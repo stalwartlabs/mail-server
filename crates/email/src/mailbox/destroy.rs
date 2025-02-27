@@ -12,11 +12,12 @@ use jmap_proto::{
     error::set::{SetError, SetErrorType},
     types::{acl::Acl, collection::Collection, id::Id, property::Property},
 };
+use rkyv::vec::ArchivedVec;
 use store::{
     Serialize, SerializeInfallible,
     query::Filter,
     roaring::RoaringBitmap,
-    write::{ArchivedValue, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
+    write::{Archive, Archiver, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -100,8 +101,8 @@ impl MailboxDestroy for Server {
                 // If the message is in multiple mailboxes, untag it from the current mailbox,
                 // otherwise delete it.
                 let mut destroy_ids = RoaringBitmap::new();
-                for (message_id, mut mailbox_ids) in self
-                    .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
+                for (message_id, mailbox_ids) in self
+                    .get_properties::<HashedValue<Archive>, _, _>(
                         account_id,
                         Collection::Email,
                         &message_ids,
@@ -110,6 +111,9 @@ impl MailboxDestroy for Server {
                     .await?
                 {
                     // Remove mailbox from list
+                    let mut mailbox_ids = mailbox_ids
+                        .into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                        .caused_by(trc::location!())?;
                     let orig_len = mailbox_ids.inner.len();
                     mailbox_ids.inner.retain(|id| id.mailbox_id != document_id);
                     if mailbox_ids.inner.len() == orig_len {
@@ -136,7 +140,9 @@ impl MailboxDestroy for Server {
                                 .assert_value(Property::MailboxIds, &mailbox_ids)
                                 .set(
                                     Property::MailboxIds,
-                                    mailbox_ids.inner.serialize().caused_by(trc::location!())?,
+                                    Archiver::new(mailbox_ids.inner)
+                                        .serialize()
+                                        .caused_by(trc::location!())?,
                                 )
                                 .untag(Property::MailboxIds, document_id);
                             match self.core.storage.data.write(batch.build()).await {
@@ -186,7 +192,7 @@ impl MailboxDestroy for Server {
 
         // Obtain mailbox
         if let Some(mailbox) = self
-            .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
+            .get_property::<HashedValue<Archive>>(
                 account_id,
                 Collection::Mailbox,
                 document_id,
@@ -195,7 +201,9 @@ impl MailboxDestroy for Server {
             .await
             .caused_by(trc::location!())?
         {
-            let mailbox = mailbox.into_deserialized().caused_by(trc::location!())?;
+            let mailbox = mailbox
+                .into_deserialized::<ArchivedMailbox, Mailbox>()
+                .caused_by(trc::location!())?;
             // Validate ACLs
             if access_token.is_shared(account_id) {
                 let acl = mailbox.inner.acls.effective_acl(access_token);

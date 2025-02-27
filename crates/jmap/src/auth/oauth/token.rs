@@ -5,25 +5,25 @@
  */
 
 use common::{
+    KV_OAUTH, Server,
     auth::{
-        oauth::{oidc::StandardClaims, GrantType},
         AccessToken,
+        oauth::{GrantType, oidc::StandardClaims},
     },
-    Server, KV_OAUTH,
 };
 use hyper::StatusCode;
 use std::future::Future;
-use store::{dispatch::lookup::KeyValue, write::Bincode};
+use store::{dispatch::lookup::KeyValue, write::LegacyBincode};
 use trc::AddContext;
 
 use crate::api::{
-    http::{HttpContext, HttpSessionData, ToHttpResponse},
     HttpRequest, HttpResponse, JsonResponse,
+    http::{HttpContext, HttpSessionData, ToHttpResponse},
 };
 
 use super::{
-    registration::ClientRegistrationHandler, ErrorType, FormData, OAuthCode, OAuthResponse,
-    OAuthStatus, TokenResponse, MAX_POST_LEN,
+    ErrorType, FormData, MAX_POST_LEN, OAuthCode, OAuthResponse, OAuthStatus, TokenResponse,
+    registration::ClientRegistrationHandler,
 };
 
 pub trait TokenHandler: Sync + Send {
@@ -79,7 +79,7 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Bincode<OAuthCode>>(KeyValue::<()>::build_key(
+                    .key_get::<LegacyBincode<OAuthCode>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         code.as_bytes(),
                     ))
@@ -149,7 +149,7 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Bincode<OAuthCode>>(KeyValue::<()>::build_key(
+                    .key_get::<LegacyBincode<OAuthCode>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         device_code.as_bytes(),
                     ))
@@ -231,10 +231,11 @@ impl TokenHandler for Server {
                                 .caused_by(trc::location!())
                         })?,
                     Err(err) => {
-                        trc::error!(err
-                            .caused_by(trc::location!())
-                            .details("Failed to validate refresh token")
-                            .span_id(session.session_id));
+                        trc::error!(
+                            err.caused_by(trc::location!())
+                                .details("Failed to validate refresh token")
+                                .span_id(session.session_id)
+                        );
                         TokenResponse::error(ErrorType::InvalidGrant)
                     }
                 };

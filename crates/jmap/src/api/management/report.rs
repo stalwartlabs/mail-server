@@ -6,26 +6,26 @@
 
 use std::future::Future;
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use directory::{
-    backend::internal::{manage::ManageDirectory, PrincipalField},
     Permission, Type,
+    backend::internal::{PrincipalField, manage::ManageDirectory},
 };
 use hyper::Method;
 use mail_auth::report::{
-    tlsrpt::{FailureDetails, Policy, TlsReport},
     Feedback,
+    tlsrpt::{FailureDetails, Policy, TlsReport},
 };
 use serde_json::json;
 use smtp::reporting::analysis::IncomingReport;
 use store::{
-    write::{key::DeserializeBigEndian, BatchBuilder, Bincode, ReportClass, ValueClass},
-    Deserialize, IterateParams, ValueKey, U64_LEN,
+    Deserialize, IterateParams, U64_LEN, ValueKey,
+    write::{BatchBuilder, LegacyBincode, ReportClass, ValueClass, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
+use crate::api::{HttpRequest, HttpResponse, JsonResponse, http::ToHttpResponse};
 
 use super::decode_path_element;
 
@@ -121,7 +121,7 @@ impl ManageReports for Server {
                             .core
                             .storage
                             .data
-                            .get_value::<Bincode<IncomingReport<TlsReport>>>(ValueKey::from(
+                            .get_value::<LegacyBincode<IncomingReport<TlsReport>>>(ValueKey::from(
                                 ValueClass::Report(report_id),
                             ))
                             .await?
@@ -129,7 +129,7 @@ impl ManageReports for Server {
                             Some(report)
                                 if tenant_domains
                                     .as_ref()
-                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
+                                    .is_none_or(|domains| report.inner.has_domain(domains)) =>
                             {
                                 Ok(JsonResponse::new(json!({
                                         "data": report.inner,
@@ -142,7 +142,7 @@ impl ManageReports for Server {
                             .core
                             .storage
                             .data
-                            .get_value::<Bincode<IncomingReport<mail_auth::report::Report>>>(
+                            .get_value::<LegacyBincode<IncomingReport<mail_auth::report::Report>>>(
                                 ValueKey::from(ValueClass::Report(report_id)),
                             )
                             .await?
@@ -150,7 +150,7 @@ impl ManageReports for Server {
                             Some(report)
                                 if tenant_domains
                                     .as_ref()
-                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
+                                    .is_none_or(|domains| report.inner.has_domain(domains)) =>
                             {
                                 Ok(JsonResponse::new(json!({
                                         "data": report.inner,
@@ -163,7 +163,7 @@ impl ManageReports for Server {
                             .core
                             .storage
                             .data
-                            .get_value::<Bincode<IncomingReport<Feedback>>>(ValueKey::from(
+                            .get_value::<LegacyBincode<IncomingReport<Feedback>>>(ValueKey::from(
                                 ValueClass::Report(report_id),
                             ))
                             .await?
@@ -171,7 +171,7 @@ impl ManageReports for Server {
                             Some(report)
                                 if tenant_domains
                                     .as_ref()
-                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
+                                    .is_none_or(|domains| report.inner.has_domain(domains)) =>
                             {
                                 Ok(JsonResponse::new(json!({
                                         "data": report.inner,
@@ -249,7 +249,7 @@ impl ManageReports for Server {
                                 .core
                                 .storage
                                 .data
-                                .get_value::<Bincode<IncomingReport<TlsReport>>>(ValueKey::from(
+                                .get_value::<LegacyBincode<IncomingReport<TlsReport>>>(ValueKey::from(
                                     ValueClass::Report(report_id.clone()),
                                 ))
                                 .await?
@@ -258,7 +258,7 @@ impl ManageReports for Server {
                                 .core
                                 .storage
                                 .data
-                                .get_value::<Bincode<IncomingReport<mail_auth::report::Report>>>(
+                                .get_value::<LegacyBincode<IncomingReport<mail_auth::report::Report>>>(
                                     ValueKey::from(ValueClass::Report(report_id.clone())),
                                 )
                                 .await?
@@ -268,7 +268,7 @@ impl ManageReports for Server {
                                 .core
                                 .storage
                                 .data
-                                .get_value::<Bincode<IncomingReport<Feedback>>>(ValueKey::from(
+                                .get_value::<LegacyBincode<IncomingReport<Feedback>>>(ValueKey::from(
                                     ValueClass::Report(report_id.clone()),
                                 ))
                                 .await?
@@ -382,7 +382,7 @@ async fn fetch_incoming_reports(
                     match typ {
                         ReportType::Dmarc => {
                             let report =
-                                Bincode::<IncomingReport<mail_auth::report::Report>>::deserialize(
+                                LegacyBincode::<IncomingReport<mail_auth::report::Report>>::deserialize(
                                     value,
                                 )
                                 .caused_by(trc::location!())?
@@ -394,7 +394,7 @@ async fn fetch_incoming_reports(
                                     .is_none_or( |domains| report.has_domain(domains))
                         }
                         ReportType::Tls => {
-                            let report = Bincode::<IncomingReport<TlsReport>>::deserialize(value)
+                            let report = LegacyBincode::<IncomingReport<TlsReport>>::deserialize(value)
                                 .caused_by(trc::location!())?
                                 .inner;
 
@@ -404,7 +404,7 @@ async fn fetch_incoming_reports(
                                     .is_none_or( |domains| report.has_domain(domains))
                         }
                         ReportType::Arf => {
-                            let report = Bincode::<IncomingReport<Feedback>>::deserialize(value)
+                            let report = LegacyBincode::<IncomingReport<Feedback>>::deserialize(value)
                                 .caused_by(trc::location!())?
                                 .inner;
 

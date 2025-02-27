@@ -6,13 +6,13 @@
 
 use std::{fs, path::PathBuf, time::SystemTime};
 
-use smtp_proto::{Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
+use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS, Response};
 use store::write::now;
 use utils::BlobHash;
 
-use crate::smtp::{inbound::sign::SIGNATURES, QueueReceiver, TestSMTP};
+use crate::smtp::{QueueReceiver, TestSMTP, inbound::sign::SIGNATURES};
 use smtp::queue::{
-    dsn::SendDsn, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status,
+    Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status, dsn::SendDsn,
 };
 
 const CONFIG: &str = r#"
@@ -87,7 +87,7 @@ async fn generate_dsn() {
         flags: 0,
         env_id: None,
         priority: 0,
-        blob_hash: BlobHash::from(dsn_original.as_bytes()),
+        blob_hash: BlobHash::generate(dsn_original.as_bytes()),
         quota_keys: vec![],
     };
 

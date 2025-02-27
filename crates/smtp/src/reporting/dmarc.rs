@@ -22,7 +22,7 @@ use mail_auth::{
 };
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass, now},
+    write::{BatchBuilder, LegacyBincode, QueueClass, ReportEvent, ValueClass, now},
 };
 use trc::{AddContext, OutgoingReportEvent};
 use utils::config::Rate;
@@ -467,7 +467,7 @@ impl DmarcReporting for Server {
             .core
             .storage
             .data
-            .get_value::<Bincode<DmarcFormat>>(ValueKey::from(ValueClass::Queue(
+            .get_value::<LegacyBincode<DmarcFormat>>(ValueKey::from(ValueClass::Queue(
                 QueueClass::DmarcReportHeader(event.clone()),
             )))
             .await?
@@ -543,7 +543,7 @@ impl DmarcReporting for Server {
             .data
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
-                |_, v| match record_map.entry(Bincode::<Record>::deserialize(v)?.inner) {
+                |_, v| match record_map.entry(LegacyBincode::<Record>::deserialize(v)?.inner) {
                     Entry::Occupied(mut e) => {
                         *e.get_mut() += 1;
                         Ok(true)
@@ -650,7 +650,7 @@ impl DmarcReporting for Server {
             // Write report
             builder.set(
                 ValueClass::Queue(QueueClass::DmarcReportHeader(report_event.clone())),
-                match Bincode::new(entry).serialize() {
+                match LegacyBincode::new(entry).serialize() {
                     Ok(data) => data,
                     Err(err) => {
                         trc::error!(
@@ -667,7 +667,7 @@ impl DmarcReporting for Server {
         report_event.seq_id = self.inner.data.queue_id_gen.generate().unwrap_or_else(now);
         builder.set(
             ValueClass::Queue(QueueClass::DmarcReportEvent(report_event)),
-            match Bincode::new(event.report_record).serialize() {
+            match LegacyBincode::new(event.report_record).serialize() {
                 Ok(data) => data,
                 Err(err) => {
                     trc::error!(

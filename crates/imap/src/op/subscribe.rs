@@ -17,7 +17,7 @@ use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
 use jmap_proto::types::{
     collection::Collection, property::Property, state::StateChange, type_state::DataType,
 };
-use store::write::{ArchivedValue, BatchBuilder, assert::HashedValue};
+use store::write::{Archive, BatchBuilder, assert::HashedValue};
 
 use super::ImapContext;
 
@@ -97,7 +97,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox = self
             .server
-            .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
+            .get_property::<HashedValue<Archive>>(
                 account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -113,7 +113,7 @@ impl<T: SessionStream> SessionData<T> {
                     .id(tag.clone())
                     .caused_by(trc::location!())
             })?
-            .into_deserialized()
+            .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
             .imap_ctx(&tag, trc::location!())?;
 
         if (subscribe && !mailbox.inner.is_subscribed(self.account_id))

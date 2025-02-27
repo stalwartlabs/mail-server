@@ -13,7 +13,7 @@ pub mod postings;
 pub mod query;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Field<T: Into<u8> + Display + Clone + std::fmt::Debug> {
+pub enum Field<T: Into<u8> + Display + std::fmt::Debug> {
     Header(T),
     Body,
     Attachment,
@@ -21,7 +21,7 @@ pub enum Field<T: Into<u8> + Display + Clone + std::fmt::Debug> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum FtsFilter<T: Into<u8> + Display + Clone + std::fmt::Debug> {
+pub enum FtsFilter<T: Into<u8> + Display + std::fmt::Debug> {
     Exact {
         field: Field<T>,
         text: String,
@@ -42,7 +42,7 @@ pub enum FtsFilter<T: Into<u8> + Display + Clone + std::fmt::Debug> {
     End,
 }
 
-impl<T: Into<u8> + Display + Clone + std::fmt::Debug> FtsFilter<T> {
+impl<T: Into<u8> + Display + std::fmt::Debug> FtsFilter<T> {
     pub fn has_text_detect(
         field: Field<T>,
         text: impl Into<String>,

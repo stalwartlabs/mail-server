@@ -27,7 +27,7 @@ use jmap_proto::types::{
     acl::Acl, collection::Collection, property::Property, state::StateChange, type_state::DataType,
     value::AclGrant,
 };
-use store::write::{ArchivedValue, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
+use store::write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -54,7 +54,7 @@ impl<T: SessionStream> Session<T> {
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let mut permissions = Vec::new();
             let mailbox = mailbox_
-                .to_unarchived()
+                .to_unarchived::<ArchivedMailbox>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
             for item in mailbox.inner.acls.iter() {
@@ -152,7 +152,7 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let mailbox = mailbox_
-                .to_unarchived()
+                .to_unarchived::<ArchivedMailbox>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let rights = if access_token.is_shared(mailbox_id.account_id) {
                 let acl = mailbox.inner.acls.effective_acl(&access_token);
@@ -241,7 +241,7 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let current_mailbox = current_mailbox
-                .into_deserialized()
+                .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
             // Obtain principal id
@@ -436,15 +436,11 @@ impl<T: SessionStream> SessionData<T> {
         &self,
         arguments: &Arguments,
         validate: bool,
-    ) -> trc::Result<(
-        MailboxId,
-        HashedValue<ArchivedValue<ArchivedMailbox>>,
-        Arc<AccessToken>,
-    )> {
+    ) -> trc::Result<(MailboxId, HashedValue<Archive>, Arc<AccessToken>)> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(values) = self
                 .server
-                .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
+                .get_property::<HashedValue<Archive>>(
                     mailbox.account_id,
                     Collection::Mailbox,
                     mailbox.mailbox_id,
@@ -458,7 +454,7 @@ impl<T: SessionStream> SessionData<T> {
                     || access_token.is_member(mailbox.account_id)
                     || values
                         .inner
-                        .unarchive()
+                        .unarchive::<ArchivedMailbox>()
                         .caused_by(trc::location!())?
                         .acls
                         .effective_acl(&access_token)

@@ -11,7 +11,7 @@ use common::{
 use jmap_proto::types::property::Property;
 use store::write::{MaybeDynamicId, TagValue};
 
-use super::{Mailbox, UidMailbox};
+use super::{ArchivedUidMailbox, Mailbox, UidMailbox};
 
 impl IndexableObject for Mailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -55,5 +55,11 @@ impl From<&UidMailbox> for TagValue<MaybeDynamicId> {
 impl From<UidMailbox> for TagValue<MaybeDynamicId> {
     fn from(value: UidMailbox) -> Self {
         TagValue::Id(MaybeDynamicId::Static(value.mailbox_id))
+    }
+}
+
+impl From<&ArchivedUidMailbox> for TagValue<MaybeDynamicId> {
+    fn from(value: &ArchivedUidMailbox) -> Self {
+        TagValue::Id(MaybeDynamicId::Static(value.mailbox_id.into()))
     }
 }

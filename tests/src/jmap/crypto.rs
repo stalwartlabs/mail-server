@@ -11,6 +11,10 @@ use email::message::crypto::{
 };
 use jmap_proto::types::id::Id;
 use mail_parser::{MessageParser, MimeHeaders};
+use store::{
+    Deserialize, Serialize,
+    write::{Archive, Archiver},
+};
 
 use crate::{
     directory::internal::TestInternalDirectory,
@@ -213,7 +217,10 @@ pub async fn import_certs_and_encrypt() {
                 .unwrap();
             assert!(!message.is_encrypted());
             params.algo = algo;
-            message.encrypt(&params).await.unwrap();
+            let arch =
+                Archive::deserialize_owned(Archiver::new(params.clone()).serialize().unwrap())
+                    .unwrap();
+            message.encrypt(arch.unarchive().unwrap()).await.unwrap();
         }
     }
 

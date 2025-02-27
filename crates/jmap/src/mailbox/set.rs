@@ -30,7 +30,7 @@ use store::{
     query::Filter,
     roaring::RoaringBitmap,
     write::{
-        ArchivedValue, BatchBuilder,
+        Archive, BatchBuilder,
         assert::{AssertValue, HashedValue},
         log::ChangeLogBuilder,
     },
@@ -158,7 +158,7 @@ impl MailboxSet for Server {
             // Obtain mailbox
             let document_id = id.document_id();
             if let Some(mailbox) = self
-                .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
+                .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
@@ -167,7 +167,9 @@ impl MailboxSet for Server {
                 .await?
             {
                 // Validate ACL
-                let mailbox = mailbox.into_deserialized().caused_by(trc::location!())?;
+                let mailbox = mailbox
+                    .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
+                    .caused_by(trc::location!())?;
                 if ctx.is_shared {
                     let acl = mailbox.inner.acls.effective_acl(access_token);
                     if !acl.contains(Acl::Modify) {
@@ -406,7 +408,7 @@ impl MailboxSet for Server {
             let parent_document_id = mailbox_parent_id - 1;
 
             if let Some(mailbox_) = self
-                .get_property::<ArchivedValue<ArchivedMailbox>>(
+                .get_property::<Archive>(
                     ctx.account_id,
                     Collection::Mailbox,
                     parent_document_id,
@@ -414,7 +416,9 @@ impl MailboxSet for Server {
                 )
                 .await?
             {
-                let mailbox = mailbox_.unarchive().caused_by(trc::location!())?;
+                let mailbox = mailbox_
+                    .unarchive::<ArchivedMailbox>()
+                    .caused_by(trc::location!())?;
                 if depth == 0
                     && ctx.is_shared
                     && !mailbox

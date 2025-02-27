@@ -8,10 +8,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
 use common::{NextMailboxState, listener::SessionStream};
-use email::mailbox::{ArchivedMailbox, UidMailbox};
+use email::mailbox::{ArchivedMailbox, ArchivedUidMailbox};
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{ArchivedValue, assert::HashedValue};
+use store::{rkyv::vec::ArchivedVec, write::Archive};
 use trc::AddContext;
 
 use crate::core::ImapId;
@@ -50,9 +50,9 @@ impl<T: SessionStream> SessionData<T> {
 
         // Obtain all message ids
         let mut uid_map = BTreeMap::new();
-        for (message_id, uid_mailbox) in self
+        for (message_id, uid_mailbox_) in self
             .server
-            .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
+            .get_properties::<Archive, _, _>(
                 mailbox.account_id,
                 Collection::Email,
                 &message_ids,
@@ -61,14 +61,16 @@ impl<T: SessionStream> SessionData<T> {
             .await?
             .into_iter()
         {
+            let uid_mailbox = uid_mailbox_
+                .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                .caused_by(trc::location!())?;
             // Make sure the message is still in this mailbox
             if let Some(item) = uid_mailbox
-                .inner
                 .iter()
                 .find(|item| item.mailbox_id == mailbox.mailbox_id)
             {
                 debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
-                if uid_map.insert(item.uid, message_id).is_some() {
+                if uid_map.insert(u32::from(item.uid), message_id).is_some() {
                     trc::event!(
                         Store(trc::StoreEvent::UnexpectedError),
                         AccountId = mailbox.account_id,
@@ -225,7 +227,7 @@ impl<T: SessionStream> SessionData<T> {
 
     pub async fn get_uid_validity(&self, mailbox: &MailboxId) -> trc::Result<u32> {
         self.server
-            .get_property::<ArchivedValue<ArchivedMailbox>>(
+            .get_property::<Archive>(
                 mailbox.account_id,
                 Collection::Mailbox,
                 mailbox.mailbox_id,
@@ -240,7 +242,10 @@ impl<T: SessionStream> SessionData<T> {
                     .collection(Collection::Mailbox)
                     .document_id(mailbox.mailbox_id)
             })
-            .and_then(|m| m.unarchive().map(|m| u32::from(m.uid_validity)))
+            .and_then(|m| {
+                m.unarchive::<ArchivedMailbox>()
+                    .map(|m| u32::from(m.uid_validity))
+            })
     }
 
     pub async fn get_uid_next(&self, mailbox: &MailboxId) -> trc::Result<u32> {

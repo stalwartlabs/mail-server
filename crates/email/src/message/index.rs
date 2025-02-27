@@ -4,28 +4,30 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
 use jmap_proto::types::{keyword::Keyword, property::Property};
 use mail_parser::{
-    Addr, Address, GetHeader, Group, Header, HeaderName, HeaderValue, Message, MessagePart,
-    PartType,
     decoders::html::html_to_text,
     parsers::{fields::thread::thread_name, preview::preview_text},
 };
 use nlp::language::Language;
+use rkyv::option::ArchivedOption;
 use store::{
     Serialize, SerializeInfallible,
     backend::MAX_TOKEN_LENGTH,
     fts::{Field, index::FtsDocument},
-    write::{BatchBuilder, Bincode, BlobOp, DirectoryClass},
+    write::{Archiver, BatchBuilder, BlobOp, DirectoryClass},
 };
 use trc::AddContext;
 use utils::BlobHash;
 
 use crate::mailbox::UidMailbox;
 
-use super::metadata::MessageMetadata;
+use super::metadata::{
+    Addr, Address, ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
+    ArchivedMessageMetadata, ArchivedMessageMetadataContents, ArchivedMessageMetadataPart,
+    ArchivedMetadataPartType, DecodedPartContent, Group, HeaderName, HeaderValue, MessageMetadata,
+    MessageMetadataPart,
+};
 
 pub const MAX_MESSAGE_PARTS: usize = 1000;
 pub const MAX_ID_LENGTH: usize = 100;
@@ -33,6 +35,402 @@ pub const MAX_SORT_FIELD_LENGTH: usize = 255;
 pub const MAX_STORED_FIELD_LENGTH: usize = 512;
 pub const PREVIEW_LENGTH: usize = 256;
 
+impl MessageMetadata {
+    #[inline(always)]
+    pub fn root_part(&self) -> &MessageMetadataPart {
+        &self.contents.parts[0]
+    }
+
+    pub fn index(
+        self,
+        batch: &mut BatchBuilder,
+        account_id: u32,
+        tenant_id: Option<u32>,
+        set: bool,
+    ) -> trc::Result<()> {
+        if set {
+            // Serialize metadata
+            batch
+                .index(Property::Size, self.size.serialize())
+                .index(Property::ReceivedAt, (self.received_at).serialize());
+        } else {
+            // Delete metadata
+            batch
+                .clear(Property::BodyStructure)
+                .unindex(Property::Size, self.size.serialize())
+                .unindex(Property::ReceivedAt, (self.received_at).serialize());
+        }
+
+        // Index properties
+        let quota = if set {
+            self.size as i64
+        } else {
+            -(self.size as i64)
+        };
+        batch.add(DirectoryClass::UsedQuota(account_id), quota);
+        if let Some(tenant_id) = tenant_id {
+            batch.add(DirectoryClass::UsedQuota(tenant_id), quota);
+        }
+
+        if self.has_attachments {
+            if set {
+                batch.tag(Property::HasAttachment, ());
+            } else {
+                batch.untag(Property::HasAttachment, ());
+            }
+        }
+
+        // Index headers
+        self.index_headers(batch, set);
+
+        // Link blob
+        if set {
+            batch.set(
+                BlobOp::Link {
+                    hash: self.blob_hash.clone(),
+                },
+                Vec::new(),
+            );
+        } else {
+            batch.clear(BlobOp::Link {
+                hash: self.blob_hash.clone(),
+            });
+        }
+
+        if set {
+            batch.set(Property::BodyStructure, Archiver::new(self).serialize()?);
+        }
+
+        Ok(())
+    }
+
+    fn index_headers(&self, batch: &mut BatchBuilder, set: bool) {
+        let mut seen_headers = [false; 40];
+        for header in self.root_part().headers.iter().rev() {
+            if matches!(header.name, HeaderName::Other(_)) {
+                continue;
+            }
+
+            match header.name {
+                HeaderName::MessageId => {
+                    header.value.visit_text(|id| {
+                        // Add ids to inverted index
+                        if id.len() < MAX_ID_LENGTH {
+                            if set {
+                                batch
+                                    .index(Property::MessageId, id.serialize())
+                                    .index(Property::References, id.serialize());
+                            } else {
+                                batch
+                                    .unindex(Property::MessageId, id.serialize())
+                                    .unindex(Property::References, id.serialize());
+                            }
+                        }
+                    });
+                }
+                HeaderName::InReplyTo | HeaderName::References | HeaderName::ResentMessageId => {
+                    header.value.visit_text(|id| {
+                        // Add ids to inverted index
+                        if id.len() < MAX_ID_LENGTH {
+                            if set {
+                                batch.index(Property::References, id.serialize());
+                            } else {
+                                batch.unindex(Property::References, id.serialize());
+                            }
+                        }
+                    });
+                }
+                HeaderName::From | HeaderName::To | HeaderName::Cc | HeaderName::Bcc => {
+                    if !seen_headers[header.name.id() as usize] {
+                        let property = property_from_header(&header.name);
+                        let mut sort_text = SortedAddressBuilder::new();
+                        let mut found_addr = false;
+
+                        header.value.visit_addresses(|element, value| {
+                            if !found_addr {
+                                match element {
+                                    AddressElement::Name => {
+                                        found_addr = !sort_text.push(value);
+                                    }
+                                    AddressElement::Address => {
+                                        sort_text.push(value);
+                                        found_addr = true;
+                                    }
+                                    AddressElement::GroupName => (),
+                                }
+                            }
+                        });
+
+                        // Add address to inverted index
+                        if set {
+                            batch.index(u8::from(&property), sort_text.build());
+                        } else {
+                            batch.unindex(u8::from(&property), sort_text.build());
+                        }
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+                HeaderName::Date => {
+                    if !seen_headers[header.name.id() as usize] {
+                        if let HeaderValue::DateTime(datetime) = &header.value {
+                            let value = (*datetime as u64).serialize();
+                            if set {
+                                batch.index(Property::SentAt, value);
+                            } else {
+                                batch.unindex(Property::SentAt, value);
+                            }
+                        }
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+                HeaderName::Subject => {
+                    if !seen_headers[header.name.id() as usize] {
+                        // Index subject
+                        let subject = match &header.value {
+                            HeaderValue::Text(text) => text.clone(),
+                            HeaderValue::TextList(list) if !list.is_empty() => {
+                                list.first().unwrap().clone()
+                            }
+                            _ => "".into(),
+                        };
+
+                        // Index thread name
+                        let thread_name = thread_name(&subject);
+                        let thread_name = if !thread_name.is_empty() {
+                            thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
+                        } else {
+                            "!"
+                        }
+                        .serialize();
+
+                        if set {
+                            batch.index(Property::Subject, thread_name);
+                        } else {
+                            batch.unindex(Property::Subject, thread_name);
+                        }
+
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+
+                _ => (),
+            }
+        }
+
+        // Add subject to index if missing
+        if !seen_headers[HeaderName::Subject.id() as usize] {
+            if set {
+                batch.index(Property::Subject, "!".serialize());
+            } else {
+                batch.unindex(Property::Subject, "!".serialize());
+            }
+        }
+    }
+}
+
+impl ArchivedMessageMetadata {
+    #[inline(always)]
+    pub fn root_part(&self) -> &ArchivedMessageMetadataPart {
+        &self.contents.parts[0]
+    }
+
+    pub fn index(
+        &self,
+        batch: &mut BatchBuilder,
+        account_id: u32,
+        tenant_id: Option<u32>,
+        set: bool,
+    ) -> trc::Result<()> {
+        if set {
+            // Serialize metadata
+            batch
+                .index(Property::Size, u32::from(self.size).serialize())
+                .index(
+                    Property::ReceivedAt,
+                    u64::from(self.received_at).serialize(),
+                );
+        } else {
+            // Delete metadata
+            batch
+                .clear(Property::BodyStructure)
+                .unindex(Property::Size, u32::from(self.size).serialize())
+                .unindex(
+                    Property::ReceivedAt,
+                    u64::from(self.received_at).serialize(),
+                );
+        }
+
+        // Index properties
+        let quota = if set {
+            u32::from(self.size) as i64
+        } else {
+            -(u32::from(self.size) as i64)
+        };
+        batch.add(DirectoryClass::UsedQuota(account_id), quota);
+        if let Some(tenant_id) = tenant_id {
+            batch.add(DirectoryClass::UsedQuota(tenant_id), quota);
+        }
+
+        if self.has_attachments {
+            if set {
+                batch.tag(Property::HasAttachment, ());
+            } else {
+                batch.untag(Property::HasAttachment, ());
+            }
+        }
+
+        // Index headers
+        self.index_headers(batch, set);
+
+        // Link blob
+        let hash = BlobHash::from(&self.blob_hash);
+        if set {
+            batch.set(BlobOp::Link { hash }, Vec::new());
+        } else {
+            batch.clear(BlobOp::Link { hash });
+        }
+
+        Ok(())
+    }
+
+    fn index_headers(&self, batch: &mut BatchBuilder, set: bool) {
+        let mut seen_headers = [false; 40];
+        for header in self.root_part().headers.iter().rev() {
+            if matches!(header.name, ArchivedHeaderName::Other(_)) {
+                continue;
+            }
+
+            match header.name {
+                ArchivedHeaderName::MessageId => {
+                    header.value.visit_text(|id| {
+                        // Add ids to inverted index
+                        if id.len() < MAX_ID_LENGTH {
+                            if set {
+                                batch
+                                    .index(Property::MessageId, id.serialize())
+                                    .index(Property::References, id.serialize());
+                            } else {
+                                batch
+                                    .unindex(Property::MessageId, id.serialize())
+                                    .unindex(Property::References, id.serialize());
+                            }
+                        }
+                    });
+                }
+                ArchivedHeaderName::InReplyTo
+                | ArchivedHeaderName::References
+                | ArchivedHeaderName::ResentMessageId => {
+                    header.value.visit_text(|id| {
+                        // Add ids to inverted index
+                        if id.len() < MAX_ID_LENGTH {
+                            if set {
+                                batch.index(Property::References, id.serialize());
+                            } else {
+                                batch.unindex(Property::References, id.serialize());
+                            }
+                        }
+                    });
+                }
+                ArchivedHeaderName::From
+                | ArchivedHeaderName::To
+                | ArchivedHeaderName::Cc
+                | ArchivedHeaderName::Bcc => {
+                    if !seen_headers[header.name.id() as usize] {
+                        let property = property_from_archived_header(&header.name);
+                        let mut sort_text = SortedAddressBuilder::new();
+                        let mut found_addr = false;
+
+                        header.value.visit_addresses(|element, value| {
+                            if !found_addr {
+                                match element {
+                                    AddressElement::Name => {
+                                        found_addr = !sort_text.push(value);
+                                    }
+                                    AddressElement::Address => {
+                                        sort_text.push(value);
+                                        found_addr = true;
+                                    }
+                                    AddressElement::GroupName => (),
+                                }
+                            }
+                        });
+
+                        // Add address to inverted index
+                        if set {
+                            batch.index(u8::from(&property), sort_text.build());
+                        } else {
+                            batch.unindex(u8::from(&property), sort_text.build());
+                        }
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+                ArchivedHeaderName::Date => {
+                    if !seen_headers[header.name.id() as usize] {
+                        if let ArchivedHeaderValue::DateTime(datetime) = &header.value {
+                            let value = (i64::from(*datetime) as u64).serialize();
+                            if set {
+                                batch.index(Property::SentAt, value);
+                            } else {
+                                batch.unindex(Property::SentAt, value);
+                            }
+                        }
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+                ArchivedHeaderName::Subject => {
+                    if !seen_headers[header.name.id() as usize] {
+                        // Index subject
+                        let subject = match &header.value {
+                            ArchivedHeaderValue::Text(text) => text.as_str(),
+                            ArchivedHeaderValue::TextList(list) if !list.is_empty() => {
+                                list.first().unwrap().as_str()
+                            }
+                            _ => "",
+                        };
+
+                        // Index thread name
+                        let thread_name = thread_name(subject);
+                        let thread_name = if !thread_name.is_empty() {
+                            thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
+                        } else {
+                            "!"
+                        }
+                        .serialize();
+
+                        if set {
+                            batch.index(Property::Subject, thread_name);
+                        } else {
+                            batch.unindex(Property::Subject, thread_name);
+                        }
+
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+
+                _ => (),
+            }
+        }
+
+        // Add subject to index if missing
+        if !seen_headers[HeaderName::Subject.id() as usize] {
+            if set {
+                batch.index(Property::Subject, "!".serialize());
+            } else {
+                batch.unindex(Property::Subject, "!".serialize());
+            }
+        }
+    }
+}
+
+impl ArchivedMessageMetadataContents {
+    pub fn is_html_part(&self, part_id: u16) -> bool {
+        self.html_body.iter().any(|&id| id == part_id)
+    }
+
+    pub fn is_text_part(&self, part_id: u16) -> bool {
+        self.text_body.iter().any(|&id| id == part_id)
+    }
+}
 #[derive(Debug)]
 pub struct SortedAddressBuilder {
     last_is_space: bool,
@@ -45,18 +443,12 @@ pub(super) trait IndexMessage {
         &mut self,
         account_id: u32,
         tenant_id: Option<u32>,
-        message: Message,
+        message: mail_parser::Message<'_>,
         blob_hash: BlobHash,
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<UidMailbox>,
         received_at: u64,
     ) -> trc::Result<&mut Self>;
-
-    fn index_headers(&mut self, headers: &[Header<'_>], set: bool);
-}
-
-pub trait IndexMessageText<'x>: Sized {
-    fn index_message(self, message: &'x Message<'x>) -> Self;
 }
 
 impl IndexMessage for BatchBuilder {
@@ -64,25 +456,27 @@ impl IndexMessage for BatchBuilder {
         &mut self,
         account_id: u32,
         tenant_id: Option<u32>,
-        message: Message,
+        message: mail_parser::Message<'_>,
         blob_hash: BlobHash,
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<UidMailbox>,
         received_at: u64,
     ) -> trc::Result<&mut Self> {
         // Index keywords
+        let keywords = Archiver::new(keywords);
         self.set(
             Property::Keywords,
             keywords.serialize().caused_by(trc::location!())?,
         )
-        .tag_many(Property::Keywords, keywords.into_iter());
+        .tag_many(Property::Keywords, keywords.into_inner().into_iter());
 
         // Index mailboxIds
-        self.set(
+        self.tag_many(Property::MailboxIds, mailbox_ids.iter()).set(
             Property::MailboxIds,
-            mailbox_ids.serialize().caused_by(trc::location!())?,
-        )
-        .tag_many(Property::MailboxIds, mailbox_ids.iter());
+            Archiver::new(mailbox_ids)
+                .serialize()
+                .caused_by(trc::location!())?,
+        );
 
         // Index size
         self.index(
@@ -113,12 +507,8 @@ impl IndexMessage for BatchBuilder {
             .unwrap_or(usize::MAX);
 
         for (part_id, part) in message.parts.iter().take(MAX_MESSAGE_PARTS).enumerate() {
-            if part_id == 0 {
-                self.index_headers(&part.headers, true);
-            }
-
             match &part.body {
-                PartType::Text(text) => {
+                mail_parser::PartType::Text(text) => {
                     if part_id == preview_part_id {
                         preview =
                             preview_text(text.replace('\r', "").into(), PREVIEW_LENGTH).into();
@@ -130,7 +520,7 @@ impl IndexMessage for BatchBuilder {
                         has_attachments = true;
                     }
                 }
-                PartType::Html(html) => {
+                mail_parser::PartType::Html(html) => {
                     let text = html_to_text(html);
                     if part_id == preview_part_id {
                         preview =
@@ -143,12 +533,32 @@ impl IndexMessage for BatchBuilder {
                         has_attachments = true;
                     }
                 }
-                PartType::Binary(_) | PartType::Message(_) if !has_attachments => {
+                mail_parser::PartType::Binary(_) | mail_parser::PartType::Message(_)
+                    if !has_attachments =>
+                {
                     has_attachments = true;
                 }
                 _ => {}
             }
         }
+
+        // Build metadata
+        let root_part = message.root_part();
+        let metadata = MessageMetadata {
+            preview: preview.unwrap_or_default().into_owned(),
+            size: message.raw_message.len() as u32,
+            raw_headers: message
+                .raw_message
+                .as_ref()
+                .get(root_part.offset_header..root_part.offset_body)
+                .unwrap_or_default()
+                .to_vec(),
+            contents: message.into(),
+            received_at,
+            has_attachments,
+            blob_hash,
+        };
+        metadata.index_headers(self, true);
 
         // Store and index hasAttachment property
         if has_attachments {
@@ -158,209 +568,97 @@ impl IndexMessage for BatchBuilder {
         // Link blob
         self.set(
             BlobOp::Link {
-                hash: blob_hash.clone(),
+                hash: metadata.blob_hash.clone(),
             },
             Vec::new(),
         );
 
         // Store message metadata
-        let root_part = message.root_part();
         self.set(
             Property::BodyStructure,
-            Bincode::new(MessageMetadata {
-                preview: preview.unwrap_or_default().into_owned(),
-                size: message.raw_message.len(),
-                raw_headers: message
-                    .raw_message
-                    .as_ref()
-                    .get(root_part.offset_header..root_part.offset_body)
-                    .unwrap_or_default()
-                    .to_vec(),
-                contents: message.into(),
-                received_at,
-                has_attachments,
-                blob_hash,
-            })
-            .serialize()
-            .caused_by(trc::location!())?,
+            Archiver::new(metadata)
+                .serialize()
+                .caused_by(trc::location!())?,
         );
 
         Ok(self)
     }
-
-    fn index_headers(&mut self, headers: &[Header<'_>], set: bool) {
-        let mut seen_headers = [false; 40];
-        for header in headers.iter().rev() {
-            if matches!(header.name, HeaderName::Other(_)) {
-                continue;
-            }
-
-            match header.name {
-                HeaderName::MessageId => {
-                    header.value.visit_text(|id| {
-                        // Add ids to inverted index
-                        if id.len() < MAX_ID_LENGTH {
-                            if set {
-                                self.index(Property::MessageId, id.serialize())
-                                    .index(Property::References, id.serialize());
-                            } else {
-                                self.unindex(Property::MessageId, id.serialize())
-                                    .unindex(Property::References, id.serialize());
-                            }
-                        }
-                    });
-                }
-                HeaderName::InReplyTo | HeaderName::References | HeaderName::ResentMessageId => {
-                    header.value.visit_text(|id| {
-                        // Add ids to inverted index
-                        if id.len() < MAX_ID_LENGTH {
-                            if set {
-                                self.index(Property::References, id.serialize());
-                            } else {
-                                self.unindex(Property::References, id.serialize());
-                            }
-                        }
-                    });
-                }
-                HeaderName::From | HeaderName::To | HeaderName::Cc | HeaderName::Bcc => {
-                    if !seen_headers[header.name.id() as usize] {
-                        let property = Property::from_header(&header.name);
-                        let mut sort_text = SortedAddressBuilder::new();
-                        let mut found_addr = false;
-
-                        header.value.visit_addresses(|element, value| {
-                            if !found_addr {
-                                match element {
-                                    AddressElement::Name => {
-                                        found_addr = !sort_text.push(value);
-                                    }
-                                    AddressElement::Address => {
-                                        sort_text.push(value);
-                                        found_addr = true;
-                                    }
-                                    AddressElement::GroupName => (),
-                                }
-                            }
-                        });
-
-                        // Add address to inverted index
-                        if set {
-                            self.index(u8::from(&property), sort_text.build());
-                        } else {
-                            self.unindex(u8::from(&property), sort_text.build());
-                        }
-                        seen_headers[header.name.id() as usize] = true;
-                    }
-                }
-                HeaderName::Date => {
-                    if !seen_headers[header.name.id() as usize] {
-                        if let HeaderValue::DateTime(datetime) = &header.value {
-                            let value = (datetime.to_timestamp() as u64).serialize();
-                            if set {
-                                self.index(Property::SentAt, value);
-                            } else {
-                                self.unindex(Property::SentAt, value);
-                            }
-                        }
-                        seen_headers[header.name.id() as usize] = true;
-                    }
-                }
-                HeaderName::Subject => {
-                    if !seen_headers[header.name.id() as usize] {
-                        // Index subject
-                        let subject = match &header.value {
-                            HeaderValue::Text(text) => text.clone(),
-                            HeaderValue::TextList(list) if !list.is_empty() => {
-                                list.first().unwrap().clone()
-                            }
-                            _ => "".into(),
-                        };
-
-                        // Index thread name
-                        let thread_name = thread_name(&subject);
-                        let thread_name = if !thread_name.is_empty() {
-                            thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
-                        } else {
-                            "!"
-                        }
-                        .serialize();
-
-                        if set {
-                            self.index(Property::Subject, thread_name);
-                        } else {
-                            self.unindex(Property::Subject, thread_name);
-                        }
-
-                        seen_headers[header.name.id() as usize] = true;
-                    }
-                }
-
-                _ => (),
-            }
-        }
-
-        // Add subject to index if missing
-        if !seen_headers[HeaderName::Subject.id() as usize] {
-            if set {
-                self.index(Property::Subject, "!".serialize());
-            } else {
-                self.unindex(Property::Subject, "!".serialize());
-            }
-        }
-    }
 }
 
-impl<'x> IndexMessageText<'x> for FtsDocument<'x, HeaderName<'x>> {
-    fn index_message(mut self, message: &'x Message<'x>) -> Self {
+pub trait IndexMessageText<'x>: Sized {
+    fn index_message(self, message: &'x ArchivedMessageMetadata, raw_message: &'x [u8]) -> Self;
+}
+
+impl<'x> IndexMessageText<'x> for FtsDocument<'x, mail_parser::HeaderName<'x>> {
+    fn index_message(
+        mut self,
+        message: &'x ArchivedMessageMetadata,
+        raw_message: &'x [u8],
+    ) -> Self {
         let mut language = Language::Unknown;
 
-        for (part_id, part) in message.parts.iter().take(MAX_MESSAGE_PARTS).enumerate() {
+        for (part_id, part) in message
+            .contents
+            .parts
+            .iter()
+            .take(MAX_MESSAGE_PARTS)
+            .enumerate()
+        {
             let part_language = part.language().unwrap_or(language);
             if part_id == 0 {
                 language = part_language;
 
                 for header in part.headers.iter().rev() {
-                    if matches!(header.name, HeaderName::Other(_)) {
+                    if matches!(header.name, ArchivedHeaderName::Other(_)) {
                         continue;
                     }
                     // Index hasHeader property
                     self.index_keyword(Field::Keyword, header.name.as_str().to_ascii_lowercase());
 
                     match &header.name {
-                        HeaderName::MessageId
-                        | HeaderName::InReplyTo
-                        | HeaderName::References
-                        | HeaderName::ResentMessageId => {
+                        ArchivedHeaderName::MessageId
+                        | ArchivedHeaderName::InReplyTo
+                        | ArchivedHeaderName::References
+                        | ArchivedHeaderName::ResentMessageId => {
                             header.value.visit_text(|id| {
                                 // Index ids without stemming
                                 if id.len() < MAX_TOKEN_LENGTH {
                                     self.index_keyword(
-                                        Field::Header(header.name.clone()),
+                                        Field::Header(mail_parser::HeaderName::from(&header.name)),
                                         id.to_string(),
                                     );
                                 }
                             });
                         }
-                        HeaderName::From | HeaderName::To | HeaderName::Cc | HeaderName::Bcc => {
+                        ArchivedHeaderName::From
+                        | ArchivedHeaderName::To
+                        | ArchivedHeaderName::Cc
+                        | ArchivedHeaderName::Bcc => {
                             header.value.visit_addresses(|_, value| {
                                 // Index an address name or email without stemming
                                 self.index_tokenized(
-                                    Field::Header(header.name.clone()),
+                                    Field::Header(mail_parser::HeaderName::from(&header.name)),
                                     value.to_string(),
                                 );
                             });
                         }
-                        HeaderName::Subject => {
+                        ArchivedHeaderName::Subject => {
                             // Index subject for FTS
                             if let Some(subject) = header.value.as_text() {
-                                self.index(Field::Header(HeaderName::Subject), subject, language);
+                                self.index(
+                                    Field::Header(mail_parser::HeaderName::Subject),
+                                    subject,
+                                    language,
+                                );
                             }
                         }
-                        HeaderName::Comments | HeaderName::Keywords | HeaderName::ListId => {
+                        ArchivedHeaderName::Comments
+                        | ArchivedHeaderName::Keywords
+                        | ArchivedHeaderName::ListId => {
                             // Index headers
                             header.value.visit_text(|text| {
                                 self.index_tokenized(
-                                    Field::Header(header.name.clone()),
+                                    Field::Header(mail_parser::HeaderName::from(&header.name)),
                                     text.to_string(),
                                 );
                             });
@@ -370,32 +668,34 @@ impl<'x> IndexMessageText<'x> for FtsDocument<'x, HeaderName<'x>> {
                 }
             }
 
+            let part_id = part_id as u16;
             match &part.body {
-                PartType::Text(text) => {
-                    if message.text_body.contains(&part_id) || message.html_body.contains(&part_id)
-                    {
-                        self.index(Field::Body, text.as_ref(), part_language);
-                    } else {
-                        self.index(Field::Attachment, text.as_ref(), part_language);
-                    }
-                }
-                PartType::Html(html) => {
-                    let text = html_to_text(html);
+                ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html => {
+                    let text = match (part.decode_contents(raw_message), &part.body) {
+                        (DecodedPartContent::Text(text), ArchivedMetadataPartType::Text) => text,
+                        (DecodedPartContent::Text(html), ArchivedMetadataPartType::Html) => {
+                            html_to_text(html.as_ref()).into()
+                        }
+                        _ => unreachable!(),
+                    };
 
-                    if message.text_body.contains(&part_id) || message.html_body.contains(&part_id)
+                    if message.contents.is_html_part(part_id)
+                        || message.contents.is_text_part(part_id)
                     {
                         self.index(Field::Body, text, part_language);
                     } else {
                         self.index(Field::Attachment, text, part_language);
                     }
                 }
-                PartType::Message(nested_message) => {
+                ArchivedMetadataPartType::Message(nested_message) => {
                     let nested_message_language = nested_message
                         .root_part()
                         .language()
                         .unwrap_or(Language::Unknown);
-                    if let Some(HeaderValue::Text(subject)) =
-                        nested_message.header(HeaderName::Subject)
+                    if let Some(ArchivedHeaderValue::Text(subject)) = nested_message
+                        .root_part()
+                        .headers
+                        .header_value(&ArchivedHeaderName::Subject)
                     {
                         self.index(Field::Attachment, subject.as_ref(), nested_message_language);
                     }
@@ -403,11 +703,20 @@ impl<'x> IndexMessageText<'x> for FtsDocument<'x, HeaderName<'x>> {
                     for sub_part in nested_message.parts.iter().take(MAX_MESSAGE_PARTS) {
                         let language = sub_part.language().unwrap_or(nested_message_language);
                         match &sub_part.body {
-                            PartType::Text(text) => {
-                                self.index(Field::Attachment, text.as_ref(), language);
-                            }
-                            PartType::Html(html) => {
-                                self.index(Field::Attachment, html_to_text(html), language);
+                            ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html => {
+                                let text =
+                                    match (sub_part.decode_contents(raw_message), &sub_part.body) {
+                                        (
+                                            DecodedPartContent::Text(text),
+                                            ArchivedMetadataPartType::Text,
+                                        ) => text,
+                                        (
+                                            DecodedPartContent::Text(html),
+                                            ArchivedMetadataPartType::Html,
+                                        ) => html_to_text(html.as_ref()).into(),
+                                        _ => unreachable!(),
+                                    };
+                                self.index(Field::Attachment, text, language);
                             }
                             _ => (),
                         }
@@ -417,88 +726,6 @@ impl<'x> IndexMessageText<'x> for FtsDocument<'x, HeaderName<'x>> {
             }
         }
         self
-    }
-}
-
-pub struct EmailIndexBuilder<'x> {
-    inner: Bincode<MessageMetadata<'x>>,
-    set: bool,
-}
-
-impl<'x> EmailIndexBuilder<'x> {
-    pub fn set(inner: MessageMetadata<'x>) -> Self {
-        Self {
-            inner: Bincode { inner },
-            set: true,
-        }
-    }
-
-    pub fn clear(inner: MessageMetadata<'x>) -> Self {
-        Self {
-            inner: Bincode { inner },
-            set: false,
-        }
-    }
-}
-
-impl EmailIndexBuilder<'_> {
-    pub fn build(
-        self,
-        batch: &mut BatchBuilder,
-        account_id: u32,
-        tenant_id: Option<u32>,
-    ) -> trc::Result<()> {
-        let metadata = &self.inner.inner;
-        if self.set {
-            // Serialize metadata
-            batch
-                .set(Property::BodyStructure, (self.inner).serialize()?)
-                .index(Property::Size, (metadata.size as u32).serialize())
-                .index(Property::ReceivedAt, (metadata.received_at).serialize());
-        } else {
-            // Delete metadata
-            batch
-                .clear(Property::BodyStructure)
-                .unindex(Property::Size, (metadata.size as u32).serialize())
-                .unindex(Property::ReceivedAt, (metadata.received_at).serialize());
-        }
-
-        // Index properties
-        let quota = if self.set {
-            metadata.size as i64
-        } else {
-            -(metadata.size as i64)
-        };
-        batch.add(DirectoryClass::UsedQuota(account_id), quota);
-        if let Some(tenant_id) = tenant_id {
-            batch.add(DirectoryClass::UsedQuota(tenant_id), quota);
-        }
-
-        if metadata.has_attachments {
-            if self.set {
-                batch.tag(Property::HasAttachment, ());
-            } else {
-                batch.untag(Property::HasAttachment, ());
-            }
-        }
-
-        // Index headers
-        batch.index_headers(&metadata.contents.parts[0].headers, self.set);
-
-        // Link blob
-        if self.set {
-            batch.set(
-                BlobOp::Link {
-                    hash: metadata.blob_hash.clone(),
-                },
-                Vec::new(),
-            );
-        } else {
-            batch.clear(BlobOp::Link {
-                hash: metadata.blob_hash.clone(),
-            });
-        }
-        Ok(())
     }
 }
 
@@ -548,11 +775,7 @@ impl Default for SortedAddressBuilder {
     }
 }
 
-trait GetContentLanguage {
-    fn language(&self) -> Option<Language>;
-}
-
-impl GetContentLanguage for MessagePart<'_> {
+/*impl MessageMetadataPart {
     fn language(&self) -> Option<Language> {
         self.headers
             .header_value(&HeaderName::ContentLanguage)
@@ -568,12 +791,24 @@ impl GetContentLanguage for MessagePart<'_> {
                 .into()
             })
     }
-}
+}*/
 
-pub trait VisitValues<'x> {
-    fn visit_addresses<'y: 'x>(&'y self, visitor: impl FnMut(AddressElement, &'x str));
-    fn visit_text<'y: 'x>(&'y self, visitor: impl FnMut(&'x str));
-    fn into_visit_text(self, visitor: impl FnMut(String));
+impl ArchivedMessageMetadataPart {
+    fn language(&self) -> Option<Language> {
+        self.headers
+            .header_value(&ArchivedHeaderName::ContentLanguage)
+            .and_then(|v| {
+                Language::from_iso_639(match v {
+                    ArchivedHeaderValue::Text(v) => v.as_ref(),
+                    ArchivedHeaderValue::TextList(v) => v.first()?,
+                    _ => {
+                        return None;
+                    }
+                })
+                .unwrap_or(Language::Unknown)
+                .into()
+            })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -583,8 +818,8 @@ pub enum AddressElement {
     GroupName,
 }
 
-impl<'x> VisitValues<'x> for HeaderValue<'x> {
-    fn visit_addresses<'y: 'x>(&'y self, mut visitor: impl FnMut(AddressElement, &'x str)) {
+impl HeaderValue {
+    pub fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
         match self {
             HeaderValue::Address(Address::List(addr_list)) => {
                 for addr in addr_list {
@@ -616,7 +851,7 @@ impl<'x> VisitValues<'x> for HeaderValue<'x> {
         }
     }
 
-    fn visit_text<'y: 'x>(&'y self, mut visitor: impl FnMut(&'x str)) {
+    pub fn visit_text<'x>(&'x self, mut visitor: impl FnMut(&'x str)) {
         match &self {
             HeaderValue::Text(text) => {
                 visitor(text.as_ref());
@@ -630,14 +865,62 @@ impl<'x> VisitValues<'x> for HeaderValue<'x> {
         }
     }
 
-    fn into_visit_text(self, mut visitor: impl FnMut(String)) {
+    pub fn into_visit_text(self, mut visitor: impl FnMut(String)) {
         match self {
             HeaderValue::Text(text) => {
-                visitor(text.into_owned());
+                visitor(text);
             }
             HeaderValue::TextList(texts) => {
                 for text in texts {
-                    visitor(text.into_owned());
+                    visitor(text);
+                }
+            }
+            _ => (),
+        }
+    }
+}
+
+impl ArchivedHeaderValue {
+    fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
+        match self {
+            ArchivedHeaderValue::Address(ArchivedAddress::List(addr_list)) => {
+                for addr in addr_list.iter() {
+                    if let ArchivedOption::Some(name) = &addr.name {
+                        visitor(AddressElement::Name, name);
+                    }
+                    if let ArchivedOption::Some(addr) = &addr.address {
+                        visitor(AddressElement::Address, addr);
+                    }
+                }
+            }
+            ArchivedHeaderValue::Address(ArchivedAddress::Group(groups)) => {
+                for group in groups.iter() {
+                    if let ArchivedOption::Some(name) = &group.name {
+                        visitor(AddressElement::GroupName, name);
+                    }
+
+                    for addr in group.addresses.iter() {
+                        if let ArchivedOption::Some(name) = &addr.name {
+                            visitor(AddressElement::Name, name);
+                        }
+                        if let ArchivedOption::Some(addr) = &addr.address {
+                            visitor(AddressElement::Address, addr);
+                        }
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn visit_text(&self, mut visitor: impl FnMut(&str)) {
+        match &self {
+            ArchivedHeaderValue::Text(text) => {
+                visitor(text.as_ref());
+            }
+            ArchivedHeaderValue::TextList(texts) => {
+                for text in texts.iter() {
+                    visitor(text.as_ref());
                 }
             }
             _ => (),
@@ -649,7 +932,7 @@ pub trait TrimTextValue {
     fn trim_text(self, length: usize) -> Self;
 }
 
-impl TrimTextValue for HeaderValue<'_> {
+impl TrimTextValue for HeaderValue {
     fn trim_text(self, length: usize) -> Self {
         match self {
             HeaderValue::Address(Address::List(v)) => {
@@ -665,7 +948,7 @@ impl TrimTextValue for HeaderValue<'_> {
     }
 }
 
-impl TrimTextValue for Addr<'_> {
+impl TrimTextValue for Addr {
     fn trim_text(self, length: usize) -> Self {
         Self {
             name: self.name.map(|v| v.trim_text(length)),
@@ -674,24 +957,11 @@ impl TrimTextValue for Addr<'_> {
     }
 }
 
-impl TrimTextValue for Group<'_> {
+impl TrimTextValue for Group {
     fn trim_text(self, length: usize) -> Self {
         Self {
             name: self.name.map(|v| v.trim_text(length)),
             addresses: self.addresses.trim_text(length),
-        }
-    }
-}
-
-impl TrimTextValue for Cow<'_, str> {
-    fn trim_text(self, length: usize) -> Self {
-        if self.len() < length {
-            self
-        } else {
-            match self {
-                Cow::Borrowed(v) => v.trim_text(length).into(),
-                Cow::Owned(v) => v.trim_text(length).into(),
-            }
         }
     }
 }
@@ -735,5 +1005,109 @@ impl TrimTextValue for String {
 impl<T: TrimTextValue> TrimTextValue for Vec<T> {
     fn trim_text(self, length: usize) -> Self {
         self.into_iter().map(|v| v.trim_text(length)).collect()
+    }
+}
+
+pub fn property_from_header(header: &HeaderName) -> Property {
+    match header {
+        HeaderName::Subject => Property::Subject,
+        HeaderName::From => Property::From,
+        HeaderName::To => Property::To,
+        HeaderName::Cc => Property::Cc,
+        HeaderName::Date => Property::SentAt,
+        HeaderName::Bcc => Property::Bcc,
+        HeaderName::ReplyTo => Property::ReplyTo,
+        HeaderName::Sender => Property::Sender,
+        HeaderName::InReplyTo => Property::InReplyTo,
+        HeaderName::MessageId => Property::MessageId,
+        HeaderName::References => Property::References,
+        HeaderName::ResentMessageId => Property::EmailIds,
+        _ => unreachable!(),
+    }
+}
+
+pub fn property_from_archived_header(header: &ArchivedHeaderName) -> Property {
+    match header {
+        ArchivedHeaderName::Subject => Property::Subject,
+        ArchivedHeaderName::From => Property::From,
+        ArchivedHeaderName::To => Property::To,
+        ArchivedHeaderName::Cc => Property::Cc,
+        ArchivedHeaderName::Date => Property::SentAt,
+        ArchivedHeaderName::Bcc => Property::Bcc,
+        ArchivedHeaderName::ReplyTo => Property::ReplyTo,
+        ArchivedHeaderName::Sender => Property::Sender,
+        ArchivedHeaderName::InReplyTo => Property::InReplyTo,
+        ArchivedHeaderName::MessageId => Property::MessageId,
+        ArchivedHeaderName::References => Property::References,
+        ArchivedHeaderName::ResentMessageId => Property::EmailIds,
+        _ => unreachable!(),
+    }
+}
+
+pub trait VisitValues<'x> {
+    fn visit_addresses<'y: 'x>(&'y self, visitor: impl FnMut(AddressElement, &'x str));
+    fn visit_text<'y: 'x>(&'y self, visitor: impl FnMut(&'x str));
+    fn into_visit_text(self, visitor: impl FnMut(String));
+}
+
+impl<'x> VisitValues<'x> for mail_parser::HeaderValue<'x> {
+    fn visit_addresses<'y: 'x>(&'y self, mut visitor: impl FnMut(AddressElement, &'x str)) {
+        match self {
+            mail_parser::HeaderValue::Address(mail_parser::Address::List(addr_list)) => {
+                for addr in addr_list {
+                    if let Some(name) = &addr.name {
+                        visitor(AddressElement::Name, name);
+                    }
+                    if let Some(addr) = &addr.address {
+                        visitor(AddressElement::Address, addr);
+                    }
+                }
+            }
+            mail_parser::HeaderValue::Address(mail_parser::Address::Group(groups)) => {
+                for group in groups {
+                    if let Some(name) = &group.name {
+                        visitor(AddressElement::GroupName, name);
+                    }
+
+                    for addr in &group.addresses {
+                        if let Some(name) = &addr.name {
+                            visitor(AddressElement::Name, name);
+                        }
+                        if let Some(addr) = &addr.address {
+                            visitor(AddressElement::Address, addr);
+                        }
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn visit_text<'y: 'x>(&'y self, mut visitor: impl FnMut(&'x str)) {
+        match &self {
+            mail_parser::HeaderValue::Text(text) => {
+                visitor(text.as_ref());
+            }
+            mail_parser::HeaderValue::TextList(texts) => {
+                for text in texts {
+                    visitor(text.as_ref());
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn into_visit_text(self, mut visitor: impl FnMut(String)) {
+        match self {
+            mail_parser::HeaderValue::Text(text) => {
+                visitor(text.into_owned());
+            }
+            mail_parser::HeaderValue::TextList(texts) => {
+                for text in texts {
+                    visitor(text.into_owned());
+                }
+            }
+            _ => (),
+        }
     }
 }

@@ -27,7 +27,7 @@ use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use std::future::Future;
 use store::write::{
-    ArchivedValue, BatchBuilder, BlobOp,
+    Archive, BatchBuilder, BlobOp,
     assert::HashedValue,
     log::{Changes, LogInsert},
 };
@@ -219,7 +219,7 @@ impl VacationResponseSet for Server {
 
             let mut obj = if let Some(document_id) = document_id {
                 let prev_sieve = self
-                    .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
+                    .get_property::<HashedValue<Archive>>(
                         account_id,
                         Collection::SieveScript,
                         document_id,
@@ -231,7 +231,9 @@ impl VacationResponseSet for Server {
                             .into_err()
                             .caused_by(trc::location!())
                     })?;
-                let prev_sieve = prev_sieve.into_deserialized().caused_by(trc::location!())?;
+                let prev_sieve = prev_sieve
+                    .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                    .caused_by(trc::location!())?;
                 was_active = prev_sieve.inner.is_active;
                 let mut sieve = prev_sieve.inner.clone();
                 sieve.vacation_response = vacation.into();

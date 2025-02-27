@@ -7,12 +7,13 @@
 use std::collections::BTreeMap;
 
 use common::listener::SessionStream;
-use email::mailbox::{ArchivedMailbox, INBOX_ID, UidMailbox, manage::MailboxFnc};
+use email::mailbox::{ArchivedMailbox, ArchivedUidMailbox, INBOX_ID, manage::MailboxFnc};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     IndexKey, IterateParams, SerializeInfallible, U32_LEN,
     ahash::AHashMap,
-    write::{ArchivedValue, key::DeserializeBigEndian},
+    rkyv::vec::ArchivedVec,
+    write::{Archive, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 
@@ -63,7 +64,7 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
         let uid_validity = u32::from(
             self.server
-                .get_property::<ArchivedValue<ArchivedMailbox>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::Mailbox,
                     INBOX_ID,
@@ -78,7 +79,7 @@ impl<T: SessionStream> Session<T> {
                         .account_id(account_id)
                         .document_id(INBOX_ID)
                 })?
-                .unarchive()
+                .unarchive::<ArchivedMailbox>()
                 .caused_by(trc::location!())?
                 .uid_validity,
         );
@@ -124,7 +125,7 @@ impl<T: SessionStream> Session<T> {
         // Sort by UID
         for (message_id, uid_mailbox) in self
             .server
-            .get_properties::<Vec<UidMailbox>, _, _>(
+            .get_properties::<Archive, _, _>(
                 account_id,
                 Collection::Email,
                 &message_ids,
@@ -135,9 +136,14 @@ impl<T: SessionStream> Session<T> {
             .into_iter()
         {
             // Make sure the message is still in Inbox
-            if let Some(item) = uid_mailbox.iter().find(|item| item.mailbox_id == INBOX_ID) {
+            if let Some(item) = uid_mailbox
+                .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                .caused_by(trc::location!())?
+                .iter()
+                .find(|item| item.mailbox_id == INBOX_ID)
+            {
                 debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
-                message_map.insert(item.uid, message_id);
+                message_map.insert(u32::from(item.uid), message_id);
             }
         }
 

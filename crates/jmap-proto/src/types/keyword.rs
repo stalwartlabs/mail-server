@@ -8,9 +8,8 @@ use std::fmt::Display;
 
 use store::{
     Serialize,
-    write::{DeserializeFrom, MaybeDynamicId, SerializeInto, TagValue},
+    write::{MaybeDynamicId, TagValue},
 };
-use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use crate::parser::{JsonObjectParser, json::Parser};
 
@@ -28,8 +27,19 @@ pub const FORWARDED: usize = 10;
 pub const MDN_SENT: usize = 11;
 pub const OTHER: usize = 12;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+)]
 #[serde(untagged)]
+#[rkyv(derive(PartialEq))]
 pub enum Keyword {
     #[serde(rename(serialize = "$seen"))]
     Seen,
@@ -168,6 +178,26 @@ impl Display for Keyword {
     }
 }
 
+impl Display for ArchivedKeyword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArchivedKeyword::Seen => write!(f, "$seen"),
+            ArchivedKeyword::Draft => write!(f, "$draft"),
+            ArchivedKeyword::Flagged => write!(f, "$flagged"),
+            ArchivedKeyword::Answered => write!(f, "$answered"),
+            ArchivedKeyword::Recent => write!(f, "$recent"),
+            ArchivedKeyword::Important => write!(f, "$important"),
+            ArchivedKeyword::Phishing => write!(f, "$phishing"),
+            ArchivedKeyword::Junk => write!(f, "$junk"),
+            ArchivedKeyword::NotJunk => write!(f, "$notjunk"),
+            ArchivedKeyword::Deleted => write!(f, "$deleted"),
+            ArchivedKeyword::Forwarded => write!(f, "$forwarded"),
+            ArchivedKeyword::MdnSent => write!(f, "$mdnsent"),
+            ArchivedKeyword::Other(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 impl Serialize for Keyword {
     fn serialize(&self) -> trc::Result<Vec<u8>> {
         Ok(match self {
@@ -185,58 +215,6 @@ impl Serialize for Keyword {
             Keyword::MdnSent => vec![MDN_SENT as u8],
             Keyword::Other(string) => string.as_bytes().to_vec(),
         })
-    }
-}
-
-impl SerializeInto for Keyword {
-    fn serialize_into(&self, buf: &mut Vec<u8>) {
-        match self {
-            Keyword::Seen => buf.push(SEEN as u8),
-            Keyword::Draft => buf.push(DRAFT as u8),
-            Keyword::Flagged => buf.push(FLAGGED as u8),
-            Keyword::Answered => buf.push(ANSWERED as u8),
-            Keyword::Recent => buf.push(RECENT as u8),
-            Keyword::Important => buf.push(IMPORTANT as u8),
-            Keyword::Phishing => buf.push(PHISHING as u8),
-            Keyword::Junk => buf.push(JUNK as u8),
-            Keyword::NotJunk => buf.push(NOTJUNK as u8),
-            Keyword::Deleted => buf.push(DELETED as u8),
-            Keyword::Forwarded => buf.push(FORWARDED as u8),
-            Keyword::MdnSent => buf.push(MDN_SENT as u8),
-            Keyword::Other(string) => {
-                buf.push_leb128(OTHER + string.len());
-                if !string.is_empty() {
-                    buf.extend_from_slice(string.as_bytes())
-                }
-            }
-        }
-    }
-}
-
-impl DeserializeFrom for Keyword {
-    fn deserialize_from(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
-        match bytes.next_leb128::<usize>()? {
-            SEEN => Some(Keyword::Seen),
-            DRAFT => Some(Keyword::Draft),
-            FLAGGED => Some(Keyword::Flagged),
-            ANSWERED => Some(Keyword::Answered),
-            RECENT => Some(Keyword::Recent),
-            IMPORTANT => Some(Keyword::Important),
-            PHISHING => Some(Keyword::Phishing),
-            JUNK => Some(Keyword::Junk),
-            NOTJUNK => Some(Keyword::NotJunk),
-            DELETED => Some(Keyword::Deleted),
-            FORWARDED => Some(Keyword::Forwarded),
-            MDN_SENT => Some(Keyword::MdnSent),
-            other => {
-                let len = other - OTHER;
-                let mut keyword = Vec::with_capacity(len);
-                for _ in 0..len {
-                    keyword.push(*bytes.next()?);
-                }
-                Some(Keyword::Other(String::from_utf8(keyword).ok()?))
-            }
-        }
     }
 }
 
@@ -278,6 +256,26 @@ impl Keyword {
     }
 }
 
+impl ArchivedKeyword {
+    pub fn id(&self) -> Result<u32, String> {
+        match self {
+            ArchivedKeyword::Seen => Ok(SEEN as u32),
+            ArchivedKeyword::Draft => Ok(DRAFT as u32),
+            ArchivedKeyword::Flagged => Ok(FLAGGED as u32),
+            ArchivedKeyword::Answered => Ok(ANSWERED as u32),
+            ArchivedKeyword::Recent => Ok(RECENT as u32),
+            ArchivedKeyword::Important => Ok(IMPORTANT as u32),
+            ArchivedKeyword::Phishing => Ok(PHISHING as u32),
+            ArchivedKeyword::Junk => Ok(JUNK as u32),
+            ArchivedKeyword::NotJunk => Ok(NOTJUNK as u32),
+            ArchivedKeyword::Deleted => Ok(DELETED as u32),
+            ArchivedKeyword::Forwarded => Ok(FORWARDED as u32),
+            ArchivedKeyword::MdnSent => Ok(MDN_SENT as u32),
+            ArchivedKeyword::Other(string) => Err(string.to_string()),
+        }
+    }
+}
+
 impl From<Keyword> for TagValue<u32> {
     fn from(value: Keyword) -> Self {
         match value.into_id() {
@@ -307,6 +305,15 @@ impl From<Keyword> for TagValue<MaybeDynamicId> {
 
 impl From<&Keyword> for TagValue<MaybeDynamicId> {
     fn from(value: &Keyword) -> Self {
+        match value.id() {
+            Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
+            Err(string) => TagValue::Text(string.into_bytes()),
+        }
+    }
+}
+
+impl From<&ArchivedKeyword> for TagValue<MaybeDynamicId> {
+    fn from(value: &ArchivedKeyword) -> Self {
         match value.id() {
             Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
             Err(string) => TagValue::Text(string.into_bytes()),

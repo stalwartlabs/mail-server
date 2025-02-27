@@ -6,11 +6,11 @@
 
 use std::{future::Future, sync::atomic::Ordering};
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use common::{auth::AccessToken, ipc::QueueEvent, Server};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use common::{Server, auth::AccessToken, ipc::QueueEvent};
 use directory::{
-    backend::internal::{manage::ManageDirectory, PrincipalField},
     Permission, Type,
+    backend::internal::{PrincipalField, manage::ManageDirectory},
 };
 use hyper::Method;
 use mail_auth::{
@@ -22,19 +22,19 @@ use mail_parser::DateTime;
 use serde::{Deserializer, Serializer};
 use serde_json::json;
 use smtp::{
-    queue::{self, spool::SmtpSpool, ErrorDetails, HostResponse, QueueId, Status},
+    queue::{self, ErrorDetails, HostResponse, QueueId, Status, spool::SmtpSpool},
     reporting::{dmarc::DmarcReporting, tls::TlsReporting},
 };
 use store::{
-    write::{key::DeserializeBigEndian, now, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, ValueKey,
+    write::{LegacyBincode, QueueClass, ReportEvent, ValueClass, key::DeserializeBigEndian, now},
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
+use crate::api::{HttpRequest, HttpResponse, JsonResponse, http::ToHttpResponse};
 
-use super::{decode_path_element, FutureTimestamp};
+use super::{FutureTimestamp, decode_path_element};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Message {
@@ -205,7 +205,7 @@ impl QueueManagement for Server {
                     .filter(|message| {
                         tenant_domains
                             .as_ref()
-                            .is_none_or( |domains| message.has_domain(domains))
+                            .is_none_or(|domains| message.has_domain(domains))
                     })
                 {
                     Ok(JsonResponse::new(json!({
@@ -282,7 +282,7 @@ impl QueueManagement for Server {
                     .filter(|message| {
                         tenant_domains
                             .as_ref()
-                            .is_none_or( |domains| message.has_domain(domains))
+                            .is_none_or(|domains| message.has_domain(domains))
                     })
                 {
                     let prev_event = message.next_event().unwrap_or_default();
@@ -294,7 +294,7 @@ impl QueueManagement for Server {
                             Status::Scheduled | Status::TemporaryFailure(_)
                         ) && item
                             .as_ref()
-                            .is_none_or( |item| domain.domain.contains(item))
+                            .is_none_or(|item| domain.domain.contains(item))
                         {
                             domain.retry.due = time;
                             if domain.expires > time {
@@ -374,7 +374,7 @@ impl QueueManagement for Server {
                     .filter(|message| {
                         tenant_domains
                             .as_ref()
-                            .is_none_or( |domains| message.has_domain(domains))
+                            .is_none_or(|domains| message.has_domain(domains))
                     })
                 {
                     let mut found = false;
@@ -475,7 +475,7 @@ impl QueueManagement for Server {
                         QueueClass::DmarcReportHeader(event)
                             if tenant_domains
                                 .as_ref()
-                                .is_none_or( |domains| domains.contains(&event.domain)) =>
+                                .is_none_or(|domains| domains.contains(&event.domain)) =>
                         {
                             let mut rua = Vec::new();
                             if let Some(report) = self
@@ -488,7 +488,7 @@ impl QueueManagement for Server {
                         QueueClass::TlsReportHeader(event)
                             if tenant_domains
                                 .as_ref()
-                                .is_none_or( |domains| domains.contains(&event.domain)) =>
+                                .is_none_or(|domains| domains.contains(&event.domain)) =>
                         {
                             let mut rua = Vec::new();
                             if let Some(report) = self
@@ -548,7 +548,7 @@ impl QueueManagement for Server {
                         QueueClass::DmarcReportHeader(event)
                             if tenant_domains
                                 .as_ref()
-                                .is_none_or( |domains| domains.contains(&event.domain)) =>
+                                .is_none_or(|domains| domains.contains(&event.domain)) =>
                         {
                             self.delete_dmarc_report(event).await;
                             true
@@ -556,7 +556,7 @@ impl QueueManagement for Server {
                         QueueClass::TlsReportHeader(event)
                             if tenant_domains
                                 .as_ref()
-                                .is_none_or( |domains| domains.contains(&event.domain)) =>
+                                .is_none_or(|domains| domains.contains(&event.domain)) =>
                         {
                             self.delete_tls_report(vec![event]).await;
                             true
@@ -714,12 +714,12 @@ async fn fetch_queued_messages(
         .iterate(
             IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
-                let message = Bincode::<queue::Message>::deserialize(value)
+                let message = LegacyBincode::<queue::Message>::deserialize(value)
                     .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?
                     .inner;
                 let matches = tenant_domains
                     .as_ref()
-                    .is_none_or( |domains| message.has_domain(domains))
+                    .is_none_or(|domains| message.has_domain(domains))
                     && (!has_filters
                         || (text
                             .as_ref()
@@ -732,8 +732,8 @@ async fn fetch_queued_messages(
                             })
                             .unwrap_or_else(|| {
                                 from.as_ref()
-                                    .is_none_or( |from| message.return_path.contains(from))
-                                    && to.as_ref().is_none_or( |to| {
+                                    .is_none_or(|from| message.return_path.contains(from))
+                                    && to.as_ref().is_none_or(|to| {
                                         message
                                             .recipients
                                             .iter()
@@ -742,10 +742,10 @@ async fn fetch_queued_messages(
                             })
                             && before
                                 .as_ref()
-                                .is_none_or( |before| message.next_delivery_event() < *before)
+                                .is_none_or(|before| message.next_delivery_event() < *before)
                             && after
                                 .as_ref()
-                                .is_none_or( |after| message.next_delivery_event() > *after)));
+                                .is_none_or(|after| message.next_delivery_event() > *after)));
 
                 if matches {
                     if offset == 0 {
@@ -825,13 +825,13 @@ async fn fetch_queued_reports(
         .iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                if type_.is_none_or( |t| t == *key.last().unwrap()) {
+                if type_.is_none_or(|t| t == *key.last().unwrap()) {
                     let event = ReportEvent::deserialize(key)?;
                     if tenant_domains
                         .as_ref()
-                        .is_none_or( |domains| domains.contains(&event.domain))
+                        .is_none_or(|domains| domains.contains(&event.domain))
                         && event.seq_id != 0
-                        && domain.as_ref().is_none_or( |d| event.domain.contains(d))
+                        && domain.as_ref().is_none_or(|d| event.domain.contains(d))
                     {
                         if offset == 0 {
                             if limit == 0 || total_returned < limit {

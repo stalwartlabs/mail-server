@@ -612,7 +612,7 @@ impl Server {
         set_quota: bool,
     ) -> trc::Result<BlobId> {
         // First reserve the hash
-        let hash = BlobHash::from(data);
+        let hash = BlobHash::generate(data);
         let mut batch = BatchBuilder::new();
         let until = now() + self.core.jmap.upload_tmp_ttl;
 

@@ -9,21 +9,23 @@ use std::slice::IterMut;
 use jmap_proto::types::property::Property;
 use store::{
     Serialize,
-    write::{
-        BatchBuilder, DeserializeFrom, MaybeDynamicId, SerializeInto, TagValue, ValueClass,
-        assert::HashedValue,
-    },
+    write::{Archiver, BatchBuilder, MaybeDynamicId, TagValue, ValueClass, assert::HashedValue},
 };
 
 pub struct TagManager<
     T: Into<TagValue<MaybeDynamicId>>
         + PartialEq
         + Clone
-        + SerializeInto
-        + Serialize
-        + DeserializeFrom
         + Sync
-        + Send,
+        + Send
+        + rkyv::Archive
+        + for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::util::AlignedVec,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >,
 > {
     current: HashedValue<Vec<T>>,
     added: Vec<T>,
@@ -41,11 +43,16 @@ impl<
     T: Into<TagValue<MaybeDynamicId>>
         + PartialEq
         + Clone
-        + SerializeInto
-        + Serialize
-        + DeserializeFrom
         + Sync
-        + Send,
+        + Send
+        + rkyv::Archive
+        + for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::util::AlignedVec,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >,
 > TagManager<T>
 {
     pub fn new(current: HashedValue<Vec<T>>) -> Self {
@@ -129,7 +136,7 @@ impl<
             .assert_value(ValueClass::Property(property), &self.current)
             .set(
                 ValueClass::Property(property),
-                self.current.inner.serialize()?,
+                Archiver::new(self.current.inner).serialize()?,
             );
         for added in self.added {
             batch.tag(property, added);

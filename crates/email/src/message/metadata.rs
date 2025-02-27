@@ -4,175 +4,399 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Display};
 
 use mail_parser::{
+    DateTime, PartType,
     decoders::{
         base64::base64_decode, charsets::map::charset_decoder,
         quoted_printable::quoted_printable_decode,
     },
-    ContentType, Encoding, GetHeader, Header, HeaderName, HeaderValue, Message, MessagePart,
-    MessagePartId, MimeHeaders, PartType,
 };
-use serde::{Deserialize, Serialize};
+use rkyv::{
+    rend::{u16_le, u32_le},
+    string::ArchivedString,
+    vec::ArchivedVec,
+};
 use utils::BlobHash;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MessageMetadata<'x> {
-    pub contents: MessageMetadataContents<'x>,
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
+pub struct MessageMetadata {
+    pub contents: MessageMetadataContents,
     pub blob_hash: BlobHash,
-    pub size: usize,
+    pub size: u32,
     pub received_at: u64,
     pub preview: String,
     pub has_attachments: bool,
     pub raw_headers: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MessageMetadataContents<'x> {
-    pub html_body: Vec<MessagePartId>,
-    pub text_body: Vec<MessagePartId>,
-    pub attachments: Vec<MessagePartId>,
-    pub parts: Vec<MessageMetadataPart<'x>>,
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
+pub struct MessageMetadataContents {
+    pub html_body: Vec<u16>,
+    pub text_body: Vec<u16>,
+    pub attachments: Vec<u16>,
+    pub parts: Vec<MessageMetadataPart>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MessageMetadataPart<'x> {
-    pub headers: Vec<Header<'x>>,
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
+pub struct MessageMetadataPart {
+    pub headers: Vec<Header>,
     pub is_encoding_problem: bool,
-    pub body: MetadataPartType<'x>,
+    pub body: MetadataPartType,
     pub encoding: Encoding,
-    pub size: usize,
-    pub offset_header: usize,
-    pub offset_body: usize,
-    pub offset_end: usize,
+    pub size: u32,
+    pub offset_header: u32,
+    pub offset_body: u32,
+    pub offset_end: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum MetadataPartType<'x> {
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Default)]
+pub enum Encoding {
+    #[default]
+    None = 0,
+    QuotedPrintable = 1,
+    Base64 = 2,
+}
+
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
+#[rkyv(serialize_bounds(
+    __S: rkyv::ser::Writer + rkyv::ser::Allocator,
+    __S::Error: rkyv::rancor::Source,
+))]
+#[rkyv(deserialize_bounds(__D::Error: rkyv::rancor::Source))]
+#[rkyv(bytecheck(
+    bounds(
+        __C: rkyv::validation::ArchiveContext,
+    )
+))]
+pub enum MetadataPartType {
     Text,
     Html,
     Binary,
     InlineBinary,
-    Message(MessageMetadataContents<'x>),
-    Multipart(Vec<MessagePartId>),
+    Message(#[rkyv(omit_bounds)] MessageMetadataContents),
+    Multipart(Vec<u16>),
 }
 
-impl<'x> MessageMetadataContents<'x> {
-    pub fn into_message(self, raw_message: &'x [u8]) -> Message<'x> {
-        Message {
-            html_body: self.html_body,
-            text_body: self.text_body,
-            attachments: self.attachments,
-            parts: self
-                .parts
-                .into_iter()
-                .map(|part| MessagePart {
-                    body: match part.body {
-                        MetadataPartType::Text
-                        | MetadataPartType::Html
-                        | MetadataPartType::Binary
-                        | MetadataPartType::InlineBinary
-                            if !raw_message.is_empty() =>
-                        {
-                            part.decode_contents(raw_message)
-                        }
-                        MetadataPartType::Message(_) if !raw_message.is_empty() => {
-                            match part.contents(raw_message) {
-                                Cow::Borrowed(_) => PartType::Message(
-                                    part.body.unwrap_message().into_message(raw_message),
-                                ),
-                                Cow::Owned(raw_message) => PartType::Message(
-                                    part.body
-                                        .unwrap_message()
-                                        .into_message(&raw_message)
-                                        .into_owned(),
-                                ),
-                            }
-                        }
-                        MetadataPartType::Multipart(parts) => PartType::Multipart(parts),
-                        _ => PartType::Binary(Cow::Borrowed(&[])),
-                    },
-                    headers: part.headers,
-                    is_encoding_problem: part.is_encoding_problem,
-                    encoding: part.encoding,
-                    offset_header: part.offset_header,
-                    offset_body: part.offset_body,
-                    offset_end: part.offset_end,
-                })
-                .collect(),
-            raw_message: raw_message.into(),
-        }
-    }
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, PartialEq, Eq, Clone)]
+pub struct Header {
+    pub name: HeaderName,
+    pub value: HeaderValue,
+    pub offset_field: u32,
+    pub offset_start: u32,
+    pub offset_end: u32,
+}
 
-    pub fn root_part(&self) -> &MessageMetadataPart<'x> {
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, PartialEq, Eq, Clone)]
+pub struct Addr {
+    pub name: Option<String>,
+    pub address: Option<String>,
+}
+
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, PartialEq, Eq, Clone)]
+pub struct Group {
+    pub name: Option<String>,
+    pub addresses: Vec<Addr>,
+}
+
+#[derive(
+    rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, PartialEq, Eq, Clone, PartialOrd, Ord,
+)]
+#[rkyv(derive(PartialEq, Debug))]
+pub enum HeaderName {
+    Subject,
+    From,
+    To,
+    Cc,
+    Date,
+    Bcc,
+    ReplyTo,
+    Sender,
+    Comments,
+    InReplyTo,
+    Keywords,
+    Received,
+    MessageId,
+    References,
+    ReturnPath,
+    MimeVersion,
+    ContentDescription,
+    ContentId,
+    ContentLanguage,
+    ContentLocation,
+    ContentTransferEncoding,
+    ContentType,
+    ContentDisposition,
+    ResentTo,
+    ResentFrom,
+    ResentBcc,
+    ResentCc,
+    ResentSender,
+    ResentDate,
+    ResentMessageId,
+    ListArchive,
+    ListHelp,
+    ListId,
+    ListOwner,
+    ListPost,
+    ListSubscribe,
+    ListUnsubscribe,
+    Other(String),
+    DkimSignature,
+    ArcAuthenticationResults,
+    ArcMessageSignature,
+    ArcSeal,
+}
+
+#[derive(
+    rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, PartialEq, Eq, Clone, Default,
+)]
+pub enum HeaderValue {
+    Address(Address),
+    Text(String),
+    TextList(Vec<String>),
+    DateTime(i64),
+    ContentType(ContentType),
+    #[default]
+    Empty,
+}
+
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, PartialEq, Eq, Clone)]
+pub enum Address {
+    List(Vec<Addr>),
+    Group(Vec<Group>),
+}
+
+#[derive(
+    rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, PartialEq, Eq, Clone, Default,
+)]
+pub struct ContentType {
+    pub c_type: String,
+    pub c_subtype: Option<String>,
+    pub attributes: Option<Vec<(String, String)>>,
+}
+
+impl MessageMetadataContents {
+    pub fn root_part(&self) -> &MessageMetadataPart {
         &self.parts[0]
     }
 }
 
-impl<'x> MessageMetadataPart<'x> {
-    pub fn contents<'y>(&self, raw_message: &'y [u8]) -> Cow<'y, [u8]> {
-        let bytes = raw_message
-            .get(self.offset_body..self.offset_end)
-            .unwrap_or_default();
-        match self.encoding {
-            Encoding::None => bytes.into(),
-            Encoding::QuotedPrintable => quoted_printable_decode(bytes).unwrap_or_default().into(),
-            Encoding::Base64 => base64_decode(bytes).unwrap_or_default().into(),
-        }
+pub struct DecodedParts<'x> {
+    pub raw_messages: Vec<Cow<'x, [u8]>>,
+    pub parts: Vec<DecodedPart<'x>>,
+}
+
+pub struct DecodedPart<'x> {
+    pub message_id: usize,
+    pub part_id: usize,
+    pub content: DecodedPartContent<'x>,
+}
+
+pub enum DecodedPartContent<'x> {
+    Text(Cow<'x, str>),
+    Binary(Cow<'x, [u8]>),
+}
+
+impl<'x> DecodedParts<'x> {
+    #[inline]
+    pub fn raw_message(&self, message_id: usize) -> Option<&[u8]> {
+        self.raw_messages.get(message_id).map(|m| m.as_ref())
     }
 
-    pub fn decode_contents<'y>(&self, raw_message: &'y [u8]) -> PartType<'y> {
-        let bytes = self.contents(raw_message);
-
-        match self.body {
-            MetadataPartType::Text | MetadataPartType::Html => {
-                let text = match (
-                    bytes,
-                    self.headers
-                        .header_value(&HeaderName::ContentType)
-                        .and_then(|c| c.as_content_type())
-                        .and_then(|ct| {
-                            ct.attribute("charset")
-                                .and_then(|c| charset_decoder(c.as_bytes()))
-                        }),
-                ) {
-                    (Cow::Owned(vec), Some(charset_decoder)) => charset_decoder(&vec).into(),
-                    (Cow::Owned(vec), None) => String::from_utf8(vec)
-                        .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
-                        .into(),
-                    (Cow::Borrowed(bytes), Some(charset_decoder)) => charset_decoder(bytes).into(),
-                    (Cow::Borrowed(bytes), None) => String::from_utf8_lossy(bytes),
-                };
-
-                if matches!(self.body, MetadataPartType::Text) {
-                    PartType::Text(text)
-                } else {
-                    PartType::Html(text)
-                }
-            }
-            MetadataPartType::Binary => PartType::Binary(bytes),
-            MetadataPartType::InlineBinary => PartType::InlineBinary(bytes),
-            MetadataPartType::Message(_) | MetadataPartType::Multipart(_) => unreachable!(),
-        }
+    #[inline]
+    pub fn raw_message_section(&self, message_id: usize, from: usize, to: usize) -> Option<&[u8]> {
+        self.raw_messages
+            .get(message_id)
+            .map(|m| m.as_ref())
+            .and_then(|m| m.get(from..to))
     }
 
-    pub fn remove_header(&mut self, header_name: &HeaderName) -> Option<HeaderValue<'x>> {
-        for header in self.headers.iter_mut().rev() {
-            if header.name == *header_name {
-                return Some(std::mem::take(&mut header.value));
-            }
-        }
-        None
+    #[inline]
+    pub fn raw_message_section_arch(
+        &self,
+        message_id: usize,
+        from: u32_le,
+        to: u32_le,
+    ) -> Option<&[u8]> {
+        self.raw_message_section(message_id, u32::from(from) as usize, u32::from(to) as usize)
+    }
+
+    #[inline]
+    pub fn part(&self, message_id: usize, part_id: usize) -> Option<&DecodedPartContent<'x>> {
+        self.parts
+            .iter()
+            .find(|p| p.message_id == message_id && p.part_id == part_id)
+            .map(|p| &p.content)
+    }
+
+    #[inline]
+    pub fn text_part(&self, message_id: usize, part_id: usize) -> Option<&str> {
+        self.part(message_id, part_id).and_then(|p| match p {
+            DecodedPartContent::Text(text) => Some(text.as_ref()),
+            DecodedPartContent::Binary(_) => None,
+        })
+    }
+
+    #[inline]
+    pub fn binary_part(&self, message_id: usize, part_id: usize) -> Option<&[u8]> {
+        self.part(message_id, part_id).and_then(|p| match p {
+            DecodedPartContent::Text(_) => None,
+            DecodedPartContent::Binary(binary) => Some(binary.as_ref()),
+        })
     }
 }
 
-impl<'x> From<Message<'x>> for MessageMetadataContents<'x> {
-    fn from(value: Message<'x>) -> Self {
+impl DecodedPartContent<'_> {
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            DecodedPartContent::Text(text) => text.as_bytes(),
+            DecodedPartContent::Binary(binary) => binary,
+        }
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        match self {
+            DecodedPartContent::Text(text) => text.len(),
+            DecodedPartContent::Binary(binary) => binary.len(),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            DecodedPartContent::Text(text) => text,
+            DecodedPartContent::Binary(binary) => std::str::from_utf8(binary).unwrap_or_default(),
+        }
+    }
+}
+
+impl ArchivedMessageMetadataContents {
+    pub fn decode_contents<'x>(&self, raw_message: &'x [u8]) -> DecodedParts<'x> {
+        let mut result = DecodedParts {
+            raw_messages: vec![raw_message.into()],
+            parts: Vec::new(),
+        };
+        let mut parts_iter = self.parts.iter().enumerate();
+        let mut iter_stack = Vec::new();
+        let mut message_id = 0;
+
+        loop {
+            while let Some((part_id, part)) = parts_iter.next() {
+                match &part.body {
+                    ArchivedMetadataPartType::Text
+                    | ArchivedMetadataPartType::Html
+                    | ArchivedMetadataPartType::Binary
+                    | ArchivedMetadataPartType::InlineBinary => {
+                        match result.raw_messages.last().unwrap() {
+                            Cow::Borrowed(raw_message) => {
+                                result.parts.push(DecodedPart {
+                                    message_id,
+                                    part_id,
+                                    content: part.decode_contents(raw_message),
+                                });
+                            }
+                            Cow::Owned(raw_message) => {
+                                result.parts.push(DecodedPart {
+                                    message_id,
+                                    part_id,
+                                    content: match part.decode_contents(raw_message) {
+                                        DecodedPartContent::Text(text) => {
+                                            DecodedPartContent::Text(text.into_owned().into())
+                                        }
+                                        DecodedPartContent::Binary(binary) => {
+                                            DecodedPartContent::Binary(binary.into_owned().into())
+                                        }
+                                    },
+                                });
+                            }
+                        }
+                    }
+                    ArchivedMetadataPartType::Message(message) => {
+                        match part.contents(raw_message) {
+                            Cow::Borrowed(raw_message) => {
+                                result.raw_messages.push(raw_message.into());
+                            }
+                            Cow::Owned(raw_message) => {
+                                result.raw_messages.push(raw_message.into());
+                            }
+                        }
+                        iter_stack.push((parts_iter, message_id));
+                        message_id += 1;
+                        parts_iter = message.parts.iter().enumerate();
+                    }
+                    _ => {}
+                }
+            }
+            if let Some((iter, prev_message_id)) = iter_stack.pop() {
+                parts_iter = iter;
+                message_id = prev_message_id;
+            } else {
+                break;
+            }
+        }
+
+        result
+    }
+}
+
+impl ArchivedMessageMetadataPart {
+    pub fn contents<'x>(&self, raw_message: &'x [u8]) -> Cow<'x, [u8]> {
+        let bytes = raw_message
+            .get(u32::from(self.offset_body) as usize..u32::from(self.offset_end) as usize)
+            .unwrap_or_default();
+        match self.encoding {
+            ArchivedEncoding::None => bytes.into(),
+            ArchivedEncoding::QuotedPrintable => {
+                quoted_printable_decode(bytes).unwrap_or_default().into()
+            }
+            ArchivedEncoding::Base64 => base64_decode(bytes).unwrap_or_default().into(),
+        }
+    }
+
+    pub fn decode_contents<'x>(&self, raw_message: &'x [u8]) -> DecodedPartContent<'x> {
+        let bytes = self.contents(raw_message);
+
+        match self.body {
+            ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html => {
+                DecodedPartContent::Text(
+                    match (
+                        bytes,
+                        self.headers
+                            .header_value(&ArchivedHeaderName::ContentType)
+                            .and_then(|c| c.as_content_type())
+                            .and_then(|ct| {
+                                ct.attribute("charset")
+                                    .and_then(|c| charset_decoder(c.as_bytes()))
+                            }),
+                    ) {
+                        (Cow::Owned(vec), Some(charset_decoder)) => charset_decoder(&vec).into(),
+                        (Cow::Owned(vec), None) => String::from_utf8(vec)
+                            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+                            .into(),
+                        (Cow::Borrowed(bytes), Some(charset_decoder)) => {
+                            charset_decoder(bytes).into()
+                        }
+                        (Cow::Borrowed(bytes), None) => String::from_utf8_lossy(bytes),
+                    },
+                )
+            }
+            ArchivedMetadataPartType::Binary => DecodedPartContent::Binary(bytes),
+            ArchivedMetadataPartType::InlineBinary => DecodedPartContent::Binary(bytes),
+            ArchivedMetadataPartType::Message(_) | ArchivedMetadataPartType::Multipart(_) => {
+                unreachable!()
+            }
+        }
+    }
+}
+
+impl From<mail_parser::Message<'_>> for MessageMetadataContents {
+    fn from(value: mail_parser::Message<'_>) -> Self {
         MessageMetadataContents {
-            html_body: value.html_body,
-            text_body: value.text_body,
-            attachments: value.attachments,
+            html_body: value.html_body.into_iter().map(|c| c as u16).collect(),
+            text_body: value.text_body.into_iter().map(|c| c as u16).collect(),
+            attachments: value.attachments.into_iter().map(|c| c as u16).collect(),
             parts: value
                 .parts
                 .into_iter()
@@ -188,7 +412,12 @@ impl<'x> From<Message<'x>> for MessageMetadataContents<'x> {
                             message.root_part().raw_len(),
                             MetadataPartType::Message(message.into()),
                         ),
-                        PartType::Multipart(parts) => (0, MetadataPartType::Multipart(parts)),
+                        PartType::Multipart(parts) => (
+                            0,
+                            MetadataPartType::Multipart(
+                                parts.into_iter().map(|p| p as u16).collect(),
+                            ),
+                        ),
                     };
 
                     MessageMetadataPart {
@@ -198,46 +427,47 @@ impl<'x> From<Message<'x>> for MessageMetadataContents<'x> {
                             .map(|hdr| Header {
                                 value: if matches!(
                                     &hdr.name,
-                                    HeaderName::Subject
-                                        | HeaderName::From
-                                        | HeaderName::To
-                                        | HeaderName::Cc
-                                        | HeaderName::Date
-                                        | HeaderName::Bcc
-                                        | HeaderName::ReplyTo
-                                        | HeaderName::Sender
-                                        | HeaderName::Comments
-                                        | HeaderName::InReplyTo
-                                        | HeaderName::Keywords
-                                        | HeaderName::MessageId
-                                        | HeaderName::References
-                                        | HeaderName::ResentMessageId
-                                        | HeaderName::ContentDescription
-                                        | HeaderName::ContentId
-                                        | HeaderName::ContentLanguage
-                                        | HeaderName::ContentLocation
-                                        | HeaderName::ContentTransferEncoding
-                                        | HeaderName::ContentType
-                                        | HeaderName::ContentDisposition
-                                        | HeaderName::ListId
+                                    mail_parser::HeaderName::Subject
+                                        | mail_parser::HeaderName::From
+                                        | mail_parser::HeaderName::To
+                                        | mail_parser::HeaderName::Cc
+                                        | mail_parser::HeaderName::Date
+                                        | mail_parser::HeaderName::Bcc
+                                        | mail_parser::HeaderName::ReplyTo
+                                        | mail_parser::HeaderName::Sender
+                                        | mail_parser::HeaderName::Comments
+                                        | mail_parser::HeaderName::InReplyTo
+                                        | mail_parser::HeaderName::Keywords
+                                        | mail_parser::HeaderName::MessageId
+                                        | mail_parser::HeaderName::References
+                                        | mail_parser::HeaderName::ResentMessageId
+                                        | mail_parser::HeaderName::ContentDescription
+                                        | mail_parser::HeaderName::ContentId
+                                        | mail_parser::HeaderName::ContentLanguage
+                                        | mail_parser::HeaderName::ContentLocation
+                                        | mail_parser::HeaderName::ContentTransferEncoding
+                                        | mail_parser::HeaderName::ContentType
+                                        | mail_parser::HeaderName::ContentDisposition
+                                        | mail_parser::HeaderName::ListId
                                 ) {
                                     hdr.value
                                 } else {
-                                    HeaderValue::Empty
-                                },
-                                name: hdr.name,
-                                offset_field: hdr.offset_field,
-                                offset_start: hdr.offset_start,
-                                offset_end: hdr.offset_end,
+                                    mail_parser::HeaderValue::Empty
+                                }
+                                .into(),
+                                name: hdr.name.into(),
+                                offset_field: hdr.offset_field as u32,
+                                offset_start: hdr.offset_start as u32,
+                                offset_end: hdr.offset_end as u32,
                             })
                             .collect(),
                         is_encoding_problem: part.is_encoding_problem,
-                        encoding: part.encoding,
+                        encoding: part.encoding.into(),
                         body,
-                        size,
-                        offset_header: part.offset_header,
-                        offset_body: part.offset_body,
-                        offset_end: part.offset_end,
+                        size: size as u32,
+                        offset_header: part.offset_header as u32,
+                        offset_body: part.offset_body as u32,
+                        offset_end: part.offset_end as u32,
                     }
                 })
                 .collect(),
@@ -245,55 +475,692 @@ impl<'x> From<Message<'x>> for MessageMetadataContents<'x> {
     }
 }
 
-impl<'x> MetadataPartType<'x> {
-    fn unwrap_message(self) -> MessageMetadataContents<'x> {
-        match self {
-            MetadataPartType::Message(message) => message,
-            _ => panic!("unwrap_message called on non-message part"),
+impl From<mail_parser::Encoding> for Encoding {
+    fn from(value: mail_parser::Encoding) -> Self {
+        match value {
+            mail_parser::Encoding::None => Encoding::None,
+            mail_parser::Encoding::QuotedPrintable => Encoding::QuotedPrintable,
+            mail_parser::Encoding::Base64 => Encoding::Base64,
         }
     }
 }
 
-impl<'x> MimeHeaders<'x> for MessageMetadataPart<'x> {
-    fn content_description(&self) -> Option<&str> {
+impl From<mail_parser::HeaderName<'_>> for HeaderName {
+    fn from(value: mail_parser::HeaderName<'_>) -> Self {
+        match value {
+            mail_parser::HeaderName::Subject => HeaderName::Subject,
+            mail_parser::HeaderName::From => HeaderName::From,
+            mail_parser::HeaderName::To => HeaderName::To,
+            mail_parser::HeaderName::Cc => HeaderName::Cc,
+            mail_parser::HeaderName::Date => HeaderName::Date,
+            mail_parser::HeaderName::Bcc => HeaderName::Bcc,
+            mail_parser::HeaderName::ReplyTo => HeaderName::ReplyTo,
+            mail_parser::HeaderName::Sender => HeaderName::Sender,
+            mail_parser::HeaderName::Comments => HeaderName::Comments,
+            mail_parser::HeaderName::InReplyTo => HeaderName::InReplyTo,
+            mail_parser::HeaderName::Keywords => HeaderName::Keywords,
+            mail_parser::HeaderName::Received => HeaderName::Received,
+            mail_parser::HeaderName::MessageId => HeaderName::MessageId,
+            mail_parser::HeaderName::References => HeaderName::References,
+            mail_parser::HeaderName::ReturnPath => HeaderName::ReturnPath,
+            mail_parser::HeaderName::MimeVersion => HeaderName::MimeVersion,
+            mail_parser::HeaderName::ContentDescription => HeaderName::ContentDescription,
+            mail_parser::HeaderName::ContentId => HeaderName::ContentId,
+            mail_parser::HeaderName::ContentLanguage => HeaderName::ContentLanguage,
+            mail_parser::HeaderName::ContentLocation => HeaderName::ContentLocation,
+            mail_parser::HeaderName::ContentTransferEncoding => HeaderName::ContentTransferEncoding,
+            mail_parser::HeaderName::ContentType => HeaderName::ContentType,
+            mail_parser::HeaderName::ContentDisposition => HeaderName::ContentDisposition,
+            mail_parser::HeaderName::ResentTo => HeaderName::ResentTo,
+            mail_parser::HeaderName::ResentFrom => HeaderName::ResentFrom,
+            mail_parser::HeaderName::ResentBcc => HeaderName::ResentBcc,
+            mail_parser::HeaderName::ResentCc => HeaderName::ResentCc,
+            mail_parser::HeaderName::ResentSender => HeaderName::ResentSender,
+            mail_parser::HeaderName::ResentDate => HeaderName::ResentDate,
+            mail_parser::HeaderName::ResentMessageId => HeaderName::ResentMessageId,
+            mail_parser::HeaderName::ListArchive => HeaderName::ListArchive,
+            mail_parser::HeaderName::ListHelp => HeaderName::ListHelp,
+            mail_parser::HeaderName::ListId => HeaderName::ListId,
+            mail_parser::HeaderName::ListOwner => HeaderName::ListOwner,
+            mail_parser::HeaderName::ListPost => HeaderName::ListPost,
+            mail_parser::HeaderName::ListSubscribe => HeaderName::ListSubscribe,
+            mail_parser::HeaderName::ListUnsubscribe => HeaderName::ListUnsubscribe,
+            mail_parser::HeaderName::Other(other) => HeaderName::Other(other.into_owned()),
+            mail_parser::HeaderName::DkimSignature => HeaderName::DkimSignature,
+            mail_parser::HeaderName::ArcAuthenticationResults => {
+                HeaderName::ArcAuthenticationResults
+            }
+            mail_parser::HeaderName::ArcMessageSignature => HeaderName::ArcMessageSignature,
+            mail_parser::HeaderName::ArcSeal => HeaderName::ArcSeal,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl From<mail_parser::HeaderValue<'_>> for HeaderValue {
+    fn from(value: mail_parser::HeaderValue) -> Self {
+        match value {
+            mail_parser::HeaderValue::Address(address) => HeaderValue::Address(address.into()),
+            mail_parser::HeaderValue::Text(cow) => HeaderValue::Text(cow.into_owned()),
+            mail_parser::HeaderValue::TextList(cows) => {
+                HeaderValue::TextList(cows.into_iter().map(|cow| cow.into_owned()).collect())
+            }
+            mail_parser::HeaderValue::DateTime(date_time) => {
+                HeaderValue::DateTime(date_time.to_timestamp())
+            }
+            mail_parser::HeaderValue::ContentType(content_type) => {
+                HeaderValue::ContentType(content_type.into())
+            }
+            mail_parser::HeaderValue::Received(_) | mail_parser::HeaderValue::Empty => {
+                HeaderValue::Empty
+            }
+        }
+    }
+}
+
+impl From<mail_parser::ContentType<'_>> for ContentType {
+    fn from(value: mail_parser::ContentType<'_>) -> Self {
+        ContentType {
+            c_type: value.c_type.into_owned(),
+            c_subtype: value.c_subtype.map(|cow| cow.into_owned()),
+            attributes: value.attributes.map(|attrs| {
+                attrs
+                    .into_iter()
+                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                    .collect()
+            }),
+        }
+    }
+}
+
+impl From<mail_parser::Address<'_>> for Address {
+    fn from(value: mail_parser::Address<'_>) -> Self {
+        match value {
+            mail_parser::Address::List(addrs) => {
+                Address::List(addrs.into_iter().map(|addr| addr.into()).collect())
+            }
+            mail_parser::Address::Group(groups) => {
+                Address::Group(groups.into_iter().map(|group| group.into()).collect())
+            }
+        }
+    }
+}
+
+impl From<mail_parser::Addr<'_>> for Addr {
+    fn from(value: mail_parser::Addr<'_>) -> Self {
+        Addr {
+            name: value.name.map(|cow| cow.into_owned()),
+            address: value.address.map(|cow| cow.into_owned()),
+        }
+    }
+}
+
+impl From<mail_parser::Group<'_>> for Group {
+    fn from(value: mail_parser::Group<'_>) -> Self {
+        Group {
+            name: value.name.map(|cow| cow.into_owned()),
+            addresses: value
+                .addresses
+                .into_iter()
+                .map(|addr| addr.into())
+                .collect(),
+        }
+    }
+}
+
+impl ArchivedMessageMetadataPart {
+    pub fn is_message(&self) -> bool {
+        matches!(self.body, ArchivedMetadataPartType::Message(_))
+    }
+
+    pub fn sub_parts(&self) -> Option<&ArchivedVec<u16_le>> {
+        if let ArchivedMetadataPartType::Multipart(parts) = &self.body {
+            Some(parts)
+        } else {
+            None
+        }
+    }
+
+    pub fn raw_len(&self) -> usize {
+        (u32::from(self.offset_end)).saturating_sub(u32::from(self.offset_header)) as usize
+    }
+
+    pub fn header_values(
+        &self,
+        name: ArchivedHeaderName,
+    ) -> impl Iterator<Item = &ArchivedHeaderValue> + Sync + Send {
+        self.headers.iter().filter_map(move |header| {
+            if header.name == name {
+                Some(&header.value)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn subject(&self) -> Option<&str> {
         self.headers
-            .header_value(&HeaderName::ContentDescription)
+            .header_value(&ArchivedHeaderName::Subject)
             .and_then(|header| header.as_text())
     }
 
-    fn content_disposition(&self) -> Option<&ContentType> {
+    pub fn date(&self) -> Option<i64> {
         self.headers
-            .header_value(&HeaderName::ContentDisposition)
+            .header_value(&ArchivedHeaderName::Date)
+            .and_then(|header| header.as_datetime())
+    }
+
+    pub fn message_id(&self) -> Option<&str> {
+        self.headers
+            .header_value(&ArchivedHeaderName::MessageId)
+            .and_then(|header| header.as_text())
+    }
+
+    pub fn in_reply_to(&self) -> &ArchivedHeaderValue {
+        self.headers
+            .header_value(&ArchivedHeaderName::InReplyTo)
+            .unwrap_or(&ArchivedHeaderValue::Empty)
+    }
+
+    pub fn content_description(&self) -> Option<&str> {
+        self.headers
+            .header_value(&ArchivedHeaderName::ContentDescription)
+            .and_then(|header| header.as_text())
+    }
+
+    pub fn content_disposition(&self) -> Option<&ArchivedContentType> {
+        self.headers
+            .header_value(&ArchivedHeaderName::ContentDisposition)
             .and_then(|header| header.as_content_type())
     }
 
-    fn content_id(&self) -> Option<&str> {
+    pub fn content_id(&self) -> Option<&str> {
         self.headers
-            .header_value(&HeaderName::ContentId)
+            .header_value(&ArchivedHeaderName::ContentId)
             .and_then(|header| header.as_text())
     }
 
-    fn content_transfer_encoding(&self) -> Option<&str> {
+    pub fn content_transfer_encoding(&self) -> Option<&str> {
         self.headers
-            .header_value(&HeaderName::ContentTransferEncoding)
+            .header_value(&ArchivedHeaderName::ContentTransferEncoding)
             .and_then(|header| header.as_text())
     }
 
-    fn content_type(&self) -> Option<&ContentType> {
+    pub fn content_type(&self) -> Option<&ArchivedContentType> {
         self.headers
-            .header_value(&HeaderName::ContentType)
+            .header_value(&ArchivedHeaderName::ContentType)
             .and_then(|header| header.as_content_type())
     }
 
-    fn content_language(&self) -> &HeaderValue {
+    pub fn content_language(&self) -> &ArchivedHeaderValue {
         self.headers
-            .header_value(&HeaderName::ContentLanguage)
-            .unwrap_or(&HeaderValue::Empty)
+            .header_value(&ArchivedHeaderName::ContentLanguage)
+            .unwrap_or(&ArchivedHeaderValue::Empty)
     }
 
-    fn content_location(&self) -> Option<&str> {
+    pub fn content_location(&self) -> Option<&str> {
         self.headers
-            .header_value(&HeaderName::ContentLocation)
+            .header_value(&ArchivedHeaderName::ContentLocation)
             .and_then(|header| header.as_text())
+    }
+
+    pub fn attachment_name(&self) -> Option<&str> {
+        self.content_disposition()
+            .and_then(|cd| cd.attribute("filename"))
+            .or_else(|| self.content_type().and_then(|ct| ct.attribute("name")))
+    }
+}
+
+pub trait GetHeader {
+    fn header_value(&self, name: &HeaderName) -> Option<&HeaderValue>;
+    fn header(&self, name: impl Into<HeaderName>) -> Option<&Header>;
+}
+
+impl GetHeader for Vec<Header> {
+    fn header_value(&self, name: &HeaderName) -> Option<&HeaderValue> {
+        self.iter()
+            .rev()
+            .find(|header| &header.name == name)
+            .map(|header| &header.value)
+    }
+
+    fn header(&self, name: impl Into<HeaderName>) -> Option<&Header> {
+        let name = name.into();
+        self.iter().rev().find(|header| header.name == name)
+    }
+}
+
+pub trait ArchivedGetHeader {
+    fn header_value(&self, name: &ArchivedHeaderName) -> Option<&ArchivedHeaderValue>;
+    fn header(&self, name: impl Into<ArchivedHeaderName>) -> Option<&ArchivedHeader>;
+    fn convert_header(
+        &self,
+        header_name: &ArchivedHeaderName,
+    ) -> Option<mail_parser::HeaderValue<'static>>;
+}
+
+impl ArchivedGetHeader for ArchivedVec<ArchivedHeader> {
+    fn header_value(&self, name: &ArchivedHeaderName) -> Option<&ArchivedHeaderValue> {
+        self.iter()
+            .rev()
+            .find(|header| &header.name == name)
+            .map(|header| &header.value)
+    }
+
+    fn header(&self, name: impl Into<ArchivedHeaderName>) -> Option<&ArchivedHeader> {
+        let name = name.into();
+        self.iter().rev().find(|header| header.name == name)
+    }
+
+    fn convert_header(
+        &self,
+        header_name: &ArchivedHeaderName,
+    ) -> Option<mail_parser::HeaderValue<'static>> {
+        for header in self.iter().rev() {
+            if header.name == *header_name {
+                return Some(mail_parser::HeaderValue::from(&header.value));
+            }
+        }
+        None
+    }
+}
+
+impl HeaderValue {
+    pub fn as_text(&self) -> Option<&str> {
+        match *self {
+            HeaderValue::Text(ref s) => Some(s),
+            HeaderValue::TextList(ref l) => l.last().map(|s| s.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn as_content_type(&self) -> Option<&ContentType> {
+        match *self {
+            HeaderValue::ContentType(ref c) => Some(c),
+            _ => None,
+        }
+    }
+}
+
+impl ArchivedHeaderValue {
+    pub fn as_text(&self) -> Option<&str> {
+        match *self {
+            ArchivedHeaderValue::Text(ref s) => Some(s),
+            ArchivedHeaderValue::TextList(ref l) => l.last().map(|s| s.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn as_content_type(&self) -> Option<&ArchivedContentType> {
+        match *self {
+            ArchivedHeaderValue::ContentType(ref c) => Some(c),
+            _ => None,
+        }
+    }
+
+    pub fn as_text_list(&self) -> Option<&[ArchivedString]> {
+        match *self {
+            ArchivedHeaderValue::Text(ref s) => Some(std::slice::from_ref(s)),
+            ArchivedHeaderValue::TextList(ref l) => Some(l.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn as_datetime(&self) -> Option<i64> {
+        match self {
+            ArchivedHeaderValue::DateTime(d) => Some(i64::from(d)),
+            _ => None,
+        }
+    }
+}
+
+impl HeaderName {
+    pub fn id(&self) -> u8 {
+        match self {
+            HeaderName::Subject => 0,
+            HeaderName::From => 1,
+            HeaderName::To => 2,
+            HeaderName::Cc => 3,
+            HeaderName::Date => 4,
+            HeaderName::Bcc => 5,
+            HeaderName::ReplyTo => 6,
+            HeaderName::Sender => 7,
+            HeaderName::Comments => 8,
+            HeaderName::InReplyTo => 9,
+            HeaderName::Keywords => 10,
+            HeaderName::Received => 11,
+            HeaderName::MessageId => 12,
+            HeaderName::References => 13,
+            HeaderName::ReturnPath => 14,
+            HeaderName::MimeVersion => 15,
+            HeaderName::ContentDescription => 16,
+            HeaderName::ContentId => 17,
+            HeaderName::ContentLanguage => 18,
+            HeaderName::ContentLocation => 19,
+            HeaderName::ContentTransferEncoding => 20,
+            HeaderName::ContentType => 21,
+            HeaderName::ContentDisposition => 22,
+            HeaderName::ResentTo => 23,
+            HeaderName::ResentFrom => 24,
+            HeaderName::ResentBcc => 25,
+            HeaderName::ResentCc => 26,
+            HeaderName::ResentSender => 27,
+            HeaderName::ResentDate => 28,
+            HeaderName::ResentMessageId => 29,
+            HeaderName::ListArchive => 30,
+            HeaderName::ListHelp => 31,
+            HeaderName::ListId => 32,
+            HeaderName::ListOwner => 33,
+            HeaderName::ListPost => 34,
+            HeaderName::ListSubscribe => 35,
+            HeaderName::ListUnsubscribe => 36,
+            HeaderName::Other(_) => 37,
+            HeaderName::ArcAuthenticationResults => 38,
+            HeaderName::ArcMessageSignature => 39,
+            HeaderName::ArcSeal => 40,
+            HeaderName::DkimSignature => 41,
+        }
+    }
+}
+
+impl ArchivedHeaderName {
+    pub fn id(&self) -> u8 {
+        match self {
+            ArchivedHeaderName::Subject => 0,
+            ArchivedHeaderName::From => 1,
+            ArchivedHeaderName::To => 2,
+            ArchivedHeaderName::Cc => 3,
+            ArchivedHeaderName::Date => 4,
+            ArchivedHeaderName::Bcc => 5,
+            ArchivedHeaderName::ReplyTo => 6,
+            ArchivedHeaderName::Sender => 7,
+            ArchivedHeaderName::Comments => 8,
+            ArchivedHeaderName::InReplyTo => 9,
+            ArchivedHeaderName::Keywords => 10,
+            ArchivedHeaderName::Received => 11,
+            ArchivedHeaderName::MessageId => 12,
+            ArchivedHeaderName::References => 13,
+            ArchivedHeaderName::ReturnPath => 14,
+            ArchivedHeaderName::MimeVersion => 15,
+            ArchivedHeaderName::ContentDescription => 16,
+            ArchivedHeaderName::ContentId => 17,
+            ArchivedHeaderName::ContentLanguage => 18,
+            ArchivedHeaderName::ContentLocation => 19,
+            ArchivedHeaderName::ContentTransferEncoding => 20,
+            ArchivedHeaderName::ContentType => 21,
+            ArchivedHeaderName::ContentDisposition => 22,
+            ArchivedHeaderName::ResentTo => 23,
+            ArchivedHeaderName::ResentFrom => 24,
+            ArchivedHeaderName::ResentBcc => 25,
+            ArchivedHeaderName::ResentCc => 26,
+            ArchivedHeaderName::ResentSender => 27,
+            ArchivedHeaderName::ResentDate => 28,
+            ArchivedHeaderName::ResentMessageId => 29,
+            ArchivedHeaderName::ListArchive => 30,
+            ArchivedHeaderName::ListHelp => 31,
+            ArchivedHeaderName::ListId => 32,
+            ArchivedHeaderName::ListOwner => 33,
+            ArchivedHeaderName::ListPost => 34,
+            ArchivedHeaderName::ListSubscribe => 35,
+            ArchivedHeaderName::ListUnsubscribe => 36,
+            ArchivedHeaderName::Other(_) => 37,
+            ArchivedHeaderName::ArcAuthenticationResults => 38,
+            ArchivedHeaderName::ArcMessageSignature => 39,
+            ArchivedHeaderName::ArcSeal => 40,
+            ArchivedHeaderName::DkimSignature => 41,
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            ArchivedHeaderName::Subject => "Subject",
+            ArchivedHeaderName::From => "From",
+            ArchivedHeaderName::To => "To",
+            ArchivedHeaderName::Cc => "Cc",
+            ArchivedHeaderName::Date => "Date",
+            ArchivedHeaderName::Bcc => "Bcc",
+            ArchivedHeaderName::ReplyTo => "Reply-To",
+            ArchivedHeaderName::Sender => "Sender",
+            ArchivedHeaderName::Comments => "Comments",
+            ArchivedHeaderName::InReplyTo => "In-Reply-To",
+            ArchivedHeaderName::Keywords => "Keywords",
+            ArchivedHeaderName::Received => "Received",
+            ArchivedHeaderName::MessageId => "Message-ID",
+            ArchivedHeaderName::References => "References",
+            ArchivedHeaderName::ReturnPath => "Return-Path",
+            ArchivedHeaderName::MimeVersion => "MIME-Version",
+            ArchivedHeaderName::ContentDescription => "Content-Description",
+            ArchivedHeaderName::ContentId => "Content-ID",
+            ArchivedHeaderName::ContentLanguage => "Content-Language",
+            ArchivedHeaderName::ContentLocation => "Content-Location",
+            ArchivedHeaderName::ContentTransferEncoding => "Content-Transfer-Encoding",
+            ArchivedHeaderName::ContentType => "Content-Type",
+            ArchivedHeaderName::ContentDisposition => "Content-Disposition",
+            ArchivedHeaderName::ResentTo => "Resent-To",
+            ArchivedHeaderName::ResentFrom => "Resent-From",
+            ArchivedHeaderName::ResentBcc => "Resent-Bcc",
+            ArchivedHeaderName::ResentCc => "Resent-Cc",
+            ArchivedHeaderName::ResentSender => "Resent-Sender",
+            ArchivedHeaderName::ResentDate => "Resent-Date",
+            ArchivedHeaderName::ResentMessageId => "Resent-Message-ID",
+            ArchivedHeaderName::ListArchive => "List-Archive",
+            ArchivedHeaderName::ListHelp => "List-Help",
+            ArchivedHeaderName::ListId => "List-ID",
+            ArchivedHeaderName::ListOwner => "List-Owner",
+            ArchivedHeaderName::ListPost => "List-Post",
+            ArchivedHeaderName::ListSubscribe => "List-Subscribe",
+            ArchivedHeaderName::ListUnsubscribe => "List-Unsubscribe",
+            ArchivedHeaderName::ArcAuthenticationResults => "ARC-Authentication-Results",
+            ArchivedHeaderName::ArcMessageSignature => "ARC-Message-Signature",
+            ArchivedHeaderName::ArcSeal => "ARC-Seal",
+            ArchivedHeaderName::DkimSignature => "DKIM-Signature",
+            ArchivedHeaderName::Other(v) => v.as_str(),
+        }
+    }
+
+    pub fn is_mime_header(&self) -> bool {
+        matches!(
+            self,
+            ArchivedHeaderName::ContentDescription
+                | ArchivedHeaderName::ContentId
+                | ArchivedHeaderName::ContentLanguage
+                | ArchivedHeaderName::ContentLocation
+                | ArchivedHeaderName::ContentTransferEncoding
+                | ArchivedHeaderName::ContentType
+                | ArchivedHeaderName::ContentDisposition
+        )
+    }
+}
+
+impl Display for ArchivedHeaderName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl ArchivedContentType {
+    pub fn ctype(&self) -> &str {
+        &self.c_type
+    }
+
+    pub fn subtype(&self) -> Option<&str> {
+        self.c_subtype.as_deref()
+    }
+
+    pub fn attribute(&self, name: &str) -> Option<&str> {
+        self.attributes
+            .as_ref()?
+            .iter()
+            .find(|k| k.0 == name)?
+            .1
+            .as_ref()
+            .into()
+    }
+}
+
+impl ArchivedMessageMetadataContents {
+    pub fn root_part(&self) -> &ArchivedMessageMetadataPart {
+        &self.parts[0]
+    }
+}
+
+impl ArchivedAddress {
+    pub fn iter(&self) -> Box<dyn DoubleEndedIterator<Item = &ArchivedAddr> + '_ + Sync + Send> {
+        match self {
+            ArchivedAddress::List(list) => Box::new(list.iter()),
+            ArchivedAddress::Group(group) => {
+                Box::new(group.iter().flat_map(|group| group.addresses.iter()))
+            }
+        }
+    }
+}
+
+impl ArchivedAddr {
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn address(&self) -> Option<&str> {
+        self.address.as_deref()
+    }
+}
+
+impl From<&ArchivedHeaderName> for mail_parser::HeaderName<'static> {
+    fn from(value: &ArchivedHeaderName) -> Self {
+        match value {
+            ArchivedHeaderName::Subject => mail_parser::HeaderName::Subject,
+            ArchivedHeaderName::From => mail_parser::HeaderName::From,
+            ArchivedHeaderName::To => mail_parser::HeaderName::To,
+            ArchivedHeaderName::Cc => mail_parser::HeaderName::Cc,
+            ArchivedHeaderName::Date => mail_parser::HeaderName::Date,
+            ArchivedHeaderName::Bcc => mail_parser::HeaderName::Bcc,
+            ArchivedHeaderName::ReplyTo => mail_parser::HeaderName::ReplyTo,
+            ArchivedHeaderName::Sender => mail_parser::HeaderName::Sender,
+            ArchivedHeaderName::Comments => mail_parser::HeaderName::Comments,
+            ArchivedHeaderName::InReplyTo => mail_parser::HeaderName::InReplyTo,
+            ArchivedHeaderName::Keywords => mail_parser::HeaderName::Keywords,
+            ArchivedHeaderName::Received => mail_parser::HeaderName::Received,
+            ArchivedHeaderName::MessageId => mail_parser::HeaderName::MessageId,
+            ArchivedHeaderName::References => mail_parser::HeaderName::References,
+            ArchivedHeaderName::ReturnPath => mail_parser::HeaderName::ReturnPath,
+            ArchivedHeaderName::MimeVersion => mail_parser::HeaderName::MimeVersion,
+            ArchivedHeaderName::ContentDescription => mail_parser::HeaderName::ContentDescription,
+            ArchivedHeaderName::ContentId => mail_parser::HeaderName::ContentId,
+            ArchivedHeaderName::ContentLanguage => mail_parser::HeaderName::ContentLanguage,
+            ArchivedHeaderName::ContentLocation => mail_parser::HeaderName::ContentLocation,
+            ArchivedHeaderName::ContentTransferEncoding => {
+                mail_parser::HeaderName::ContentTransferEncoding
+            }
+            ArchivedHeaderName::ContentType => mail_parser::HeaderName::ContentType,
+            ArchivedHeaderName::ContentDisposition => mail_parser::HeaderName::ContentDisposition,
+            ArchivedHeaderName::ResentTo => mail_parser::HeaderName::ResentTo,
+            ArchivedHeaderName::ResentFrom => mail_parser::HeaderName::ResentFrom,
+            ArchivedHeaderName::ResentBcc => mail_parser::HeaderName::ResentBcc,
+            ArchivedHeaderName::ResentCc => mail_parser::HeaderName::ResentCc,
+            ArchivedHeaderName::ResentSender => mail_parser::HeaderName::ResentSender,
+            ArchivedHeaderName::ResentDate => mail_parser::HeaderName::ResentDate,
+            ArchivedHeaderName::ResentMessageId => mail_parser::HeaderName::ResentMessageId,
+            ArchivedHeaderName::ListArchive => mail_parser::HeaderName::ListArchive,
+            ArchivedHeaderName::ListHelp => mail_parser::HeaderName::ListHelp,
+            ArchivedHeaderName::ListId => mail_parser::HeaderName::ListId,
+            ArchivedHeaderName::ListOwner => mail_parser::HeaderName::ListOwner,
+            ArchivedHeaderName::ListPost => mail_parser::HeaderName::ListPost,
+            ArchivedHeaderName::ListSubscribe => mail_parser::HeaderName::ListSubscribe,
+            ArchivedHeaderName::ListUnsubscribe => mail_parser::HeaderName::ListUnsubscribe,
+            ArchivedHeaderName::Other(other) => {
+                mail_parser::HeaderName::Other(other.to_string().into())
+            }
+            ArchivedHeaderName::ArcAuthenticationResults => {
+                mail_parser::HeaderName::ArcAuthenticationResults
+            }
+            ArchivedHeaderName::ArcMessageSignature => mail_parser::HeaderName::ArcMessageSignature,
+            ArchivedHeaderName::ArcSeal => mail_parser::HeaderName::ArcSeal,
+            ArchivedHeaderName::DkimSignature => mail_parser::HeaderName::DkimSignature,
+        }
+    }
+}
+
+impl From<&ArchivedHeaderValue> for mail_parser::HeaderValue<'static> {
+    fn from(value: &ArchivedHeaderValue) -> Self {
+        match value {
+            ArchivedHeaderValue::Text(s) => mail_parser::HeaderValue::Text(s.to_string().into()),
+            ArchivedHeaderValue::TextList(list) => mail_parser::HeaderValue::TextList(
+                list.iter().map(|s| s.to_string().into()).collect(),
+            ),
+            ArchivedHeaderValue::DateTime(d) => {
+                mail_parser::HeaderValue::DateTime(DateTime::from_timestamp(i64::from(d)))
+            }
+            ArchivedHeaderValue::ContentType(ct) => {
+                mail_parser::HeaderValue::ContentType(ct.into())
+            }
+            ArchivedHeaderValue::Empty => mail_parser::HeaderValue::Empty,
+            ArchivedHeaderValue::Address(a) => mail_parser::HeaderValue::Address(a.into()),
+        }
+    }
+}
+
+impl From<&ArchivedAddress> for mail_parser::Address<'static> {
+    fn from(value: &ArchivedAddress) -> Self {
+        match value {
+            ArchivedAddress::List(list) => {
+                mail_parser::Address::List(list.iter().map(Into::into).collect())
+            }
+            ArchivedAddress::Group(groups) => {
+                mail_parser::Address::Group(groups.iter().map(Into::into).collect())
+            }
+        }
+    }
+}
+
+impl From<&ArchivedContentType> for mail_parser::ContentType<'static> {
+    fn from(value: &ArchivedContentType) -> Self {
+        mail_parser::ContentType {
+            c_type: value.c_type.to_string().into(),
+            c_subtype: value.subtype().map(|s| s.to_string().into()),
+            attributes: value.attributes.as_ref().map(|attrs| {
+                attrs
+                    .iter()
+                    .map(|a| (a.0.to_string().into(), a.0.to_string().into()))
+                    .collect()
+            }),
+        }
+    }
+}
+
+impl From<&ArchivedGroup> for mail_parser::Group<'static> {
+    fn from(value: &ArchivedGroup) -> Self {
+        mail_parser::Group {
+            name: value.name.as_ref().map(|s| s.to_string().into()),
+            addresses: value.addresses.iter().map(|a| a.into()).collect(),
+        }
+    }
+}
+
+impl From<&ArchivedAddr> for mail_parser::Addr<'static> {
+    fn from(value: &ArchivedAddr) -> Self {
+        mail_parser::Addr {
+            name: value.name().map(|s| s.to_string().into()),
+            address: value.address().map(|s| s.to_string().into()),
+        }
+    }
+}
+
+impl Encoding {
+    pub fn id(&self) -> u8 {
+        match self {
+            Encoding::None => 0,
+            Encoding::QuotedPrintable => 1,
+            Encoding::Base64 => 2,
+        }
+    }
+}
+
+impl ArchivedEncoding {
+    pub fn id(&self) -> u8 {
+        match self {
+            ArchivedEncoding::None => 0,
+            ArchivedEncoding::QuotedPrintable => 1,
+            ArchivedEncoding::Base64 => 2,
+        }
     }
 }

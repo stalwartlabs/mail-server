@@ -8,10 +8,10 @@ use std::time::Instant;
 
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::sieve::ArchivedSieveScript;
+use email::sieve::{ArchivedSieveScript, SieveScript};
 use imap_proto::receiver::Request;
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{ArchivedValue, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
+use store::write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -60,7 +60,7 @@ impl<T: SessionStream> Session<T> {
         // Obtain script values
         let script = self
             .server
-            .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
+            .get_property::<HashedValue<Archive>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -74,7 +74,7 @@ impl<T: SessionStream> Session<T> {
                     .details("Script not found")
                     .code(ResponseCode::NonExistent)
             })?
-            .into_deserialized()
+            .into_deserialized::<ArchivedSieveScript, SieveScript>()
             .caused_by(trc::location!())?;
 
         // Write record

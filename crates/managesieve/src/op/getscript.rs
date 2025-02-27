@@ -11,7 +11,7 @@ use directory::Permission;
 use email::sieve::ArchivedSieveScript;
 use imap_proto::receiver::Request;
 use jmap_proto::types::{blob::BlobSection, collection::Collection, property::Property};
-use store::write::ArchivedValue;
+use store::write::Archive;
 use trc::AddContext;
 use utils::BlobHash;
 
@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
         let document_id = self.get_script_id(account_id, &name).await?;
         let sieve_ = self
             .server
-            .get_property::<ArchivedValue<ArchivedSieveScript>>(
+            .get_property::<Archive>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -51,7 +51,9 @@ impl<T: SessionStream> Session<T> {
                     .details("Script not found")
                     .code(ResponseCode::NonExistent)
             })?;
-        let sieve = sieve_.unarchive().caused_by(trc::location!())?;
+        let sieve = sieve_
+            .unarchive::<ArchivedSieveScript>()
+            .caused_by(trc::location!())?;
         let blob_size = u32::from(sieve.size) as usize;
         let script = self
             .server

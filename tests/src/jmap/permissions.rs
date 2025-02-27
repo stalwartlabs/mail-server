@@ -597,7 +597,7 @@ pub async fn test(params: &JMAPTest) {
         );
 
     // John should not be allowed to receive email
-    let message_blob = BlobHash::from(TEST_MESSAGE.as_bytes());
+    let message_blob = BlobHash::generate(TEST_MESSAGE.as_bytes());
     server
         .blob_store()
         .put_blob(message_blob.as_ref(), TEST_MESSAGE.as_bytes())

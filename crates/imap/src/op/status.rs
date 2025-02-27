@@ -21,7 +21,7 @@ use imap_proto::{
     receiver::Request,
 };
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
-use store::{Deserialize, U32_LEN, write::ArchivedValue};
+use store::{Deserialize, U32_LEN, write::Archive};
 use store::{
     IndexKeyPrefix, IterateParams, ValueKey,
     roaring::RoaringBitmap,
@@ -255,7 +255,7 @@ impl<T: SessionStream> SessionData<T> {
                         .caused_by(trc::location!())? as u64,
                     Status::UidValidity => u32::from(
                         self.server
-                            .get_property::<ArchivedValue<ArchivedMailbox>>(
+                            .get_property::<Archive>(
                                 mailbox.account_id,
                                 Collection::Mailbox,
                                 mailbox.mailbox_id,
@@ -271,7 +271,7 @@ impl<T: SessionStream> SessionData<T> {
                                     .account_id(mailbox.account_id)
                                     .document_id(mailbox.mailbox_id)
                             })?
-                            .unarchive()
+                            .unarchive::<ArchivedMailbox>()
                             .caused_by(trc::location!())?
                             .uid_validity,
                     ) as u64,

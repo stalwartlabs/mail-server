@@ -5,7 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken};
-use email::mailbox::UidMailbox;
+use email::mailbox::ArchivedUidMailbox;
 use jmap_proto::{
     method::{
         get::{GetRequest, GetResponse},
@@ -24,7 +24,8 @@ use jmap_proto::{
 use mail_builder::encoders::base64::base64_encode;
 use sha1::{Digest, Sha1};
 use sha2::{Sha256, Sha512};
-use store::BlobClass;
+use store::{BlobClass, rkyv::vec::ArchivedVec, write::Archive};
+use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
 use std::future::Future;
@@ -238,7 +239,7 @@ impl BlobOperations for Server {
                                 }
                                 if include_mailbox {
                                     if let Some(mailboxes) = self
-                                        .get_property::<Vec<UidMailbox>>(
+                                        .get_property::<Archive>(
                                             req_account_id,
                                             Collection::Email,
                                             *document_id,
@@ -249,10 +250,12 @@ impl BlobOperations for Server {
                                         matched_ids.append(
                                             DataType::Mailbox,
                                             mailboxes
-                                                .into_iter()
+                                                .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                                                .caused_by(trc::location!())?
+                                                .iter()
                                                 .map(|m| {
                                                     debug_assert!(m.uid != 0);
-                                                    Id::from(m.mailbox_id)
+                                                    Id::from(u32::from(m.mailbox_id))
                                                 })
                                                 .collect::<Vec<_>>(),
                                         );

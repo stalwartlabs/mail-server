@@ -19,7 +19,7 @@ use jmap_proto::{
     },
 };
 use std::future::Future;
-use store::{query::Filter, write::ArchivedValue};
+use store::{query::Filter, write::Archive};
 use trc::AddContext;
 
 use crate::{JmapMethods, changes::state::StateManager};
@@ -81,7 +81,7 @@ impl VacationResponseGet for Server {
         if do_get {
             if let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await? {
                 if let Some(sieve_) = self
-                    .get_property::<ArchivedValue<ArchivedSieveScript>>(
+                    .get_property::<Archive>(
                         account_id,
                         Collection::SieveScript,
                         document_id,
@@ -89,7 +89,9 @@ impl VacationResponseGet for Server {
                     )
                     .await?
                 {
-                    let sieve = sieve_.unarchive().caused_by(trc::location!())?;
+                    let sieve = sieve_
+                        .unarchive::<ArchivedSieveScript>()
+                        .caused_by(trc::location!())?;
                     let vacation = sieve.vacation_response.as_ref();
                     let mut result = Object::with_capacity(properties.len());
                     for property in &properties {

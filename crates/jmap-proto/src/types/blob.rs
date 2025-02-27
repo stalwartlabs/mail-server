@@ -6,19 +6,16 @@
 
 use std::borrow::Borrow;
 
-use store::{
-    write::{DeserializeFrom, SerializeInto},
-    BlobClass,
-};
+use store::BlobClass;
 use utils::{
+    BlobHash,
     codec::{
         base32_custom::{Base32Reader, Base32Writer},
         leb128::{Leb128Iterator, Leb128Writer},
     },
-    BlobHash,
 };
 
-use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
+use crate::parser::{JsonObjectParser, base32::JsonBase32Reader, json::Parser};
 
 const B_LINKED: u8 = 0x10;
 const B_RESERVED: u8 = 0x20;
@@ -197,17 +194,5 @@ impl std::fmt::Display for BlobId {
         let mut writer = Base32Writer::with_capacity(std::mem::size_of::<BlobId>() * 2);
         self.serialize_as(&mut writer);
         f.write_str(&writer.finalize())
-    }
-}
-
-impl SerializeInto for BlobId {
-    fn serialize_into(&self, buf: &mut Vec<u8>) {
-        self.serialize_as(buf)
-    }
-}
-
-impl DeserializeFrom for BlobId {
-    fn deserialize_from(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
-        BlobId::from_iter(bytes)
     }
 }

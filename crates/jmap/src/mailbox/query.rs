@@ -16,7 +16,7 @@ use store::{
     ahash::{AHashMap, AHashSet},
     query::{self, sort::Pagination},
     roaring::RoaringBitmap,
-    write::ArchivedValue,
+    write::{Archive},
 };
 
 use crate::{JmapMethods, UpdateResults};
@@ -125,7 +125,7 @@ impl MailboxQuery for Server {
                 || (response.total.is_some_and(|total| total > 0) && filter_as_tree))
         {
             for (document_id, value) in self
-                .get_properties::<ArchivedValue<ArchivedMailbox>, _, _>(
+                .get_properties::<Archive, _, _>(
                     account_id,
                     Collection::Mailbox,
                     &mailbox_ids,
@@ -134,7 +134,7 @@ impl MailboxQuery for Server {
                 .await?
             {
                 let todo = "use index";
-                let mailbox = value.unarchive()?;
+                let mailbox = value.unarchive::<ArchivedMailbox>()?;
                 let parent_id = u32::from(mailbox.parent_id);
                 hierarchy.insert(document_id + 1, parent_id);
                 tree.entry(parent_id)

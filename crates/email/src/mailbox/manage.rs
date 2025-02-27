@@ -13,7 +13,7 @@ use store::{
     ahash::AHashSet,
     query::Filter,
     roaring::RoaringBitmap,
-    write::{ArchivedValue, BatchBuilder},
+    write::{Archive, BatchBuilder},
 };
 use trc::AddContext;
 
@@ -305,7 +305,7 @@ impl MailboxFnc for Server {
         let mut found_names = Vec::new();
         for document_id in document_ids {
             if let Some(obj) = self
-                .get_property::<ArchivedValue<ArchivedMailbox>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
@@ -313,7 +313,7 @@ impl MailboxFnc for Server {
                 )
                 .await?
             {
-                let obj = obj.unarchive()?;
+                let obj = obj.unarchive::<ArchivedMailbox>()?;
                 found_names.push((
                     obj.name.to_string(),
                     u32::from(obj.parent_id),

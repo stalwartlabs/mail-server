@@ -8,7 +8,7 @@ use std::{cmp::Ordering, fmt::Display};
 
 use ahash::AHashSet;
 use chrono::{DateTime, Utc};
-use jmap_proto::types::keyword::Keyword;
+use jmap_proto::types::keyword::{ArchivedKeyword, Keyword};
 
 use crate::{Command, ResponseCode, ResponseType, StatusResponse};
 
@@ -278,6 +278,26 @@ impl From<Keyword> for Flag {
             Keyword::Forwarded => Flag::Forwarded,
             Keyword::MdnSent => Flag::MDNSent,
             Keyword::Other(value) => Flag::Keyword(value),
+        }
+    }
+}
+
+impl From<&ArchivedKeyword> for Flag {
+    fn from(value: &ArchivedKeyword) -> Self {
+        match value {
+            ArchivedKeyword::Seen => Flag::Seen,
+            ArchivedKeyword::Draft => Flag::Draft,
+            ArchivedKeyword::Flagged => Flag::Flagged,
+            ArchivedKeyword::Answered => Flag::Answered,
+            ArchivedKeyword::Recent => Flag::Recent,
+            ArchivedKeyword::Important => Flag::Important,
+            ArchivedKeyword::Phishing => Flag::Phishing,
+            ArchivedKeyword::Junk => Flag::Junk,
+            ArchivedKeyword::NotJunk => Flag::NotJunk,
+            ArchivedKeyword::Deleted => Flag::Deleted,
+            ArchivedKeyword::Forwarded => Flag::Forwarded,
+            ArchivedKeyword::MdnSent => Flag::MDNSent,
+            ArchivedKeyword::Other(value) => Flag::Keyword(value.to_string()),
         }
     }
 }

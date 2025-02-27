@@ -26,7 +26,7 @@ use rasn_cms::{
 };
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs1::DecodeRsaPublicKey};
 use sequoia_openpgp as openpgp;
-use store::{Deserialize, Serialize, write::Bincode};
+use store::{Deserialize, write::Archive};
 
 const P: openpgp::policy::StandardPolicy<'static> = openpgp::policy::StandardPolicy::new();
 
@@ -36,26 +36,63 @@ pub enum EncryptMessageError {
     Error(String),
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    Debug,
+    Clone,
+    Copy,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[rkyv(derive(Clone, Copy))]
 pub enum Algorithm {
     Aes128,
     Aes256,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub enum EncryptionMethod {
     PGP,
     SMIME,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    Debug,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct EncryptionParams {
     pub method: EncryptionMethod,
     pub algo: Algorithm,
     pub certs: Vec<Vec<u8>>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
+#[derive(
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    Debug,
+    serde::Serialize,
+    serde::Deserialize,
+    Default,
+)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum EncryptionType {
@@ -73,12 +110,18 @@ pub enum EncryptionType {
 
 #[allow(async_fn_in_trait)]
 pub trait EncryptMessage {
-    async fn encrypt(&self, params: &EncryptionParams) -> Result<Vec<u8>, EncryptMessageError>;
+    async fn encrypt(
+        &self,
+        params: &ArchivedEncryptionParams,
+    ) -> Result<Vec<u8>, EncryptMessageError>;
     fn is_encrypted(&self) -> bool;
 }
 
 impl EncryptMessage for Message<'_> {
-    async fn encrypt(&self, params: &EncryptionParams) -> Result<Vec<u8>, EncryptMessageError> {
+    async fn encrypt(
+        &self,
+        params: &ArchivedEncryptionParams,
+    ) -> Result<Vec<u8>, EncryptMessageError> {
         let root = self.root_part();
         let raw_message = self.raw_message();
         let mut outer_message = Vec::with_capacity((raw_message.len() as f64 * 1.5) as usize);
@@ -98,7 +141,7 @@ impl EncryptMessage for Message<'_> {
 
         // Encrypt inner message
         match params.method {
-            EncryptionMethod::PGP => {
+            ArchivedEncryptionMethod::PGP => {
                 // Prepare encrypted message
                 let boundary = make_boundary("_");
                 outer_message.extend_from_slice(
@@ -179,8 +222,8 @@ impl EncryptMessage for Message<'_> {
                         })?;
                     let message = stream::Encryptor2::for_recipients(message, keys)
                         .symmetric_algo(match algo {
-                            Algorithm::Aes128 => SymmetricAlgorithm::AES128,
-                            Algorithm::Aes256 => SymmetricAlgorithm::AES256,
+                            ArchivedAlgorithm::Aes128 => SymmetricAlgorithm::AES128,
+                            ArchivedAlgorithm::Aes256 => SymmetricAlgorithm::AES256,
                         })
                         .build()
                         .map_err(|err| {
@@ -224,7 +267,7 @@ impl EncryptMessage for Message<'_> {
                 outer_message.extend_from_slice(boundary.as_bytes());
                 outer_message.extend_from_slice(b"--\r\n");
             }
-            EncryptionMethod::SMIME => {
+            ArchivedEncryptionMethod::SMIME => {
                 // Generate random IV
                 let mut rng = StdRng::from_entropy();
                 let mut iv = vec![0u8; 16];
@@ -247,7 +290,7 @@ impl EncryptMessage for Message<'_> {
                 // Encrypt key using public keys
                 #[allow(clippy::mutable_key_type)]
                 let mut recipient_infos = BTreeSet::new();
-                for cert in &params.certs {
+                for cert in params.certs.iter() {
                     let cert =
                         rasn::der::decode::<rasn_pkix::Certificate>(cert).map_err(|err| {
                             EncryptMessageError::Error(format!(
@@ -412,26 +455,26 @@ impl EncryptMessage for Message<'_> {
     }
 }
 
-impl Algorithm {
+impl ArchivedAlgorithm {
     fn key_size(&self) -> usize {
         match self {
-            Algorithm::Aes128 => 16,
-            Algorithm::Aes256 => 32,
+            ArchivedAlgorithm::Aes128 => 16,
+            ArchivedAlgorithm::Aes256 => 32,
         }
     }
 
     fn to_algorithm_identifier(self) -> ObjectIdentifier {
         match self {
-            Algorithm::Aes128 => AES128_CBC.into(),
-            Algorithm::Aes256 => AES256_CBC.into(),
+            ArchivedAlgorithm::Aes128 => AES128_CBC.into(),
+            ArchivedAlgorithm::Aes256 => AES256_CBC.into(),
         }
     }
 
     fn encrypt(&self, key: &[u8], iv: &[u8], contents: &[u8]) -> Vec<u8> {
         match self {
-            Algorithm::Aes128 => cbc::Encryptor::<aes::Aes128>::new(key.into(), iv.into())
+            ArchivedAlgorithm::Aes128 => cbc::Encryptor::<aes::Aes128>::new(key.into(), iv.into())
                 .encrypt_padded_vec_mut::<Pkcs7>(contents),
-            Algorithm::Aes256 => cbc::Encryptor::<aes::Aes256>::new(key.into(), iv.into())
+            ArchivedAlgorithm::Aes256 => cbc::Encryptor::<aes::Aes256>::new(key.into(), iv.into())
                 .encrypt_padded_vec_mut::<Pkcs7>(contents),
         }
     }
@@ -485,10 +528,13 @@ fn try_parse_pem(
         return base64_decode(internal.as_bytes())
             .ok_or(Cow::from("Failed to decode base64"))
             .and_then(|bytes| {
-                Bincode::<EncryptionParams>::deserialize(&bytes)
+                Archive::deserialize_owned(bytes)
+                    .and_then(|arch| {
+                        arch.deserialize::<ArchivedEncryptionParams, EncryptionParams>()
+                    })
                     .map_err(|_| Cow::from("Failed to deserialize internal certificate"))
             })
-            .map(|params| Some((params.inner.method, params.inner.certs)));
+            .map(|params| Some((params.method, params.certs)));
     }
 
     let mut bytes = bytes_.iter().enumerate();
@@ -610,40 +656,6 @@ fn try_parse_pem(
     }
 
     Ok(method.map(|method| (method, certs)))
-}
-
-impl Serialize for EncryptionParams {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        let len = bincode::serialized_size(&self).unwrap_or_default();
-        let mut buf = Vec::with_capacity(len as usize + 1);
-        buf.push(1);
-        bincode::serialize_into(&mut buf, &self).map_err(|err| {
-            trc::EventType::Store(trc::StoreEvent::DeserializeError)
-                .reason(err)
-                .caused_by(trc::location!())
-        })?;
-        Ok(buf)
-    }
-}
-
-impl Deserialize for EncryptionParams {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let version = *bytes
-            .first()
-            .ok_or_else(|| trc::StoreEvent::DataCorruption.caused_by(trc::location!()))?;
-        match version {
-            1 if bytes.len() > 1 => bincode::deserialize(&bytes[1..]).map_err(|err| {
-                trc::EventType::Store(trc::StoreEvent::DeserializeError)
-                    .from_bincode_error(err)
-                    .caused_by(trc::location!())
-            }),
-
-            _ => Err(trc::StoreEvent::DeserializeError
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, version as u64)),
-        }
-    }
 }
 
 impl Display for EncryptionMethod {

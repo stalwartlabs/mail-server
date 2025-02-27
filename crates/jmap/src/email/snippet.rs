@@ -5,7 +5,10 @@
  */
 
 use common::{Server, auth::AccessToken};
-use email::message::metadata::{MessageMetadata, MetadataPartType};
+use email::message::metadata::{
+    ArchivedGetHeader, ArchivedHeaderName, ArchivedMessageMetadata, ArchivedMetadataPartType,
+    DecodedPartContent,
+};
 use jmap_proto::{
     method::{
         query::Filter,
@@ -13,9 +16,11 @@ use jmap_proto::{
     },
     types::{acl::Acl, collection::Collection, property::Property},
 };
-use mail_parser::{GetHeader, HeaderName, PartType, decoders::html::html_to_text};
+use mail_parser::decoders::html::html_to_text;
 use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer};
-use store::{backend::MAX_TOKEN_LENGTH, write::Bincode};
+use store::{backend::MAX_TOKEN_LENGTH, write::Archive};
+use trc::AddContext;
+use utils::BlobHash;
 
 use crate::blob::download::BlobDownload;
 
@@ -114,8 +119,8 @@ impl EmailSearchSnippet for Server {
                 response.list.push(snippet);
                 continue;
             }
-            let metadata = match self
-                .get_property::<Bincode<MessageMetadata>>(
+            let metadata_ = match self
+                .get_property::<Archive>(
                     account_id,
                     Collection::Email,
                     document_id,
@@ -123,19 +128,22 @@ impl EmailSearchSnippet for Server {
                 )
                 .await?
             {
-                Some(metadata) => metadata.inner,
+                Some(metadata) => metadata,
                 None => {
                     response.not_found.push(email_id);
                     continue;
                 }
             };
+            let metadata = metadata_
+                .unarchive::<ArchivedMessageMetadata>()
+                .caused_by(trc::location!())?;
 
             // Add subject snippet
             if let Some(subject) = metadata
                 .contents
                 .root_part()
                 .headers
-                .header_value(&HeaderName::Subject)
+                .header_value(&ArchivedHeaderName::Subject)
                 .and_then(|v| v.as_text())
                 .and_then(|v| generate_snippet(v, &terms, language, is_exact))
             {
@@ -147,8 +155,9 @@ impl EmailSearchSnippet for Server {
                 snippet.preview = body.into();
             } else {*/
             // Download message
-            let raw_message = if let Some(raw_message) =
-                self.get_blob(&metadata.blob_hash, 0..usize::MAX).await?
+            let raw_message = if let Some(raw_message) = self
+                .get_blob(&BlobHash::from(&metadata.blob_hash), 0..usize::MAX)
+                .await?
             {
                 raw_message
             } else {
@@ -157,7 +166,7 @@ impl EmailSearchSnippet for Server {
                     AccountId = account_id,
                     DocumentId = email_id.document_id(),
                     Collection = Collection::Email,
-                    BlobId = metadata.blob_hash.to_hex(),
+                    BlobId = metadata.blob_hash.0.as_slice(),
                     Details = "Blob not found.",
                     CausedBy = trc::location!(),
                 );
@@ -167,12 +176,11 @@ impl EmailSearchSnippet for Server {
             };
 
             // Find a matching part
-            'outer: for part in &metadata.contents.parts {
+            'outer: for part in metadata.contents.parts.iter() {
                 match &part.body {
-                    MetadataPartType::Text | MetadataPartType::Html => {
+                    ArchivedMetadataPartType::Text => {
                         let text = match part.decode_contents(&raw_message) {
-                            PartType::Text(text) => text,
-                            PartType::Html(html) => html_to_text(&html).into(),
+                            DecodedPartContent::Text(text) => text,
                             _ => unreachable!(),
                         };
 
@@ -181,12 +189,31 @@ impl EmailSearchSnippet for Server {
                             break;
                         }
                     }
-                    MetadataPartType::Message(message) => {
-                        for part in &message.parts {
-                            if let MetadataPartType::Text | MetadataPartType::Html = part.body {
-                                let text = match part.decode_contents(&raw_message) {
-                                    PartType::Text(text) => text,
-                                    PartType::Html(html) => html_to_text(&html).into(),
+                    ArchivedMetadataPartType::Html => {
+                        let text = match part.decode_contents(&raw_message) {
+                            DecodedPartContent::Text(html) => html_to_text(&html),
+                            _ => unreachable!(),
+                        };
+
+                        if let Some(body) = generate_snippet(&text, &terms, language, is_exact) {
+                            snippet.preview = body.into();
+                            break;
+                        }
+                    }
+                    ArchivedMetadataPartType::Message(message) => {
+                        for part in message.parts.iter() {
+                            if let ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html =
+                                part.body
+                            {
+                                let text = match (part.decode_contents(&raw_message), &part.body) {
+                                    (
+                                        DecodedPartContent::Text(text),
+                                        ArchivedMetadataPartType::Text,
+                                    ) => text,
+                                    (
+                                        DecodedPartContent::Text(html),
+                                        ArchivedMetadataPartType::Html,
+                                    ) => html_to_text(&html).into(),
                                     _ => unreachable!(),
                                 };
 

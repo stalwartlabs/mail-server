@@ -8,7 +8,10 @@ use std::{sync::Arc, time::Instant};
 
 use ahash::AHashMap;
 use directory::Permission;
-use email::{mailbox::UidMailbox, message::delete::EmailDeletion};
+use email::{
+    mailbox::{ArchivedUidMailbox, UidMailbox},
+    message::delete::EmailDeletion,
+};
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     parser::parse_sequence_set,
@@ -19,13 +22,19 @@ use trc::AddContext;
 use crate::core::{SavedSearch, SelectedMailbox, Session, SessionData};
 use common::{ImapId, listener::SessionStream, storage::tag::TagManager};
 use jmap_proto::types::{
-    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
-    state::StateChange, type_state::DataType,
+    acl::Acl,
+    collection::Collection,
+    id::Id,
+    keyword::{ArchivedKeyword, Keyword},
+    property::Property,
+    state::StateChange,
+    type_state::DataType,
 };
 use store::{
     SerializeInfallible,
+    rkyv::vec::ArchivedVec,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
+    write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
 };
 
 use super::{ImapContext, ToModSeq};
@@ -194,7 +203,7 @@ impl<T: SessionStream> SessionData<T> {
 
         for (id, mailbox_ids) in self
             .server
-            .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
+            .get_properties::<HashedValue<Archive>, _, _>(
                 account_id,
                 Collection::Email,
                 deleted_ids,
@@ -203,14 +212,18 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .caused_by(trc::location!())?
         {
-            let mut mailboxes = TagManager::new(mailbox_ids);
+            let mut mailboxes = TagManager::new(
+                mailbox_ids
+                    .into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                    .caused_by(trc::location!())?,
+            );
 
             if mailboxes.current().contains(&mailbox_id) {
                 if mailboxes.current().len() > 1 {
                     // Remove deleted flag
                     let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
                         self.server
-                            .get_property::<HashedValue<Vec<Keyword>>>(
+                            .get_property::<HashedValue<Archive>>(
                                 account_id,
                                 Collection::Email,
                                 id,
@@ -228,7 +241,14 @@ impl<T: SessionStream> SessionData<T> {
                             .await
                             .caused_by(trc::location!())?,
                     ) {
-                        (TagManager::new(keywords), thread_id)
+                        (
+                            TagManager::new(
+                                keywords
+                                    .into_deserialized::<ArchivedVec<ArchivedKeyword>, Vec<Keyword>>()
+                                    .caused_by(trc::location!())?,
+                            ),
+                            thread_id,
+                        )
                     } else {
                         continue;
                     };

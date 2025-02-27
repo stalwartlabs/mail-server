@@ -7,8 +7,10 @@
 use common::{Server, auth::AccessToken};
 
 use email::{
-    mailbox::UidMailbox,
-    message::metadata::{MessageMetadata, MetadataPartType},
+    mailbox::ArchivedUidMailbox,
+    message::metadata::{
+        ArchivedGetHeader, ArchivedHeaderName, ArchivedMessageMetadata, ArchivedMetadataPartType,
+    },
     thread::cache::ThreadCache,
 };
 use jmap_proto::{
@@ -20,22 +22,23 @@ use jmap_proto::{
         collection::Collection,
         date::UTCDate,
         id::Id,
-        keyword::Keyword,
+        keyword::ArchivedKeyword,
         property::{HeaderForm, Property},
         value::{Object, Value},
     },
 };
-use mail_parser::HeaderName;
-use store::{BlobClass, write::Bincode};
+
+use store::{BlobClass, rkyv::vec::ArchivedVec, write::Archive};
 use trc::{AddContext, StoreEvent};
+use utils::BlobHash;
 
 use crate::{
     blob::download::BlobDownload, changes::state::StateManager, email::headers::HeaderToValue,
 };
-use std::future::Future;
+use std::{borrow::Cow, future::Future};
 
 use super::{
-    body::{ToBodyPart, TruncateBody},
+    body::{ToBodyPart, truncate_html, truncate_plain},
     headers::IntoForm,
 };
 
@@ -153,8 +156,8 @@ impl EmailGet for Server {
                 response.not_found.push(id.into());
                 continue;
             }
-            let mut metadata = match self
-                .get_property::<Bincode<MessageMetadata>>(
+            let metadata_ = match self
+                .get_property::<Archive>(
                     account_id,
                     Collection::Email,
                     id.document_id(),
@@ -162,25 +165,28 @@ impl EmailGet for Server {
                 )
                 .await?
             {
-                Some(metadata) => metadata.inner,
+                Some(metadata) => metadata,
                 None => {
                     response.not_found.push(id.into());
                     continue;
                 }
             };
+            let metadata = metadata_
+                .unarchive::<ArchivedMessageMetadata>()
+                .caused_by(trc::location!())?;
 
             // Retrieve raw message if needed
-            let raw_message = if needs_body {
-                if let Some(raw_message) = self.get_blob(&metadata.blob_hash, 0..usize::MAX).await?
-                {
-                    raw_message
+            let blob_hash = BlobHash::from(&metadata.blob_hash);
+            let raw_message: Cow<[u8]> = if needs_body {
+                if let Some(raw_message) = self.get_blob(&blob_hash, 0..usize::MAX).await? {
+                    raw_message.into()
                 } else {
                     trc::event!(
                         Store(StoreEvent::NotFound),
                         AccountId = account_id,
                         DocumentId = id.document_id(),
                         Collection = Collection::Email,
-                        BlobId = metadata.blob_hash.to_hex(),
+                        BlobId = blob_hash.to_hex(),
                         Details = "Blob not found.",
                         CausedBy = trc::location!(),
                     );
@@ -189,10 +195,10 @@ impl EmailGet for Server {
                     continue;
                 }
             } else {
-                metadata.raw_headers
+                metadata.raw_headers.as_slice().into()
             };
             let blob_id = BlobId {
-                hash: metadata.blob_hash.clone(),
+                hash: blob_hash,
                 class: BlobClass::Linked {
                     account_id,
                     collection: Collection::Email.into(),
@@ -215,27 +221,28 @@ impl EmailGet for Server {
                         email.append(Property::BlobId, blob_id.clone());
                     }
                     Property::MailboxIds => {
-                        if let Some(mailboxes) = self
-                            .get_property::<Vec<UidMailbox>>(
+                        if let Some(mailboxes_) = self
+                            .get_property::<Archive>(
                                 account_id,
                                 Collection::Email,
                                 id.document_id(),
                                 &Property::MailboxIds,
                             )
                             .await?
-                            .map(|ids| {
-                                let mut obj = Object::with_capacity(ids.len());
-                                for id in ids {
-                                    debug_assert!(id.uid != 0);
-                                    obj.append(
-                                        Property::_T(Id::from(id.mailbox_id).to_string()),
-                                        true,
-                                    );
-                                }
-                                Value::Object(obj)
-                            })
                         {
-                            email.append(property.clone(), mailboxes);
+                            let mailboxes = mailboxes_
+                                .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                                .caused_by(trc::location!())?;
+                            let mut obj = Object::with_capacity(mailboxes.len());
+                            for id in mailboxes.iter() {
+                                debug_assert!(id.uid != 0);
+                                obj.append(
+                                    Property::_T(Id::from(u32::from(id.mailbox_id)).to_string()),
+                                    true,
+                                );
+                            }
+
+                            email.append(property.clone(), Value::Object(obj));
                         } else {
                             trc::event!(
                                 Store(StoreEvent::NotFound),
@@ -251,23 +258,23 @@ impl EmailGet for Server {
                         }
                     }
                     Property::Keywords => {
-                        if let Some(keywords) = self
-                            .get_property::<Vec<Keyword>>(
+                        if let Some(keywords_) = self
+                            .get_property::<Archive>(
                                 account_id,
                                 Collection::Email,
                                 id.document_id(),
                                 &Property::Keywords,
                             )
                             .await?
-                            .map(|keywords| {
-                                let mut obj = Object::with_capacity(keywords.len());
-                                for keyword in keywords {
-                                    obj.append(Property::_T(keyword.to_string()), true);
-                                }
-                                Value::Object(obj)
-                            })
                         {
-                            email.append(property.clone(), keywords);
+                            let keywords = keywords_
+                                .unarchive::<ArchivedVec<ArchivedKeyword>>()
+                                .caused_by(trc::location!())?;
+                            let mut obj = Object::with_capacity(keywords.len());
+                            for keyword in keywords.iter() {
+                                obj.append(Property::_T(keyword.to_string()), true);
+                            }
+                            email.append(property.clone(), Value::Object(obj));
                         } else {
                             trc::event!(
                                 Store(StoreEvent::NotFound),
@@ -283,17 +290,19 @@ impl EmailGet for Server {
                         }
                     }
                     Property::Size => {
-                        email.append(Property::Size, metadata.size);
+                        email.append(Property::Size, u32::from(metadata.size));
                     }
                     Property::ReceivedAt => {
                         email.append(
                             Property::ReceivedAt,
-                            Value::Date(UTCDate::from_timestamp(metadata.received_at as i64)),
+                            Value::Date(UTCDate::from_timestamp(
+                                u64::from(metadata.received_at) as i64
+                            )),
                         );
                     }
                     Property::Preview => {
                         if !metadata.preview.is_empty() {
-                            email.append(Property::Preview, std::mem::take(&mut metadata.preview));
+                            email.append(Property::Preview, metadata.preview.to_string());
                         }
                     }
                     Property::HasAttachment => {
@@ -303,7 +312,8 @@ impl EmailGet for Server {
                         email.append(
                             Property::Subject,
                             metadata.contents.parts[0]
-                                .remove_header(&HeaderName::Subject)
+                                .headers
+                                .convert_header(&ArchivedHeaderName::Subject)
                                 .map(|value| value.into_form(&HeaderForm::Text))
                                 .unwrap_or_default(),
                         );
@@ -312,7 +322,8 @@ impl EmailGet for Server {
                         email.append(
                             Property::SentAt,
                             metadata.contents.parts[0]
-                                .remove_header(&HeaderName::Date)
+                                .headers
+                                .convert_header(&ArchivedHeaderName::Date)
                                 .map(|value| value.into_form(&HeaderForm::Date))
                                 .unwrap_or_default(),
                         );
@@ -321,10 +332,11 @@ impl EmailGet for Server {
                         email.append(
                             property.clone(),
                             metadata.contents.parts[0]
-                                .remove_header(&match property {
-                                    Property::MessageId => HeaderName::MessageId,
-                                    Property::InReplyTo => HeaderName::InReplyTo,
-                                    Property::References => HeaderName::References,
+                                .headers
+                                .convert_header(&match property {
+                                    Property::MessageId => ArchivedHeaderName::MessageId,
+                                    Property::InReplyTo => ArchivedHeaderName::InReplyTo,
+                                    Property::References => ArchivedHeaderName::References,
                                     _ => unreachable!(),
                                 })
                                 .map(|value| value.into_form(&HeaderForm::MessageIds))
@@ -341,13 +353,14 @@ impl EmailGet for Server {
                         email.append(
                             property.clone(),
                             metadata.contents.parts[0]
-                                .remove_header(&match property {
-                                    Property::Sender => HeaderName::Sender,
-                                    Property::From => HeaderName::From,
-                                    Property::To => HeaderName::To,
-                                    Property::Cc => HeaderName::Cc,
-                                    Property::Bcc => HeaderName::Bcc,
-                                    Property::ReplyTo => HeaderName::ReplyTo,
+                                .headers
+                                .convert_header(&match property {
+                                    Property::Sender => ArchivedHeaderName::Sender,
+                                    Property::From => ArchivedHeaderName::From,
+                                    Property::To => ArchivedHeaderName::To,
+                                    Property::Cc => ArchivedHeaderName::Cc,
+                                    Property::Bcc => ArchivedHeaderName::Bcc,
+                                    Property::ReplyTo => ArchivedHeaderName::ReplyTo,
                                     _ => unreachable!(),
                                 })
                                 .map(|value| value.into_form(&HeaderForm::Addresses))
@@ -382,7 +395,7 @@ impl EmailGet for Server {
                             property.clone(),
                             list.map(|part_id| {
                                 metadata.contents.to_body_part(
-                                    *part_id,
+                                    u16::from(part_id) as usize,
                                     &body_properties,
                                     &raw_message,
                                     &blob_id,
@@ -405,18 +418,27 @@ impl EmailGet for Server {
                     Property::BodyValues => {
                         let mut body_values = Object::with_capacity(metadata.contents.parts.len());
                         for (part_id, part) in metadata.contents.parts.iter().enumerate() {
-                            if ((metadata.contents.html_body.contains(&part_id)
+                            if ((metadata.contents.is_html_part(part_id as u16)
                                 && (fetch_all_body_values || fetch_html_body_values))
-                                || (metadata.contents.text_body.contains(&part_id)
+                                || (metadata.contents.is_text_part(part_id as u16)
                                     && (fetch_all_body_values || fetch_text_body_values)))
                                 && matches!(
                                     part.body,
-                                    MetadataPartType::Text | MetadataPartType::Html
+                                    ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html
                                 )
                             {
-                                let (is_truncated, value) = part
-                                    .decode_contents(&raw_message)
-                                    .truncate(max_body_value_bytes);
+                                let contents = part.decode_contents(&raw_message);
+
+                                let (is_truncated, value) = match &part.body {
+                                    ArchivedMetadataPartType::Text => {
+                                        truncate_plain(contents.as_str(), max_body_value_bytes)
+                                    }
+                                    ArchivedMetadataPartType::Html => {
+                                        truncate_html(contents.as_str(), max_body_value_bytes)
+                                    }
+                                    _ => unreachable!(),
+                                };
+
                                 body_values.append(
                                     Property::_T(part_id.to_string()),
                                     Object::with_capacity(3)

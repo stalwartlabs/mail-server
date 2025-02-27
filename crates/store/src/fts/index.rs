@@ -31,7 +31,7 @@ use super::{Field, postings::Postings};
 pub const TERM_INDEX_VERSION: u8 = 1;
 
 #[derive(Debug)]
-pub(crate) struct Text<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> {
+pub(crate) struct Text<'x, T: Into<u8> + Display + std::fmt::Debug> {
     pub field: Field<T>,
     pub text: Cow<'x, str>,
     pub typ: Type,
@@ -45,7 +45,7 @@ pub(crate) enum Type {
 }
 
 #[derive(Debug)]
-pub struct FtsDocument<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> {
+pub struct FtsDocument<'x, T: Into<u8> + Display + std::fmt::Debug> {
     pub(crate) parts: Vec<Text<'x, T>>,
     pub(crate) default_language: Language,
     pub(crate) account_id: u32,
@@ -53,7 +53,7 @@ pub struct FtsDocument<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> {
     pub(crate) document_id: u32,
 }
 
-impl<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> FtsDocument<'x, T> {
+impl<'x, T: Into<u8> + Display + std::fmt::Debug> FtsDocument<'x, T> {
     pub fn with_default_language(default_language: Language) -> FtsDocument<'x, T> {
         FtsDocument {
             parts: vec![],
@@ -107,7 +107,7 @@ impl<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> FtsDocument<'x, T> {
     }
 }
 
-impl<T: Into<u8> + Display + Clone + std::fmt::Debug> From<Field<T>> for u8 {
+impl<T: Into<u8> + Display + std::fmt::Debug> From<Field<T>> for u8 {
     fn from(value: Field<T>) -> Self {
         match value {
             Field::Body => 0,
@@ -119,7 +119,7 @@ impl<T: Into<u8> + Display + Clone + std::fmt::Debug> From<Field<T>> for u8 {
 }
 
 impl Store {
-    pub async fn fts_index<T: Into<u8> + Display + Clone + std::fmt::Debug>(
+    pub async fn fts_index<T: Into<u8> + Display + std::fmt::Debug>(
         &self,
         document: FtsDocument<'_, T>,
     ) -> trc::Result<()> {

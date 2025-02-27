@@ -19,7 +19,7 @@ use store::{
     Serialize,
     rkyv::{option::ArchivedOption, vec::ArchivedVec},
     roaring::RoaringBitmap,
-    write::{ArchivedValue, BatchBuilder},
+    write::{Archive, BatchBuilder},
 };
 use trc::AddContext;
 use utils::sanitize_email;
@@ -85,7 +85,7 @@ impl IdentityGet for Server {
                 continue;
             }
             let _identity = if let Some(identity) = self
-                .get_property::<ArchivedValue<ArchivedIdentity>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::Identity,
                     document_id,
@@ -98,7 +98,9 @@ impl IdentityGet for Server {
                 response.not_found.push(id.into());
                 continue;
             };
-            let identity = _identity.unarchive().caused_by(trc::location!())?;
+            let identity = _identity
+                .unarchive::<ArchivedIdentity>()
+                .caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {
                 match property {

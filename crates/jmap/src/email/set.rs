@@ -8,7 +8,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use common::{Server, auth::AccessToken, storage::tag::TagManager};
 use email::{
-    mailbox::{UidMailbox, manage::MailboxFnc},
+    mailbox::{ArchivedUidMailbox, UidMailbox, manage::MailboxFnc},
     message::{
         delete::EmailDeletion,
         ingest::{EmailIngest, IngestEmail, IngestSource},
@@ -21,7 +21,7 @@ use jmap_proto::{
     types::{
         acl::Acl,
         collection::Collection,
-        keyword::Keyword,
+        keyword::{ArchivedKeyword, Keyword},
         property::Property,
         state::{State, StateChange},
         type_state::DataType,
@@ -40,8 +40,9 @@ use mail_parser::MessageParser;
 use store::{
     SerializeInfallible,
     ahash::AHashSet,
+    rkyv::vec::ArchivedVec,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
+    write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -764,14 +765,14 @@ impl EmailSet for Server {
             // Obtain current keywords and mailboxes
             let document_id = id.document_id();
             let (mut mailboxes, mut keywords) = if let (Some(mailboxes), Some(keywords)) = (
-                self.get_property::<HashedValue<Vec<UidMailbox>>>(
+                self.get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::Email,
                     document_id,
                     Property::MailboxIds,
                 )
                 .await?,
-                self.get_property::<HashedValue<Vec<Keyword>>>(
+                self.get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::Email,
                     document_id,
@@ -779,7 +780,18 @@ impl EmailSet for Server {
                 )
                 .await?,
             ) {
-                (TagManager::new(mailboxes), TagManager::new(keywords))
+                (
+                    TagManager::new(
+                        mailboxes
+                            .into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                            .caused_by(trc::location!())?,
+                    ),
+                    TagManager::new(
+                        keywords
+                            .into_deserialized::<ArchivedVec<ArchivedKeyword>, Vec<Keyword>>()
+                            .caused_by(trc::location!())?,
+                    ),
+                )
             } else {
                 response.not_updated.append(id, SetError::not_found());
                 continue 'update;

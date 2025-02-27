@@ -7,7 +7,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use sieve::Sieve;
-use store::{ahash::RandomState, blake3};
+use store::{ahash::RandomState, blake3, write::Archive};
 use utils::BlobHash;
 
 pub mod activate;
@@ -21,7 +21,7 @@ pub struct ActiveScript {
     pub document_id: u32,
     pub script_name: String,
     pub script: Arc<Sieve>,
-    pub seen_ids: SeenIds,
+    pub seen_ids: Option<Archive>,
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone)]

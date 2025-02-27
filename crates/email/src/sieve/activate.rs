@@ -9,11 +9,11 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     SerializeInfallible,
     query::Filter,
-    write::{ArchivedValue, BatchBuilder, assert::HashedValue},
+    write::{Archive, BatchBuilder, assert::HashedValue},
 };
 use trc::AddContext;
 
-use super::ArchivedSieveScript;
+use super::{ArchivedSieveScript, SieveScript};
 
 pub trait SieveScriptActivate: Sync + Send {
     fn sieve_activate_script(
@@ -59,7 +59,7 @@ impl SieveScriptActivate for Server {
         // Deactivate scripts
         for document_id in active_ids {
             if let Some(sieve) = self
-                .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
+                .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -67,7 +67,9 @@ impl SieveScriptActivate for Server {
                 )
                 .await?
             {
-                let sieve = sieve.into_deserialized().caused_by(trc::location!())?;
+                let sieve = sieve
+                    .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                    .caused_by(trc::location!())?;
                 let mut new_sieve = sieve.inner.clone();
                 new_sieve.is_active = false;
                 batch
@@ -86,7 +88,7 @@ impl SieveScriptActivate for Server {
         // Activate script
         if let Some(document_id) = activate_id {
             if let Some(sieve) = self
-                .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
+                .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -94,7 +96,9 @@ impl SieveScriptActivate for Server {
                 )
                 .await?
             {
-                let sieve = sieve.into_deserialized().caused_by(trc::location!())?;
+                let sieve = sieve
+                    .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                    .caused_by(trc::location!())?;
                 let mut new_sieve = sieve.inner.clone();
                 new_sieve.is_active = true;
                 batch

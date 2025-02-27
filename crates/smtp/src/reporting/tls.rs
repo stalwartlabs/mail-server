@@ -28,7 +28,7 @@ use reqwest::header::CONTENT_TYPE;
 use std::fmt::Write;
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass, now},
+    write::{BatchBuilder, LegacyBincode, QueueClass, ReportEvent, ValueClass, now},
 };
 use trc::{AddContext, OutgoingReportEvent};
 
@@ -299,7 +299,7 @@ impl TlsReporting for Server {
                 .core
                 .storage
                 .data
-                .get_value::<Bincode<TlsFormat>>(ValueKey::from(ValueClass::Queue(
+                .get_value::<LegacyBincode<TlsFormat>>(ValueKey::from(ValueClass::Queue(
                     QueueClass::TlsReportHeader(event.clone()),
                 )))
                 .await?
@@ -338,7 +338,7 @@ impl TlsReporting for Server {
                 .data
                 .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
                     if let Some(failure_details) =
-                        Bincode::<Option<FailureDetails>>::deserialize(v)?.inner
+                        LegacyBincode::<Option<FailureDetails>>::deserialize(v)?.inner
                     {
                         match record_map.entry(failure_details) {
                             Entry::Occupied(mut e) => {
@@ -491,7 +491,7 @@ impl TlsReporting for Server {
             // Write report
             builder.set(
                 ValueClass::Queue(QueueClass::TlsReportHeader(report_event.clone())),
-                match Bincode::new(entry).serialize() {
+                match LegacyBincode::new(entry).serialize() {
                     Ok(data) => data,
                     Err(err) => {
                         trc::error!(
@@ -508,7 +508,7 @@ impl TlsReporting for Server {
         report_event.seq_id = self.inner.data.queue_id_gen.generate().unwrap_or_else(now);
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
-            match Bincode::new(event.failure).serialize() {
+            match LegacyBincode::new(event.failure).serialize() {
                 Ok(data) => data,
                 Err(err) => {
                     trc::error!(

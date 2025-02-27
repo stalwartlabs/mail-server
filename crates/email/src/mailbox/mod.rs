@@ -10,7 +10,6 @@ use jmap_proto::types::value::AclGrant;
 pub mod destroy;
 pub mod index;
 pub mod manage;
-pub mod serialize;
 
 pub const INBOX_ID: u32 = 0;
 pub const TRASH_ID: u32 = 1;
@@ -31,7 +30,8 @@ pub struct Mailbox {
     pub acls: Vec<AclGrant>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, Copy)]
+#[rkyv(derive(Debug, Clone, Copy))]
 pub struct UidMailbox {
     pub mailbox_id: u32,
     pub uid: u32,

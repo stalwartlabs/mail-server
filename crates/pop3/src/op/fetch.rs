@@ -8,9 +8,9 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use email::message::metadata::MessageMetadata;
+use email::message::metadata::ArchivedMessageMetadata;
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::Bincode;
+use store::write::Archive;
 use trc::AddContext;
 
 use crate::{Session, protocol::response::Response};
@@ -25,9 +25,9 @@ impl<T: SessionStream> Session<T> {
         let op_start = Instant::now();
         let mailbox = self.state.mailbox();
         if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
-            if let Some(metadata) = self
+            if let Some(metadata_) = self
                 .server
-                .get_property::<Bincode<MessageMetadata>>(
+                .get_property::<Archive>(
                     mailbox.account_id,
                     Collection::Email,
                     message.id,
@@ -36,10 +36,13 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .caused_by(trc::location!())?
             {
+                let metadata = metadata_
+                    .unarchive::<ArchivedMessageMetadata>()
+                    .caused_by(trc::location!())?;
                 if let Some(bytes) = self
                     .server
                     .blob_store()
-                    .get_blob(metadata.inner.blob_hash.as_slice(), 0..usize::MAX)
+                    .get_blob(metadata.blob_hash.0.as_slice(), 0..usize::MAX)
                     .await
                     .caused_by(trc::location!())?
                 {

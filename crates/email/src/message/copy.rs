@@ -12,11 +12,11 @@ use jmap_proto::{
         property::Property,
     },
 };
-use mail_parser::{HeaderName, HeaderValue, parsers::fields::thread::thread_name};
+use mail_parser::parsers::fields::thread::thread_name;
 use store::{
     BlobClass, Serialize, SerializeInfallible,
     write::{
-        BatchBuilder, Bincode, MaybeDynamicId, TagValue, TaskQueueClass, ValueClass,
+        Archive, Archiver, BatchBuilder, MaybeDynamicId, TagValue, TaskQueueClass, ValueClass,
         log::{Changes, LogInsert},
     },
 };
@@ -25,9 +25,9 @@ use trc::AddContext;
 use crate::mailbox::UidMailbox;
 
 use super::{
-    index::{EmailIndexBuilder, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue, VisitValues},
+    index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue},
     ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
-    metadata::MessageMetadata,
+    metadata::{ArchivedMessageMetadata, HeaderName, HeaderValue, MessageMetadata},
 };
 
 pub trait EmailCopy: Sync + Send {
@@ -59,7 +59,7 @@ impl EmailCopy for Server {
         // Obtain metadata
         let account_id = resource_token.account_id;
         let mut metadata = if let Some(metadata) = self
-            .get_property::<Bincode<MessageMetadata>>(
+            .get_property::<Archive>(
                 from_account_id,
                 Collection::Email,
                 from_message_id,
@@ -67,7 +67,9 @@ impl EmailCopy for Server {
             )
             .await?
         {
-            metadata.inner
+            metadata
+                .deserialize::<ArchivedMessageMetadata, MessageMetadata>()
+                .caused_by(trc::location!())?
         } else {
             return Ok(Err(SetError::not_found().with_description(format!(
                 "Message not found not found in account {}.",
@@ -137,7 +139,7 @@ impl EmailCopy for Server {
 
         // Assign id
         let mut email = IngestedEmail {
-            size: metadata.size,
+            size: metadata.size as usize,
             ..Default::default()
         };
         let blob_hash = metadata.blob_hash.clone();
@@ -179,16 +181,20 @@ impl EmailCopy for Server {
             .log(LogEmailInsert::new(thread_id))
             .set(Property::ThreadId, maybe_thread_id)
             .tag(Property::ThreadId, TagValue::Id(maybe_thread_id))
+            .tag_many(Property::MailboxIds, mailbox_ids.iter())
             .set(
                 Property::MailboxIds,
-                mailbox_ids.serialize().caused_by(trc::location!())?,
+                Archiver::new(mailbox_ids)
+                    .serialize()
+                    .caused_by(trc::location!())?,
             )
+            .tag_many(Property::Keywords, keywords.iter())
             .set(
                 Property::Keywords,
-                keywords.serialize().caused_by(trc::location!())?,
+                Archiver::new(keywords)
+                    .serialize()
+                    .caused_by(trc::location!())?,
             )
-            .tag_many(Property::MailboxIds, mailbox_ids.iter())
-            .tag_many(Property::Keywords, keywords.into_iter())
             .set(Property::Cid, change_id.serialize())
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
@@ -197,8 +203,13 @@ impl EmailCopy for Server {
                 }),
                 vec![],
             );
-        EmailIndexBuilder::set(metadata)
-            .build(&mut batch, account_id, resource_token.tenant.map(|t| t.id))
+        metadata
+            .index(
+                &mut batch,
+                account_id,
+                resource_token.tenant.map(|t| t.id),
+                true,
+            )
             .caused_by(trc::location!())?;
 
         // Insert and obtain ids

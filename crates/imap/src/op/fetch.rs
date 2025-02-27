@@ -13,7 +13,11 @@ use crate::{
 use ahash::AHashMap;
 use common::listener::SessionStream;
 use directory::Permission;
-use email::message::metadata::MessageMetadata;
+use email::message::metadata::{
+    ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
+    ArchivedMessageMetadata, ArchivedMessageMetadataContents, ArchivedMetadataPartType,
+    DecodedParts,
+};
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     parser::PushUnique,
@@ -28,16 +32,21 @@ use imap_proto::{
     receiver::Request,
 };
 use jmap_proto::types::{
-    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
-    state::StateChange, type_state::DataType,
+    acl::Acl,
+    collection::Collection,
+    id::Id,
+    keyword::{ArchivedKeyword, Keyword},
+    property::Property,
+    state::StateChange,
+    type_state::DataType,
 };
-use mail_parser::{Address, GetHeader, HeaderName, Message, PartType};
+use mail_parser::DateTime;
 use store::{
     Serialize, SerializeInfallible,
     query::log::{Change, Query},
-    write::{BatchBuilder, Bincode, assert::HashedValue},
+    rkyv::{rend::u16_le, vec::ArchivedVec},
+    write::{Archive, Archiver, BatchBuilder, assert::HashedValue, serialize::rkyv_deserialize},
 };
-use trc::AddContext;
 
 use super::{FromModSeq, ImapContext};
 
@@ -300,9 +309,9 @@ impl<T: SessionStream> SessionData<T> {
 
         for (seqnum, uid, id) in ids {
             // Obtain attributes and keywords
-            let (email, keywords) = if let (Some(email), Some(keywords)) = (
+            let (email_, keywords_) = if let (Some(email), Some(keywords)) = (
                 self.server
-                    .get_property::<Bincode<MessageMetadata>>(
+                    .get_property::<Archive>(
                         account_id,
                         Collection::Email,
                         id,
@@ -311,7 +320,7 @@ impl<T: SessionStream> SessionData<T> {
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
                 self.server
-                    .get_property::<HashedValue<Vec<Keyword>>>(
+                    .get_property::<HashedValue<Archive>>(
                         account_id,
                         Collection::Email,
                         id,
@@ -320,7 +329,7 @@ impl<T: SessionStream> SessionData<T> {
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
             ) {
-                (email.inner, keywords)
+                (email, keywords)
             } else {
                 trc::event!(
                     Store(trc::StoreEvent::NotFound),
@@ -332,25 +341,32 @@ impl<T: SessionStream> SessionData<T> {
                 );
                 continue;
             };
+            let email = email_
+                .unarchive::<ArchivedMessageMetadata>()
+                .imap_ctx(&arguments.tag, trc::location!())?;
+            let keywords = keywords_
+                .inner
+                .unarchive::<ArchivedVec<ArchivedKeyword>>()
+                .imap_ctx(&arguments.tag, trc::location!())?;
 
             // Fetch and parse blob
-            let raw_message = if needs_blobs {
+            let raw_message: Cow<[u8]> = if needs_blobs {
                 // Retrieve raw message if needed
                 match self
                     .server
                     .blob_store()
-                    .get_blob(email.blob_hash.as_slice(), 0..usize::MAX)
+                    .get_blob(email.blob_hash.0.as_slice(), 0..usize::MAX)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
                 {
-                    Some(raw_message) => raw_message,
+                    Some(raw_message) => raw_message.into(),
                     None => {
                         trc::event!(
                             Store(trc::StoreEvent::NotFound),
                             AccountId = account_id,
                             DocumentId = id,
                             Collection = Collection::Email,
-                            BlobId = email.blob_hash.to_hex(),
+                            BlobId = email.blob_hash.0.as_slice(),
                             Details = "Blob not found.",
                             CausedBy = trc::location!(),
                         );
@@ -359,14 +375,15 @@ impl<T: SessionStream> SessionData<T> {
                     }
                 }
             } else {
-                email.raw_headers
+                email.raw_headers.as_slice().into()
             };
-            let message = email.contents.into_message(&raw_message);
+            let message = &email.contents;
+            let decoded = message.decode_contents(raw_message.as_ref());
 
             // Build response
             let mut items = Vec::with_capacity(arguments.attributes.len());
             let set_seen_flag =
-                set_seen_flags && !keywords.inner.iter().any(|k| k == &Keyword::Seen);
+                set_seen_flags && !keywords.iter().any(|k| k == &ArchivedKeyword::Seen);
             let thread_id = if needs_thread_id || set_seen_flag {
                 if let Some(thread_id) = self
                     .server
@@ -389,11 +406,7 @@ impl<T: SessionStream> SessionData<T> {
                         });
                     }
                     Attribute::Flags => {
-                        let mut flags = keywords
-                            .inner
-                            .iter()
-                            .map(|k| Flag::from(k.clone()))
-                            .collect::<Vec<_>>();
+                        let mut flags = keywords.iter().map(Flag::from).collect::<Vec<_>>();
                         if set_seen_flag {
                             flags.push(Flag::Seen);
                         }
@@ -401,7 +414,7 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::InternalDate => {
                         items.push(DataItem::InternalDate {
-                            date: email.received_at as i64,
+                            date: u64::from(email.received_at) as i64,
                         });
                     }
                     Attribute::Preview { .. } => {
@@ -414,21 +427,24 @@ impl<T: SessionStream> SessionData<T> {
                         });
                     }
                     Attribute::Rfc822Size => {
-                        items.push(DataItem::Rfc822Size { size: email.size });
+                        items.push(DataItem::Rfc822Size {
+                            size: u32::from(email.size) as usize,
+                        });
                     }
                     Attribute::Uid => {
                         items.push(DataItem::Uid { uid });
                     }
                     Attribute::Rfc822 => {
                         items.push(DataItem::Rfc822 {
-                            contents: raw_message.as_slice().into(),
+                            contents: raw_message.as_ref().into(),
                         });
                     }
                     Attribute::Rfc822Header => {
-                        let message = message.root_part();
-                        if let Some(header) =
-                            raw_message.get(message.offset_header..message.offset_body)
-                        {
+                        let message = email.root_part();
+                        if let Some(header) = raw_message.get(
+                            u32::from(message.offset_header) as usize
+                                ..u32::from(message.offset_body) as usize,
+                        ) {
                             items.push(DataItem::Rfc822Header {
                                 contents: header.into(),
                             });
@@ -436,23 +452,23 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::Rfc822Text => {
                         items.push(DataItem::Rfc822Text {
-                            contents: raw_message.as_slice().into(),
+                            contents: raw_message.as_ref().into(),
                         });
                     }
                     Attribute::Body => {
                         items.push(DataItem::Body {
-                            part: message.body_structure(false),
+                            part: message.body_structure(&decoded, false),
                         });
                     }
                     Attribute::BodyStructure => {
                         items.push(DataItem::BodyStructure {
-                            part: message.body_structure(true),
+                            part: message.body_structure(&decoded, true),
                         });
                     }
                     Attribute::BodySection {
                         sections, partial, ..
                     } => {
-                        if let Some(contents) = message.body_section(sections, *partial) {
+                        if let Some(contents) = message.body_section(&decoded, sections, *partial) {
                             items.push(DataItem::BodySection {
                                 sections: sections.to_vec(),
                                 origin_octet: partial.map(|(start, _)| start),
@@ -463,7 +479,7 @@ impl<T: SessionStream> SessionData<T> {
 
                     Attribute::Binary {
                         sections, partial, ..
-                    } => match message.binary(sections, *partial) {
+                    } => match message.binary(&decoded, sections, *partial) {
                         Ok(Some(contents)) => {
                             items.push(DataItem::Binary {
                                 sections: sections.to_vec(),
@@ -492,7 +508,7 @@ impl<T: SessionStream> SessionData<T> {
                         _ => (),
                     },
                     Attribute::BinarySize { sections } => {
-                        if let Some(size) = message.binary_size(sections) {
+                        if let Some(size) = message.binary_size(&decoded, sections) {
                             items.push(DataItem::BinarySize {
                                 sections: sections.to_vec(),
                                 size,
@@ -523,11 +539,7 @@ impl<T: SessionStream> SessionData<T> {
 
             // Add flags to the response if the message was unseen
             if set_seen_flag && !arguments.attributes.contains(&Attribute::Flags) {
-                let mut flags = keywords
-                    .inner
-                    .iter()
-                    .map(|k| Flag::from(k.clone()))
-                    .collect::<Vec<_>>();
+                let mut flags = keywords.iter().map(Flag::from).collect::<Vec<_>>();
                 flags.push(Flag::Seen);
                 items.push(DataItem::Flags { flags });
             }
@@ -539,7 +551,14 @@ impl<T: SessionStream> SessionData<T> {
 
             // Add to set flags
             if set_seen_flag {
-                set_seen_ids.push((Id::from_parts(thread_id, id), keywords));
+                set_seen_ids.push((
+                    Id::from_parts(thread_id, id),
+                    HashedValue {
+                        hash: keywords_.hash,
+                        inner: rkyv_deserialize::<_, Vec<Keyword>>(keywords)
+                            .imap_ctx(&arguments.tag, trc::location!())?,
+                    },
+                ));
             }
         }
 
@@ -559,7 +578,9 @@ impl<T: SessionStream> SessionData<T> {
                     .assert_value(Property::Keywords, &keywords)
                     .set(
                         Property::Keywords,
-                        keywords.inner.serialize().caused_by(trc::location!())?,
+                        Archiver::new(keywords.inner)
+                            .serialize()
+                            .imap_ctx(&arguments.tag, trc::location!())?,
                     )
                     .tag(Property::Keywords, Keyword::Seen)
                     .set(Property::Cid, changelog.change_id.serialize());
@@ -568,7 +589,7 @@ impl<T: SessionStream> SessionData<T> {
                     .store()
                     .write(batch)
                     .await
-                    .caused_by(trc::location!())
+                    .imap_ctx(&arguments.tag, trc::location!())
                 {
                     Ok(_) => {
                         changelog.log_update(Collection::Email, id);
@@ -625,46 +646,58 @@ impl<T: SessionStream> SessionData<T> {
 }
 
 #[allow(clippy::result_unit_err)]
-pub trait AsImapDataItem<'x> {
-    fn body_structure(&self, is_extended: bool) -> BodyPart;
-    fn body_section<'z: 'x>(
-        &'z self,
+pub trait AsImapDataItem {
+    fn body_structure(&self, decoded: &DecodedParts<'_>, is_extended: bool) -> BodyPart;
+    fn body_section<'x>(
+        &self,
+        decoded: &'x DecodedParts<'x>,
         sections: &[Section],
         partial: Option<(u32, u32)>,
     ) -> Option<Cow<'x, [u8]>>;
-    fn binary(
+    fn binary<'x>(
         &self,
+        decoded: &'x DecodedParts<'x>,
         sections: &[u32],
         partial: Option<(u32, u32)>,
-    ) -> Result<Option<BodyContents>, ()>;
-    fn binary_size(&self, sections: &[u32]) -> Option<usize>;
-    fn as_body_part(&self, part_id: usize, is_extended: bool) -> BodyPart;
+    ) -> Result<Option<BodyContents<'x>>, ()>;
+    fn binary_size(&self, decoded: &DecodedParts<'_>, sections: &[u32]) -> Option<usize>;
+    fn as_body_part(
+        &self,
+        decoded: &DecodedParts<'_>,
+        message_id: usize,
+        part_id: usize,
+        is_extended: bool,
+    ) -> BodyPart;
     fn envelope(&self) -> Envelope;
 }
 
-impl<'x> AsImapDataItem<'x> for Message<'x> {
-    fn body_structure(&self, is_extended: bool) -> BodyPart {
+impl AsImapDataItem for ArchivedMessageMetadataContents {
+    fn body_structure(&self, decoded: &DecodedParts<'_>, is_extended: bool) -> BodyPart {
         let mut stack = Vec::new();
-        let mut parts = [0].iter();
+        let base_part = [u16_le::from_native(0)];
+        let mut parts = base_part.as_slice().iter();
         let mut message = self;
         let mut root_part = None;
+        let mut message_id = 0;
 
         loop {
             while let Some(part_id) = parts.next() {
-                let mut part = message.as_body_part(*part_id, is_extended);
+                let part_id = u16::from(part_id) as usize;
+                let mut part = message.as_body_part(decoded, message_id, part_id, is_extended);
 
-                match &message.parts[*part_id].body {
-                    PartType::Message(nested_message) => {
+                match &message.parts[part_id].body {
+                    ArchivedMetadataPartType::Message(nested_message) => {
                         part.set_envelope(nested_message.envelope());
                         if let Some(root_part) = root_part {
-                            stack.push((root_part, parts, message.into()));
+                            stack.push((root_part, parts, (message, message_id).into()));
+                            message_id += 1;
                         }
                         root_part = part.into();
-                        parts = [0].iter();
+                        parts = base_part.as_slice().iter();
                         message = nested_message;
                         continue;
                     }
-                    PartType::Multipart(subparts) => {
+                    ArchivedMetadataPartType::Multipart(subparts) => {
                         if let Some(root_part) = root_part {
                             stack.push((root_part, parts, None));
                         }
@@ -681,8 +714,9 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                 }
             }
             if let Some((mut prev_root_part, prev_parts, prev_message)) = stack.pop() {
-                if let Some(prev_message) = prev_message {
+                if let Some((prev_message, prev_message_id)) = prev_message {
                     message = prev_message;
+                    message_id = prev_message_id;
                 }
 
                 prev_root_part.add_part(root_part.unwrap());
@@ -696,17 +730,23 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         root_part.unwrap()
     }
 
-    fn as_body_part(&self, part_id: usize, is_extended: bool) -> BodyPart {
+    fn as_body_part(
+        &self,
+        decoded: &DecodedParts<'_>,
+        message_id: usize,
+        part_id: usize,
+        is_extended: bool,
+    ) -> BodyPart {
         let part = &self.parts[part_id];
-        let body = self.raw_message.get(part.offset_body..part.offset_end);
+        let body = decoded.raw_message_section_arch(message_id, part.offset_body, part.offset_end);
         let (is_multipart, is_text) = match &part.body {
-            PartType::Text(_) | PartType::Html(_) => (false, true),
-            PartType::Multipart(_) => (true, false),
+            ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html => (false, true),
+            ArchivedMetadataPartType::Multipart(_) => (true, false),
             _ => (false, false),
         };
         let content_type = part
             .headers
-            .header_value(&HeaderName::ContentType)
+            .header_value(&ArchivedHeaderName::ContentType)
             .and_then(|ct| ct.as_content_type());
 
         let mut body_md5 = None;
@@ -717,7 +757,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
             fields.body_parameters = content_type.as_ref().and_then(|ct| {
                 ct.attributes.as_ref().map(|at| {
                     at.iter()
-                        .map(|(h, v)| (h.as_ref().into(), v.as_ref().into()))
+                        .map(|k| (k.0.as_ref().into(), k.1.as_ref().into()))
                         .collect::<Vec<_>>()
                 })
             })
@@ -730,17 +770,17 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 
             fields.body_id = part
                 .headers
-                .header_value(&HeaderName::ContentId)
+                .header_value(&ArchivedHeaderName::ContentId)
                 .and_then(|id| id.as_text().map(|id| format!("<{}>", id).into()));
 
             fields.body_description = part
                 .headers
-                .header_value(&HeaderName::ContentDescription)
+                .header_value(&ArchivedHeaderName::ContentDescription)
                 .and_then(|ct| ct.as_text().map(|ct| ct.into()));
 
             fields.body_encoding = part
                 .headers
-                .header_value(&HeaderName::ContentTransferEncoding)
+                .header_value(&ArchivedHeaderName::ContentTransferEncoding)
                 .and_then(|ct| ct.as_text().map(|ct| ct.into()));
 
             fields.body_size_octets = body.as_ref().map(|b| b.len()).unwrap_or(0);
@@ -767,7 +807,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 
             extension.body_disposition = part
                 .headers
-                .header_value(&HeaderName::ContentDisposition)
+                .header_value(&ArchivedHeaderName::ContentDisposition)
                 .and_then(|cd| cd.as_content_type())
                 .map(|cd| {
                     (
@@ -776,7 +816,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                             .as_ref()
                             .map(|at| {
                                 at.iter()
-                                    .map(|(h, v)| (h.as_ref().into(), v.as_ref().into()))
+                                    .map(|k| (k.0.as_ref().into(), k.1.as_ref().into()))
                                     .collect::<Vec<_>>()
                             })
                             .unwrap_or_default(),
@@ -785,7 +825,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 
             extension.body_language = part
                 .headers
-                .header_value(&HeaderName::ContentLanguage)
+                .header_value(&ArchivedHeaderName::ContentLanguage)
                 .and_then(|hv| {
                     hv.as_text_list()
                         .map(|list| list.iter().map(|item| item.as_ref().into()).collect())
@@ -793,12 +833,12 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 
             extension.body_location = part
                 .headers
-                .header_value(&HeaderName::ContentLocation)
+                .header_value(&ArchivedHeaderName::ContentLocation)
                 .and_then(|ct| ct.as_text().map(|ct| ct.into()));
         }
 
         match &part.body {
-            PartType::Multipart(parts) => BodyPart::Multipart {
+            ArchivedMetadataPartType::Multipart(parts) => BodyPart::Multipart {
                 body_parts: Vec::with_capacity(parts.len()),
                 body_subtype: content_type
                     .as_ref()
@@ -807,7 +847,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                 body_parameters: fields.body_parameters,
                 extension,
             },
-            PartType::Message(_) => BodyPart::Message {
+            ArchivedMetadataPartType::Message(_) => BodyPart::Message {
                 fields,
                 envelope: None,
                 body: None,
@@ -840,8 +880,9 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         }
     }
 
-    fn body_section<'z: 'x>(
-        &'z self,
+    fn body_section<'x>(
+        &self,
+        decoded: &'x DecodedParts<'x>,
         sections: &[Section],
         partial: Option<(u32, u32)>,
     ) -> Option<Cow<'x, [u8]>> {
@@ -849,7 +890,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         if sections.is_empty() {
             return Some(
                 get_partial_bytes(
-                    self.raw_message.get(part.offset_header..part.offset_end)?,
+                    decoded.raw_message_section_arch(0, part.offset_header, part.offset_end)?,
                     partial,
                 )
                 .into(),
@@ -857,6 +898,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         }
 
         let mut message = self;
+        let mut message_id = 0;
         let mut sections_iter = sections.iter().enumerate().peekable();
 
         while let Some((section_num, section)) = sections_iter.next() {
@@ -865,7 +907,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     part = if let Some(sub_part_ids) = part.sub_parts() {
                         sub_part_ids
                             .get((*num).saturating_sub(1) as usize)
-                            .and_then(|pos| message.parts.get(*pos))
+                            .and_then(|pos| message.parts.get(u16::from(*pos) as usize))
                     } else if *num == 1 && (section_num == sections.len() - 1 || part.is_message())
                     {
                         Some(part)
@@ -874,7 +916,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     }?;
 
                     if let (
-                        PartType::Message(nested_message),
+                        ArchivedMetadataPartType::Message(nested_message),
                         Some((
                             _,
                             Section::Part { .. }
@@ -886,32 +928,40 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     {
                         message = nested_message;
                         part = message.root_part();
+                        message_id += 1;
                     }
                 }
                 Section::Header => {
                     return Some(
                         get_partial_bytes(
-                            message
-                                .raw_message
-                                .get(part.offset_header..part.offset_body)?,
+                            decoded.raw_message_section_arch(
+                                message_id,
+                                part.offset_header,
+                                part.offset_body,
+                            )?,
                             partial,
                         )
                         .into(),
                     );
                 }
                 Section::HeaderFields { not, fields } => {
-                    let mut headers =
-                        Vec::with_capacity(part.offset_body.saturating_sub(part.offset_header));
-                    for header in &part.headers {
+                    let mut headers = Vec::with_capacity(
+                        u32::from(part.offset_body).saturating_sub(u32::from(part.offset_header))
+                            as usize,
+                    );
+                    for header in part.headers.iter() {
                         let header_name = header.name.as_str();
                         if fields.iter().any(|f| header_name.eq_ignore_ascii_case(f)) != *not {
                             headers.extend_from_slice(header_name.as_bytes());
                             headers.push(b':');
                             headers.extend_from_slice(
-                                message
-                                    .raw_message
-                                    .get(header.offset_start..header.offset_end)
-                                    .unwrap_or(b""),
+                                decoded
+                                    .raw_message_section_arch(
+                                        message_id,
+                                        header.offset_start,
+                                        header.offset_end,
+                                    )
+                                    .unwrap_or_default(),
                             );
                         }
                     }
@@ -927,26 +977,35 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                 Section::Text => {
                     return Some(
                         get_partial_bytes(
-                            message.raw_message.get(part.offset_body..part.offset_end)?,
+                            decoded.raw_message_section_arch(
+                                message_id,
+                                part.offset_body,
+                                part.offset_end,
+                            )?,
                             partial,
                         )
                         .into(),
                     );
                 }
                 Section::Mime => {
-                    let mut headers =
-                        Vec::with_capacity(part.offset_body.saturating_sub(part.offset_header));
-                    for header in &part.headers {
+                    let mut headers = Vec::with_capacity(
+                        u32::from(part.offset_body).saturating_sub(u32::from(part.offset_header))
+                            as usize,
+                    );
+                    for header in part.headers.iter() {
                         if header.name.is_mime_header()
                             || header.name.as_str().starts_with("Content-")
                         {
                             headers.extend_from_slice(header.name.as_str().as_bytes());
                             headers.extend_from_slice(b":");
                             headers.extend_from_slice(
-                                message
-                                    .raw_message
-                                    .get(header.offset_start..header.offset_end)
-                                    .unwrap_or(b""),
+                                decoded
+                                    .raw_message_section_arch(
+                                        message_id,
+                                        header.offset_start,
+                                        header.offset_end,
+                                    )
+                                    .unwrap_or_default(),
                             );
                         }
                     }
@@ -965,73 +1024,96 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 
         Some(
             get_partial_bytes(
-                message.raw_message.get(part.offset_body..part.offset_end)?,
+                decoded.raw_message_section_arch(message_id, part.offset_body, part.offset_end)?,
                 partial,
             )
             .into(),
         )
     }
 
-    fn binary(
+    fn binary<'x>(
         &self,
+        decoded: &'x DecodedParts<'x>,
         sections: &[u32],
         partial: Option<(u32, u32)>,
-    ) -> Result<Option<BodyContents>, ()> {
+    ) -> Result<Option<BodyContents<'x>>, ()> {
         let mut message = self;
+        let mut message_id = 0;
         let mut part = self.root_part();
+        let mut part_id = 0;
         let mut sections_iter = sections.iter().enumerate().peekable();
 
         while let Some((section_num, num)) = sections_iter.next() {
             part = if let Some(sub_part_ids) = part.sub_parts() {
+                part_id = (*num).saturating_sub(1) as usize;
                 if let Some(part) = sub_part_ids
-                    .get((*num).saturating_sub(1) as usize)
-                    .and_then(|pos| message.parts.get(*pos))
+                    .get(part_id)
+                    .and_then(|pos| message.parts.get(u16::from(*pos) as usize))
                 {
                     part
                 } else {
                     return Ok(None);
                 }
             } else if *num == 1 && (section_num == sections.len() - 1 || part.is_message()) {
+                part_id = 0;
                 part
             } else {
                 return Ok(None);
             };
 
-            if let (PartType::Message(nested_message), Some(_)) = (&part.body, sections_iter.peek())
+            if let (ArchivedMetadataPartType::Message(nested_message), Some(_)) =
+                (&part.body, sections_iter.peek())
             {
                 message = nested_message;
                 part = message.root_part();
+                message_id += 1;
             }
         }
 
         if !part.is_encoding_problem {
             Ok(match &part.body {
-                PartType::Text(text) | PartType::Html(text) => BodyContents::Text(
-                    String::from_utf8_lossy(get_partial_bytes(text.as_bytes(), partial)),
-                )
-                .into(),
-                PartType::Binary(bytes) | PartType::InlineBinary(bytes) => {
-                    BodyContents::Bytes(get_partial_bytes(bytes.as_ref(), partial).into()).into()
-                }
-                PartType::Message(message) => BodyContents::Bytes(
-                    get_partial_bytes(
-                        message
-                            .raw_message
-                            .get(
-                                message.root_part().raw_header_offset()
-                                    ..message.root_part().raw_end_offset(),
-                            )
-                            .unwrap_or_default(),
+                ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html => {
+                    BodyContents::Text(String::from_utf8_lossy(get_partial_bytes(
+                        decoded.binary_part(message_id, part_id).unwrap_or_default(),
                         partial,
+                    )))
+                    .into()
+                }
+                ArchivedMetadataPartType::Binary | ArchivedMetadataPartType::InlineBinary => {
+                    BodyContents::Bytes(
+                        get_partial_bytes(
+                            decoded.binary_part(message_id, part_id).unwrap_or_default(),
+                            partial,
+                        )
+                        .into(),
                     )
-                    .into(),
-                )
+                    .into()
+                }
+                ArchivedMetadataPartType::Message(message) => BodyContents::Bytes({
+                    {
+                        let part = message.root_part();
+                        get_partial_bytes(
+                            decoded
+                                .raw_message_section_arch(
+                                    message_id,
+                                    part.offset_header,
+                                    part.offset_end,
+                                )
+                                .unwrap_or_default(),
+                            partial,
+                        )
+                        .into()
+                    }
+                })
                 .into(),
-                PartType::Multipart(_) => BodyContents::Bytes(
+                ArchivedMetadataPartType::Multipart(_) => BodyContents::Bytes(
                     get_partial_bytes(
-                        message
-                            .raw_message
-                            .get(part.raw_header_offset()..part.raw_end_offset())
+                        decoded
+                            .raw_message_section_arch(
+                                message_id,
+                                part.offset_header,
+                                part.offset_end,
+                            )
                             .unwrap_or_default(),
                         partial,
                     )
@@ -1044,67 +1126,79 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         }
     }
 
-    fn binary_size(&self, sections: &[u32]) -> Option<usize> {
+    fn binary_size(&self, decoded: &DecodedParts<'_>, sections: &[u32]) -> Option<usize> {
         let mut message = self;
+        let mut message_id = 0;
         let mut part = self.root_part();
+        let mut part_id = 0;
         let mut sections_iter = sections.iter().enumerate().peekable();
 
         while let Some((section_num, num)) = sections_iter.next() {
+            part_id = (*num).saturating_sub(1) as usize;
             part = if let Some(sub_part_ids) = part.sub_parts() {
                 sub_part_ids
-                    .get((*num).saturating_sub(1) as usize)
-                    .and_then(|pos| message.parts.get(*pos))
+                    .get(part_id)
+                    .and_then(|pos| message.parts.get(u16::from(pos) as usize))
             } else if *num == 1 && (section_num == sections.len() - 1 || part.is_message()) {
                 Some(part)
             } else {
                 None
             }?;
 
-            if let (PartType::Message(nested_message), Some(_)) = (&part.body, sections_iter.peek())
+            if let (ArchivedMetadataPartType::Message(nested_message), Some(_)) =
+                (&part.body, sections_iter.peek())
             {
                 message = nested_message;
+                message_id += 1;
                 part = message.root_part();
+                part_id = 0;
             }
         }
 
         match &part.body {
-            PartType::Text(text) | PartType::Html(text) => text.len(),
-            PartType::Binary(bytes) | PartType::InlineBinary(bytes) => bytes.len(),
-            PartType::Message(message) => message.root_part().raw_len(),
-            PartType::Multipart(_) => part.raw_len(),
+            ArchivedMetadataPartType::Text
+            | ArchivedMetadataPartType::Html
+            | ArchivedMetadataPartType::Binary
+            | ArchivedMetadataPartType::InlineBinary => decoded
+                .part(message_id, part_id)
+                .map(|p| p.len())
+                .unwrap_or_default(),
+            ArchivedMetadataPartType::Message(message) => message.root_part().raw_len(),
+            ArchivedMetadataPartType::Multipart(_) => part.raw_len(),
         }
         .into()
     }
 
     fn envelope(&self) -> Envelope {
+        let headers = self.root_part();
         Envelope {
-            date: self.date().cloned(),
-            subject: self.subject().map(|s| s.into()),
-            from: self
-                .header_values(HeaderName::From)
+            date: headers.date().map(DateTime::from_timestamp),
+            subject: headers.subject().map(|s| s.into()),
+            from: headers
+                .header_values(ArchivedHeaderName::From)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
-            sender: self
-                .header_values(HeaderName::Sender)
+            sender: headers
+                .header_values(ArchivedHeaderName::Sender)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
-            reply_to: self
-                .header_values(HeaderName::ReplyTo)
+            reply_to: headers
+                .header_values(ArchivedHeaderName::ReplyTo)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
-            to: self
-                .header_values(HeaderName::To)
+            to: headers
+                .header_values(ArchivedHeaderName::To)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
-            cc: self
-                .header_values(HeaderName::Cc)
+            cc: headers
+                .header_values(ArchivedHeaderName::Cc)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
-            bcc: self
-                .header_values(HeaderName::Bcc)
+            bcc: headers
+                .header_values(ArchivedHeaderName::Bcc)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
-            in_reply_to: self.in_reply_to().as_text_list().map(|list| {
+            in_reply_to: headers.in_reply_to().as_text_list().map(|list| {
                 let mut irt = String::with_capacity(list.len() * 10);
                 for (pos, l) in list.iter().enumerate() {
                     if pos > 0 {
@@ -1116,7 +1210,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                 }
                 irt.into()
             }),
-            message_id: self.message_id().map(|id| format!("<{}>", id).into()),
+            message_id: headers.message_id().map(|id| format!("<{}>", id).into()),
         }
     }
 }
@@ -1136,14 +1230,14 @@ trait AsImapAddress {
     fn as_imap_address(&self) -> Vec<fetch::Address>;
 }
 
-impl AsImapAddress for mail_parser::HeaderValue<'_> {
+impl AsImapAddress for ArchivedHeaderValue {
     fn as_imap_address(&self) -> Vec<fetch::Address> {
         let mut addresses = Vec::new();
 
         match self {
-            mail_parser::HeaderValue::Address(Address::List(list)) => {
-                for addr in list {
-                    if let Some(email) = &addr.address {
+            ArchivedHeaderValue::Address(ArchivedAddress::List(list)) => {
+                for addr in list.iter() {
+                    if let Some(email) = addr.address.as_ref() {
                         addresses.push(fetch::Address::Single(fetch::EmailAddress {
                             name: addr.name.as_ref().map(|n| n.as_ref().into()),
                             address: email.as_ref().into(),
@@ -1151,8 +1245,8 @@ impl AsImapAddress for mail_parser::HeaderValue<'_> {
                     }
                 }
             }
-            mail_parser::HeaderValue::Address(Address::Group(list)) => {
-                for group in list {
+            ArchivedHeaderValue::Address(ArchivedAddress::Group(list)) => {
+                for group in list.iter() {
                     addresses.push(fetch::Address::Group(fetch::AddressGroup {
                         name: group.name.as_ref().map(|n| n.as_ref().into()),
                         addresses: group
