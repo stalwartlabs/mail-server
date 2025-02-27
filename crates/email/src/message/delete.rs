@@ -8,28 +8,26 @@ use std::time::Duration;
 
 use common::{KV_LOCK_PURGE_ACCOUNT, Server};
 use jmap_proto::types::{
-    collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
-    type_state::DataType,
+    collection::Collection, id::Id, keyword::ArchivedKeyword, property::Property,
+    state::StateChange, type_state::DataType,
 };
+use rkyv::vec::ArchivedVec;
 use store::{
     BitmapKey, IterateParams, U32_LEN, ValueKey,
     ahash::AHashMap,
     roaring::RoaringBitmap,
     write::{
-        BatchBuilder, Bincode, BitmapClass, MaybeDynamicId, TagValue, ValueClass,
+        Archive, BatchBuilder, BitmapClass, MaybeDynamicId, TagValue, ValueClass,
         log::ChangeLogBuilder,
     },
 };
 use trc::{AddContext, StoreEvent};
-use utils::codec::leb128::Leb128Reader;
+use utils::{BlobHash, codec::leb128::Leb128Reader};
 
 use std::future::Future;
 use store::rand::prelude::SliceRandom;
 
-use crate::{
-    mailbox::*,
-    message::{index::EmailIndexBuilder, metadata::MessageMetadata},
-};
+use crate::{mailbox::*, message::metadata::ArchivedMessageMetadata};
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_tombstone(
@@ -67,7 +65,7 @@ impl EmailDeletion for Server {
         // Fetch mailboxes and threadIds
         let mut thread_ids: AHashMap<u32, i32> = AHashMap::new();
         for (document_id, mailboxes) in self
-            .get_properties::<Vec<UidMailbox>, _, _>(
+            .get_properties::<Archive, _, _>(
                 account_id,
                 Collection::Email,
                 &document_ids,
@@ -78,7 +76,12 @@ impl EmailDeletion for Server {
             delete_properties.insert(
                 document_id,
                 DeleteProperties {
-                    mailboxes,
+                    mailboxes: mailboxes
+                        .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                        .caused_by(trc::location!())?
+                        .iter()
+                        .map(|m| u32::from(m.mailbox_id))
+                        .collect(),
                     thread_id: None,
                 },
             );
@@ -151,12 +154,14 @@ impl EmailDeletion for Server {
 
             if !delete_properties.mailboxes.is_empty() {
                 for mailbox_id in &delete_properties.mailboxes {
-                    debug_assert!(mailbox_id.uid != 0);
-                    changes.log_child_update(Collection::Mailbox, mailbox_id.mailbox_id);
+                    changes.log_child_update(Collection::Mailbox, *mailbox_id);
                 }
 
                 batch
-                    .untag_many(Property::MailboxIds, delete_properties.mailboxes.iter())
+                    .untag_many(
+                        Property::MailboxIds,
+                        delete_properties.mailboxes.iter().copied(),
+                    )
                     .clear(Property::MailboxIds);
             } else {
                 trc::event!(
@@ -437,11 +442,11 @@ impl EmailDeletion for Server {
                 );
 
             // Remove keywords
-            if let Some(keywords) = self
+            if let Some(keywords_) = self
                 .core
                 .storage
                 .data
-                .get_value::<Vec<Keyword>>(ValueKey {
+                .get_value::<Archive>(ValueKey {
                     account_id,
                     collection: Collection::Email.into(),
                     document_id,
@@ -449,8 +454,11 @@ impl EmailDeletion for Server {
                 })
                 .await?
             {
+                let keywords = keywords_
+                    .unarchive::<ArchivedVec<ArchivedKeyword>>()
+                    .caused_by(trc::location!())?;
                 batch
-                    .untag_many(Property::Keywords, keywords.into_iter())
+                    .untag_many(Property::Keywords, keywords.iter())
                     .clear(Property::Keywords);
             } else {
                 trc::event!(
@@ -463,11 +471,11 @@ impl EmailDeletion for Server {
             }
 
             // Remove message metadata
-            if let Some(metadata) = self
+            if let Some(metadata_) = self
                 .core
                 .storage
                 .data
-                .get_value::<Bincode<MessageMetadata>>(ValueKey {
+                .get_value::<Archive>(ValueKey {
                     account_id,
                     collection: Collection::Email.into(),
                     document_id,
@@ -475,6 +483,10 @@ impl EmailDeletion for Server {
                 })
                 .await?
             {
+                let metadata = metadata_
+                    .unarchive::<ArchivedMessageMetadata>()
+                    .caused_by(trc::location!())?;
+
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL
@@ -484,15 +496,15 @@ impl EmailDeletion for Server {
                 self.core.hold_undelete(
                     &mut batch,
                     Collection::Email.into(),
-                    &metadata.inner.blob_hash,
-                    metadata.inner.size,
+                    &BlobHash::from(&metadata.blob_hash),
+                    u32::from(metadata.size) as usize,
                 );
 
                 // SPDX-SnippetEnd
 
                 // Delete message
-                EmailIndexBuilder::clear(metadata.inner)
-                    .build(&mut batch, account_id, tenant_id)
+                metadata
+                    .index(&mut batch, account_id, tenant_id, false)
                     .caused_by(trc::location!())?;
 
                 // Commit batch
@@ -514,6 +526,6 @@ impl EmailDeletion for Server {
 
 #[derive(Default, Debug)]
 struct DeleteProperties {
-    mailboxes: Vec<UidMailbox>,
+    mailboxes: Vec<u32>,
     thread_id: Option<u32>,
 }

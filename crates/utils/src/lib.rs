@@ -48,6 +48,10 @@ impl BlobHash {
         BlobHash([u8::MAX; BLOB_HASH_LEN])
     }
 
+    pub fn generate(value: impl AsRef<[u8]>) -> Self {
+        BlobHash(blake3::hash(value.as_ref()).into())
+    }
+
     pub fn try_from_hash_slice(value: &[u8]) -> Result<BlobHash, std::array::TryFromSliceError> {
         value.try_into().map(BlobHash)
     }
@@ -65,27 +69,9 @@ impl BlobHash {
     }
 }
 
-impl From<&[u8]> for BlobHash {
-    fn from(value: &[u8]) -> Self {
-        BlobHash(blake3::hash(value).into())
-    }
-}
-
 impl From<&ArchivedBlobHash> for BlobHash {
     fn from(value: &ArchivedBlobHash) -> Self {
-        value.0.as_slice().into()
-    }
-}
-
-impl From<Vec<u8>> for BlobHash {
-    fn from(value: Vec<u8>) -> Self {
-        value.as_slice().into()
-    }
-}
-
-impl From<&Vec<u8>> for BlobHash {
-    fn from(value: &Vec<u8>) -> Self {
-        value.as_slice().into()
+        BlobHash(value.0)
     }
 }
 

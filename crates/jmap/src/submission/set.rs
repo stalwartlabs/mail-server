@@ -13,7 +13,7 @@ use common::{
 };
 use email::{
     identity::ArchivedIdentity,
-    message::metadata::MessageMetadata,
+    message::metadata::{ArchivedHeaderName, ArchivedHeaderValue, ArchivedMessageMetadata},
     submission::{
         Address, ArchivedEmailSubmission, Delivered, DeliveryStatus, EmailSubmission, UndoStatus,
     },
@@ -35,17 +35,14 @@ use jmap_proto::{
         value::{MaybePatchValue, Object, SetValue, Value},
     },
 };
-use mail_parser::{HeaderName, HeaderValue};
 use smtp::{
     core::{Session, SessionData, State},
     queue::spool::SmtpSpool,
 };
 use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
-use store::write::{
-    ArchivedValue, BatchBuilder, Bincode, assert::HashedValue, log::ChangeLogBuilder, now,
-};
+use store::write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder, now};
 use trc::AddContext;
-use utils::{map::vec_map::VecMap, sanitize_email};
+use utils::{BlobHash, map::vec_map::VecMap, sanitize_email};
 
 use crate::blob::download::BlobDownload;
 use std::future::Future;
@@ -126,7 +123,7 @@ impl EmailSubmissionSet for Server {
             // Obtain submission
             let document_id = id.document_id();
             let submission = if let Some(submission) = self
-                .get_property::<HashedValue<ArchivedValue<ArchivedEmailSubmission>>>(
+                .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::EmailSubmission,
                     document_id,
@@ -134,7 +131,9 @@ impl EmailSubmissionSet for Server {
                 )
                 .await?
             {
-                submission.into_deserialized().caused_by(trc::location!())?
+                submission
+                    .into_deserialized::<ArchivedEmailSubmission, EmailSubmission>()
+                    .caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());
                 continue 'update;
@@ -228,7 +227,7 @@ impl EmailSubmissionSet for Server {
         for id in will_destroy {
             let document_id = id.document_id();
             if let Some(submission) = self
-                .get_property::<HashedValue<ArchivedValue<ArchivedEmailSubmission>>>(
+                .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::EmailSubmission,
                     document_id,
@@ -244,7 +243,9 @@ impl EmailSubmissionSet for Server {
                     .delete_document(document_id)
                     .custom(
                         ObjectIndexBuilder::new().with_current(
-                            submission.into_deserialized().caused_by(trc::location!())?,
+                            submission
+                                .into_deserialized::<ArchivedEmailSubmission, EmailSubmission>()
+                                .caused_by(trc::location!())?,
                         ),
                     )
                     .caused_by(trc::location!())?;
@@ -459,7 +460,7 @@ impl EmailSubmissionSet for Server {
 
         // Fetch identity's mailFrom
         let identity_mail_from = if let Some(identity) = self
-            .get_property::<ArchivedValue<ArchivedIdentity>>(
+            .get_property::<Archive>(
                 account_id,
                 Collection::Identity,
                 submission.identity_id,
@@ -468,7 +469,7 @@ impl EmailSubmissionSet for Server {
             .await?
         {
             identity
-                .unarchive()
+                .unarchive::<ArchivedIdentity>()
                 .caused_by(trc::location!())?
                 .email
                 .to_string()
@@ -499,8 +500,8 @@ impl EmailSubmissionSet for Server {
         };
 
         // Obtain message metadata
-        let metadata = if let Some(metadata) = self
-            .get_property::<Bincode<MessageMetadata>>(
+        let metadata_ = if let Some(metadata) = self
+            .get_property::<Archive>(
                 account_id,
                 Collection::Email,
                 submission.email_id,
@@ -508,25 +509,28 @@ impl EmailSubmissionSet for Server {
             )
             .await?
         {
-            metadata.inner
+            metadata
         } else {
             return Ok(Err(SetError::invalid_properties()
                 .with_property(Property::EmailId)
                 .with_description("Email not found.")));
         };
+        let metadata = metadata_
+            .unarchive::<ArchivedMessageMetadata>()
+            .caused_by(trc::location!())?;
 
         // Add recipients to envelope if missing
         let mut bcc_header = None;
         if rcpt_to.is_empty() {
-            for header in &metadata.contents.parts[0].headers {
+            for header in metadata.contents.parts[0].headers.iter() {
                 if matches!(
                     header.name,
-                    HeaderName::To | HeaderName::Cc | HeaderName::Bcc
+                    ArchivedHeaderName::To | ArchivedHeaderName::Cc | ArchivedHeaderName::Bcc
                 ) {
-                    if matches!(header.name, HeaderName::Bcc) {
+                    if matches!(header.name, ArchivedHeaderName::Bcc) {
                         bcc_header = Some(header);
                     }
-                    if let HeaderValue::Address(addr) = &header.value {
+                    if let ArchivedHeaderValue::Address(addr) = &header.value {
                         for address in addr.iter() {
                             if let Some(address) = address.address().and_then(sanitize_email) {
                                 if !rcpt_to.iter().any(|rcpt| rcpt.address == address) {
@@ -553,7 +557,7 @@ impl EmailSubmissionSet for Server {
             bcc_header = metadata.contents.parts[0]
                 .headers
                 .iter()
-                .find(|header| matches!(header.name, HeaderName::Bcc));
+                .find(|header| matches!(header.name, ArchivedHeaderName::Bcc));
         }
 
         // Update sendAt
@@ -566,28 +570,30 @@ impl EmailSubmissionSet for Server {
         };
 
         // Obtain raw message
-        let mut message =
-            if let Some(message) = self.get_blob(&metadata.blob_hash, 0..usize::MAX).await? {
-                if message.len() > self.core.jmap.mail_max_size {
-                    return Ok(Err(SetError::new(SetErrorType::InvalidEmail)
-                        .with_description(format!(
-                            "Message exceeds maximum size of {} bytes.",
-                            self.core.jmap.mail_max_size
-                        ))));
-                }
+        let mut message = if let Some(message) = self
+            .get_blob(&BlobHash::from(&metadata.blob_hash), 0..usize::MAX)
+            .await?
+        {
+            if message.len() > self.core.jmap.mail_max_size {
+                return Ok(Err(SetError::new(SetErrorType::InvalidEmail)
+                    .with_description(format!(
+                        "Message exceeds maximum size of {} bytes.",
+                        self.core.jmap.mail_max_size
+                    ))));
+            }
 
-                message
-            } else {
-                return Ok(Err(SetError::invalid_properties()
-                    .with_property(Property::EmailId)
-                    .with_description("Blob for email not found.")));
-            };
+            message
+        } else {
+            return Ok(Err(SetError::invalid_properties()
+                .with_property(Property::EmailId)
+                .with_description("Blob for email not found.")));
+        };
 
         // Remove BCC header if present
         if let Some(bcc_header) = bcc_header {
             let mut new_message = Vec::with_capacity(message.len());
-            new_message.extend_from_slice(&message[..bcc_header.offset_field]);
-            new_message.extend_from_slice(&message[bcc_header.offset_end..]);
+            new_message.extend_from_slice(&message[..u32::from(bcc_header.offset_field) as usize]);
+            new_message.extend_from_slice(&message[u32::from(bcc_header.offset_end) as usize..]);
             message = new_message;
         }
 

@@ -24,7 +24,7 @@ use std::future::Future;
 use store::{
     Serialize,
     rand::{Rng, rng},
-    write::{ArchivedValue, BatchBuilder, now},
+    write::{Archive, BatchBuilder, now},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -136,7 +136,7 @@ impl PushSubscriptionSet for Server {
             // Obtain push subscription
             let document_id = id.document_id();
             let mut push = if let Some(push) = self
-                .get_property::<ArchivedValue<ArchivedPushSubscription>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::PushSubscription,
                     document_id,
@@ -144,7 +144,8 @@ impl PushSubscriptionSet for Server {
                 )
                 .await?
             {
-                push.deserialize().caused_by(trc::location!())?
+                push.deserialize::<ArchivedPushSubscription, email::push::PushSubscription>()
+                    .caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());
                 continue 'update;

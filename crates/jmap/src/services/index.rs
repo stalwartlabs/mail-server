@@ -11,15 +11,18 @@ use directory::{
     Type,
     backend::internal::{PrincipalField, manage::ManageDirectory},
 };
-use email::message::{bayes::EmailBayesTrain, index::IndexMessageText, metadata::MessageMetadata};
+use email::message::{
+    bayes::EmailBayesTrain, index::IndexMessageText, metadata::ArchivedMessageMetadata,
+};
 use jmap_proto::types::{collection::Collection, property::Property};
+use mail_parser::MessageParser;
 use store::{
     IterateParams, SerializeInfallible, U32_LEN, U64_LEN, ValueKey,
     ahash::AHashMap,
     fts::index::FtsDocument,
     roaring::RoaringBitmap,
     write::{
-        BatchBuilder, Bincode, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
+        Archive, BatchBuilder, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
         now,
     },
@@ -147,94 +150,117 @@ impl Indexer for Server {
                 unlock_events.push(event.clone());
             }
 
-            match self
-                .get_property::<Bincode<MessageMetadata>>(
-                    event.account_id,
-                    Collection::Email,
-                    event.document_id,
-                    Property::BodyStructure,
-                )
-                .await
-            {
-                Ok(Some(metadata))
-                    if metadata.inner.blob_hash.as_slice() == event.hash.as_slice() =>
-                {
-                    // Obtain raw message
-                    let raw_message = if let Ok(Some(raw_message)) = self
-                        .get_blob(&metadata.inner.blob_hash, 0..usize::MAX)
+            // Obtain raw message
+            let raw_message =
+                if let Ok(Some(raw_message)) = self.get_blob(&event.hash, 0..usize::MAX).await {
+                    raw_message
+                } else {
+                    trc::event!(
+                        TaskQueue(TaskQueueEvent::BlobNotFound),
+                        AccountId = event.account_id,
+                        DocumentId = event.document_id,
+                        BlobId = event.hash.as_slice(),
+                    );
+                    continue;
+                };
+
+            match event.action {
+                EmailTaskAction::Index => {
+                    match self
+                        .get_property::<Archive>(
+                            event.account_id,
+                            Collection::Email,
+                            event.document_id,
+                            Property::BodyStructure,
+                        )
                         .await
                     {
-                        raw_message
-                    } else {
-                        trc::event!(
-                            TaskQueue(TaskQueueEvent::BlobNotFound),
-                            AccountId = event.account_id,
-                            DocumentId = event.document_id,
-                            BlobId = metadata.inner.blob_hash.to_hex(),
-                        );
-                        continue;
-                    };
-                    let message = metadata.inner.contents.into_message(&raw_message);
-
-                    match event.action {
-                        EmailTaskAction::Index => {
-                            // Index message
-                            let document =
-                                FtsDocument::with_default_language(self.core.jmap.default_language)
+                        Ok(Some(metadata_)) => {
+                            match metadata_.unarchive::<ArchivedMessageMetadata>() {
+                                Ok(metadata)
+                                    if metadata.blob_hash.0.as_slice() == event.hash.as_slice() =>
+                                {
+                                    // Index message
+                                    let document = FtsDocument::with_default_language(
+                                        self.core.jmap.default_language,
+                                    )
                                     .with_account_id(event.account_id)
                                     .with_collection(Collection::Email)
                                     .with_document_id(event.document_id)
-                                    .index_message(&message);
-                            if let Err(err) = self.core.storage.fts.index(document).await {
-                                trc::error!(
-                                    err.account_id(event.account_id)
-                                        .document_id(event.document_id)
-                                        .details("Failed to index email in FTS index")
-                                );
+                                    .index_message(&metadata, &raw_message);
+                                    if let Err(err) = self.core.storage.fts.index(document).await {
+                                        trc::error!(
+                                            err.account_id(event.account_id)
+                                                .document_id(event.document_id)
+                                                .details("Failed to index email in FTS index")
+                                        );
 
-                                continue;
+                                        continue;
+                                    }
+
+                                    trc::event!(
+                                        TaskQueue(TaskQueueEvent::Index),
+                                        AccountId = event.account_id,
+                                        Collection = Collection::Email,
+                                        DocumentId = event.document_id,
+                                        Elapsed = op_start.elapsed(),
+                                    );
+                                }
+                                Err(err) => {
+                                    trc::error!(
+                                        err.account_id(event.account_id)
+                                            .document_id(event.document_id)
+                                            .details("Failed to unarchive email metadata")
+                                    );
+                                }
+
+                                _ => {
+                                    // The message was probably deleted or overwritten
+                                    trc::event!(
+                                        TaskQueue(TaskQueueEvent::MetadataNotFound),
+                                        Details = "Blob hash mismatch",
+                                        AccountId = event.account_id,
+                                        DocumentId = event.document_id,
+                                    );
+                                }
                             }
-
-                            trc::event!(
-                                TaskQueue(TaskQueueEvent::Index),
-                                AccountId = event.account_id,
-                                Collection = Collection::Email,
-                                DocumentId = event.document_id,
-                                Elapsed = op_start.elapsed(),
-                            );
                         }
-                        EmailTaskAction::BayesTrain { learn_spam } => {
-                            // Train bayes classifier for account
-                            self.email_bayes_train(event.account_id, 0, message, learn_spam)
-                                .await;
+                        Err(err) => {
+                            trc::error!(
+                                err.account_id(event.account_id)
+                                    .document_id(event.document_id)
+                                    .caused_by(trc::location!())
+                                    .details("Failed to retrieve email metadata")
+                            );
 
+                            continue;
+                        }
+                        _ => {
+                            // The message was probably deleted or overwritten
                             trc::event!(
-                                TaskQueue(TaskQueueEvent::BayesTrain),
+                                TaskQueue(TaskQueueEvent::MetadataNotFound),
                                 AccountId = event.account_id,
-                                Collection = Collection::Email,
                                 DocumentId = event.document_id,
-                                Elapsed = op_start.elapsed(),
                             );
                         }
                     }
                 }
+                EmailTaskAction::BayesTrain { learn_spam } => {
+                    // Train bayes classifier for account
+                    self.email_bayes_train(
+                        event.account_id,
+                        0,
+                        MessageParser::new().parse(&raw_message).unwrap_or_default(),
+                        learn_spam,
+                    )
+                    .await;
 
-                Err(err) => {
-                    trc::error!(
-                        err.account_id(event.account_id)
-                            .document_id(event.document_id)
-                            .caused_by(trc::location!())
-                            .details("Failed to retrieve email metadata")
-                    );
-
-                    continue;
-                }
-                _ => {
-                    // The message was probably deleted or overwritten
                     trc::event!(
-                        TaskQueue(TaskQueueEvent::MetadataNotFound),
+                        TaskQueue(TaskQueueEvent::BayesTrain),
                         AccountId = event.account_id,
+                        Collection = Collection::Email,
                         DocumentId = event.document_id,
+                        Elapsed = op_start.elapsed(),
                     );
                 }
             }

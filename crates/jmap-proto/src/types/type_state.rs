@@ -7,7 +7,6 @@
 use std::fmt::Display;
 
 use serde::Serialize;
-use store::write::{DeserializeFrom, SerializeInto};
 use utils::map::bitmap::BitmapItem;
 
 use crate::parser::{JsonObjectParser, json::Parser};
@@ -203,33 +202,6 @@ impl DataType {
 impl Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
-    }
-}
-
-impl SerializeInto for DataType {
-    fn serialize_into(&self, buf: &mut Vec<u8>) {
-        buf.push(*self as u8);
-    }
-}
-
-impl DeserializeFrom for DataType {
-    fn deserialize_from(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
-        match *bytes.next()? {
-            0 => Some(DataType::Email),
-            1 => Some(DataType::EmailDelivery),
-            2 => Some(DataType::EmailSubmission),
-            3 => Some(DataType::Mailbox),
-            4 => Some(DataType::Thread),
-            5 => Some(DataType::Identity),
-            6 => Some(DataType::Core),
-            7 => Some(DataType::PushSubscription),
-            8 => Some(DataType::SearchSnippet),
-            9 => Some(DataType::VacationResponse),
-            10 => Some(DataType::Mdn),
-            11 => Some(DataType::Quota),
-            12 => Some(DataType::SieveScript),
-            _ => None,
-        }
     }
 }
 

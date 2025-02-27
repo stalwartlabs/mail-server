@@ -182,7 +182,7 @@ impl FormHandler for Server {
                 .unwrap_or_default();
 
             // Reserve and write blob
-            let message_blob = BlobHash::from(message.as_bytes());
+            let message_blob = BlobHash::generate(message.as_bytes());
             let message_size = message.len();
             let mut batch = BatchBuilder::new();
             batch.set(

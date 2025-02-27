@@ -7,18 +7,21 @@
 use std::sync::Arc;
 
 use rustls::{
+    ServerConfig,
     crypto::ring::sign::any_ecdsa_type,
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
-    ServerConfig,
 };
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use store::{dispatch::lookup::KeyValue, write::Bincode};
+use store::{dispatch::lookup::KeyValue, write::Archive};
 use trc::AcmeEvent;
 
-use crate::{listener::acme::directory::SerializedCert, Server, KV_ACME};
+use crate::{KV_ACME, Server};
 
-use super::{directory::ACME_TLS_ALPN_NAME, AcmeProvider, StaticResolver};
+use super::{
+    AcmeProvider, StaticResolver,
+    directory::{ACME_TLS_ALPN_NAME, ArchivedSerializedCert},
+};
 
 impl Server {
     pub(crate) fn set_cert(&self, provider: &AcmeProvider, cert: Arc<CertifiedKey>) {
@@ -45,28 +48,40 @@ impl Server {
     pub(crate) async fn build_acme_certificate(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
         match self
             .in_memory_store()
-            .key_get::<Bincode<SerializedCert>>(KeyValue::<()>::build_key(KV_ACME, domain))
+            .key_get::<Archive>(KeyValue::<()>::build_key(KV_ACME, domain))
             .await
         {
-            Ok(Some(cert)) => {
-                match any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
-                    cert.inner.private_key,
-                ))) {
-                    Ok(key) => Some(Arc::new(CertifiedKey::new(
-                        vec![CertificateDer::from(cert.inner.certificate)],
-                        key,
-                    ))),
-                    Err(err) => {
-                        trc::event!(
-                            Acme(AcmeEvent::Error),
-                            Domain = domain.to_string(),
-                            Reason = err.to_string(),
-                            Details = "Failed to parse private key"
-                        );
-                        None
+            Ok(Some(cert_)) => match cert_.unarchive::<ArchivedSerializedCert>() {
+                Ok(cert) => {
+                    match any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+                        cert.private_key.as_ref(),
+                    ))) {
+                        Ok(key) => Some(Arc::new(CertifiedKey::new(
+                            vec![CertificateDer::from(cert.certificate.to_vec())],
+                            key,
+                        ))),
+                        Err(err) => {
+                            trc::event!(
+                                Acme(AcmeEvent::Error),
+                                Domain = domain.to_string(),
+                                Reason = err.to_string(),
+                                Details = "Failed to parse private key"
+                            );
+                            None
+                        }
                     }
                 }
-            }
+
+                Err(err) => {
+                    trc::event!(
+                        Acme(AcmeEvent::Error),
+                        Domain = domain.to_string(),
+                        CausedBy = err,
+                        Details = "Failed to unarchive certificate"
+                    );
+                    None
+                }
+            },
             Err(err) => {
                 trc::event!(
                     Acme(AcmeEvent::Error),

@@ -10,7 +10,7 @@ use common::listener::SessionStream;
 use directory::Permission;
 use email::sieve::ArchivedSieveScript;
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::ArchivedValue;
+use store::write::Archive;
 use trc::AddContext;
 
 use crate::core::{Session, StatusResponse};
@@ -39,7 +39,7 @@ impl<T: SessionStream> Session<T> {
         for document_id in document_ids {
             if let Some(script_) = self
                 .server
-                .get_property::<ArchivedValue<ArchivedSieveScript>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -48,7 +48,9 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .caused_by(trc::location!())?
             {
-                let script = script_.unarchive().caused_by(trc::location!())?;
+                let script = script_
+                    .unarchive::<ArchivedSieveScript>()
+                    .caused_by(trc::location!())?;
                 response.push(b'\"');
                 for ch in script.name.as_bytes() {
                     if [b'\\', b'\"'].contains(ch) {

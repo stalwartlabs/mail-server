@@ -9,7 +9,7 @@ use std::{borrow::Cow, collections::HashSet, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible,
     write::{
-        BatchBuilder, BitmapClass, DirectoryClass, IntoOperations, Operation, ValueOp,
+        Archiver, BatchBuilder, BitmapClass, DirectoryClass, IntoOperations, Operation, ValueOp,
         assert::HashedValue,
     },
 };
@@ -25,7 +25,20 @@ pub enum IndexValue<'x> {
     Acl { value: &'x [AclGrant] },
 }
 
-pub trait IndexableObject: Debug + Eq + Serialize + Sync + Send {
+pub trait IndexableObject:
+    Debug
+    + Eq
+    + Sync
+    + Send
+    + rkyv::Archive
+    + for<'a> rkyv::Serialize<
+        rkyv::api::high::HighSerializer<
+            rkyv::util::AlignedVec,
+            rkyv::ser::allocator::ArenaHandle<'a>,
+            rkyv::rancor::Error,
+        >,
+    >
+{
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>>;
 }
 
@@ -94,7 +107,7 @@ impl<T: IndexableObject> IntoOperations for ObjectIndexBuilder<T> {
             (None, Some(changes)) => {
                 // Insertion
                 build_batch(batch, &changes, self.tenant_id, true);
-                batch.set(Property::Value, changes.serialize()?);
+                batch.set(Property::Value, Archiver::new(changes).serialize()?);
             }
             (Some(current), Some(changes)) => {
                 // Update
@@ -410,7 +423,7 @@ fn merge_batch<T: IndexableObject>(
     if has_changes {
         batch.ops.push(Operation::Value {
             class: Property::Value.into(),
-            op: ValueOp::Set(current.serialize()?.into()),
+            op: ValueOp::Set(Archiver::new(current).serialize()?.into()),
         });
     }
 

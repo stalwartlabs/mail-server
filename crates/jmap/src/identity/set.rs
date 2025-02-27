@@ -18,8 +18,8 @@ use jmap_proto::{
     },
 };
 use std::future::Future;
-use store::write::{BatchBuilder, log::ChangeLogBuilder};
-use store::{Serialize, write::ArchivedValue};
+use store::Serialize;
+use store::write::{Archive, BatchBuilder, log::ChangeLogBuilder};
 use trc::AddContext;
 use utils::sanitize_email;
 
@@ -119,7 +119,7 @@ impl IdentitySet for Server {
             // Obtain identity
             let document_id = id.document_id();
             let mut identity = if let Some(identity) = self
-                .get_property::<ArchivedValue<ArchivedIdentity>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::Identity,
                     document_id,
@@ -127,7 +127,9 @@ impl IdentitySet for Server {
                 )
                 .await?
             {
-                identity.deserialize().caused_by(trc::location!())?
+                identity
+                    .deserialize::<ArchivedIdentity, Identity>()
+                    .caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());
                 continue 'update;

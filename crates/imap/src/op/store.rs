@@ -14,7 +14,7 @@ use ahash::AHashSet;
 use common::{listener::SessionStream, storage::tag::TagManager};
 use directory::Permission;
 use email::{
-    mailbox::UidMailbox,
+    mailbox::ArchivedUidMailbox,
     message::{bayes::EmailBayesTrain, ingest::EmailIngest},
 };
 use imap_proto::{
@@ -27,13 +27,19 @@ use imap_proto::{
     receiver::Request,
 };
 use jmap_proto::types::{
-    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
-    state::StateChange, type_state::DataType,
+    acl::Acl,
+    collection::Collection,
+    id::Id,
+    keyword::{ArchivedKeyword, Keyword},
+    property::Property,
+    state::StateChange,
+    type_state::DataType,
 };
 use store::{
     SerializeInfallible,
     query::log::{Change, Query},
-    write::{BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
+    rkyv::vec::ArchivedVec,
+    write::{Archive, BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -207,7 +213,7 @@ impl<T: SessionStream> SessionData<T> {
                 // Obtain current keywords
                 let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
                     self.server
-                        .get_property::<HashedValue<Vec<Keyword>>>(
+                        .get_property::<HashedValue<Archive>>(
                             account_id,
                             Collection::Email,
                             *id,
@@ -220,7 +226,14 @@ impl<T: SessionStream> SessionData<T> {
                         .await
                         .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
                 ) {
-                    (TagManager::new(keywords), thread_id)
+                    (
+                        TagManager::new(
+                            keywords
+                                .into_deserialized::<ArchivedVec<ArchivedKeyword>, Vec<Keyword>>()
+                                .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
+                        ),
+                        thread_id,
+                    )
                 } else {
                     continue 'outer;
                 };
@@ -323,7 +336,7 @@ impl<T: SessionStream> SessionData<T> {
                             if seen_changed {
                                 if let Some(mailboxes) = self
                                     .server
-                                    .get_property::<Vec<UidMailbox>>(
+                                    .get_property::<Archive>(
                                         account_id,
                                         Collection::Email,
                                         *id,
@@ -332,8 +345,12 @@ impl<T: SessionStream> SessionData<T> {
                                     .await
                                     .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                                 {
-                                    for mailbox_id in mailboxes {
-                                        changed_mailboxes.insert(mailbox_id.mailbox_id);
+                                    for mailbox_id in mailboxes
+                                        .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                                        .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
+                                        .iter()
+                                    {
+                                        changed_mailboxes.insert(u32::from(mailbox_id.mailbox_id));
                                     }
                                 }
                             }

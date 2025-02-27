@@ -15,7 +15,10 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use store::{BlobClass, write::ArchivedValue};
+use store::{
+    BlobClass,
+    write::{Archive},
+};
 use trc::AddContext;
 
 use crate::changes::state::StateManager;
@@ -73,7 +76,7 @@ impl SieveScriptGet for Server {
                 continue;
             }
             let sieve_ = if let Some(sieve) = self
-                .get_property::<ArchivedValue<ArchivedSieveScript>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -86,7 +89,9 @@ impl SieveScriptGet for Server {
                 response.not_found.push(id.into());
                 continue;
             };
-            let sieve = sieve_.unarchive().caused_by(trc::location!())?;
+            let sieve = sieve_
+                .unarchive::<ArchivedSieveScript>()
+                .caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {
                 match property {

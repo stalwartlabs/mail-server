@@ -12,10 +12,11 @@ use mail_parser::Message;
 use spam_filter::{
     SpamFilterInput, analysis::init::SpamFilterInit, modules::bayes::BayesClassifier,
 };
-use store::write::{Bincode, TaskQueueClass};
+use store::write::{Archive, TaskQueueClass};
 use trc::StoreEvent;
+use utils::BlobHash;
 
-use super::metadata::MessageMetadata;
+use super::metadata::ArchivedMessageMetadata;
 
 pub trait EmailBayesTrain: Sync + Send {
     fn email_bayes_train(
@@ -58,7 +59,7 @@ impl EmailBayesTrain for Server {
         learn_spam: bool,
     ) -> trc::Result<TaskQueueClass> {
         let metadata = self
-            .get_property::<Bincode<MessageMetadata>>(
+            .get_property::<Archive>(
                 account_id,
                 Collection::Email,
                 document_id,
@@ -74,7 +75,7 @@ impl EmailBayesTrain for Server {
 
         Ok(TaskQueueClass::BayesTrain {
             seq: self.generate_snowflake_id()?,
-            hash: metadata.inner.blob_hash,
+            hash: BlobHash::from(&metadata.unarchive::<ArchivedMessageMetadata>()?.blob_hash),
             learn_spam,
         })
     }

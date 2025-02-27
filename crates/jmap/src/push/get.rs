@@ -21,7 +21,7 @@ use jmap_proto::{
 };
 use store::{
     BitmapKey, ValueKey,
-    write::{ArchivedValue, ValueClass, now},
+    write::{Archive, ValueClass, now},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -85,7 +85,7 @@ impl PushSubscriptionFetch for Server {
                 continue;
             }
             let push_ = if let Some(push) = self
-                .get_property::<ArchivedValue<ArchivedPushSubscription>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::PushSubscription,
                     document_id,
@@ -98,7 +98,9 @@ impl PushSubscriptionFetch for Server {
                 response.not_found.push(id.into());
                 continue;
             };
-            let push = push_.unarchive().caused_by(trc::location!())?;
+            let push = push_
+                .unarchive::<ArchivedPushSubscription>()
+                .caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {
                 match property {
@@ -166,7 +168,7 @@ impl PushSubscriptionFetch for Server {
                 .core
                 .storage
                 .data
-                .get_value::<ArchivedValue<ArchivedPushSubscription>>(ValueKey {
+                .get_value::<Archive>(ValueKey {
                     account_id,
                     collection: Collection::PushSubscription.into(),
                     document_id,
@@ -179,7 +181,7 @@ impl PushSubscriptionFetch for Server {
                         .caused_by(trc::location!())
                         .document_id(document_id)
                 })?
-                .deserialize()
+                .deserialize::<ArchivedPushSubscription, email::push::PushSubscription>()
                 .caused_by(trc::location!())?;
 
             if subscription.expires > current_time {

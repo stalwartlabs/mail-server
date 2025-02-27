@@ -17,7 +17,7 @@ use directory::{
     backend::internal::manage::{self, ManageDirectory},
 };
 use email::{
-    mailbox::{ArchivedMailbox, UidMailbox},
+    mailbox::{ArchivedMailbox, ArchivedUidMailbox, UidMailbox},
     message::ingest::EmailIngest,
 };
 use hyper::Method;
@@ -25,7 +25,8 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use serde_json::json;
 use store::{
     Serialize,
-    write::{ArchivedValue, BatchBuilder, ValueClass, assert::HashedValue},
+    rkyv::vec::ArchivedVec,
+    write::{Archive, Archiver, BatchBuilder, ValueClass, assert::HashedValue},
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
@@ -341,7 +342,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .unwrap_or_default()
     {
         let mailbox = server
-            .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
+            .get_property::<HashedValue<Archive>>(
                 account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -350,7 +351,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?
-            .into_deserialized::<email::mailbox::Mailbox>()
+            .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
             .caused_by(trc::location!())?;
         let mut new_mailbox = mailbox.inner.clone();
         new_mailbox.uid_validity = rand::random::<u32>();
@@ -382,7 +383,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .unwrap_or_default()
     {
         let uids = server
-            .get_property::<HashedValue<Vec<UidMailbox>>>(
+            .get_property::<HashedValue<Archive>>(
                 account_id,
                 Collection::Email,
                 message_id,
@@ -390,8 +391,9 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             )
             .await
             .caused_by(trc::location!())?;
-        let mut uids = if let Some(uids) = uids.filter(|uids| !uids.inner.is_empty()) {
-            uids
+        let mut uids = if let Some(uids) = uids {
+            uids.into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                .caused_by(trc::location!())?
         } else {
             continue;
         };
@@ -412,7 +414,9 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .assert_value(ValueClass::Property(Property::MailboxIds.into()), &uids)
             .set(
                 Property::MailboxIds,
-                uids.inner.serialize().caused_by(trc::location!())?,
+                Archiver::new(uids.inner)
+                    .serialize()
+                    .caused_by(trc::location!())?,
             );
         server
             .store()

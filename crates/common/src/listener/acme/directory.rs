@@ -12,7 +12,7 @@ use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
 use serde::Deserialize;
 use store::Serialize;
-use store::write::Bincode;
+use store::write::Archiver;
 use trc::AddContext;
 use trc::event::conv::AssertSuccess;
 
@@ -190,7 +190,7 @@ impl Account {
                 .reason(err)
         })?;
 
-        Bincode::new(SerializedCert {
+        Archiver::new(SerializedCert {
             certificate: cert.serialize_der().map_err(|err| {
                 trc::EventType::Acme(trc::AcmeEvent::Error)
                     .caused_by(trc::location!())
@@ -202,7 +202,9 @@ impl Account {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+#[derive(
+    rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone, serde::Serialize, Deserialize,
+)]
 pub struct SerializedCert {
     pub certificate: Vec<u8>,
     pub private_key: Vec<u8>,

@@ -10,6 +10,7 @@ use crate::api::{HttpResponse, JsonResponse, http::ToHttpResponse};
 use common::{Server, auth::AccessToken};
 use directory::backend::internal::manage;
 use email::message::crypto::{
+    Algorithm, ArchivedAlgorithm, ArchivedEncryptionMethod, ArchivedEncryptionParams,
     EncryptMessage, EncryptMessageError, EncryptionMethod, EncryptionParams, EncryptionType,
     try_parse_certs,
 };
@@ -19,7 +20,7 @@ use mail_parser::MessageParser;
 use serde_json::json;
 use store::{
     Serialize,
-    write::{BatchBuilder, Bincode},
+    write::{Archive, Archiver, BatchBuilder, serialize::rkyv_unarchive},
 };
 use trc::AddContext;
 
@@ -38,34 +39,39 @@ pub trait CryptoHandler: Sync + Send {
 
 impl CryptoHandler for Server {
     async fn handle_crypto_get(&self, access_token: Arc<AccessToken>) -> trc::Result<HttpResponse> {
-        let params = self
-            .get_property::<EncryptionParams>(
+        let ec = if let Some(params_) = self
+            .get_property::<Archive>(
                 access_token.primary_id(),
                 Collection::Principal,
                 0,
                 Property::Parameters,
             )
-            .await?;
-        let ec = params
-            .map(|params| {
-                let method = params.method;
-                let algo = params.algo;
-                let mut certs = Vec::new();
-                certs.extend_from_slice(b"-----STALWART CERTIFICATE-----\r\n");
-                let _ = base64_encode_mime(
-                    &Bincode::new(params).serialize().unwrap_or_default(),
-                    &mut certs,
-                    false,
-                );
-                certs.extend_from_slice(b"\r\n");
-                let certs = String::from_utf8(certs).unwrap_or_default();
+            .await?
+        {
+            let params = params_
+                .unarchive::<ArchivedEncryptionParams>()
+                .caused_by(trc::location!())?;
+            let algo = match &params.algo {
+                ArchivedAlgorithm::Aes128 => Algorithm::Aes128,
+                ArchivedAlgorithm::Aes256 => Algorithm::Aes256,
+            };
+            let method = match &params.method {
+                ArchivedEncryptionMethod::PGP => EncryptionMethod::PGP,
+                ArchivedEncryptionMethod::SMIME => EncryptionMethod::SMIME,
+            };
+            let mut certs = Vec::new();
+            certs.extend_from_slice(b"-----STALWART CERTIFICATE-----\r\n");
+            let _ = base64_encode_mime(&params_.into_inner(), &mut certs, false);
+            certs.extend_from_slice(b"\r\n");
+            let certs = String::from_utf8(certs).unwrap_or_default();
 
-                match method {
-                    EncryptionMethod::PGP => EncryptionType::PGP { algo, certs },
-                    EncryptionMethod::SMIME => EncryptionType::SMIME { algo, certs },
-                }
-            })
-            .unwrap_or(EncryptionType::Disabled);
+            match method {
+                EncryptionMethod::PGP => EncryptionType::PGP { algo, certs },
+                EncryptionMethod::SMIME => EncryptionType::SMIME { algo, certs },
+            }
+        } else {
+            EncryptionType::Disabled
+        };
 
         Ok(JsonResponse::new(json!({
             "data": ec,
@@ -111,34 +117,34 @@ impl CryptoHandler for Server {
         }
 
         // Parse certificates
-        let params = EncryptionParams {
+        let certs = try_parse_certs(method, certs.into_bytes())
+            .map_err(|err| manage::error(err, None::<u32>))?;
+        let num_certs = certs.len();
+        let params = Archiver::new(EncryptionParams {
             method,
             algo,
-            certs: try_parse_certs(method, certs.into_bytes())
-                .map_err(|err| manage::error(err, None::<u32>))?,
-        };
+            certs,
+        })
+        .serialize()
+        .caused_by(trc::location!())?;
 
         // Try a test encryption
         if let Err(EncryptMessageError::Error(message)) = MessageParser::new()
             .parse("Subject: test\r\ntest\r\n".as_bytes())
             .unwrap()
-            .encrypt(&params)
+            .encrypt(rkyv_unarchive(&params)?)
             .await
         {
             return Err(manage::error(message, None::<u32>));
         }
 
         // Save encryption params
-        let num_certs = params.certs.len();
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(access_token.primary_id())
             .with_collection(Collection::Principal)
             .update_document(0)
-            .set(
-                Property::Parameters,
-                params.serialize().caused_by(trc::location!())?,
-            );
+            .set(Property::Parameters, params);
         self.core.storage.data.write(batch.build()).await?;
 
         Ok(JsonResponse::new(json!({

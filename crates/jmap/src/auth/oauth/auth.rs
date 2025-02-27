@@ -21,7 +21,7 @@ use rand::{
 use serde::Deserialize;
 use serde_json::json;
 use std::future::Future;
-use store::{Serialize, dispatch::lookup::KeyValue, write::Bincode};
+use store::{Serialize, dispatch::lookup::KeyValue, write::LegacyBincode};
 use trc::AddContext;
 
 use crate::{
@@ -107,7 +107,7 @@ impl OAuthApiHandler for Server {
                     .collect::<String>();
 
                 // Serialize OAuth code
-                let value = Bincode::new(OAuthCode {
+                let value = LegacyBincode::new(OAuthCode {
                     status: OAuthStatus::Authorized,
                     account_id: access_token.primary_id(),
                     client_id,
@@ -149,7 +149,7 @@ impl OAuthApiHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Bincode<OAuthCode>>(KeyValue::<()>::build_key(
+                    .key_get::<LegacyBincode<OAuthCode>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         code.as_bytes(),
                     ))
@@ -232,7 +232,7 @@ impl OAuthApiHandler for Server {
         }
 
         // Add OAuth status
-        let oauth_code = Bincode::new(OAuthCode {
+        let oauth_code = LegacyBincode::new(OAuthCode {
             status: OAuthStatus::Pending,
             account_id: u32::MAX,
             client_id,

@@ -21,7 +21,7 @@ use mail_parser::{Message, MimeHeaders, PartType};
 
 use store::{
     Serialize,
-    write::{BatchBuilder, Bincode, ReportClass, ValueClass, now},
+    write::{BatchBuilder, LegacyBincode, ReportClass, ValueClass, now},
 };
 use trc::IncomingReportEvent;
 
@@ -281,7 +281,7 @@ impl AnalyzeReport for Server {
                         Format::Dmarc(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Dmarc { id, expires }),
-                                Bincode::new(IncomingReport {
+                                LegacyBincode::new(IncomingReport {
                                     from,
                                     to,
                                     subject,
@@ -294,7 +294,7 @@ impl AnalyzeReport for Server {
                         Format::Tls(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Tls { id, expires }),
-                                Bincode::new(IncomingReport {
+                                LegacyBincode::new(IncomingReport {
                                     from,
                                     to,
                                     subject,
@@ -307,7 +307,7 @@ impl AnalyzeReport for Server {
                         Format::Arf(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Arf { id, expires }),
-                                Bincode::new(IncomingReport {
+                                LegacyBincode::new(IncomingReport {
                                     from,
                                     to,
                                     subject,

@@ -8,13 +8,14 @@ use std::{sync::Arc, time::Instant};
 
 use directory::Permission;
 use email::{
-    mailbox::{JUNK_ID, UidMailbox},
+    mailbox::{ArchivedUidMailbox, JUNK_ID, UidMailbox},
     message::{bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest},
 };
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse, protocol::copy_move::Arguments,
     receiver::Request,
 };
+use trc::AddContext;
 
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
@@ -30,8 +31,9 @@ use jmap_proto::{
 };
 use store::{
     SerializeInfallible,
+    rkyv::vec::ArchivedVec,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
+    write::{Archive, BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
 
 use super::ImapContext;
@@ -469,7 +471,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox tags
         if let (Some(mailboxes), Some(thread_id)) = (
             self.server
-                .get_property::<HashedValue<Vec<UidMailbox>>>(
+                .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::Email,
                     id,
@@ -480,7 +482,14 @@ impl<T: SessionStream> SessionData<T> {
                 .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
                 .await?,
         ) {
-            Ok(Some((TagManager::new(mailboxes), thread_id)))
+            Ok(Some((
+                TagManager::new(
+                    mailboxes
+                        .into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                        .caused_by(trc::location!())?,
+                ),
+                thread_id,
+            )))
         } else {
             trc::event!(
                 Store(trc::StoreEvent::NotFound),

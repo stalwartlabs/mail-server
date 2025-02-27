@@ -6,12 +6,17 @@
 
 use std::fs;
 
+use email::message::metadata::{ArchivedMessageMetadata, MessageMetadata};
 use imap::op::fetch::AsImapDataItem;
 use imap_proto::{
-    protocol::fetch::{BodyContents, DataItem, Section},
     ResponseCode, StatusResponse,
+    protocol::fetch::{BodyContents, DataItem, Section},
 };
 use mail_parser::MessageParser;
+use store::{
+    Deserialize, Serialize,
+    write::{Archive, Archiver},
+};
 
 use super::resources_dir;
 
@@ -21,19 +26,41 @@ fn body_structure() {
 
     for file_name in fs::read_dir(resources_dir()).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();
-        if file_name.extension().is_none_or( |e| e != "txt") {
+        if file_name.extension().is_none_or(|e| e != "txt") {
             continue;
         }
 
-        let raw_message = fs::read(&file_name).unwrap();
-        let message = MessageParser::new().parse(&raw_message).unwrap();
         let mut buf = Vec::new();
+        let raw_message = fs::read(&file_name).unwrap();
+        let message_ = MessageParser::new().parse(&raw_message).unwrap();
+        let metadata_ = Archive::deserialize_owned(
+            Archiver::new(MessageMetadata {
+                preview: Default::default(),
+                size: message_.raw_message.len() as u32,
+                raw_headers: message_
+                    .raw_message
+                    .as_ref()
+                    .get(message_.root_part().offset_header..message_.root_part().offset_body)
+                    .unwrap_or_default()
+                    .to_vec(),
+                contents: message_.into(),
+                received_at: 0,
+                has_attachments: false,
+                blob_hash: Default::default(),
+            })
+            .serialize()
+            .unwrap(),
+        )
+        .unwrap();
+        let metadata = metadata_.unarchive::<ArchivedMessageMetadata>().unwrap();
+        let message = &metadata.contents;
+        let decoded = message.decode_contents(&raw_message);
 
         // Serialize body and bodystructure
         for is_extended in [false, true] {
             let mut buf_ = Vec::new();
             message
-                .body_structure(is_extended)
+                .body_structure(&decoded, is_extended)
                 .serialize(&mut buf_, is_extended);
             if is_extended {
                 buf.extend_from_slice(b"BODYSTRUCTURE ");
@@ -92,7 +119,8 @@ fn body_structure() {
                             true
                         };
 
-                        if let Some(contents) = message.body_section(&body_sections, None) {
+                        if let Some(contents) = message.body_section(&decoded, &body_sections, None)
+                        {
                             DataItem::BodySection {
                                 sections: body_sections,
                                 origin_octet: None,
@@ -101,7 +129,7 @@ fn body_structure() {
                             .serialize(&mut buf);
 
                             if is_first {
-                                match message.binary(&sections, None) {
+                                match message.binary(&decoded, &sections, None) {
                                     Ok(Some(contents)) => {
                                         buf.push(b'\n');
                                         DataItem::Binary {
@@ -135,7 +163,7 @@ fn body_structure() {
                                     }
                                 }
 
-                                if let Some(size) = message.binary_size(&sections) {
+                                if let Some(size) = message.binary_size(&decoded, &sections) {
                                     buf.push(b'\n');
                                     DataItem::BinarySize {
                                         sections: sections.clone(),
@@ -175,14 +203,16 @@ fn body_structure() {
             }],
         ] {
             DataItem::BodySection {
-                contents: message.body_section(&sections, None).unwrap(),
+                contents: message.body_section(&decoded, &sections, None).unwrap(),
                 sections: sections.clone(),
                 origin_octet: None,
             }
             .serialize(&mut buf);
             buf.extend_from_slice(b"\n----------------------------------\n");
             DataItem::BodySection {
-                contents: message.body_section(&sections, (10, 25).into()).unwrap(),
+                contents: message
+                    .body_section(&decoded, &sections, (10, 25).into())
+                    .unwrap(),
                 sections,
                 origin_octet: 10.into(),
             }

@@ -6,10 +6,10 @@
 
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{ArchivedValue, BatchBuilder, BlobOp, assert::HashedValue};
+use store::write::{Archive, BatchBuilder, BlobOp, assert::HashedValue};
 use trc::AddContext;
 
-use super::ArchivedSieveScript;
+use super::{ArchivedSieveScript, SieveScript};
 
 pub trait SieveScriptDelete: Sync + Send {
     fn sieve_script_delete(
@@ -30,7 +30,7 @@ impl SieveScriptDelete for Server {
         // Fetch record
         let account_id = resource_token.account_id;
         let obj = self
-            .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
+            .get_property::<HashedValue<Archive>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -43,7 +43,7 @@ impl SieveScriptDelete for Server {
                     .caused_by(trc::location!())
                     .document_id(document_id)
             })?
-            .into_deserialized()
+            .into_deserialized::<ArchivedSieveScript, SieveScript>()
             .caused_by(trc::location!())?;
 
         // Make sure the script is not active

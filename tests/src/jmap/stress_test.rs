@@ -9,7 +9,7 @@ use std::{sync::Arc, time::Duration};
 use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
 use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
-use email::mailbox::UidMailbox;
+use email::mailbox::{ArchivedUidMailbox, UidMailbox};
 use futures::future::join_all;
 use jmap_client::{
     client::Client,
@@ -17,7 +17,11 @@ use jmap_client::{
     mailbox::{self, Mailbox, Role},
 };
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
-use store::rand::{self, Rng};
+use store::{
+    rand::{self, Rng},
+    rkyv::vec::ArchivedVec,
+    write::Archive,
+};
 
 use super::assert_is_empty;
 
@@ -70,8 +74,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                     let client = client.clone();
                     let mailboxes = mailboxes.clone();
                     futures.push(tokio::spawn(async move {
-                        let mailbox_num =
-                            rand::rng().random_range::<usize, _>(0..mailboxes.len());
+                        let mailbox_num = rand::rng().random_range::<usize, _>(0..mailboxes.len());
                         let _message_id = client
                             .email_import(
                                 format!(
@@ -230,7 +233,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
 
             for email_id in &email_ids_in_mailbox {
                 if let Some(mailbox_tags) = server
-                    .get_property::<Vec<UidMailbox>>(
+                    .get_property::<Archive>(
                         TEST_USER_ID,
                         Collection::Email,
                         email_id,
@@ -239,11 +242,14 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                     .await
                     .unwrap()
                 {
+                    let mailbox_tags = mailbox_tags
+                        .deserialize::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                        .unwrap();
                     if mailbox_tags.len() != 1 {
                         panic!(
-                        "Email ORM has more than one mailbox {:?}! Id {} in mailbox {} with messages {:?}",
-                        mailbox_tags, email_id, mailbox_id, email_ids_in_mailbox
-                    );
+                            "Email ORM has more than one mailbox {:?}! Id {} in mailbox {} with messages {:?}",
+                            mailbox_tags, email_id, mailbox_id, email_ids_in_mailbox
+                        );
                     }
                     let mailbox_tag = mailbox_tags[0];
                     assert!(mailbox_tag.uid != 0);

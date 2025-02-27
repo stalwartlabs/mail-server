@@ -15,7 +15,7 @@ use sieve::compiler::ErrorType;
 use store::{
     BlobClass,
     query::Filter,
-    write::{ArchivedValue, BatchBuilder, BlobOp, assert::HashedValue, log::LogInsert},
+    write::{Archive, BatchBuilder, BlobOp, assert::HashedValue, log::LogInsert},
 };
 use trc::AddContext;
 
@@ -101,7 +101,7 @@ impl<T: SessionStream> Session<T> {
             // Obtain script values
             let script = self
                 .server
-                .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
+                .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -115,7 +115,7 @@ impl<T: SessionStream> Session<T> {
                         .details("Script not found")
                         .code(ResponseCode::NonExistent)
                 })?
-                .into_deserialized()
+                .into_deserialized::<ArchivedSieveScript, SieveScript>()
                 .caused_by(trc::location!())?;
 
             // Write script blob

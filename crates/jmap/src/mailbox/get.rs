@@ -15,7 +15,7 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use store::write::ArchivedValue;
+use store::write::{Archive};
 use trc::AddContext;
 
 use crate::changes::state::StateManager;
@@ -98,7 +98,7 @@ impl MailboxGet for Server {
 
             let archived_mailbox_ = if fetch_properties {
                 match self
-                    .get_property::<ArchivedValue<ArchivedMailbox>>(
+                    .get_property::<Archive>(
                         account_id,
                         Collection::Mailbox,
                         document_id,
@@ -118,7 +118,7 @@ impl MailboxGet for Server {
             };
             let archived_mailbox = if let Some(archived_mailbox) = &archived_mailbox_ {
                 archived_mailbox
-                    .unarchive()
+                    .unarchive::<ArchivedMailbox>()
                     .caused_by(trc::location!())?
                     .into()
             } else {

@@ -21,7 +21,10 @@ use jmap_proto::{
 };
 use smtp::queue::{self, spool::SmtpSpool};
 use std::future::Future;
-use store::{rkyv::option::ArchivedOption, write::ArchivedValue};
+use store::{
+    rkyv::option::ArchivedOption,
+    write::{Archive},
+};
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
@@ -84,7 +87,7 @@ impl EmailSubmissionGet for Server {
                 continue;
             }
             let submission_ = if let Some(submission) = self
-                .get_property::<ArchivedValue<ArchivedEmailSubmission>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::EmailSubmission,
                     document_id,
@@ -97,7 +100,9 @@ impl EmailSubmissionGet for Server {
                 response.not_found.push(id.into());
                 continue;
             };
-            let submission = submission_.unarchive().caused_by(trc::location!())?;
+            let submission = submission_
+                .unarchive::<ArchivedEmailSubmission>()
+                .caused_by(trc::location!())?;
 
             // Obtain queueId
             let mut delivery_status = submission

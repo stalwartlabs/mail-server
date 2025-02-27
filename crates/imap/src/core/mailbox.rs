@@ -18,7 +18,7 @@ use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, property::Prop
 use parking_lot::Mutex;
 use store::{
     query::log::{Change, Query},
-    write::ArchivedValue,
+    write::Archive,
 };
 use trc::AddContext;
 
@@ -155,7 +155,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut special_uses = AHashMap::new();
         for (mailbox_id, mailbox_) in self
             .server
-            .get_properties::<ArchivedValue<ArchivedMailbox>, _, _>(
+            .get_properties::<Archive, _, _>(
                 account_id,
                 Collection::Mailbox,
                 &mailbox_ids,
@@ -164,7 +164,9 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .caused_by(trc::location!())?
         {
-            let mailbox = mailbox_.unarchive().caused_by(trc::location!())?;
+            let mailbox = mailbox_
+                .unarchive::<ArchivedMailbox>()
+                .caused_by(trc::location!())?;
             // Map special uses
             let role = SpecialUse::from(&mailbox.role);
             if !matches!(mailbox.role, ArchivedSpecialUse::None) {
@@ -177,10 +179,7 @@ impl<T: SessionStream> SessionData<T> {
                 parent_id: u32::from(mailbox.parent_id),
                 role,
                 name: mailbox.name.to_string(),
-                is_subscribed: mailbox
-                    .subscribers
-                    .iter()
-                    .any(|s| u32::from(s) == access_token.primary_id()),
+                is_subscribed: mailbox.is_subscribed(access_token.primary_id()),
             });
         }
 
@@ -216,8 +215,8 @@ impl<T: SessionStream> SessionData<T> {
                 .map(|k| k.len() + std::mem::size_of::<u32>())
                 .sum::<usize>()
             + (account.mailbox_state.len()
-                * (std::mem::size_of::<ArchivedValue<ArchivedMailbox>>()
-                    + std::mem::size_of::<u32>()))) as u64;
+                * (std::mem::size_of::<email::mailbox::Mailbox>() + std::mem::size_of::<u32>())))
+            as u64;
 
         loop {
             while let Some(mailbox) = iter.next() {
@@ -621,7 +620,7 @@ impl<T: SessionStream> SessionData<T> {
         Ok(access_token.is_member(account_id)
             || self
                 .server
-                .get_property::<ArchivedValue<ArchivedMailbox>>(
+                .get_property::<Archive>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
@@ -632,7 +631,7 @@ impl<T: SessionStream> SessionData<T> {
                     if let Some(mailbox) = mailbox {
                         Ok(Some(
                             mailbox
-                                .unarchive()?
+                                .unarchive::<ArchivedMailbox>()?
                                 .acls
                                 .effective_acl(&access_token)
                                 .contains(item),

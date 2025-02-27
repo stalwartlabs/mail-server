@@ -37,8 +37,8 @@ use store::{
     ahash::AHashSet,
     query::Filter,
     write::{
-        AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId, MaybeDynamicValue, SerializeWithId,
-        TagValue, TaskQueueClass, ValueClass,
+        Archive, AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId, MaybeDynamicValue,
+        SerializeWithId, TagValue, TaskQueueClass, ValueClass,
         log::{ChangeLogBuilder, Changes, LogInsert},
         now,
     },
@@ -49,12 +49,15 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
-    message::index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
+    message::{
+        crypto::ArchivedEncryptionParams,
+        index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
+    },
     thread::cache::ThreadCache,
 };
 
 use super::{
-    crypto::{EncryptMessage, EncryptMessageError, EncryptionParams},
+    crypto::{EncryptMessage, EncryptMessageError},
     index::{MAX_SORT_FIELD_LENGTH, TrimTextValue},
 };
 
@@ -385,17 +388,15 @@ impl EmailIngest for Server {
             IngestSource::Restore => false,
         };
         if do_encrypt && !message.is_encrypted() {
-            if let Some(encrypt_params) = self
-                .get_property::<EncryptionParams>(
-                    account_id,
-                    Collection::Principal,
-                    0,
-                    Property::Parameters,
-                )
+            if let Some(encrypt_params_) = self
+                .get_property::<Archive>(account_id, Collection::Principal, 0, Property::Parameters)
                 .await
                 .caused_by(trc::location!())?
             {
-                match message.encrypt(&encrypt_params).await {
+                let encrypt_params = encrypt_params_
+                    .unarchive::<ArchivedEncryptionParams>()
+                    .caused_by(trc::location!())?;
+                match message.encrypt(encrypt_params).await {
                     Ok(new_raw_message) => {
                         raw_message = Cow::from(new_raw_message);
                         raw_message_len = raw_message.len() as u64;

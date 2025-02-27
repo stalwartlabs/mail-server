@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
 use store::write::key::DeserializeBigEndian;
-use store::write::{BatchBuilder, Bincode, BlobOp, QueueClass, ValueClass, now};
+use store::write::{BatchBuilder, BlobOp, LegacyBincode, QueueClass, ValueClass, now};
 use store::{IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
 use trc::ServerEvent;
 use utils::BlobHash;
@@ -151,9 +151,9 @@ impl SmtpSpool for Server {
     async fn read_message(&self, id: QueueId) -> Option<Message> {
         match self
             .store()
-            .get_value::<Bincode<Message>>(ValueKey::from(ValueClass::Queue(QueueClass::Message(
-                id,
-            ))))
+            .get_value::<LegacyBincode<Message>>(ValueKey::from(ValueClass::Queue(
+                QueueClass::Message(id),
+            )))
             .await
         {
             Ok(Some(message)) => Some(message.inner),
@@ -188,7 +188,7 @@ impl Message {
         } else {
             raw_message.into()
         };
-        self.blob_hash = BlobHash::from(message.as_ref());
+        self.blob_hash = BlobHash::generate(message.as_ref());
 
         // Generate id
         if self.size == 0 {
@@ -298,7 +298,7 @@ impl Message {
             )
             .set(
                 ValueClass::Queue(QueueClass::Message(self.queue_id)),
-                match Bincode::new(self).serialize() {
+                match LegacyBincode::new(self).serialize() {
                     Ok(data) => data,
                     Err(err) => {
                         trc::error!(
@@ -430,7 +430,7 @@ impl Message {
         let span_id = self.span_id;
         batch.set(
             ValueClass::Queue(QueueClass::Message(self.queue_id)),
-            match Bincode::new(self).serialize() {
+            match LegacyBincode::new(self).serialize() {
                 Ok(data) => data,
                 Err(err) => {
                     trc::error!(

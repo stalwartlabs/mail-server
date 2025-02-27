@@ -32,7 +32,7 @@ use store::{
     BlobClass,
     query::Filter,
     rand::{Rng, rng},
-    write::{ArchivedValue, BatchBuilder, BlobOp, assert::HashedValue, log::ChangeLogBuilder},
+    write::{Archive, BatchBuilder, BlobOp, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -184,7 +184,7 @@ impl SieveScriptSet for Server {
             // Obtain sieve script
             let document_id = id.document_id();
             if let Some(sieve) = self
-                .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
+                .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -192,7 +192,9 @@ impl SieveScriptSet for Server {
                 )
                 .await?
             {
-                let sieve = sieve.into_deserialized().caused_by(trc::location!())?;
+                let sieve = sieve
+                    .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                    .caused_by(trc::location!())?;
                 let prev_blob_hash = sieve.inner.blob_hash.clone();
 
                 match self

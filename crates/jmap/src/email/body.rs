@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use email::message::metadata::{MessageMetadataContents, MetadataPartType};
+use email::message::metadata::{
+    ArchivedHeaderValue, ArchivedMessageMetadataContents, ArchivedMetadataPartType,
+};
 use jmap_proto::types::{
     blob::BlobId,
     property::Property,
@@ -135,7 +137,7 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
     }
 }
 
-impl ToBodyPart for MessageMetadataContents<'_> {
+impl ToBodyPart for ArchivedMessageMetadataContents {
     fn to_body_part(
         &self,
         part_id: usize,
@@ -152,7 +154,7 @@ impl ToBodyPart for MessageMetadataContents<'_> {
                 parts.next().map(|part_id| (part_id, &self.parts[part_id]))
             {
                 let mut values = Object::with_capacity(properties.len());
-                let multipart = if let MetadataPartType::Multipart(parts) = &part.body {
+                let multipart = if let ArchivedMetadataPartType::Multipart(parts) = &part.body {
                     parts.into()
                 } else {
                     None
@@ -166,13 +168,13 @@ impl ToBodyPart for MessageMetadataContents<'_> {
                             BlobId::new_section(
                                 blob_id.hash.clone(),
                                 blob_id.class.clone(),
-                                part.offset_body + base_offset,
-                                part.offset_end + base_offset,
-                                part.encoding as u8,
+                                u32::from(part.offset_body) as usize + base_offset,
+                                u32::from(part.offset_end) as usize + base_offset,
+                                part.encoding.id(),
                             )
                             .into()
                         }
-                        Property::Size if multipart.is_none() => part.size.into(),
+                        Property::Size if multipart.is_none() => u32::from(part.size).into(),
                         Property::Name => part.attachment_name().into(),
                         Property::Type => part
                             .content_type()
@@ -182,27 +184,31 @@ impl ToBodyPart for MessageMetadataContents<'_> {
                                     .unwrap_or_else(|| ct.ctype().to_string())
                             })
                             .or_else(|| match &part.body {
-                                MetadataPartType::Text => Some("text/plain".to_string()),
-                                MetadataPartType::Html => Some("text/html".to_string()),
-                                MetadataPartType::Message(_) => Some("message/rfc822".to_string()),
+                                ArchivedMetadataPartType::Text => Some("text/plain".to_string()),
+                                ArchivedMetadataPartType::Html => Some("text/html".to_string()),
+                                ArchivedMetadataPartType::Message(_) => {
+                                    Some("message/rfc822".to_string())
+                                }
                                 _ => None,
                             })
                             .into(),
-                        Property::Charset => part
-                            .content_type()
-                            .and_then(|ct| ct.attribute("charset"))
-                            .or(match &part.body {
-                                MetadataPartType::Text | MetadataPartType::Html => Some("us-ascii"),
-                                _ => None,
-                            })
-                            .into(),
+                        Property::Charset => {
+                            part.content_type()
+                                .and_then(|ct| ct.attribute("charset"))
+                                .or(match &part.body {
+                                    ArchivedMetadataPartType::Text
+                                    | ArchivedMetadataPartType::Html => Some("us-ascii"),
+                                    _ => None,
+                                })
+                                .into()
+                        }
                         Property::Disposition => {
                             part.content_disposition().map(|cd| cd.ctype()).into()
                         }
                         Property::Cid => part.content_id().into(),
                         Property::Language => match part.content_language() {
-                            HeaderValue::Text(text) => vec![text.to_string()].into(),
-                            HeaderValue::TextList(list) => list
+                            ArchivedHeaderValue::Text(text) => vec![text.to_string()].into(),
+                            ArchivedHeaderValue::TextList(list) => list
                                 .iter()
                                 .map(|text| text.to_string().into())
                                 .collect::<Vec<Value>>()
@@ -221,7 +227,10 @@ impl ToBodyPart for MessageMetadataContents<'_> {
                 subparts.push(values);
 
                 if let Some(multipart) = multipart {
-                    let multipart = multipart.clone();
+                    let multipart = multipart
+                        .iter()
+                        .map(|id| u16::from(id) as usize)
+                        .collect::<Vec<_>>();
                     parts_stack.push((
                         parts,
                         std::mem::replace(&mut subparts, Vec::with_capacity(multipart.len())),
@@ -247,97 +256,101 @@ pub(super) trait TruncateBody {
 }
 
 impl TruncateBody for PartType<'_> {
-    fn truncate(&self, mut max_len: usize) -> (bool, String) {
+    fn truncate(&self, max_len: usize) -> (bool, String) {
         match self {
-            PartType::Text(text) => {
-                if max_len != 0 && text.len() > max_len {
-                    let add_dots = max_len > 6;
-                    if add_dots {
-                        max_len -= 3;
-                    }
-                    let mut result = String::with_capacity(max_len);
-                    for ch in text.chars() {
-                        if ch != '\r' {
-                            if ch.len_utf8() + result.len() > max_len {
-                                break;
-                            }
-                            result.push(ch);
-                        }
-                    }
-                    if add_dots {
-                        result.push_str("...");
-                    }
-                    (true, result)
-                } else {
-                    (false, text.replace('\r', ""))
-                }
-            }
-            PartType::Html(html) => {
-                if max_len != 0 && html.len() > max_len {
-                    let add_dots = max_len > 6;
-                    if add_dots {
-                        max_len -= 3;
-                    }
-
-                    let mut result = String::with_capacity(max_len);
-                    let mut in_tag = false;
-                    let mut in_comment = false;
-                    let mut last_tag_end_pos = 0;
-                    let mut cr_count = 0;
-                    for (pos, ch) in html.char_indices() {
-                        let mut set_last_tag = 0;
-                        match ch {
-                            '<' if !in_tag => {
-                                in_tag = true;
-                                if let Some("!--") = html.get(pos + 1..pos + 4) {
-                                    in_comment = true;
-                                }
-                                set_last_tag = pos;
-                            }
-                            '>' if in_tag => {
-                                if in_comment {
-                                    if let Some("--") = html.get(pos - 2..pos) {
-                                        in_comment = false;
-                                        in_tag = false;
-                                        set_last_tag = pos + 1;
-                                    }
-                                } else {
-                                    in_tag = false;
-                                    set_last_tag = pos + 1;
-                                }
-                            }
-                            '\r' => {
-                                cr_count += 1;
-                                continue;
-                            }
-                            _ => (),
-                        }
-                        if ch.len_utf8() + pos - cr_count > max_len {
-                            result.push_str(
-                                &html[0..if (in_tag || set_last_tag > 0) && last_tag_end_pos > 0 {
-                                    last_tag_end_pos
-                                } else {
-                                    pos
-                                }]
-                                    .replace('\r', ""),
-                            );
-                            if add_dots {
-                                result.push_str("...");
-                            }
-                            break;
-                        } else if set_last_tag > 0 {
-                            last_tag_end_pos = set_last_tag;
-                        }
-                    }
-                    (true, result)
-                } else {
-                    (false, html.replace('\r', ""))
-                }
-            }
+            PartType::Text(text) => truncate_plain(text, max_len),
+            PartType::Html(html) => truncate_html(html, max_len),
             PartType::Binary(bytes) | PartType::InlineBinary(bytes) => {
                 PartType::Text(String::from_utf8_lossy(bytes)).truncate(max_len)
             }
             _ => (false, "".into()),
         }
+    }
+}
+
+pub(crate) fn truncate_plain(text: &str, mut max_len: usize) -> (bool, String) {
+    if max_len != 0 && text.len() > max_len {
+        let add_dots = max_len > 6;
+        if add_dots {
+            max_len -= 3;
+        }
+        let mut result = String::with_capacity(max_len);
+        for ch in text.chars() {
+            if ch != '\r' {
+                if ch.len_utf8() + result.len() > max_len {
+                    break;
+                }
+                result.push(ch);
+            }
+        }
+        if add_dots {
+            result.push_str("...");
+        }
+        (true, result)
+    } else {
+        (false, text.replace('\r', ""))
+    }
+}
+
+pub(crate) fn truncate_html(html: &str, mut max_len: usize) -> (bool, String) {
+    if max_len != 0 && html.len() > max_len {
+        let add_dots = max_len > 6;
+        if add_dots {
+            max_len -= 3;
+        }
+
+        let mut result = String::with_capacity(max_len);
+        let mut in_tag = false;
+        let mut in_comment = false;
+        let mut last_tag_end_pos = 0;
+        let mut cr_count = 0;
+        for (pos, ch) in html.char_indices() {
+            let mut set_last_tag = 0;
+            match ch {
+                '<' if !in_tag => {
+                    in_tag = true;
+                    if let Some("!--") = html.get(pos + 1..pos + 4) {
+                        in_comment = true;
+                    }
+                    set_last_tag = pos;
+                }
+                '>' if in_tag => {
+                    if in_comment {
+                        if let Some("--") = html.get(pos - 2..pos) {
+                            in_comment = false;
+                            in_tag = false;
+                            set_last_tag = pos + 1;
+                        }
+                    } else {
+                        in_tag = false;
+                        set_last_tag = pos + 1;
+                    }
+                }
+                '\r' => {
+                    cr_count += 1;
+                    continue;
+                }
+                _ => (),
+            }
+            if ch.len_utf8() + pos - cr_count > max_len {
+                result.push_str(
+                    &html[0..if (in_tag || set_last_tag > 0) && last_tag_end_pos > 0 {
+                        last_tag_end_pos
+                    } else {
+                        pos
+                    }]
+                        .replace('\r', ""),
+                );
+                if add_dots {
+                    result.push_str("...");
+                }
+                break;
+            } else if set_last_tag > 0 {
+                last_tag_end_pos = set_last_tag;
+            }
+        }
+        (true, result)
+    } else {
+        (false, html.replace('\r', ""))
     }
 }

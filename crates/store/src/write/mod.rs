@@ -9,22 +9,15 @@ use std::{
     collections::HashSet,
     fmt::{self, Formatter},
     hash::Hash,
-    slice::Iter,
     time::{Duration, SystemTime},
 };
 
-use assert::HashedValue;
 use nlp::tokenizers::word::WordTokenizer;
 use rand::Rng;
 use roaring::RoaringBitmap;
-use utils::{
-    BlobHash,
-    codec::leb128::{Leb128Iterator, Leb128Vec},
-};
+use utils::BlobHash;
 
-use crate::{
-    BlobClass, Deserialize, Serialize, SerializeInfallible, Value, backend::MAX_TOKEN_LENGTH,
-};
+use crate::{BlobClass, SerializeInfallible, backend::MAX_TOKEN_LENGTH};
 
 use self::assert::AssertValue;
 
@@ -34,6 +27,30 @@ pub mod blob;
 pub mod hash;
 pub mod key;
 pub mod log;
+pub mod serialize;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Archive {
+    Raw(Vec<u8>),
+    Uncompressed(Vec<u8>),
+}
+
+#[repr(transparent)]
+pub struct Archiver<T>(pub T)
+where
+    T: rkyv::Archive
+        + for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::util::AlignedVec,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >;
+
+#[derive(Debug)]
+pub struct LegacyBincode<T: serde::Serialize + serde::de::DeserializeOwned> {
+    pub inner: T,
+}
 
 pub trait SerializeWithId: Send + Sync {
     fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>>;
@@ -303,177 +320,6 @@ impl<T> From<()> for TagValue<T> {
     }
 }
 
-impl SerializeInfallible for u32 {
-    fn serialize(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
-    }
-}
-
-impl SerializeInfallible for u64 {
-    fn serialize(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
-    }
-}
-
-impl SerializeInfallible for i64 {
-    fn serialize(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
-    }
-}
-
-impl SerializeInfallible for u16 {
-    fn serialize(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
-    }
-}
-
-impl SerializeInfallible for f64 {
-    fn serialize(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
-    }
-}
-
-impl SerializeInfallible for &str {
-    fn serialize(&self) -> Vec<u8> {
-        self.as_bytes().to_vec()
-    }
-}
-
-impl Deserialize for String {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        Ok(String::from_utf8_lossy(bytes).into_owned())
-    }
-
-    fn deserialize_owned(bytes: Vec<u8>) -> trc::Result<Self> {
-        Ok(String::from_utf8(bytes)
-            .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned()))
-    }
-}
-
-impl Deserialize for u64 {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        Ok(u64::from_be_bytes(bytes.try_into().map_err(|_| {
-            trc::StoreEvent::DataCorruption.caused_by(trc::location!())
-        })?))
-    }
-}
-
-impl Deserialize for i64 {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        Ok(i64::from_be_bytes(bytes.try_into().map_err(|_| {
-            trc::StoreEvent::DataCorruption.caused_by(trc::location!())
-        })?))
-    }
-}
-
-impl Deserialize for u32 {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        Ok(u32::from_be_bytes(bytes.try_into().map_err(|_| {
-            trc::StoreEvent::DataCorruption.caused_by(trc::location!())
-        })?))
-    }
-}
-
-pub trait SerializeInto {
-    fn serialize_into(&self, buf: &mut Vec<u8>);
-}
-
-pub trait DeserializeFrom: Sized {
-    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self>;
-}
-
-pub struct ArchivedValue<T> {
-    inner: Vec<u8>,
-    _phantom: std::marker::PhantomData<T>,
-}
-
-impl<T: SerializeInto> Serialize for Vec<T> {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(self.len() * 4);
-        bytes.push_leb128(self.len());
-        for item in self.iter() {
-            item.serialize_into(&mut bytes);
-        }
-        Ok(bytes)
-    }
-}
-
-impl SerializeInto for String {
-    fn serialize_into(&self, buf: &mut Vec<u8>) {
-        buf.push_leb128(self.len());
-        if !self.is_empty() {
-            buf.extend_from_slice(self.as_bytes());
-        }
-    }
-}
-
-impl SerializeInto for Vec<u8> {
-    fn serialize_into(&self, buf: &mut Vec<u8>) {
-        buf.push_leb128(self.len());
-        if !self.is_empty() {
-            buf.extend_from_slice(self.as_slice());
-        }
-    }
-}
-
-impl SerializeInto for u32 {
-    fn serialize_into(&self, buf: &mut Vec<u8>) {
-        buf.push_leb128(*self);
-    }
-}
-
-impl SerializeInto for u64 {
-    fn serialize_into(&self, buf: &mut Vec<u8>) {
-        buf.push_leb128(*self);
-    }
-}
-
-impl DeserializeFrom for u32 {
-    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
-        bytes.next_leb128()
-    }
-}
-
-impl DeserializeFrom for u64 {
-    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
-        bytes.next_leb128()
-    }
-}
-
-impl DeserializeFrom for String {
-    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
-        <Vec<u8>>::deserialize_from(bytes).and_then(|s| String::from_utf8(s).ok())
-    }
-}
-
-impl DeserializeFrom for Vec<u8> {
-    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
-        let len: usize = bytes.next_leb128()?;
-        let mut buf = Vec::with_capacity(len);
-        for _ in 0..len {
-            buf.push(*bytes.next()?);
-        }
-        buf.into()
-    }
-}
-
-impl<T: DeserializeFrom + Sync + Send> Deserialize for Vec<T> {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let mut bytes = bytes.iter();
-        let len: usize = bytes
-            .next_leb128()
-            .ok_or_else(|| trc::StoreEvent::DataCorruption.caused_by(trc::location!()))?;
-        let mut list = Vec::with_capacity(len);
-        for _ in 0..len {
-            list.push(
-                T::deserialize_from(&mut bytes)
-                    .ok_or_else(|| trc::StoreEvent::DataCorruption.caused_by(trc::location!()))?,
-            );
-        }
-        Ok(list)
-    }
-}
-
 pub trait TokenizeText {
     fn tokenize_into(&self, tokens: &mut HashSet<String>);
     fn to_tokens(&self) -> HashSet<String>;
@@ -490,18 +336,6 @@ impl TokenizeText for &str {
         let mut tokens = HashSet::new();
         self.tokenize_into(&mut tokens);
         tokens
-    }
-}
-
-impl Serialize for () {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        Ok(Vec::with_capacity(0))
-    }
-}
-
-impl Deserialize for () {
-    fn deserialize(_bytes: &[u8]) -> trc::Result<Self> {
-        Ok(())
     }
 }
 
@@ -571,124 +405,6 @@ impl BlobClass {
             BlobClass::Reserved { expires, .. } => *expires > now(),
             BlobClass::Linked { .. } => true,
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
-    pub inner: T,
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Bincode<T> {
-    pub fn new(inner: T) -> Self {
-        Self { inner }
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> From<Value<'static>> for Bincode<T> {
-    fn from(_: Value<'static>) -> Self {
-        unreachable!("From Value called on Bincode<T>")
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for Bincode<T> {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        bincode::serialize(&self.inner)
-            .map(|bytes| lz4_flex::compress_prepend_size(&bytes))
-            .map_err(|err| {
-                trc::StoreEvent::DeserializeError
-                    .caused_by(trc::location!())
-                    .reason(err)
-            })
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> Deserialize
-    for Bincode<T>
-{
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        lz4_flex::decompress_size_prepended(bytes)
-            .map_err(|err| {
-                trc::StoreEvent::DecompressError
-                    .ctx(trc::Key::Value, bytes)
-                    .caused_by(trc::location!())
-                    .reason(err)
-            })
-            .and_then(|result| {
-                bincode::deserialize(&result).map_err(|err| {
-                    trc::StoreEvent::DataCorruption
-                        .ctx(trc::Key::Value, bytes)
-                        .caused_by(trc::location!())
-                        .reason(err)
-                })
-            })
-            .map(|inner| Self { inner })
-    }
-}
-
-impl<T: Sync + Send> Deserialize for ArchivedValue<T> {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        Ok(ArchivedValue {
-            inner: bytes.to_vec(),
-            _phantom: std::marker::PhantomData,
-        })
-    }
-
-    fn deserialize_owned(bytes: Vec<u8>) -> trc::Result<Self> {
-        Ok(ArchivedValue {
-            inner: bytes,
-            _phantom: std::marker::PhantomData,
-        })
-    }
-}
-
-impl<T> ArchivedValue<T>
-where
-    T: rkyv::Portable
-        + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
-        + Sync
-        + Send,
-{
-    pub fn unarchive(&self) -> trc::Result<&T> {
-        rkyv::access::<T, rkyv::rancor::Error>(&self.inner).map_err(Into::into)
-    }
-
-    pub fn unarchive_unsafe(&self) -> &T {
-        unsafe { rkyv::access_unchecked::<T>(&self.inner) }
-    }
-
-    pub fn deserialize<V>(&self) -> trc::Result<V>
-    where
-        T: rkyv::Deserialize<V, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
-    {
-        rkyv::access::<T, rkyv::rancor::Error>(&self.inner)
-            .and_then(|value| rkyv::deserialize::<V, rkyv::rancor::Error>(value))
-            .map_err(Into::into)
-    }
-}
-
-impl<T> HashedValue<ArchivedValue<T>>
-where
-    T: rkyv::Portable
-        + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
-        + Sync
-        + Send,
-{
-    pub fn to_unarchived(&self) -> trc::Result<HashedValue<&T>> {
-        self.inner.unarchive().map(|inner| HashedValue {
-            hash: self.hash,
-            inner,
-        })
-    }
-
-    pub fn into_deserialized<V>(self) -> trc::Result<HashedValue<V>>
-    where
-        T: rkyv::Deserialize<V, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
-    {
-        self.inner.deserialize().map(|inner| HashedValue {
-            hash: self.hash,
-            inner,
-        })
     }
 }
 

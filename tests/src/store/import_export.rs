@@ -5,7 +5,7 @@
  */
 
 use ahash::AHashSet;
-use common::{manager::backup::BackupParams, Core};
+use common::{Core, manager::backup::BackupParams};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     rand,
@@ -35,7 +35,7 @@ pub async fn test(db: Store) {
     let mut blob_hashes = Vec::new();
     for blob_size in [16, 128, 1024, 2056, 102400] {
         let data = random_bytes(blob_size);
-        let hash = BlobHash::from(data.as_slice());
+        let hash = BlobHash::generate(data.as_slice());
         blob_hashes.push(hash.clone());
         core.storage
             .blob
