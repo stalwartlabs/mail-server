@@ -11,24 +11,22 @@ use crate::{
     op::ImapContext,
     spawn_op,
 };
-use common::{listener::SessionStream, Mailbox};
+use common::{Mailbox, listener::SessionStream};
 use directory::Permission;
 use imap_proto::{
+    Command, ResponseCode, StatusResponse,
     parser::PushUnique,
     protocol::status::{Status, StatusItem, StatusItemType},
     receiver::Request,
-    Command, ResponseCode, StatusResponse,
 };
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, id::Id, keyword::Keyword, property::Property, value::Value},
 };
-use store::{
-    roaring::RoaringBitmap,
-    write::{key::DeserializeBigEndian, ValueClass},
-    IndexKeyPrefix, IterateParams, ValueKey,
-};
 use store::{Deserialize, U32_LEN};
+use store::{
+    IndexKeyPrefix, IterateParams, roaring::RoaringBitmap, write::key::DeserializeBigEndian,
+};
 use trc::AddContext;
 
 use super::ToModSeq;
@@ -251,22 +249,10 @@ impl<T: SessionStream> SessionData<T> {
             for item in items_update {
                 let result = match item {
                     Status::Messages => mailbox_message_ids.as_ref().map(|v| v.len()).unwrap_or(0),
-                    Status::UidNext => {
-                        (self
-                            .server
-                            .core
-                            .storage
-                            .data
-                            .get_counter(ValueKey {
-                                account_id: mailbox.account_id,
-                                collection: Collection::Mailbox.into(),
-                                document_id: mailbox.mailbox_id,
-                                class: ValueClass::Property(Property::EmailIds.into()),
-                            })
-                            .await
-                            .caused_by(trc::location!())?
-                            + 1) as u64
-                    }
+                    Status::UidNext => self
+                        .get_uid_next(&mailbox)
+                        .await
+                        .caused_by(trc::location!())? as u64,
                     Status::UidValidity => self
                         .server
                         .get_property::<Object<Value>>(

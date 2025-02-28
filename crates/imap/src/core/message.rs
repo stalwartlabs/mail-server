@@ -7,14 +7,17 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
-use common::{listener::SessionStream, NextMailboxState};
+use common::{NextMailboxState, listener::SessionStream};
 use email::mailbox::UidMailbox;
-use imap_proto::protocol::{expunge, select::Exists, Sequence};
+use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
-use store::write::assert::HashedValue;
+use store::{
+    ValueKey,
+    write::{ValueClass, assert::HashedValue},
+};
 use trc::AddContext;
 
 use crate::core::ImapId;
@@ -37,8 +40,9 @@ impl<T: SessionStream> SessionData<T> {
             .await?
             .unwrap_or_default();
 
-        // Obtain UID validity
+        // Obtain UID validity and UID next
         let uid_validity = self.get_uid_validity(mailbox).await?;
+        let uid_next = self.get_uid_next(mailbox).await?;
 
         // Obtain current state
         let modseq = self
@@ -104,7 +108,7 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         let mut state = MailboxState {
-            uid_next: uid_max + 1,
+            uid_next,
             uid_validity,
             total_messages: id_to_imap.len(),
             id_to_imap,
@@ -244,6 +248,21 @@ impl<T: SessionStream> SessionData<T> {
                     .document_id(mailbox.mailbox_id)
             })
             .map(|v| v as u32)
+    }
+
+    pub async fn get_uid_next(&self, mailbox: &MailboxId) -> trc::Result<u32> {
+        self.server
+            .core
+            .storage
+            .data
+            .get_counter(ValueKey {
+                account_id: mailbox.account_id,
+                collection: Collection::Mailbox.into(),
+                document_id: mailbox.mailbox_id,
+                class: ValueClass::Property(Property::EmailIds.into()),
+            })
+            .await
+            .map(|v| (v + 1) as u32)
     }
 }
 
