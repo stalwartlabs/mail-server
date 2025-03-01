@@ -9,7 +9,7 @@ use std::{sync::Arc, time::Duration};
 use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
 use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
-use email::mailbox::{ArchivedUidMailbox, UidMailbox};
+use email::mailbox::UidMailbox;
 use futures::future::join_all;
 use jmap_client::{
     client::Client,
@@ -19,7 +19,6 @@ use jmap_client::{
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 use store::{
     rand::{self, Rng},
-    rkyv::vec::ArchivedVec,
     write::Archive,
 };
 
@@ -242,9 +241,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                     .await
                     .unwrap()
                 {
-                    let mailbox_tags = mailbox_tags
-                        .deserialize::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
-                        .unwrap();
+                    let mailbox_tags = mailbox_tags.deserialize::<Vec<UidMailbox>>().unwrap();
                     if mailbox_tags.len() != 1 {
                         panic!(
                             "Email ORM has more than one mailbox {:?}! Id {} in mailbox {} with messages {:?}",

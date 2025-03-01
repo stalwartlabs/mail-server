@@ -12,7 +12,7 @@ use common::{
     sharing::EffectiveAcl,
 };
 use directory::{QueryBy, backend::internal::PrincipalField};
-use email::mailbox::{ArchivedMailbox, INBOX_ID, manage::MailboxFnc};
+use email::mailbox::{INBOX_ID, manage::MailboxFnc};
 use imap_proto::protocol::list::Attribute;
 use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, property::Property};
 use parking_lot::Mutex;
@@ -165,7 +165,7 @@ impl<T: SessionStream> SessionData<T> {
             .caused_by(trc::location!())?
         {
             let mailbox = mailbox_
-                .unarchive::<ArchivedMailbox>()
+                .unarchive::<email::mailbox::Mailbox>()
                 .caused_by(trc::location!())?;
             // Map special uses
             let role = SpecialUse::from(&mailbox.role);
@@ -631,7 +631,7 @@ impl<T: SessionStream> SessionData<T> {
                     if let Some(mailbox) = mailbox {
                         Ok(Some(
                             mailbox
-                                .unarchive::<ArchivedMailbox>()?
+                                .unarchive::<email::mailbox::Mailbox>()?
                                 .acls
                                 .effective_acl(&access_token)
                                 .contains(item),

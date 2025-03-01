@@ -28,22 +28,22 @@ use std::{
 
 use ::managesieve::core::ManageSieveSessionManager;
 use common::{
+    Caches, Core, Data, Inner, Server,
     config::{
         server::{Listeners, ServerProtocol},
         telemetry::Telemetry,
     },
     core::BuildServer,
     manager::boot::build_ipc,
-    Caches, Core, Data, Inner, Server,
 };
 
 use ::store::Stores;
 use ahash::AHashSet;
 use imap::core::ImapSessionManager;
 use imap_proto::ResponseType;
-use jmap::{api::JmapSessionManager, SpawnServices};
+use jmap::{SpawnServices, api::JmapSessionManager};
 use pop3::Pop3SessionManager;
-use smtp::{core::SmtpSessionManager, SpawnQueueManager};
+use smtp::{SpawnQueueManager, core::SmtpSessionManager};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -52,7 +52,7 @@ use tokio::{
 use utils::config::Config;
 
 use crate::{
-    add_test_certs, directory::internal::TestInternalDirectory, store::TempDir, AssertConfig,
+    AssertConfig, add_test_certs, directory::internal::TestInternalDirectory, store::TempDir,
 };
 
 const SERVER: &str = r#"

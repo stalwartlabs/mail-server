@@ -36,10 +36,7 @@ impl SieveScriptQuery for Server {
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
-                Filter::Name(name) => filters.push(query::Filter::contains(
-                    Property::Name,
-                    name.to_lowercase().into_bytes(),
-                )),
+                Filter::Name(name) => filters.push(query::Filter::contains(Property::Name, &name)),
                 Filter::IsActive(is_active) => filters.push(query::Filter::eq(
                     Property::IsActive,
                     (is_active as u32).serialize(),

@@ -31,7 +31,7 @@ use utils::config::utils::ParseValue;
 
 use std::future::Future;
 
-use super::{ActiveScript, ArchivedSeenIds, ArchivedSieveScript, SeenIdHash, SeenIds};
+use super::{ActiveScript, SeenIdHash, SeenIds, SieveScript};
 
 struct SieveMessage<'x> {
     pub raw_message: Cow<'x, [u8]>,
@@ -149,7 +149,7 @@ impl SieveScriptIngest for Server {
         };
         let mut seen_ids = if let Some(seen_ids) = active_script.seen_ids {
             seen_ids
-                .deserialize::<ArchivedSeenIds, SeenIds>()
+                .deserialize::<SeenIds>()
                 .caused_by(trc::location!())?
         } else {
             SeenIds::default()
@@ -648,7 +648,7 @@ impl SieveScriptIngest for Server {
         // Obtain the sieve script length
         let unarchived_script = script_object
             .inner
-            .unarchive::<ArchivedSieveScript>()
+            .unarchive::<SieveScript>()
             .caused_by(trc::location!())?;
         let script_offset = u32::from(unarchived_script.size) as usize;
 

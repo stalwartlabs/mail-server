@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use email::sieve::ArchivedSieveScript;
+use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
 use jmap_proto::types::{blob::BlobSection, collection::Collection, property::Property};
 use store::write::Archive;
@@ -52,7 +52,7 @@ impl<T: SessionStream> Session<T> {
                     .code(ResponseCode::NonExistent)
             })?;
         let sieve = sieve_
-            .unarchive::<ArchivedSieveScript>()
+            .unarchive::<SieveScript>()
             .caused_by(trc::location!())?;
         let blob_size = u32::from(sieve.size) as usize;
         let script = self

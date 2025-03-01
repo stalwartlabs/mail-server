@@ -16,7 +16,7 @@ pub mod index;
 pub mod ingest;
 pub mod serialize;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ActiveScript {
     pub document_id: u32,
     pub script_name: String,

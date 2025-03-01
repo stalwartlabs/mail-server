@@ -12,7 +12,6 @@ use jmap_proto::{
     error::set::{SetError, SetErrorType},
     types::{acl::Acl, collection::Collection, id::Id, property::Property},
 };
-use rkyv::vec::ArchivedVec;
 use store::{
     Serialize, SerializeInfallible,
     query::Filter,
@@ -112,7 +111,7 @@ impl MailboxDestroy for Server {
                 {
                     // Remove mailbox from list
                     let mut mailbox_ids = mailbox_ids
-                        .into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                        .into_deserialized::<Vec<UidMailbox>>()
                         .caused_by(trc::location!())?;
                     let orig_len = mailbox_ids.inner.len();
                     mailbox_ids.inner.retain(|id| id.mailbox_id != document_id);
@@ -202,7 +201,7 @@ impl MailboxDestroy for Server {
             .caused_by(trc::location!())?
         {
             let mailbox = mailbox
-                .into_deserialized::<ArchivedMailbox, Mailbox>()
+                .into_deserialized::<Mailbox>()
                 .caused_by(trc::location!())?;
             // Validate ACLs
             if access_token.is_shared(account_id) {

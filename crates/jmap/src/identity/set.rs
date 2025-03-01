@@ -6,7 +6,7 @@
 
 use common::Server;
 use directory::{QueryBy, backend::internal::PrincipalField};
-use email::identity::{ArchivedIdentity, EmailAddress, Identity};
+use email::identity::{EmailAddress, Identity};
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -128,7 +128,7 @@ impl IdentitySet for Server {
                 .await?
             {
                 identity
-                    .deserialize::<ArchivedIdentity, Identity>()
+                    .deserialize::<Identity>()
                     .caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());

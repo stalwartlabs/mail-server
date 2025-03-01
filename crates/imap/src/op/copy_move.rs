@@ -8,7 +8,7 @@ use std::{sync::Arc, time::Instant};
 
 use directory::Permission;
 use email::{
-    mailbox::{ArchivedUidMailbox, JUNK_ID, UidMailbox},
+    mailbox::{JUNK_ID, UidMailbox},
     message::{bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest},
 };
 use imap_proto::{
@@ -31,7 +31,6 @@ use jmap_proto::{
 };
 use store::{
     SerializeInfallible,
-    rkyv::vec::ArchivedVec,
     roaring::RoaringBitmap,
     write::{Archive, BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
@@ -485,7 +484,7 @@ impl<T: SessionStream> SessionData<T> {
             Ok(Some((
                 TagManager::new(
                     mailboxes
-                        .into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                        .into_deserialized::<Vec<UidMailbox>>()
                         .caused_by(trc::location!())?,
                 ),
                 thread_id,

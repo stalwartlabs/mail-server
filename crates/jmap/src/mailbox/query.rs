@@ -5,18 +5,18 @@
  */
 
 use common::{Server, auth::AccessToken};
-use email::mailbox::{ArchivedMailbox, manage::MailboxFnc};
+use email::mailbox::manage::MailboxFnc;
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::mailbox::QueryArguments,
     types::{acl::Acl, collection::Collection, property::Property},
 };
 use store::{
-    Serialize, SerializeInfallible,
+    SerializeInfallible,
     ahash::{AHashMap, AHashSet},
     query::{self, sort::Pagination},
     roaring::RoaringBitmap,
-    write::{Archive},
+    write::Archive,
 };
 
 use crate::{JmapMethods, UpdateResults};
@@ -59,10 +59,7 @@ impl MailboxQuery for Server {
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }
                     }
-                    filters.push(query::Filter::contains(
-                        Property::Name,
-                        name.to_lowercase().into_bytes(),
-                    ));
+                    filters.push(query::Filter::contains(Property::Name, &name));
                 }
                 Filter::Role(role) => {
                     if let Some(role) = role {
@@ -134,7 +131,7 @@ impl MailboxQuery for Server {
                 .await?
             {
                 let todo = "use index";
-                let mailbox = value.unarchive::<ArchivedMailbox>()?;
+                let mailbox = value.unarchive::<email::mailbox::Mailbox>()?;
                 let parent_id = u32::from(mailbox.parent_id);
                 hierarchy.insert(document_id + 1, parent_id);
                 tree.entry(parent_id)

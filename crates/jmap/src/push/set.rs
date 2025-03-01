@@ -6,7 +6,7 @@
 
 use base64::{Engine, engine::general_purpose};
 use common::{Server, auth::AccessToken};
-use email::push::{ArchivedPushSubscription, Keys, PushSubscription};
+use email::push::{Keys, PushSubscription};
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -144,7 +144,7 @@ impl PushSubscriptionSet for Server {
                 )
                 .await?
             {
-                push.deserialize::<ArchivedPushSubscription, email::push::PushSubscription>()
+                push.deserialize::<email::push::PushSubscription>()
                     .caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());

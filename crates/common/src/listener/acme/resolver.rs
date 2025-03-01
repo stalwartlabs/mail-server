@@ -20,7 +20,7 @@ use crate::{KV_ACME, Server};
 
 use super::{
     AcmeProvider, StaticResolver,
-    directory::{ACME_TLS_ALPN_NAME, ArchivedSerializedCert},
+    directory::{ACME_TLS_ALPN_NAME, SerializedCert},
 };
 
 impl Server {
@@ -51,7 +51,7 @@ impl Server {
             .key_get::<Archive>(KeyValue::<()>::build_key(KV_ACME, domain))
             .await
         {
-            Ok(Some(cert_)) => match cert_.unarchive::<ArchivedSerializedCert>() {
+            Ok(Some(cert_)) => match cert_.unarchive::<SerializedCert>() {
                 Ok(cert) => {
                     match any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
                         cert.private_key.as_ref(),

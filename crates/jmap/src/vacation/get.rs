@@ -5,7 +5,7 @@
  */
 
 use common::Server;
-use email::sieve::ArchivedSieveScript;
+use email::sieve::SieveScript;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     request::reference::MaybeReference,
@@ -90,7 +90,7 @@ impl VacationResponseGet for Server {
                     .await?
                 {
                     let sieve = sieve_
-                        .unarchive::<ArchivedSieveScript>()
+                        .unarchive::<SieveScript>()
                         .caused_by(trc::location!())?;
                     let vacation = sieve.vacation_response.as_ref();
                     let mut result = Object::with_capacity(properties.len());

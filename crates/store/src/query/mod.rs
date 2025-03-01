@@ -128,11 +128,11 @@ impl Filter {
         }
     }
 
-    pub fn contains(field: impl Into<u8>, value: Vec<u8>) -> Self {
+    pub fn contains(field: impl Into<u8>, value: &str) -> Self {
         Filter::MatchValue {
             field: field.into(),
             op: Operator::Contains,
-            value,
+            value: value.to_lowercase().into_bytes(),
         }
     }
 

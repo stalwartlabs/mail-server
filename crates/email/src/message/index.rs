@@ -38,7 +38,7 @@ pub const PREVIEW_LENGTH: usize = 256;
 impl MessageMetadata {
     #[inline(always)]
     pub fn root_part(&self) -> &MessageMetadataPart {
-        &self.contents.parts[0]
+        &self.contents[0].parts[0]
     }
 
     pub fn index(
@@ -173,7 +173,9 @@ impl MessageMetadata {
                 HeaderName::Date => {
                     if !seen_headers[header.name.id() as usize] {
                         if let HeaderValue::DateTime(datetime) = &header.value {
-                            let value = (*datetime as u64).serialize();
+                            let value = (mail_parser::DateTime::from(datetime).to_timestamp()
+                                as u64)
+                                .serialize();
                             if set {
                                 batch.index(Property::SentAt, value);
                             } else {
@@ -231,7 +233,7 @@ impl MessageMetadata {
 impl ArchivedMessageMetadata {
     #[inline(always)]
     pub fn root_part(&self) -> &ArchivedMessageMetadataPart {
-        &self.contents.parts[0]
+        &self.contents[0].parts[0]
     }
 
     pub fn index(
@@ -367,7 +369,9 @@ impl ArchivedMessageMetadata {
                 ArchivedHeaderName::Date => {
                     if !seen_headers[header.name.id() as usize] {
                         if let ArchivedHeaderValue::DateTime(datetime) = &header.value {
-                            let value = (i64::from(*datetime) as u64).serialize();
+                            let value = (mail_parser::DateTime::from(datetime).to_timestamp()
+                                as u64)
+                                .serialize();
                             if set {
                                 batch.index(Property::SentAt, value);
                             } else {
@@ -553,11 +557,12 @@ impl IndexMessage for BatchBuilder {
                 .get(root_part.offset_header..root_part.offset_body)
                 .unwrap_or_default()
                 .to_vec(),
-            contents: message.into(),
+            contents: vec![],
             received_at,
             has_attachments,
             blob_hash,
-        };
+        }
+        .with_contents(message);
         metadata.index_headers(self, true);
 
         // Store and index hasAttachment property
@@ -596,9 +601,9 @@ impl<'x> IndexMessageText<'x> for FtsDocument<'x, mail_parser::HeaderName<'x>> {
         raw_message: &'x [u8],
     ) -> Self {
         let mut language = Language::Unknown;
+        let message_contents = &message.contents[0];
 
-        for (part_id, part) in message
-            .contents
+        for (part_id, part) in message_contents
             .parts
             .iter()
             .take(MAX_MESSAGE_PARTS)
@@ -679,15 +684,16 @@ impl<'x> IndexMessageText<'x> for FtsDocument<'x, mail_parser::HeaderName<'x>> {
                         _ => unreachable!(),
                     };
 
-                    if message.contents.is_html_part(part_id)
-                        || message.contents.is_text_part(part_id)
+                    if message_contents.is_html_part(part_id)
+                        || message_contents.is_text_part(part_id)
                     {
                         self.index(Field::Body, text, part_language);
                     } else {
                         self.index(Field::Attachment, text, part_language);
                     }
                 }
-                ArchivedMetadataPartType::Message(nested_message) => {
+                ArchivedMetadataPartType::Message(nested_message_id) => {
+                    let nested_message = message.message_id(*nested_message_id);
                     let nested_message_language = nested_message
                         .root_part()
                         .language()

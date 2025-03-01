@@ -13,7 +13,7 @@ use store::{
 };
 use trc::AddContext;
 
-use super::{ArchivedSieveScript, SieveScript};
+use super::SieveScript;
 
 pub trait SieveScriptActivate: Sync + Send {
     fn sieve_activate_script(
@@ -68,7 +68,7 @@ impl SieveScriptActivate for Server {
                 .await?
             {
                 let sieve = sieve
-                    .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                    .into_deserialized::<SieveScript>()
                     .caused_by(trc::location!())?;
                 let mut new_sieve = sieve.inner.clone();
                 new_sieve.is_active = false;
@@ -97,7 +97,7 @@ impl SieveScriptActivate for Server {
                 .await?
             {
                 let sieve = sieve
-                    .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                    .into_deserialized::<SieveScript>()
                     .caused_by(trc::location!())?;
                 let mut new_sieve = sieve.inner.clone();
                 new_sieve.is_active = true;

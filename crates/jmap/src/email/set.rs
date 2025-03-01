@@ -8,7 +8,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use common::{Server, auth::AccessToken, storage::tag::TagManager};
 use email::{
-    mailbox::{ArchivedUidMailbox, UidMailbox, manage::MailboxFnc},
+    mailbox::{UidMailbox, manage::MailboxFnc},
     message::{
         delete::EmailDeletion,
         ingest::{EmailIngest, IngestEmail, IngestSource},
@@ -21,7 +21,7 @@ use jmap_proto::{
     types::{
         acl::Acl,
         collection::Collection,
-        keyword::{ArchivedKeyword, Keyword},
+        keyword::Keyword,
         property::Property,
         state::{State, StateChange},
         type_state::DataType,
@@ -40,7 +40,6 @@ use mail_parser::MessageParser;
 use store::{
     SerializeInfallible,
     ahash::AHashSet,
-    rkyv::vec::ArchivedVec,
     roaring::RoaringBitmap,
     write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
 };
@@ -783,12 +782,12 @@ impl EmailSet for Server {
                 (
                     TagManager::new(
                         mailboxes
-                            .into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                            .into_deserialized::<Vec<UidMailbox>>()
                             .caused_by(trc::location!())?,
                     ),
                     TagManager::new(
                         keywords
-                            .into_deserialized::<ArchivedVec<ArchivedKeyword>, Vec<Keyword>>()
+                            .into_deserialized::<Vec<Keyword>>()
                             .caused_by(trc::location!())?,
                     ),
                 )

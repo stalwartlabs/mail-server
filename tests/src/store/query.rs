@@ -145,7 +145,7 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                         match FIELDS_OPTIONS[pos] {
                             FieldType::Text => {
                                 if !field.is_empty() {
-                                    builder.tag(field_id, field.to_lowercase()).set(
+                                    builder.index(field_id, field.to_lowercase()).set(
                                         ValueClass::Property(field_id),
                                         field.to_lowercase().into_bytes(),
                                     );
@@ -326,7 +326,7 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
         ),
         (
             vec![
-                Filter::has_text(fields_u8["artist"], "mauro kunst"),
+                Filter::contains(fields_u8["artist"], "kunst, mauro"),
                 Filter::is_in_bitmap(
                     fields_u8["artistRole"],
                     Keyword::Other("artist".to_string()),
@@ -374,7 +374,7 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
         (
             vec![
                 Filter::And,
-                Filter::has_text(fields_u8["artist"], "warhol"),
+                Filter::contains(fields_u8["artist"], "warhol"),
                 Filter::Not,
                 Filter::is_in_set(
                     fts.query(

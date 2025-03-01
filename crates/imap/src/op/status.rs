@@ -13,7 +13,6 @@ use crate::{
 };
 use common::{Mailbox, listener::SessionStream};
 use directory::Permission;
-use email::mailbox::ArchivedMailbox;
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     parser::PushUnique,
@@ -271,7 +270,7 @@ impl<T: SessionStream> SessionData<T> {
                                     .account_id(mailbox.account_id)
                                     .document_id(mailbox.mailbox_id)
                             })?
-                            .unarchive::<ArchivedMailbox>()
+                            .unarchive::<email::mailbox::Mailbox>()
                             .caused_by(trc::location!())?
                             .uid_validity,
                     ) as u64,

@@ -16,7 +16,7 @@ use store::write::{Archive, TaskQueueClass};
 use trc::StoreEvent;
 use utils::BlobHash;
 
-use super::metadata::ArchivedMessageMetadata;
+use super::metadata::MessageMetadata;
 
 pub trait EmailBayesTrain: Sync + Send {
     fn email_bayes_train(
@@ -75,7 +75,7 @@ impl EmailBayesTrain for Server {
 
         Ok(TaskQueueClass::BayesTrain {
             seq: self.generate_snowflake_id()?,
-            hash: BlobHash::from(&metadata.unarchive::<ArchivedMessageMetadata>()?.blob_hash),
+            hash: BlobHash::from(&metadata.unarchive::<MessageMetadata>()?.blob_hash),
             learn_spam,
         })
     }

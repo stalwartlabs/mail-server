@@ -14,6 +14,7 @@ use std::{
 
 use nlp::tokenizers::word::WordTokenizer;
 use rand::Rng;
+use rkyv::util::AlignedVec;
 use roaring::RoaringBitmap;
 use utils::BlobHash;
 
@@ -29,10 +30,12 @@ pub mod key;
 pub mod log;
 pub mod serialize;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) const ARCHIVE_ALIGNMENT: usize = 16;
+
+#[derive(Debug, Clone)]
 pub enum Archive {
-    Raw(Vec<u8>),
-    Uncompressed(Vec<u8>),
+    Aligned(AlignedVec<ARCHIVE_ALIGNMENT>),
+    Vec(Vec<u8>),
 }
 
 #[repr(transparent)]

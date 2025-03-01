@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::sieve::{ArchivedSieveScript, SieveScript};
+use email::sieve::{SieveScript};
 use imap_proto::receiver::Request;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
@@ -74,7 +74,7 @@ impl<T: SessionStream> Session<T> {
                     .details("Script not found")
                     .code(ResponseCode::NonExistent)
             })?
-            .into_deserialized::<ArchivedSieveScript, SieveScript>()
+            .into_deserialized::<SieveScript>()
             .caused_by(trc::location!())?;
 
         // Write record

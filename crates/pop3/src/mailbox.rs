@@ -7,12 +7,11 @@
 use std::collections::BTreeMap;
 
 use common::listener::SessionStream;
-use email::mailbox::{ArchivedMailbox, ArchivedUidMailbox, INBOX_ID, manage::MailboxFnc};
+use email::mailbox::{INBOX_ID, UidMailbox, manage::MailboxFnc};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     IndexKey, IterateParams, SerializeInfallible, U32_LEN,
     ahash::AHashMap,
-    rkyv::vec::ArchivedVec,
     write::{Archive, key::DeserializeBigEndian},
 };
 use trc::AddContext;
@@ -79,7 +78,7 @@ impl<T: SessionStream> Session<T> {
                         .account_id(account_id)
                         .document_id(INBOX_ID)
                 })?
-                .unarchive::<ArchivedMailbox>()
+                .unarchive::<email::mailbox::Mailbox>()
                 .caused_by(trc::location!())?
                 .uid_validity,
         );
@@ -137,7 +136,7 @@ impl<T: SessionStream> Session<T> {
         {
             // Make sure the message is still in Inbox
             if let Some(item) = uid_mailbox
-                .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                .unarchive::<Vec<UidMailbox>>()
                 .caused_by(trc::location!())?
                 .iter()
                 .find(|item| item.mailbox_id == INBOX_ID)

@@ -16,7 +16,7 @@ use directory::Permission;
 use email::message::metadata::{
     ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
     ArchivedMessageMetadata, ArchivedMessageMetadataContents, ArchivedMetadataPartType,
-    DecodedParts,
+    DecodedParts, MessageMetadata,
 };
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
@@ -40,11 +40,10 @@ use jmap_proto::types::{
     state::StateChange,
     type_state::DataType,
 };
-use mail_parser::DateTime;
 use store::{
     Serialize, SerializeInfallible,
     query::log::{Change, Query},
-    rkyv::{rend::u16_le, vec::ArchivedVec},
+    rkyv::rend::u16_le,
     write::{Archive, Archiver, BatchBuilder, assert::HashedValue, serialize::rkyv_deserialize},
 };
 
@@ -309,7 +308,7 @@ impl<T: SessionStream> SessionData<T> {
 
         for (seqnum, uid, id) in ids {
             // Obtain attributes and keywords
-            let (email_, keywords_) = if let (Some(email), Some(keywords)) = (
+            let (metadata_, keywords_) = if let (Some(email), Some(keywords)) = (
                 self.server
                     .get_property::<Archive>(
                         account_id,
@@ -341,12 +340,12 @@ impl<T: SessionStream> SessionData<T> {
                 );
                 continue;
             };
-            let email = email_
-                .unarchive::<ArchivedMessageMetadata>()
+            let metadata = metadata_
+                .unarchive::<MessageMetadata>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let keywords = keywords_
                 .inner
-                .unarchive::<ArchivedVec<ArchivedKeyword>>()
+                .unarchive::<Vec<Keyword>>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
             // Fetch and parse blob
@@ -355,7 +354,7 @@ impl<T: SessionStream> SessionData<T> {
                 match self
                     .server
                     .blob_store()
-                    .get_blob(email.blob_hash.0.as_slice(), 0..usize::MAX)
+                    .get_blob(metadata.blob_hash.0.as_slice(), 0..usize::MAX)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
                 {
@@ -366,7 +365,7 @@ impl<T: SessionStream> SessionData<T> {
                             AccountId = account_id,
                             DocumentId = id,
                             Collection = Collection::Email,
-                            BlobId = email.blob_hash.0.as_slice(),
+                            BlobId = metadata.blob_hash.0.as_slice(),
                             Details = "Blob not found.",
                             CausedBy = trc::location!(),
                         );
@@ -375,10 +374,10 @@ impl<T: SessionStream> SessionData<T> {
                     }
                 }
             } else {
-                email.raw_headers.as_slice().into()
+                metadata.raw_headers.as_slice().into()
             };
-            let message = &email.contents;
-            let decoded = message.decode_contents(raw_message.as_ref());
+            let message = &metadata.contents[0];
+            let decoded = metadata.decode_contents(raw_message.as_ref());
 
             // Build response
             let mut items = Vec::with_capacity(arguments.attributes.len());
@@ -414,13 +413,13 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::InternalDate => {
                         items.push(DataItem::InternalDate {
-                            date: u64::from(email.received_at) as i64,
+                            date: u64::from(metadata.received_at) as i64,
                         });
                     }
                     Attribute::Preview { .. } => {
                         items.push(DataItem::Preview {
-                            contents: if !email.preview.is_empty() {
-                                Some(email.preview.as_bytes().into())
+                            contents: if !metadata.preview.is_empty() {
+                                Some(metadata.preview.as_bytes().into())
                             } else {
                                 None
                             },
@@ -428,7 +427,7 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::Rfc822Size => {
                         items.push(DataItem::Rfc822Size {
-                            size: u32::from(email.size) as usize,
+                            size: u32::from(metadata.size) as usize,
                         });
                     }
                     Attribute::Uid => {
@@ -440,7 +439,7 @@ impl<T: SessionStream> SessionData<T> {
                         });
                     }
                     Attribute::Rfc822Header => {
-                        let message = email.root_part();
+                        let message = metadata.root_part();
                         if let Some(header) = raw_message.get(
                             u32::from(message.offset_header) as usize
                                 ..u32::from(message.offset_body) as usize,
@@ -457,18 +456,19 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::Body => {
                         items.push(DataItem::Body {
-                            part: message.body_structure(&decoded, false),
+                            part: metadata.body_structure(&decoded, false),
                         });
                     }
                     Attribute::BodyStructure => {
                         items.push(DataItem::BodyStructure {
-                            part: message.body_structure(&decoded, true),
+                            part: metadata.body_structure(&decoded, true),
                         });
                     }
                     Attribute::BodySection {
                         sections, partial, ..
                     } => {
-                        if let Some(contents) = message.body_section(&decoded, sections, *partial) {
+                        if let Some(contents) = metadata.body_section(&decoded, sections, *partial)
+                        {
                             items.push(DataItem::BodySection {
                                 sections: sections.to_vec(),
                                 origin_octet: partial.map(|(start, _)| start),
@@ -479,7 +479,7 @@ impl<T: SessionStream> SessionData<T> {
 
                     Attribute::Binary {
                         sections, partial, ..
-                    } => match message.binary(&decoded, sections, *partial) {
+                    } => match metadata.binary(&decoded, sections, *partial) {
                         Ok(Some(contents)) => {
                             items.push(DataItem::Binary {
                                 sections: sections.to_vec(),
@@ -508,7 +508,7 @@ impl<T: SessionStream> SessionData<T> {
                         _ => (),
                     },
                     Attribute::BinarySize { sections } => {
-                        if let Some(size) = message.binary_size(&decoded, sections) {
+                        if let Some(size) = metadata.binary_size(&decoded, sections) {
                             items.push(DataItem::BinarySize {
                                 sections: sections.to_vec(),
                                 size,
@@ -661,6 +661,10 @@ pub trait AsImapDataItem {
         partial: Option<(u32, u32)>,
     ) -> Result<Option<BodyContents<'x>>, ()>;
     fn binary_size(&self, decoded: &DecodedParts<'_>, sections: &[u32]) -> Option<usize>;
+}
+
+#[allow(clippy::result_unit_err)]
+pub trait AsImapDataItemPart {
     fn as_body_part(
         &self,
         decoded: &DecodedParts<'_>,
@@ -668,68 +672,11 @@ pub trait AsImapDataItem {
         part_id: usize,
         is_extended: bool,
     ) -> BodyPart;
+
     fn envelope(&self) -> Envelope;
 }
 
-impl AsImapDataItem for ArchivedMessageMetadataContents {
-    fn body_structure(&self, decoded: &DecodedParts<'_>, is_extended: bool) -> BodyPart {
-        let mut stack = Vec::new();
-        let base_part = [u16_le::from_native(0)];
-        let mut parts = base_part.as_slice().iter();
-        let mut message = self;
-        let mut root_part = None;
-        let mut message_id = 0;
-
-        loop {
-            while let Some(part_id) = parts.next() {
-                let part_id = u16::from(part_id) as usize;
-                let mut part = message.as_body_part(decoded, message_id, part_id, is_extended);
-
-                match &message.parts[part_id].body {
-                    ArchivedMetadataPartType::Message(nested_message) => {
-                        part.set_envelope(nested_message.envelope());
-                        if let Some(root_part) = root_part {
-                            stack.push((root_part, parts, (message, message_id).into()));
-                            message_id += 1;
-                        }
-                        root_part = part.into();
-                        parts = base_part.as_slice().iter();
-                        message = nested_message;
-                        continue;
-                    }
-                    ArchivedMetadataPartType::Multipart(subparts) => {
-                        if let Some(root_part) = root_part {
-                            stack.push((root_part, parts, None));
-                        }
-                        root_part = part.into();
-                        parts = subparts.iter();
-                        continue;
-                    }
-                    _ => (),
-                }
-                if let Some(root_part) = &mut root_part {
-                    root_part.add_part(part);
-                } else {
-                    return part;
-                }
-            }
-            if let Some((mut prev_root_part, prev_parts, prev_message)) = stack.pop() {
-                if let Some((prev_message, prev_message_id)) = prev_message {
-                    message = prev_message;
-                    message_id = prev_message_id;
-                }
-
-                prev_root_part.add_part(root_part.unwrap());
-                parts = prev_parts;
-                root_part = prev_root_part.into();
-            } else {
-                break;
-            }
-        }
-
-        root_part.unwrap()
-    }
-
+impl AsImapDataItemPart for ArchivedMessageMetadataContents {
     fn as_body_part(
         &self,
         decoded: &DecodedParts<'_>,
@@ -880,6 +827,112 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
         }
     }
 
+    fn envelope(&self) -> Envelope {
+        let headers = self.root_part();
+        Envelope {
+            date: headers.date(),
+            subject: headers.subject().map(|s| s.into()),
+            from: headers
+                .header_values(ArchivedHeaderName::From)
+                .flat_map(|a| a.as_imap_address())
+                .collect(),
+            sender: headers
+                .header_values(ArchivedHeaderName::Sender)
+                .flat_map(|a| a.as_imap_address())
+                .collect(),
+            reply_to: headers
+                .header_values(ArchivedHeaderName::ReplyTo)
+                .flat_map(|a| a.as_imap_address())
+                .collect(),
+            to: headers
+                .header_values(ArchivedHeaderName::To)
+                .flat_map(|a| a.as_imap_address())
+                .collect(),
+            cc: headers
+                .header_values(ArchivedHeaderName::Cc)
+                .flat_map(|a| a.as_imap_address())
+                .collect(),
+            bcc: headers
+                .header_values(ArchivedHeaderName::Bcc)
+                .flat_map(|a| a.as_imap_address())
+                .collect(),
+            in_reply_to: headers.in_reply_to().as_text_list().map(|list| {
+                let mut irt = String::with_capacity(list.len() * 10);
+                for (pos, l) in list.iter().enumerate() {
+                    if pos > 0 {
+                        irt.push(' ');
+                    }
+                    irt.push('<');
+                    irt.push_str(l.as_ref());
+                    irt.push('>');
+                }
+                irt.into()
+            }),
+            message_id: headers.message_id().map(|id| format!("<{}>", id).into()),
+        }
+    }
+}
+
+impl AsImapDataItem for ArchivedMessageMetadata {
+    fn body_structure(&self, decoded: &DecodedParts<'_>, is_extended: bool) -> BodyPart {
+        let mut stack = Vec::new();
+        let base_part = [u16_le::from_native(0)];
+        let mut parts = base_part.as_slice().iter();
+        let mut message = &self.contents[0];
+        let mut root_part = None;
+        let mut message_id = 0;
+
+        loop {
+            while let Some(part_id) = parts.next() {
+                let part_id = u16::from(part_id) as usize;
+                let mut part = message.as_body_part(decoded, message_id, part_id, is_extended);
+
+                match &message.parts[part_id].body {
+                    ArchivedMetadataPartType::Message(nested_message_id) => {
+                        let nested_message = self.message_id(*nested_message_id);
+                        part.set_envelope(nested_message.envelope());
+                        if let Some(root_part) = root_part {
+                            stack.push((root_part, parts, (message, message_id).into()));
+                        }
+                        root_part = part.into();
+                        parts = base_part.as_slice().iter();
+                        message = nested_message;
+                        message_id = u16::from(*nested_message_id) as usize;
+                        continue;
+                    }
+                    ArchivedMetadataPartType::Multipart(subparts) => {
+                        if let Some(root_part) = root_part {
+                            stack.push((root_part, parts, None));
+                        }
+                        root_part = part.into();
+                        parts = subparts.iter();
+                        continue;
+                    }
+                    _ => (),
+                }
+                if let Some(root_part) = &mut root_part {
+                    root_part.add_part(part);
+                } else {
+                    return part;
+                }
+            }
+            if let Some((mut prev_root_part, prev_parts, prev_message)) = stack.pop() {
+                if let Some((prev_message, prev_message_id)) = prev_message {
+                    message = prev_message;
+                    message_id = prev_message_id;
+                }
+
+                prev_root_part.add_part(root_part.unwrap());
+                parts = prev_parts;
+                root_part = prev_root_part.into();
+            } else {
+                break;
+            }
+        }
+
+        root_part.unwrap()
+    }
+
     fn body_section<'x>(
         &self,
         decoded: &'x DecodedParts<'x>,
@@ -897,7 +950,7 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
             );
         }
 
-        let mut message = self;
+        let mut message = &self.contents[0];
         let mut message_id = 0;
         let mut sections_iter = sections.iter().enumerate().peekable();
 
@@ -915,20 +968,19 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
                         None
                     }?;
 
-                    if let (
-                        ArchivedMetadataPartType::Message(nested_message),
-                        Some((
+                    if let ArchivedMetadataPartType::Message(nested_message_id) = &part.body {
+                        if let Some((
                             _,
                             Section::Part { .. }
                             | Section::Header
                             | Section::HeaderFields { .. }
                             | Section::Text,
-                        )),
-                    ) = (&part.body, sections_iter.peek())
-                    {
-                        message = nested_message;
-                        part = message.root_part();
-                        message_id += 1;
+                        )) = sections_iter.peek()
+                        {
+                            message = self.message_id(*nested_message_id);
+                            part = message.root_part();
+                            message_id = u16::from(nested_message_id) as usize;
+                        }
                     }
                 }
                 Section::Header => {
@@ -1037,17 +1089,15 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
         sections: &[u32],
         partial: Option<(u32, u32)>,
     ) -> Result<Option<BodyContents<'x>>, ()> {
-        let mut message = self;
+        let mut message = &self.contents[0];
         let mut message_id = 0;
         let mut part = self.root_part();
-        let mut part_id = 0;
         let mut sections_iter = sections.iter().enumerate().peekable();
 
         while let Some((section_num, num)) = sections_iter.next() {
             part = if let Some(sub_part_ids) = part.sub_parts() {
-                part_id = (*num).saturating_sub(1) as usize;
                 if let Some(part) = sub_part_ids
-                    .get(part_id)
+                    .get((*num).saturating_sub(1) as usize)
                     .and_then(|pos| message.parts.get(u16::from(*pos) as usize))
                 {
                     part
@@ -1055,7 +1105,6 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
                     return Ok(None);
                 }
             } else if *num == 1 && (section_num == sections.len() - 1 || part.is_message()) {
-                part_id = 0;
                 part
             } else {
                 return Ok(None);
@@ -1064,17 +1113,20 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
             if let (ArchivedMetadataPartType::Message(nested_message), Some(_)) =
                 (&part.body, sections_iter.peek())
             {
-                message = nested_message;
+                message = self.message_id(*nested_message);
                 part = message.root_part();
-                message_id += 1;
+                message_id = u16::from(nested_message) as usize;
             }
         }
 
         if !part.is_encoding_problem {
+            let part_offset = u32::from(part.offset_header) as usize;
             Ok(match &part.body {
                 ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html => {
                     BodyContents::Text(String::from_utf8_lossy(get_partial_bytes(
-                        decoded.binary_part(message_id, part_id).unwrap_or_default(),
+                        decoded
+                            .binary_part(message_id, part_offset)
+                            .unwrap_or_default(),
                         partial,
                     )))
                     .into()
@@ -1082,7 +1134,9 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
                 ArchivedMetadataPartType::Binary | ArchivedMetadataPartType::InlineBinary => {
                     BodyContents::Bytes(
                         get_partial_bytes(
-                            decoded.binary_part(message_id, part_id).unwrap_or_default(),
+                            decoded
+                                .binary_part(message_id, part_offset)
+                                .unwrap_or_default(),
                             partial,
                         )
                         .into(),
@@ -1091,7 +1145,7 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
                 }
                 ArchivedMetadataPartType::Message(message) => BodyContents::Bytes({
                     {
-                        let part = message.root_part();
+                        let part = self.message_id(*message).root_part();
                         get_partial_bytes(
                             decoded
                                 .raw_message_section_arch(
@@ -1127,17 +1181,15 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
     }
 
     fn binary_size(&self, decoded: &DecodedParts<'_>, sections: &[u32]) -> Option<usize> {
-        let mut message = self;
+        let mut message = &self.contents[0];
         let mut message_id = 0;
         let mut part = self.root_part();
-        let mut part_id = 0;
         let mut sections_iter = sections.iter().enumerate().peekable();
 
         while let Some((section_num, num)) = sections_iter.next() {
-            part_id = (*num).saturating_sub(1) as usize;
             part = if let Some(sub_part_ids) = part.sub_parts() {
                 sub_part_ids
-                    .get(part_id)
+                    .get((*num).saturating_sub(1) as usize)
                     .and_then(|pos| message.parts.get(u16::from(pos) as usize))
             } else if *num == 1 && (section_num == sections.len() - 1 || part.is_message()) {
                 Some(part)
@@ -1148,10 +1200,9 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
             if let (ArchivedMetadataPartType::Message(nested_message), Some(_)) =
                 (&part.body, sections_iter.peek())
             {
-                message = nested_message;
-                message_id += 1;
+                message = self.message_id(*nested_message);
+                message_id = u16::from(nested_message) as usize;
                 part = message.root_part();
-                part_id = 0;
             }
         }
 
@@ -1160,58 +1211,15 @@ impl AsImapDataItem for ArchivedMessageMetadataContents {
             | ArchivedMetadataPartType::Html
             | ArchivedMetadataPartType::Binary
             | ArchivedMetadataPartType::InlineBinary => decoded
-                .part(message_id, part_id)
+                .part(message_id, u32::from(part.offset_header) as usize)
                 .map(|p| p.len())
                 .unwrap_or_default(),
-            ArchivedMetadataPartType::Message(message) => message.root_part().raw_len(),
+            ArchivedMetadataPartType::Message(message) => {
+                self.message_id(*message).root_part().raw_len()
+            }
             ArchivedMetadataPartType::Multipart(_) => part.raw_len(),
         }
         .into()
-    }
-
-    fn envelope(&self) -> Envelope {
-        let headers = self.root_part();
-        Envelope {
-            date: headers.date().map(DateTime::from_timestamp),
-            subject: headers.subject().map(|s| s.into()),
-            from: headers
-                .header_values(ArchivedHeaderName::From)
-                .flat_map(|a| a.as_imap_address())
-                .collect(),
-            sender: headers
-                .header_values(ArchivedHeaderName::Sender)
-                .flat_map(|a| a.as_imap_address())
-                .collect(),
-            reply_to: headers
-                .header_values(ArchivedHeaderName::ReplyTo)
-                .flat_map(|a| a.as_imap_address())
-                .collect(),
-            to: headers
-                .header_values(ArchivedHeaderName::To)
-                .flat_map(|a| a.as_imap_address())
-                .collect(),
-            cc: headers
-                .header_values(ArchivedHeaderName::Cc)
-                .flat_map(|a| a.as_imap_address())
-                .collect(),
-            bcc: headers
-                .header_values(ArchivedHeaderName::Bcc)
-                .flat_map(|a| a.as_imap_address())
-                .collect(),
-            in_reply_to: headers.in_reply_to().as_text_list().map(|list| {
-                let mut irt = String::with_capacity(list.len() * 10);
-                for (pos, l) in list.iter().enumerate() {
-                    if pos > 0 {
-                        irt.push(' ');
-                    }
-                    irt.push('<');
-                    irt.push_str(l.as_ref());
-                    irt.push('>');
-                }
-                irt.into()
-            }),
-            message_id: headers.message_id().map(|id| format!("<{}>", id).into()),
-        }
     }
 }
 

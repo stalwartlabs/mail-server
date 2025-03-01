@@ -8,10 +8,7 @@ use std::{sync::Arc, time::Instant};
 
 use ahash::AHashMap;
 use directory::Permission;
-use email::{
-    mailbox::{ArchivedUidMailbox, UidMailbox},
-    message::delete::EmailDeletion,
-};
+use email::{mailbox::UidMailbox, message::delete::EmailDeletion};
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     parser::parse_sequence_set,
@@ -22,17 +19,11 @@ use trc::AddContext;
 use crate::core::{SavedSearch, SelectedMailbox, Session, SessionData};
 use common::{ImapId, listener::SessionStream, storage::tag::TagManager};
 use jmap_proto::types::{
-    acl::Acl,
-    collection::Collection,
-    id::Id,
-    keyword::{ArchivedKeyword, Keyword},
-    property::Property,
-    state::StateChange,
-    type_state::DataType,
+    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
+    state::StateChange, type_state::DataType,
 };
 use store::{
     SerializeInfallible,
-    rkyv::vec::ArchivedVec,
     roaring::RoaringBitmap,
     write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
 };
@@ -214,7 +205,7 @@ impl<T: SessionStream> SessionData<T> {
         {
             let mut mailboxes = TagManager::new(
                 mailbox_ids
-                    .into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+                    .into_deserialized::<Vec<UidMailbox>>()
                     .caused_by(trc::location!())?,
             );
 
@@ -244,7 +235,7 @@ impl<T: SessionStream> SessionData<T> {
                         (
                             TagManager::new(
                                 keywords
-                                    .into_deserialized::<ArchivedVec<ArchivedKeyword>, Vec<Keyword>>()
+                                    .into_deserialized::<Vec<Keyword>>()
                                     .caused_by(trc::location!())?,
                             ),
                             thread_id,

@@ -313,7 +313,7 @@ impl MailboxFnc for Server {
                 )
                 .await?
             {
-                let obj = obj.unarchive::<ArchivedMailbox>()?;
+                let obj = obj.unarchive::<Mailbox>()?;
                 found_names.push((
                     obj.name.to_string(),
                     u32::from(obj.parent_id),
