@@ -18,8 +18,8 @@ use jmap_proto::{
     },
 };
 use std::future::Future;
-use store::Serialize;
 use store::write::{Archive, BatchBuilder, log::ChangeLogBuilder};
+use store::{Serialize, write::Archiver};
 use trc::AddContext;
 use utils::sanitize_email;
 
@@ -96,7 +96,9 @@ impl IdentitySet for Server {
                 .create_document()
                 .set(
                     Property::Value,
-                    identity.serialize().caused_by(trc::location!())?,
+                    Archiver::new(identity)
+                        .serialize()
+                        .caused_by(trc::location!())?,
                 );
             let document_id = self
                 .store()
@@ -152,7 +154,9 @@ impl IdentitySet for Server {
                 .update_document(document_id)
                 .set(
                     Property::Value,
-                    identity.serialize().caused_by(trc::location!())?,
+                    Archiver::new(identity)
+                        .serialize()
+                        .caused_by(trc::location!())?,
                 );
             self.store()
                 .write(batch)

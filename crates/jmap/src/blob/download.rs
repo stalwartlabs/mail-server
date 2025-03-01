@@ -7,7 +7,7 @@
 use std::ops::Range;
 
 use common::{Server, auth::AccessToken};
-use jmap_proto::types::{acl::Acl, blob::BlobId, collection::Collection};
+use jmap_proto::types::{acl::Acl, blob::BlobId, collection::Collection, property::Property};
 use std::future::Future;
 use store::BlobClass;
 use trc::AddContext;
@@ -60,10 +60,12 @@ impl BlobDownload for Server {
                 } => {
                     if Collection::from(*collection) == Collection::Email {
                         match self
-                            .shared_document_children(
+                            .shared_items(
                                 access_token,
                                 *account_id,
                                 Collection::Mailbox,
+                                Collection::Email,
+                                Property::MailboxIds,
                                 Acl::ReadItems,
                             )
                             .await
@@ -131,10 +133,12 @@ impl BlobDownload for Server {
                     if Collection::from(*collection) == Collection::Email {
                         access_token.is_member(*account_id)
                             || self
-                                .shared_document_children(
+                                .shared_items(
                                     access_token,
                                     *account_id,
                                     Collection::Mailbox,
+                                    Collection::Email,
+                                    Property::MailboxIds,
                                     Acl::ReadItems,
                                 )
                                 .await?

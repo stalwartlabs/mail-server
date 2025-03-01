@@ -16,7 +16,7 @@ use store::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexValue<'x> {
-    Text { field: u8, value: Cow<'x, [u8]> },
+    Text { field: u8, value: Cow<'x, str> },
     U32 { field: u8, value: Option<u32> },
     U64 { field: u8, value: Option<u64> },
     U32List { field: u8, value: &'x [u32] },
@@ -47,20 +47,6 @@ pub struct ObjectIndexBuilder<T: IndexableObject> {
     tenant_id: Option<u32>,
     current: Option<HashedValue<T>>,
     changes: Option<T>,
-}
-
-impl<'x> IndexValue<'x> {
-    pub fn queryable_text(field: impl Into<u8>, text: &'x str) -> Self {
-        let mut value = Vec::with_capacity((text.len() * 2) + 1);
-        value.extend_from_slice(text.as_bytes());
-        value.push(0);
-        value.extend_from_slice(text.to_lowercase().as_bytes());
-
-        IndexValue::Text {
-            field: field.into(),
-            value: value.into(),
-        }
-    }
 }
 
 impl<T: IndexableObject> Default for ObjectIndexBuilder<T> {
@@ -153,7 +139,7 @@ fn build_batch<T: IndexableObject>(
                 if !value.is_empty() {
                     batch.ops.push(Operation::Index {
                         field,
-                        key: value.into_owned(),
+                        key: value.into_owned().into_bytes(),
                         set,
                     });
                 }
@@ -250,7 +236,7 @@ fn merge_batch<T: IndexableObject>(
                 if !old_value.is_empty() {
                     batch.ops.push(Operation::Index {
                         field,
-                        key: old_value.into_owned(),
+                        key: old_value.into_owned().into_bytes(),
                         set: false,
                     });
                 }
@@ -258,7 +244,7 @@ fn merge_batch<T: IndexableObject>(
                 if !new_value.is_empty() {
                     batch.ops.push(Operation::Index {
                         field,
-                        key: new_value.into_owned(),
+                        key: new_value.into_owned().into_bytes(),
                         set: true,
                     });
                 }

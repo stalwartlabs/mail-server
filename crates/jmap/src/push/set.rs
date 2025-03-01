@@ -24,7 +24,7 @@ use std::future::Future;
 use store::{
     Serialize,
     rand::{Rng, rng},
-    write::{Archive, BatchBuilder, now},
+    write::{Archive, Archiver, BatchBuilder, now},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -108,7 +108,9 @@ impl PushSubscriptionSet for Server {
                 .create_document()
                 .set(
                     Property::Value,
-                    push.serialize().caused_by(trc::location!())?,
+                    Archiver::new(push)
+                        .serialize()
+                        .caused_by(trc::location!())?,
                 );
             let document_id = self
                 .store()
@@ -154,7 +156,7 @@ impl PushSubscriptionSet for Server {
             for (property, value) in object.0 {
                 if let Err(err) = response
                     .eval_object_references(value)
-                    .and_then(|value| validate_push_value(&property, value, &mut push, true))
+                    .and_then(|value| validate_push_value(&property, value, &mut push, false))
                 {
                     response.not_updated.append(id, err);
                     continue 'update;
@@ -169,7 +171,9 @@ impl PushSubscriptionSet for Server {
                 .update_document(document_id)
                 .set(
                     Property::Value,
-                    push.serialize().caused_by(trc::location!())?,
+                    Archiver::new(push)
+                        .serialize()
+                        .caused_by(trc::location!())?,
                 );
             self.store()
                 .write(batch)
@@ -294,6 +298,10 @@ fn validate_push_value(
                 .with_property(property.clone())
                 .with_description("Field could not be set."));
         }
+    }
+
+    if is_create && push.types.is_empty() {
+        push.types = Bitmap::all();
     }
 
     Ok(())

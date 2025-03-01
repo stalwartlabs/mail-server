@@ -13,7 +13,7 @@ use common::{
 };
 use hyper::StatusCode;
 use std::future::Future;
-use store::{dispatch::lookup::KeyValue, write::LegacyBincode};
+use store::{dispatch::lookup::KeyValue, write::Archive};
 use trc::AddContext;
 
 use crate::api::{
@@ -22,8 +22,8 @@ use crate::api::{
 };
 
 use super::{
-    ErrorType, FormData, MAX_POST_LEN, OAuthCode, OAuthResponse, OAuthStatus, TokenResponse,
-    registration::ClientRegistrationHandler,
+    ArchivedOAuthStatus, ErrorType, FormData, MAX_POST_LEN, OAuthCode, OAuthResponse, OAuthStatus,
+    TokenResponse, registration::ClientRegistrationHandler,
 };
 
 pub trait TokenHandler: Sync + Send {
@@ -79,14 +79,13 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<LegacyBincode<OAuthCode>>(KeyValue::<()>::build_key(
-                        KV_OAUTH,
-                        code.as_bytes(),
-                    ))
+                    .key_get::<Archive>(KeyValue::<()>::build_key(KV_OAUTH, code.as_bytes()))
                     .await?
                 {
-                    Some(auth_code) => {
-                        let oauth = auth_code.inner;
+                    Some(auth_code_) => {
+                        let oauth = auth_code_
+                            .unarchive::<OAuthCode>()
+                            .caused_by(trc::location!())?;
                         if client_id != oauth.client_id || redirect_uri != oauth.params {
                             TokenResponse::error(ErrorType::InvalidClient)
                         } else if oauth.status == OAuthStatus::Authorized {
@@ -95,7 +94,7 @@ impl TokenHandler for Server {
                                 .validate_client_registration(
                                     client_id,
                                     redirect_uri.into(),
-                                    oauth.account_id,
+                                    oauth.account_id.into(),
                                 )
                                 .await?
                             {
@@ -113,10 +112,10 @@ impl TokenHandler for Server {
 
                                 // Issue token
                                 self.issue_token(
-                                    oauth.account_id,
+                                    oauth.account_id.into(),
                                     &oauth.client_id,
                                     issuer,
-                                    oauth.nonce,
+                                    oauth.nonce.as_ref().map(|s| s.to_string()),
                                     true,
                                     true,
                                 )
@@ -145,24 +144,27 @@ impl TokenHandler for Server {
                 (params.get("device_code"), params.get("client_id"))
             {
                 // Obtain code
-                if let Some(auth_code) = self
+                if let Some(auth_code_) = self
                     .core
                     .storage
                     .lookup
-                    .key_get::<LegacyBincode<OAuthCode>>(KeyValue::<()>::build_key(
-                        KV_OAUTH,
-                        device_code.as_bytes(),
-                    ))
+                    .key_get::<Archive>(KeyValue::<()>::build_key(KV_OAUTH, device_code.as_bytes()))
                     .await?
                 {
-                    let oauth = auth_code.inner;
+                    let oauth = auth_code_
+                        .unarchive::<OAuthCode>()
+                        .caused_by(trc::location!())?;
                     response = if oauth.client_id != client_id {
                         TokenResponse::error(ErrorType::InvalidClient)
                     } else {
                         match oauth.status {
-                            OAuthStatus::Authorized => {
+                            ArchivedOAuthStatus::Authorized => {
                                 if let Some(error) = self
-                                    .validate_client_registration(client_id, None, oauth.account_id)
+                                    .validate_client_registration(
+                                        client_id,
+                                        None,
+                                        oauth.account_id.into(),
+                                    )
                                     .await?
                                 {
                                     TokenResponse::error(error)
@@ -179,10 +181,10 @@ impl TokenHandler for Server {
 
                                     // Issue token
                                     self.issue_token(
-                                        oauth.account_id,
+                                        oauth.account_id.into(),
                                         &oauth.client_id,
                                         issuer,
-                                        oauth.nonce,
+                                        oauth.nonce.as_ref().map(|s| s.to_string()),
                                         true,
                                         true,
                                     )
@@ -196,10 +198,10 @@ impl TokenHandler for Server {
                                     })?
                                 }
                             }
-                            OAuthStatus::Pending => {
+                            ArchivedOAuthStatus::Pending => {
                                 TokenResponse::error(ErrorType::AuthorizationPending)
                             }
-                            OAuthStatus::TokenIssued => {
+                            ArchivedOAuthStatus::TokenIssued => {
                                 TokenResponse::error(ErrorType::ExpiredToken)
                             }
                         }

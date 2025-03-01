@@ -279,7 +279,7 @@ impl<T: AsyncWrite + AsyncRead> Session<T> {
             .filter(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(Property::Name, name.as_bytes().to_vec())],
+                vec![Filter::eq(Property::Name, name.to_lowercase().into_bytes())],
             )
             .await
             .caused_by(trc::location!())

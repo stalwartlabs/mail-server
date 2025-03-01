@@ -5,13 +5,13 @@
  */
 
 use common::Server;
-use mail_builder::headers::content_type::ContentType;
-use mail_builder::headers::HeaderType;
-use mail_builder::mime::{make_boundary, BodyPart, MimePart};
 use mail_builder::MessageBuilder;
+use mail_builder::headers::HeaderType;
+use mail_builder::headers::content_type::ContentType;
+use mail_builder::mime::{BodyPart, MimePart, make_boundary};
 use mail_parser::DateTime;
 use smtp_proto::{
-    Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
+    RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS, Response,
 };
 use std::fmt::Write;
 use std::future::Future;
@@ -23,8 +23,8 @@ use crate::reporting::SmtpReporting;
 
 use super::spool::SmtpSpool;
 use super::{
-    Domain, Error, ErrorDetails, HostResponse, Message, MessageSource, QueueEnvelope, Recipient,
-    Status, RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
+    Domain, Error, ErrorDetails, HostResponse, Message, MessageSource, QueueEnvelope,
+    RCPT_DSN_SENT, RCPT_STATUS_CHANGED, Recipient, Status,
 };
 
 pub trait SendDsn: Sync + Send {
@@ -80,7 +80,7 @@ impl SendDsn for Server {
                 continue;
             }
 
-            let domain = &message.domains[rcpt.domain_idx];
+            let domain = &message.domains[rcpt.domain_idx as usize];
             match &rcpt.status {
                 Status::Completed(response) => {
                     trc::event!(
@@ -173,7 +173,7 @@ impl Message {
             if rcpt.has_flag(RCPT_DSN_SENT | RCPT_NOTIFY_NEVER) {
                 continue;
             }
-            let domain = &self.domains[rcpt.domain_idx];
+            let domain = &self.domains[rcpt.domain_idx as usize];
             match &rcpt.status {
                 Status::Completed(response) => {
                     rcpt.flags |= RCPT_DSN_SENT | RCPT_STATUS_CHANGED;
@@ -404,10 +404,11 @@ impl Message {
                 String::new()
             }
             Err(err) => {
-                trc::error!(err
-                    .span_id(self.span_id)
-                    .details("Failed to fetch blobId")
-                    .caused_by(trc::location!()));
+                trc::error!(
+                    err.span_id(self.span_id)
+                        .details("Failed to fetch blobId")
+                        .caused_by(trc::location!())
+                );
 
                 String::new()
             }
@@ -452,7 +453,7 @@ impl Message {
                         is_double_bounce.push(dsn);
                     }
                     Status::Scheduled => {
-                        let domain = &self.domains[rcpt.domain_idx];
+                        let domain = &self.domains[rcpt.domain_idx as usize];
                         if let Status::PermanentFailure(err) = &domain.status {
                             rcpt.flags |= RCPT_DSN_SENT;
                             let mut dsn = String::new();

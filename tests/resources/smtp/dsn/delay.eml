@@ -9,11 +9,13 @@ Content-Type: multipart/report; report-type="delivery-status";
 
 --mime_boundary
 Content-Type: text/plain; charset="utf-8"
-Content-Transfer-Encoding: 7bit
+Content-Transfer-Encoding: quoted-printable
 
-There was a temporary problem delivering your message to the following recipients:
+There was a temporary problem delivering your message to the following recip=
+ients:
 
-<john.doe@example.org> (connection to 'mx.domain.org' failed: Connection timeout)
+<john.doe@example.org> (connection to 'mx.domain.org' failed: Connection tim=
+eout)
 
 
 --mime_boundary

@@ -54,7 +54,7 @@ impl MailboxGet for Server {
         let mut mailbox_ids = self.mailbox_get_or_create(account_id).await?;
         if access_token.is_shared(account_id) {
             mailbox_ids &= self
-                .shared_documents(access_token, account_id, Collection::Mailbox, Acl::Read)
+                .shared_containers(access_token, account_id, Collection::Mailbox, Acl::Read)
                 .await?;
         }
         let message_ids = self.get_document_ids(account_id, Collection::Email).await?;

@@ -8,8 +8,7 @@ use std::borrow::Cow;
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use email::sieve::{
-    SieveScript, VacationResponse, activate::SieveScriptActivate,
-    delete::SieveScriptDelete,
+    SieveScript, VacationResponse, activate::SieveScriptActivate, delete::SieveScriptDelete,
 };
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -126,10 +125,50 @@ impl VacationResponseSet for Server {
 
         // Process changes
         if let Some(changes) = changes {
+            // Obtain current script
+            let document_id = self.get_vacation_sieve_script_id(account_id).await?;
+            let mut was_active = false;
+
+            let (mut sieve, prev_sieve) = if let Some(document_id) = document_id {
+                let prev_sieve = self
+                    .get_property::<HashedValue<Archive>>(
+                        account_id,
+                        Collection::SieveScript,
+                        document_id,
+                        Property::Value,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        trc::StoreEvent::NotFound
+                            .into_err()
+                            .caused_by(trc::location!())
+                    })?
+                    .into_deserialized::<SieveScript>()
+                    .caused_by(trc::location!())?;
+                was_active = prev_sieve.inner.is_active;
+                let mut sieve = prev_sieve.inner.clone();
+                if sieve.vacation_response.is_none() {
+                    sieve.vacation_response = VacationResponse::default().into();
+                }
+
+                (sieve, Some(prev_sieve))
+            } else {
+                (
+                    SieveScript {
+                        name: "vacation".into(),
+                        is_active: false,
+                        blob_hash: Default::default(),
+                        size: 0,
+                        vacation_response: VacationResponse::default().into(),
+                    },
+                    None,
+                )
+            };
+
             // Parse properties
-            let mut vacation = VacationResponse::default();
             let mut is_active = false;
             let mut build_script = create_id.is_some();
+            let vacation = sieve.vacation_response.as_mut().unwrap();
 
             for (property, value) in changes.0 {
                 let value = match response.eval_object_references(value) {
@@ -212,45 +251,11 @@ impl VacationResponseSet for Server {
                     }
                 }
             }
+            sieve.is_active = is_active;
 
-            // Obtain current script
-            let document_id = self.get_vacation_sieve_script_id(account_id).await?;
-            let mut was_active = false;
-
-            let mut obj = if let Some(document_id) = document_id {
-                let prev_sieve = self
-                    .get_property::<HashedValue<Archive>>(
-                        account_id,
-                        Collection::SieveScript,
-                        document_id,
-                        Property::Value,
-                    )
-                    .await?
-                    .ok_or_else(|| {
-                        trc::StoreEvent::NotFound
-                            .into_err()
-                            .caused_by(trc::location!())
-                    })?;
-                let prev_sieve = prev_sieve
-                    .into_deserialized::<SieveScript>()
-                    .caused_by(trc::location!())?;
-                was_active = prev_sieve.inner.is_active;
-                let mut sieve = prev_sieve.inner.clone();
-                sieve.vacation_response = vacation.into();
-                sieve.is_active = is_active;
-
-                ObjectIndexBuilder::new()
-                    .with_current(prev_sieve)
-                    .with_changes(sieve)
-            } else {
-                ObjectIndexBuilder::new().with_changes(SieveScript {
-                    name: "vacation".into(),
-                    is_active,
-                    blob_hash: Default::default(),
-                    size: 0,
-                    vacation_response: vacation.into(),
-                })
-            };
+            let mut obj = ObjectIndexBuilder::new()
+                .with_current_opt(prev_sieve)
+                .with_changes(sieve);
 
             // Update id
             if let Some(document_id) = document_id {

@@ -281,7 +281,7 @@ impl MailboxFnc for Server {
             if pos == 0 && item.eq_ignore_ascii_case("inbox") {
                 has_inbox = true;
             } else {
-                filter.push(Filter::eq(Property::Name, item.serialize()));
+                filter.push(Filter::eq(Property::Name, item.to_lowercase().into_bytes()));
             }
         }
         filter.push(Filter::End);

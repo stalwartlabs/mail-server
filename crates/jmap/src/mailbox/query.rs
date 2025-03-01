@@ -108,7 +108,7 @@ impl MailboxQuery for Server {
             .await?;
         if access_token.is_shared(account_id) {
             result_set.apply_mask(
-                self.shared_documents(access_token, account_id, Collection::Mailbox, Acl::Read)
+                self.shared_containers(access_token, account_id, Collection::Mailbox, Acl::Read)
                     .await?,
             );
         }

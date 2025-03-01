@@ -137,7 +137,7 @@ impl<T: SessionStream> SessionData<T> {
                 .caused_by(trc::location!())?
         } else {
             self.server
-                .shared_documents(access_token, account_id, Collection::Mailbox, Acl::Read)
+                .shared_containers(access_token, account_id, Collection::Mailbox, Acl::Read)
                 .await
                 .caused_by(trc::location!())?
         };

@@ -15,29 +15,29 @@ use std::{
 };
 
 use common::{
+    Core,
     config::{
         server::ServerProtocol,
         smtp::resolver::{DnssecResolver, Resolvers, Tlsa, TlsaEntry},
     },
     ipc::PolicyType,
-    Core,
 };
 use mail_auth::{
+    MX, MessageAuthenticator,
     common::parse::TxtRecordParser,
     hickory_resolver::{
-        config::{ResolverConfig, ResolverOpts},
         AsyncResolver,
+        config::{ResolverConfig, ResolverOpts},
     },
     mta_sts::{ReportUri, TlsRpt},
     report::tlsrpt::ResultType,
-    MessageAuthenticator, MX,
 };
 use rustls_pki_types::CertificateDer;
 
 use crate::smtp::{
+    DnsCache, TestSMTP,
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
     session::{TestSession, VerifyResponse},
-    DnsCache, TestSMTP,
 };
 use smtp::outbound::dane::{dnssec::TlsaLookup, verify::TlsaVerify};
 use smtp::queue::{Error, ErrorDetails, Status};
@@ -125,7 +125,8 @@ async fn dane_verify() {
         .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
-        .assert_contains("No TLSA records found");
+        .assert_contains("No TLSA reco=")
+        .assert_contains("rds found");
     local.queue_receiver.read_event().await.assert_done();
     local.queue_receiver.assert_no_events();
 
@@ -177,7 +178,8 @@ async fn dane_verify() {
         .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
-        .assert_contains("No matching certificates found");
+        .assert_contains("No matching ")
+        .assert_contains("certificates found");
     local.queue_receiver.read_event().await.assert_done();
     local.queue_receiver.assert_no_events();
 

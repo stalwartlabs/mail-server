@@ -17,7 +17,7 @@ mail-parser = { version = "0.10", features = ["full_encoding"] }
 mail-builder = { version = "0.4" }
 mail-auth = { version = "0.6" }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
-smtp-proto = { version = "0.1", features = ["serde_support"] }
+smtp-proto = { version = "0.1", features = ["rkyv"] }
 dns-update = { version = "0.1" }
 ahash = { version = "0.8.2", features = ["serde"] }
 parking_lot = "0.12.1"

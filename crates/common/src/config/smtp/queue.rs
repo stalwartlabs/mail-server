@@ -8,7 +8,7 @@ use ahash::AHashMap;
 use mail_auth::IpLookupStrategy;
 use mail_send::Credentials;
 use throttle::parse_queue_rate_limiter_key;
-use utils::config::{utils::ParseValue, Config};
+use utils::config::{Config, utils::ParseValue};
 
 use crate::{
     config::server::ServerProtocol,
@@ -101,8 +101,8 @@ pub struct QueueQuota {
     pub id: String,
     pub expr: Expression,
     pub keys: u16,
-    pub size: Option<usize>,
-    pub messages: Option<usize>,
+    pub size: Option<u64>,
+    pub messages: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -133,7 +133,11 @@ impl Default for QueueConfig {
             ),
             notify: IfBlock::new::<()>("queue.schedule.notify", [], "[1d, 3d]"),
             expire: IfBlock::new::<()>("queue.schedule.expire", [], "5d"),
-            hostname: IfBlock::new::<()>("queue.outbound.hostname", [], "config_get('server.hostname')"),
+            hostname: IfBlock::new::<()>(
+                "queue.outbound.hostname",
+                [],
+                "config_get('server.hostname')",
+            ),
             next_hop: IfBlock::new::<()>(
                 "queue.outbound.next-hop",
                 #[cfg(not(feature = "test_mode"))]
@@ -548,11 +552,11 @@ fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey, id: &str) -> 
         .unwrap_or_default(),
         keys,
         size: config
-            .property::<Option<usize>>((prefix.as_str(), "size"))
+            .property::<Option<u64>>((prefix.as_str(), "size"))
             .filter(|&v| v.as_ref().is_some_and(|v| *v > 0))
             .unwrap_or_default(),
         messages: config
-            .property::<Option<usize>>((prefix.as_str(), "messages"))
+            .property::<Option<u64>>((prefix.as_str(), "messages"))
             .filter(|&v| v.as_ref().is_some_and(|v| *v > 0))
             .unwrap_or_default(),
     };

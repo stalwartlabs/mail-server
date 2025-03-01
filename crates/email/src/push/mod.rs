@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::types::type_state::DataType;
-use store::Serialize;
 use utils::map::bitmap::Bitmap;
 
 #[derive(
@@ -25,12 +24,4 @@ pub struct PushSubscription {
 pub struct Keys {
     pub p256dh: Vec<u8>,
     pub auth: Vec<u8>,
-}
-
-impl Serialize for PushSubscription {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        rkyv::to_bytes::<rkyv::rancor::Error>(self)
-            .map(|r| r.into_vec())
-            .map_err(Into::into)
-    }
 }

@@ -42,7 +42,7 @@ async fn generate_dsn() {
     path.push("smtp");
     path.push("dsn");
     path.push("original.txt");
-    let size = fs::metadata(&path).unwrap().len() as usize;
+    let size = fs::metadata(&path).unwrap().len() as u64;
     let dsn_original = fs::read_to_string(&path).unwrap();
 
     let flags = RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_SUCCESS;

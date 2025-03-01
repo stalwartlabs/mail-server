@@ -6,10 +6,10 @@
 
 use ahash::AHashMap;
 use jmap_client::{
-    core::set::{SetError, SetErrorType, SetObject},
-    email_submission::{query::Filter, Address, Delivered, DeliveryStatus, Displayed, UndoStatus},
-    mailbox::Role,
     Error,
+    core::set::{SetError, SetErrorType, SetObject},
+    email_submission::{Address, Delivered, DeliveryStatus, Displayed, UndoStatus, query::Filter},
+    mailbox::Role,
 };
 use jmap_proto::types::id::Id;
 use mail_parser::DateTime;
@@ -251,12 +251,14 @@ pub async fn test(params: &mut JMAPTest) {
 
         assert_eq!(message.mail_from, "<jdoe@example.com>");
         let rcpt_to = message.rcpt_to.pop().unwrap();
-        assert!([
-            "<james@other_domain.com>",
-            "<secret_rcpt@test.com>",
-            "<tim@foobar.com>",
-        ]
-        .contains(&rcpt_to.as_str()));
+        assert!(
+            [
+                "<james@other_domain.com>",
+                "<secret_rcpt@test.com>",
+                "<tim@foobar.com>",
+            ]
+            .contains(&rcpt_to.as_str())
+        );
 
         assert!(
             message.message.contains(&email_body),
@@ -468,11 +470,13 @@ pub async fn test(params: &mut JMAPTest) {
     set_request.arguments().on_success_destroy_email(&create_id);
     request.send().await.unwrap().unwrap_method_responses();
 
-    assert!(client
-        .email_get(&email_id, None::<Vec<_>>)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        client
+            .email_get(&email_id, None::<Vec<_>>)
+            .await
+            .unwrap()
+            .is_none()
+    );
     smtp_settings.lock().do_stop = true;
 
     // Destroy the created mailbox, identity and all submissions
@@ -568,7 +572,7 @@ pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockS
                             .unwrap();
                         buf.clear();
                         while rx.read_line(&mut buf).await.is_ok() {
-                            if buf.starts_with('.') {
+                            if buf.starts_with('.') && buf.len() < 4 {
                                 message.message = message.message.trim().to_string();
                                 break;
                             } else {

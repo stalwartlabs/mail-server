@@ -77,10 +77,7 @@ impl EmailSubmissionSet for Server {
         let mut changes = ChangeLogBuilder::new();
         let mut success_email_ids = HashMap::new();
         for (id, object) in request.unwrap_create() {
-            match self
-                .send_message(account_id, &response, instance, object)
-                .await?
-            {
+            match Box::pin(self.send_message(account_id, &response, instance, object)).await? {
                 Ok(submission) => {
                     // Add id mapping
                     success_email_ids.insert(
@@ -650,9 +647,9 @@ impl EmailSubmissionSet for Server {
                     addr,
                     DeliveryStatus {
                         delivered: if response.is_none() {
-                            Delivered::No
-                        } else {
                             Delivered::Unknown
+                        } else {
+                            Delivered::No
                         },
                         smtp_reply: response.unwrap_or_else(|| "250 2.1.5 Queued".to_string()),
                         displayed: false,

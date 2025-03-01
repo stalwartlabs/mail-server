@@ -78,33 +78,39 @@ impl EmailSet for Server {
 
         // Obtain mailboxIds
         let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
-        let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_message_ids) = if access_token
-            .is_shared(account_id)
-        {
-            (
-                self.shared_documents(access_token, account_id, Collection::Mailbox, Acl::AddItems)
+        let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_message_ids) =
+            if access_token.is_shared(account_id) {
+                (
+                    self.shared_containers(
+                        access_token,
+                        account_id,
+                        Collection::Mailbox,
+                        Acl::AddItems,
+                    )
                     .await?
                     .into(),
-                self.shared_documents(
-                    access_token,
-                    account_id,
-                    Collection::Mailbox,
-                    Acl::RemoveItems,
+                    self.shared_containers(
+                        access_token,
+                        account_id,
+                        Collection::Mailbox,
+                        Acl::RemoveItems,
+                    )
+                    .await?
+                    .into(),
+                    self.shared_items(
+                        access_token,
+                        account_id,
+                        Collection::Mailbox,
+                        Collection::Email,
+                        Property::MailboxIds,
+                        Acl::ModifyItems,
+                    )
+                    .await?
+                    .into(),
                 )
-                .await?
-                .into(),
-                self.shared_document_children(
-                    access_token,
-                    account_id,
-                    Collection::Mailbox,
-                    Acl::ModifyItems,
-                )
-                .await?
-                .into(),
-            )
-        } else {
-            (None, None, None)
-        };
+            } else {
+                (None, None, None)
+            };
 
         let will_destroy = request.unwrap_destroy();
 
@@ -1014,10 +1020,12 @@ impl EmailSet for Server {
                 .await?
                 .unwrap_or_default();
             let can_destroy_message_ids = if access_token.is_shared(account_id) {
-                self.shared_document_children(
+                self.shared_items(
                     access_token,
                     account_id,
                     Collection::Mailbox,
+                    Collection::Email,
+                    Property::MailboxIds,
                     Acl::RemoveItems,
                 )
                 .await?

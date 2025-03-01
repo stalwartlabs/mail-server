@@ -14,16 +14,16 @@ use common::{
     ipc::PolicyType,
 };
 use mail_auth::{
+    MX,
     common::parse::TxtRecordParser,
     mta_sts::{MtaSts, ReportUri, TlsRpt},
     report::tlsrpt::ResultType,
-    MX,
 };
 
 use crate::smtp::{
+    DnsCache, TestSMTP,
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
     session::{TestSession, VerifyResponse},
-    DnsCache, TestSMTP,
 };
 use smtp::outbound::mta_sts::{lookup::STS_TEST_POLICY, parse::ParsePolicy};
 
@@ -109,7 +109,8 @@ async fn mta_sts_verify() {
         .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
-        .assert_contains("Record not found");
+        .assert_contains("Record not f=")
+        .assert_contains("ound");
     local.queue_receiver.read_event().await.assert_done();
 
     // Expect TLS failure report

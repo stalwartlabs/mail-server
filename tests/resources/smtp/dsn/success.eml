@@ -9,11 +9,12 @@ Content-Type: multipart/report; report-type="delivery-status";
 
 --mime_boundary
 Content-Type: text/plain; charset="utf-8"
-Content-Transfer-Encoding: 7bit
+Content-Transfer-Encoding: quoted-printable
 
 Your message has been successfully delivered to the following recipients:
 
-<jane@example.org> (delivered to 'mx2.example.org' with code 250 (2.1.5) 'Message accepted for delivery')
+<jane@example.org> (delivered to 'mx2.example.org' with code 250 (2.1.5) 'Me=
+ssage accepted for delivery')
 
 
 --mime_boundary

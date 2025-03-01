@@ -62,6 +62,10 @@ fn aligned_lz4_deflate(archive: &[u8]) -> trc::Result<Archive> {
     lz4_flex::block::uncompressed_size(archive)
         .and_then(|(uncompressed_size, archive)| {
             let mut bytes = AlignedVec::with_capacity(uncompressed_size);
+            unsafe {
+                // SAFETY: `new_len` is equal to `capacity` and vector is initialized by lz4_flex.
+                bytes.set_len(uncompressed_size);
+            }
             lz4_flex::decompress_into(archive, &mut bytes)?;
             Ok(Archive::Aligned(bytes))
         })

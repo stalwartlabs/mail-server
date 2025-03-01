@@ -9,11 +9,12 @@ Content-Type: multipart/report; report-type="delivery-status";
 
 --mime_boundary
 Content-Type: text/plain; charset="utf-8"
-Content-Transfer-Encoding: 7bit
+Content-Transfer-Encoding: quoted-printable
 
 Your message could not be delivered to the following recipients:
 
-<foobar@example.org> (host 'mx.example.org' rejected command 'RCPT TO:<foobar@example.org>' with code 550 (5.1.2) 'User does not exist')
+<foobar@example.org> (host 'mx.example.org' rejected command 'RCPT TO:<fooba=
+r@example.org>' with code 550 (5.1.2) 'User does not exist')
 
 
 --mime_boundary
