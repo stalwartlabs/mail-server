@@ -18,8 +18,8 @@ use mail_builder::encoders::base64::base64_encode_mime;
 use mail_parser::MessageParser;
 use serde_json::json;
 use store::{
-    Serialize,
-    write::{Archive, Archiver, BatchBuilder, serialize::rkyv_unarchive},
+    Deserialize, Serialize,
+    write::{Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
 
@@ -131,7 +131,10 @@ impl CryptoHandler for Server {
         if let Err(EncryptMessageError::Error(message)) = MessageParser::new()
             .parse("Subject: test\r\ntest\r\n".as_bytes())
             .unwrap()
-            .encrypt(rkyv_unarchive::<EncryptionParams>(&params)?)
+            .encrypt(
+                <Archive as Deserialize>::deserialize(params.as_slice())?
+                    .unarchive::<EncryptionParams>()?,
+            )
             .await
         {
             return Err(manage::error(message, None::<u32>));

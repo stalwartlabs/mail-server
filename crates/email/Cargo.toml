@@ -13,7 +13,7 @@ jmap_proto = { path = "../jmap-proto" }
 common = { path =  "../common" }
 directory = { path =  "../directory" }
 spam-filter = { path =  "../spam-filter" }
-smtp-proto = { version = "0.1", features = ["serde_support"] }
+smtp-proto = { version = "0.1", features = ["rkyv"] }
 mail-parser = { version = "0.10", features = ["full_encoding"] } 
 mail-builder = { version = "0.4" }
 sieve-rs = { version = "0.6" } 

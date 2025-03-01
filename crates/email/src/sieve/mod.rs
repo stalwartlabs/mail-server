@@ -6,8 +6,9 @@
 
 use std::{collections::HashSet, sync::Arc};
 
+use rkyv::collections::swiss_table::ArchivedHashSet;
 use sieve::Sieve;
-use store::{ahash::RandomState, blake3, write::Archive};
+use store::{ahash::RandomState, blake3, write::now};
 use utils::BlobHash;
 
 pub mod activate;
@@ -21,7 +22,7 @@ pub struct ActiveScript {
     pub document_id: u32,
     pub script_name: String,
     pub script: Arc<Sieve>,
-    pub seen_ids: Option<Archive>,
+    pub seen_ids: SeenIds,
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone)]
@@ -30,9 +31,7 @@ pub struct SeenIdHash {
     expiry: u64,
 }
 
-#[derive(
-    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Default, Debug, Clone, PartialEq, Eq,
-)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct SeenIds {
     pub ids: HashSet<SeenIdHash, RandomState>,
     pub has_changes: bool,
@@ -93,6 +92,35 @@ impl SieveScript {
 
     pub fn set_is_active(&mut self, is_active: bool) {
         self.is_active = is_active;
+    }
+
+    pub fn with_vacation_response(mut self, vacation_response: VacationResponse) -> Self {
+        self.vacation_response = Some(vacation_response);
+        self
+    }
+}
+
+impl From<&ArchivedHashSet<ArchivedSeenIdHash>> for SeenIds {
+    fn from(archived: &ArchivedHashSet<ArchivedSeenIdHash>) -> Self {
+        let mut seen = SeenIds {
+            ids: HashSet::with_capacity_and_hasher(archived.len(), RandomState::new()),
+            has_changes: false,
+        };
+
+        let now = now();
+
+        for hash in archived.iter() {
+            if hash.expiry > now {
+                seen.ids.insert(SeenIdHash {
+                    hash: hash.hash,
+                    expiry: hash.expiry.into(),
+                });
+            } else {
+                seen.has_changes = true;
+            }
+        }
+
+        seen
     }
 }
 

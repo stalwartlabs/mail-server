@@ -14,7 +14,7 @@ impl IndexableObject for SieveScript {
         [
             IndexValue::Text {
                 field: Property::Name.into(),
-                value: self.name.as_bytes().into(),
+                value: self.name.to_lowercase().into(),
             },
             IndexValue::U32 {
                 field: Property::IsActive.into(),

@@ -7,27 +7,27 @@
 use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use common::{
-    auth::{oauth::GrantType, AccessToken},
+    Inner, KV_ACME, Server,
+    auth::{AccessToken, oauth::GrantType},
     core::BuildServer,
     expr::{functions::ResolveVariable, *},
     ipc::StateEvent,
     listener::{ServerInstance, SessionData, SessionManager, SessionStream},
     manager::webadmin::Resource,
-    Inner, Server, KV_ACME,
 };
 use directory::Permission;
 use http_body_util::{BodyExt, Full};
 use hyper::{
+    Method, StatusCode,
     body::{self, Bytes},
     header::{self, CONTENT_TYPE},
     server::conn::http1,
     service::service_fn,
-    Method, StatusCode,
 };
 use hyper_util::rt::TokioIo;
 use jmap_proto::{
     error::request::{RequestError, RequestLimitError},
-    request::{capability::Session, Request},
+    request::{Request, capability::Session},
     response::Response,
     types::{blob::BlobId, id::Id},
 };
@@ -43,23 +43,23 @@ use crate::{
     auth::{
         authenticate::{Authenticator, HttpHeaders},
         oauth::{
-            auth::OAuthApiHandler, openid::OpenIdHandler, registration::ClientRegistrationHandler,
-            token::TokenHandler, FormData,
+            FormData, auth::OAuthApiHandler, openid::OpenIdHandler,
+            registration::ClientRegistrationHandler, token::TokenHandler,
         },
         rate_limit::RateLimiter,
     },
-    blob::{download::BlobDownload, upload::BlobUpload, DownloadResponse, UploadResponse},
+    blob::{DownloadResponse, UploadResponse, download::BlobDownload, upload::BlobUpload},
     websocket::upgrade::WebSocketUpgrade,
 };
 
 use super::{
+    HtmlResponse, HttpRequest, HttpResponse, HttpResponseBody, JmapSessionManager, JsonResponse,
     autoconfig::Autoconfig,
     event_source::EventSourceHandler,
     form::FormHandler,
-    management::{troubleshoot::TroubleshootApi, ManagementApi, ManagementApiError},
+    management::{ManagementApi, ManagementApiError, troubleshoot::TroubleshootApi},
     request::RequestHandler,
     session::SessionHandler,
-    HtmlResponse, HttpRequest, HttpResponse, HttpResponseBody, JmapSessionManager, JsonResponse,
 };
 
 pub struct HttpSessionData {
@@ -485,7 +485,7 @@ impl ParseHttp for Server {
                         if let Some(auth) = &prometheus.auth {
                             if req
                                 .authorization_basic()
-                                .is_none_or( |secret| secret != auth)
+                                .is_none_or(|secret| secret != auth)
                             {
                                 return Err(trc::AuthEvent::Failed
                                     .into_err()
@@ -757,9 +757,10 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
                 );
             }
             Err(err) => {
-                trc::error!(err
-                    .span_id(session.session_id)
-                    .details("Failed to check for fail2ban"));
+                trc::error!(
+                    err.span_id(session.session_id)
+                        .details("Failed to check for fail2ban")
+                );
             }
         }
     }

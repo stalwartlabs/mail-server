@@ -387,68 +387,73 @@ impl MailboxSet for Server {
         }
 
         // Validate depth and circular parent-child relationship
-        let mut mailbox_parent_id = changes.parent_id;
-        let current_mailbox_id = update
+        if update
             .as_ref()
-            .map_or(u32::MAX, |(mailbox_id, _)| *mailbox_id + 1);
-        let mut success = false;
-        for depth in 0..self.core.jmap.mailbox_max_depth {
-            if mailbox_parent_id == current_mailbox_id {
-                return Ok(Err(SetError::invalid_properties()
-                    .with_property(Property::ParentId)
-                    .with_description("Mailbox cannot be a parent of itself.")));
-            } else if mailbox_parent_id == 0 {
-                if depth == 0 && ctx.is_shared {
-                    return Ok(Err(SetError::forbidden()
-                        .with_description("You are not allowed to create root folders.")));
+            .is_none_or(|(_, m)| m.inner.parent_id != changes.parent_id)
+        {
+            let mut mailbox_parent_id = changes.parent_id;
+            let current_mailbox_id = update
+                .as_ref()
+                .map_or(u32::MAX, |(mailbox_id, _)| *mailbox_id + 1);
+            let mut success = false;
+            for depth in 0..self.core.jmap.mailbox_max_depth {
+                if mailbox_parent_id == current_mailbox_id {
+                    return Ok(Err(SetError::invalid_properties()
+                        .with_property(Property::ParentId)
+                        .with_description("Mailbox cannot be a parent of itself.")));
+                } else if mailbox_parent_id == 0 {
+                    if depth == 0 && ctx.is_shared {
+                        return Ok(Err(SetError::forbidden()
+                            .with_description("You are not allowed to create root folders.")));
+                    }
+                    success = true;
+                    break;
                 }
-                success = true;
-                break;
-            }
-            let parent_document_id = mailbox_parent_id - 1;
+                let parent_document_id = mailbox_parent_id - 1;
 
-            if let Some(mailbox_) = self
-                .get_property::<Archive>(
-                    ctx.account_id,
-                    Collection::Mailbox,
-                    parent_document_id,
-                    Property::Value,
-                )
-                .await?
-            {
-                let mailbox = mailbox_
-                    .unarchive::<email::mailbox::Mailbox>()
-                    .caused_by(trc::location!())?;
-                if depth == 0
-                    && ctx.is_shared
-                    && !mailbox
-                        .acls
-                        .effective_acl(ctx.access_token)
-                        .contains_any([Acl::CreateChild, Acl::Administer].into_iter())
+                if let Some(mailbox_) = self
+                    .get_property::<Archive>(
+                        ctx.account_id,
+                        Collection::Mailbox,
+                        parent_document_id,
+                        Property::Value,
+                    )
+                    .await?
                 {
-                    return Ok(Err(SetError::forbidden().with_description(
-                        "You are not allowed to create sub mailboxes under this mailbox.",
-                    )));
-                }
+                    let mailbox = mailbox_
+                        .unarchive::<email::mailbox::Mailbox>()
+                        .caused_by(trc::location!())?;
+                    if depth == 0
+                        && ctx.is_shared
+                        && !mailbox
+                            .acls
+                            .effective_acl(ctx.access_token)
+                            .contains_any([Acl::CreateChild, Acl::Administer].into_iter())
+                    {
+                        return Ok(Err(SetError::forbidden().with_description(
+                            "You are not allowed to create sub mailboxes under this mailbox.",
+                        )));
+                    }
 
-                mailbox_parent_id = mailbox.parent_id.into();
-            } else if ctx.mailbox_ids.contains(parent_document_id) {
-                // Parent mailbox is probably created within the same request
-                success = true;
-                break;
-            } else {
+                    mailbox_parent_id = mailbox.parent_id.into();
+                } else if ctx.mailbox_ids.contains(parent_document_id) {
+                    // Parent mailbox is probably created within the same request
+                    success = true;
+                    break;
+                } else {
+                    return Ok(Err(SetError::invalid_properties()
+                        .with_property(Property::ParentId)
+                        .with_description("Mailbox parent does not exist.")));
+                }
+            }
+
+            if !success {
                 return Ok(Err(SetError::invalid_properties()
                     .with_property(Property::ParentId)
-                    .with_description("Mailbox parent does not exist.")));
+                    .with_description(
+                        "Mailbox parent-child relationship is too deep.",
+                    )));
             }
-        }
-
-        if !success {
-            return Ok(Err(SetError::invalid_properties()
-                .with_property(Property::ParentId)
-                .with_description(
-                    "Mailbox parent-child relationship is too deep.",
-                )));
         }
 
         // Verify that the mailbox role is unique.
@@ -506,7 +511,7 @@ impl MailboxSet for Server {
                         ctx.account_id,
                         Collection::Mailbox,
                         vec![
-                            Filter::eq(Property::Name, changes.name.as_bytes().to_vec()),
+                            Filter::eq(Property::Name, changes.name.to_lowercase().into_bytes()),
                             Filter::eq(Property::ParentId, changes.parent_id.serialize()),
                         ],
                     )

@@ -8,14 +8,26 @@ use hyper::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use utils::map::vec_map::VecMap;
 
-use crate::api::{http::fetch_body, HttpRequest};
+use crate::api::{HttpRequest, http::fetch_body};
 
 pub mod auth;
 pub mod openid;
 pub mod registration;
 pub mod token;
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    Copy,
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+)]
+#[rkyv(compare(PartialEq))]
 pub enum OAuthStatus {
     Authorized,
     TokenIssued,
@@ -35,7 +47,7 @@ pub struct OAuth {
     pub metadata: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
 pub struct OAuthCode {
     pub status: OAuthStatus,
     pub account_id: u32,

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use crate::{
     mailbox::{INBOX_ID, TRASH_ID, manage::MailboxFnc},
@@ -22,7 +22,7 @@ use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
 use store::{
     Deserialize, Serialize, SerializeInfallible,
-    ahash::AHashSet,
+    ahash::{AHashSet, RandomState},
     query::Filter,
     write::{Archive, Archiver, BatchBuilder, BlobOp, LegacyBincode, assert::HashedValue, now},
 };
@@ -147,13 +147,7 @@ impl SieveScriptIngest for Server {
             size: raw_message.len(),
             imap_uids: Vec::new(),
         };
-        let mut seen_ids = if let Some(seen_ids) = active_script.seen_ids {
-            seen_ids
-                .deserialize::<SeenIds>()
-                .caused_by(trc::location!())?
-        } else {
-            SeenIds::default()
-        };
+        let mut seen_ids = active_script.seen_ids;
 
         while let Some(event) = instance.run(input) {
             match event {
@@ -540,7 +534,7 @@ impl SieveScriptIngest for Server {
                 .update_document(active_script.document_id)
                 .set(
                     Property::EmailIds,
-                    Archiver::new(seen_ids)
+                    Archiver::new(seen_ids.ids)
                         .serialize()
                         .caused_by(trc::location!())?,
                 );
@@ -579,18 +573,29 @@ impl SieveScriptIngest for Server {
             .min()
         {
             let (script, script_name) = self.sieve_script_compile(account_id, document_id).await?;
+
+            let seen_ids = if let Some(seen_ids_archive_) = self
+                .get_property::<Archive>(
+                    account_id,
+                    Collection::SieveScript,
+                    document_id,
+                    Property::EmailIds,
+                )
+                .await?
+            {
+                let seen_ids_archive = seen_ids_archive_
+                    .unarchive::<HashSet<SeenIdHash, RandomState>>()
+                    .caused_by(trc::location!())?;
+                SeenIds::from(seen_ids_archive)
+            } else {
+                SeenIds::default()
+            };
+
             Ok(Some(ActiveScript {
                 document_id,
                 script: Arc::new(script),
                 script_name,
-                seen_ids: self
-                    .get_property::<Archive>(
-                        account_id,
-                        Collection::SieveScript,
-                        document_id,
-                        Property::EmailIds,
-                    )
-                    .await?,
+                seen_ids,
             }))
         } else {
             Ok(None)
@@ -701,6 +706,7 @@ impl SieveScriptIngest for Server {
                         rkyv::deserialize(unarchived_script).caused_by(trc::location!())?;
                     let blob_hash =
                         std::mem::replace(&mut new_script_object.blob_hash, new_blob_hash.clone());
+                    let new_archive = Archiver::new(new_script_object);
 
                     // Update script object
                     let mut batch = BatchBuilder::new();
@@ -711,7 +717,7 @@ impl SieveScriptIngest for Server {
                         .assert_value(Property::Value, &script_object)
                         .set(
                             Property::Value,
-                            new_script_object.serialize().caused_by(trc::location!())?,
+                            new_archive.serialize().caused_by(trc::location!())?,
                         )
                         .clear(BlobOp::Link { hash: blob_hash })
                         .set(
@@ -725,7 +731,7 @@ impl SieveScriptIngest for Server {
                         .await
                         .caused_by(trc::location!())?;
 
-                    Ok((sieve.inner, new_script_object.name))
+                    Ok((sieve.inner, new_archive.into_inner().name))
                 }
                 Err(error) => Err(trc::StoreEvent::UnexpectedError
                     .caused_by(trc::location!())

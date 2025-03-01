@@ -609,7 +609,7 @@ pub async fn test(params: &JMAPTest) {
                 sender_address: "bill@foobar.org".to_string(),
                 recipients: vec!["john@foobar.org".to_string()],
                 message_blob: message_blob.clone(),
-                message_size: TEST_MESSAGE.len(),
+                message_size: TEST_MESSAGE.len() as u64,
                 session_id: 0,
             })
             .await
@@ -647,7 +647,7 @@ pub async fn test(params: &JMAPTest) {
                 sender_address: "bill@foobar.org".to_string(),
                 recipients: vec!["john@foobar.org".to_string()],
                 message_blob: message_blob.clone(),
-                message_size: TEST_MESSAGE.len(),
+                message_size: TEST_MESSAGE.len() as u64,
                 session_id: 0,
             })
             .await
@@ -672,7 +672,7 @@ pub async fn test(params: &JMAPTest) {
                 sender_address: "bill@foobar.org".to_string(),
                 recipients: vec!["john@foobar.org".to_string()],
                 message_blob,
-                message_size: TEST_MESSAGE.len(),
+                message_size: TEST_MESSAGE.len() as u64,
                 session_id: 0,
             })
             .await

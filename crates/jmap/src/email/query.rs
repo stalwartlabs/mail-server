@@ -284,10 +284,12 @@ impl EmailQuery for Server {
         let mut result_set = self.filter(account_id, Collection::Email, filters).await?;
         if access_token.is_shared(account_id) {
             result_set.apply_mask(
-                self.shared_document_children(
+                self.shared_items(
                     access_token,
                     account_id,
                     Collection::Mailbox,
+                    Collection::Email,
+                    Property::MailboxIds,
                     Acl::ReadItems,
                 )
                 .await?,

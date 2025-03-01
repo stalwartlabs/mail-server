@@ -18,7 +18,8 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use smtp::queue::{self, spool::SmtpSpool};
+use smtp::queue::{ArchivedStatus, Message, spool::SmtpSpool};
+use smtp_proto::ArchivedResponse;
 use std::future::Future;
 use store::{rkyv::option::ArchivedOption, write::Archive};
 use trc::AddContext;
@@ -108,28 +109,35 @@ impl EmailSubmissionGet for Server {
                 .collect::<VecMap<_, _>>();
             let mut is_pending = false;
             if let Some(queue_id) = submission.queue_id.as_ref().map(u64::from) {
-                if let Some(mut queued_message) = self.read_message(queue_id).await {
-                    for rcpt in std::mem::take(&mut queued_message.recipients) {
-                        *delivery_status.get_mut_or_insert(rcpt.address_lcase) = DeliveryStatus {
-                            smtp_reply: match &rcpt.status {
-                                queue::Status::Completed(reply) => {
-                                    reply.response.to_string().replace('\n', " ")
-                                }
-                                queue::Status::TemporaryFailure(reply)
-                                | queue::Status::PermanentFailure(reply) => {
-                                    reply.response.to_string().replace('\n', " ")
-                                }
-                                queue::Status::Scheduled => "250 2.1.5 Queued".to_string(),
-                            },
-                            delivered: match &rcpt.status {
-                                queue::Status::Scheduled | queue::Status::TemporaryFailure(_) => {
-                                    Delivered::Queued
-                                }
-                                queue::Status::Completed(_) => Delivered::Yes,
-                                queue::Status::PermanentFailure(_) => Delivered::No,
-                            },
-                            displayed: false,
-                        };
+                if let Some(queued_message_) = self
+                    .read_message_archive(queue_id)
+                    .await
+                    .caused_by(trc::location!())?
+                {
+                    let queued_message = queued_message_
+                        .unarchive::<Message>()
+                        .caused_by(trc::location!())?;
+                    for rcpt in queued_message.recipients.iter() {
+                        *delivery_status.get_mut_or_insert(rcpt.address_lcase.to_string()) =
+                            DeliveryStatus {
+                                smtp_reply: match &rcpt.status {
+                                    ArchivedStatus::Completed(reply) => {
+                                        format_archived_response(&reply.response)
+                                    }
+                                    ArchivedStatus::TemporaryFailure(reply)
+                                    | ArchivedStatus::PermanentFailure(reply) => {
+                                        format_archived_response(&reply.response)
+                                    }
+                                    ArchivedStatus::Scheduled => "250 2.1.5 Queued".to_string(),
+                                },
+                                delivered: match &rcpt.status {
+                                    ArchivedStatus::Scheduled
+                                    | ArchivedStatus::TemporaryFailure(_) => Delivered::Queued,
+                                    ArchivedStatus::Completed(_) => Delivered::Yes,
+                                    ArchivedStatus::PermanentFailure(_) => Delivered::No,
+                                },
+                                displayed: false,
+                            };
                     }
                     is_pending = true;
                 }
@@ -217,4 +225,15 @@ fn build_address(envelope: &ArchivedAddress) -> Value {
             },
         )
         .into()
+}
+
+fn format_archived_response(response: &ArchivedResponse<String>) -> String {
+    format!(
+        "Code: {}, Enhanced code: {}.{}.{}, Message: {}",
+        response.code,
+        response.esc[0],
+        response.esc[1],
+        response.esc[2],
+        response.message.replace('\n', " "),
+    )
 }

@@ -21,7 +21,11 @@ use rand::{
 use serde::Deserialize;
 use serde_json::json;
 use std::future::Future;
-use store::{Serialize, dispatch::lookup::KeyValue, write::LegacyBincode};
+use store::{
+    Serialize,
+    dispatch::lookup::KeyValue,
+    write::{Archive, Archiver},
+};
 use trc::AddContext;
 
 use crate::{
@@ -107,7 +111,7 @@ impl OAuthApiHandler for Server {
                     .collect::<String>();
 
                 // Serialize OAuth code
-                let value = LegacyBincode::new(OAuthCode {
+                let value = Archiver::new(OAuthCode {
                     status: OAuthStatus::Authorized,
                     account_id: access_token.primary_id(),
                     client_id,
@@ -145,20 +149,24 @@ impl OAuthApiHandler for Server {
                 let mut success = false;
 
                 // Obtain code
-                if let Some(mut auth_code) = self
+                if let Some(auth_code_) = self
                     .core
                     .storage
                     .lookup
-                    .key_get::<LegacyBincode<OAuthCode>>(KeyValue::<()>::build_key(
-                        KV_OAUTH,
-                        code.as_bytes(),
-                    ))
+                    .key_get::<Archive>(KeyValue::<()>::build_key(KV_OAUTH, code.as_bytes()))
                     .await?
                 {
-                    if auth_code.inner.status == OAuthStatus::Pending {
-                        auth_code.inner.status = OAuthStatus::Authorized;
-                        auth_code.inner.account_id = access_token.primary_id();
-                        let device_code = std::mem::take(&mut auth_code.inner.params);
+                    let oauth = auth_code_
+                        .unarchive::<OAuthCode>()
+                        .caused_by(trc::location!())?;
+                    if oauth.status == OAuthStatus::Pending {
+                        let new_oauth_code = OAuthCode {
+                            status: OAuthStatus::Authorized,
+                            account_id: access_token.primary_id(),
+                            client_id: oauth.client_id.to_string(),
+                            nonce: oauth.nonce.as_ref().map(|s| s.to_string()),
+                            params: Default::default(),
+                        };
                         success = true;
 
                         // Delete issued user code
@@ -175,8 +183,10 @@ impl OAuthApiHandler for Server {
                             .key_set(
                                 KeyValue::with_prefix(
                                     KV_OAUTH,
-                                    device_code.as_bytes(),
-                                    auth_code.serialize().caused_by(trc::location!())?,
+                                    oauth.params.as_bytes(),
+                                    Archiver::new(new_oauth_code)
+                                        .serialize()
+                                        .caused_by(trc::location!())?,
                                 )
                                 .expires(self.core.oauth.oauth_expiry_auth_code),
                             )
@@ -232,7 +242,7 @@ impl OAuthApiHandler for Server {
         }
 
         // Add OAuth status
-        let oauth_code = LegacyBincode::new(OAuthCode {
+        let oauth_code = Archiver::new(OAuthCode {
             status: OAuthStatus::Pending,
             account_id: u32::MAX,
             client_id,

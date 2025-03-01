@@ -19,7 +19,7 @@ use store::{
     Serialize,
     rkyv::{option::ArchivedOption, vec::ArchivedVec},
     roaring::RoaringBitmap,
-    write::{Archive, BatchBuilder},
+    write::{Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
 use utils::sanitize_email;
@@ -189,11 +189,11 @@ impl IdentityGet for Server {
             };
             batch.create_document_with_id(document_id).set(
                 Property::Value,
-                Identity {
+                Archiver::new(Identity {
                     name,
                     email,
                     ..Default::default()
-                }
+                })
                 .serialize()
                 .caused_by(trc::location!())?,
             );

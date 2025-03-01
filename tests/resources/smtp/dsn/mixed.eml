@@ -9,18 +9,21 @@ Content-Type: multipart/report; report-type="delivery-status";
 
 --mime_boundary
 Content-Type: text/plain; charset="utf-8"
-Content-Transfer-Encoding: 7bit
+Content-Transfer-Encoding: quoted-printable
 
 Your message has been partially delivered:
 
     ----- Delivery to the following addresses was successful -----
-<jane@example.org> (delivered to 'mx2.example.org' with code 250 (2.1.5) 'Message accepted for delivery')
+<jane@example.org> (delivered to 'mx2.example.org' with code 250 (2.1.5) 'Me=
+ssage accepted for delivery')
 
     ----- There was a temporary problem delivering to these addresses -----
-<john.doe@example.org> (connection to 'mx.domain.org' failed: Connection timeout)
+<john.doe@example.org> (connection to 'mx.domain.org' failed: Connection tim=
+eout)
 
     ----- Delivery to the following addresses failed -----
-<foobar@example.org> (host 'mx.example.org' rejected command 'RCPT TO:<foobar@example.org>' with code 550 (5.1.2) 'User does not exist')
+<foobar@example.org> (host 'mx.example.org' rejected command 'RCPT TO:<fooba=
+r@example.org>' with code 550 (5.1.2) 'User does not exist')
 
 
 --mime_boundary

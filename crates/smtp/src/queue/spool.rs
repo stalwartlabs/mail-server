@@ -11,14 +11,14 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
 use store::write::key::DeserializeBigEndian;
-use store::write::{BatchBuilder, BlobOp, LegacyBincode, QueueClass, ValueClass, now};
+use store::write::{Archive, Archiver, BatchBuilder, BlobOp, QueueClass, ValueClass, now};
 use store::{IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
 use trc::ServerEvent;
 use utils::BlobHash;
 
 use super::{
-    Domain, Message, MessageSource, QueueEnvelope, QueueId, QueuedMessage, QuotaKey, Recipient,
-    Schedule, Status,
+    ArchivedMessage, ArchivedStatus, Domain, Message, MessageSource, QueueEnvelope, QueueId,
+    QueuedMessage, QuotaKey, Recipient, Schedule, Status,
 };
 
 pub const LOCK_EXPIRY: u64 = 300;
@@ -40,6 +40,11 @@ pub trait SmtpSpool: Sync + Send {
     fn unlock_event(&self, queue_id: QueueId) -> impl Future<Output = ()> + Send;
 
     fn read_message(&self, id: QueueId) -> impl Future<Output = Option<Message>> + Send;
+
+    fn read_message_archive(
+        &self,
+        id: QueueId,
+    ) -> impl Future<Output = trc::Result<Option<Archive>>> + Send;
 }
 
 impl SmtpSpool for Server {
@@ -149,14 +154,11 @@ impl SmtpSpool for Server {
     }
 
     async fn read_message(&self, id: QueueId) -> Option<Message> {
-        match self
-            .store()
-            .get_value::<LegacyBincode<Message>>(ValueKey::from(ValueClass::Queue(
-                QueueClass::Message(id),
-            )))
-            .await
-        {
-            Ok(Some(message)) => Some(message.inner),
+        match self.read_message_archive(id).await.and_then(|a| match a {
+            Some(a) => a.deserialize::<Message>().map(Some),
+            None => Ok(None),
+        }) {
+            Ok(Some(message)) => Some(message),
             Ok(None) => None,
             Err(err) => {
                 trc::error!(
@@ -167,6 +169,12 @@ impl SmtpSpool for Server {
                 None
             }
         }
+    }
+
+    async fn read_message_archive(&self, id: QueueId) -> trc::Result<Option<Archive>> {
+        self.store()
+            .get_value::<Archive>(ValueKey::from(ValueClass::Queue(QueueClass::Message(id))))
+            .await
     }
 }
 
@@ -192,7 +200,7 @@ impl Message {
 
         // Generate id
         if self.size == 0 {
-            self.size = message.len();
+            self.size = message.len() as u64;
         }
 
         // Reserve and write blob
@@ -298,7 +306,7 @@ impl Message {
             )
             .set(
                 ValueClass::Queue(QueueClass::Message(self.queue_id)),
-                match LegacyBincode::new(self).serialize() {
+                match Archiver::new(self).serialize() {
                     Ok(data) => data,
                     Err(err) => {
                         trc::error!(
@@ -380,7 +388,7 @@ impl Message {
                 idx
             };
         self.recipients.push(Recipient {
-            domain_idx,
+            domain_idx: domain_idx as u32,
             address: rcpt.into(),
             address_lcase: rcpt_lcase.into(),
             status: Status::Scheduled,
@@ -430,7 +438,7 @@ impl Message {
         let span_id = self.span_id;
         batch.set(
             ValueClass::Queue(QueueClass::Message(self.queue_id)),
-            match LegacyBincode::new(self).serialize() {
+            match Archiver::new(self).serialize() {
                 Ok(data) => data,
                 Err(err) => {
                     trc::error!(
@@ -504,5 +512,39 @@ impl Message {
                 .return_path
                 .rsplit_once('@')
                 .is_some_and(|(_, domain)| domains.contains(&domain.to_string()))
+    }
+}
+
+impl ArchivedMessage {
+    pub fn has_domain(&self, domains: &[String]) -> bool {
+        self.domains
+            .iter()
+            .any(|d| domains.iter().any(|dd| dd == d.domain.as_str()))
+            || self
+                .return_path
+                .rsplit_once('@')
+                .is_some_and(|(_, domain)| domains.contains(&domain.to_string()))
+    }
+
+    pub fn next_delivery_event(&self) -> u64 {
+        let mut next_delivery = now();
+
+        for (pos, domain) in self
+            .domains
+            .iter()
+            .filter(|d| {
+                matches!(
+                    d.status,
+                    ArchivedStatus::Scheduled | ArchivedStatus::TemporaryFailure(_)
+                )
+            })
+            .enumerate()
+        {
+            if pos == 0 || domain.retry.due < next_delivery {
+                next_delivery = domain.retry.due.into();
+            }
+        }
+
+        next_delivery
     }
 }

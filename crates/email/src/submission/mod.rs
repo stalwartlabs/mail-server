@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use store::Serialize;
 use utils::map::vec_map::VecMap;
 
 pub mod index;
@@ -148,13 +147,5 @@ impl ArchivedDelivered {
             ArchivedDelivered::No => "no",
             ArchivedDelivered::Unknown => "unknown",
         }
-    }
-}
-
-impl Serialize for EmailSubmission {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        rkyv::to_bytes::<rkyv::rancor::Error>(self)
-            .map(|r| r.into_vec())
-            .map_err(Into::into)
     }
 }

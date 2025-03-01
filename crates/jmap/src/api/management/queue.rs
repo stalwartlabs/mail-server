@@ -22,12 +22,15 @@ use mail_parser::DateTime;
 use serde::{Deserializer, Serializer};
 use serde_json::json;
 use smtp::{
-    queue::{self, ErrorDetails, HostResponse, QueueId, Status, spool::SmtpSpool},
+    queue::{
+        self, ArchivedMessage, ArchivedStatus, DisplayArchivedResponse, ErrorDetails, HostResponse,
+        QueueId, Status, spool::SmtpSpool,
+    },
     reporting::{dmarc::DmarcReporting, tls::TlsReporting},
 };
 use store::{
     Deserialize, IterateParams, ValueKey,
-    write::{LegacyBincode, QueueClass, ReportEvent, ValueClass, key::DeserializeBigEndian, now},
+    write::{Archive, QueueClass, ReportEvent, ValueClass, key::DeserializeBigEndian, now},
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
@@ -44,7 +47,7 @@ pub struct Message {
     #[serde(deserialize_with = "deserialize_datetime")]
     #[serde(serialize_with = "serialize_datetime")]
     pub created: DateTime,
-    pub size: usize,
+    pub size: u64,
     #[serde(skip_serializing_if = "is_zero")]
     #[serde(default)]
     pub priority: i16,
@@ -199,22 +202,19 @@ impl QueueManagement for Server {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::MessageQueueGet)?;
 
-                if let Some(message) = self
-                    .read_message(queue_id.parse().unwrap_or_default())
-                    .await
-                    .filter(|message| {
-                        tenant_domains
-                            .as_ref()
-                            .is_none_or(|domains| message.has_domain(domains))
-                    })
+                if let Some(message_) = self
+                    .read_message_archive(queue_id.parse().unwrap_or_default())
+                    .await?
                 {
-                    Ok(JsonResponse::new(json!({
-                            "data": Message::from(&message),
-                    }))
-                    .into_http_response())
-                } else {
-                    Err(trc::ResourceEvent::NotFound.into_err())
+                    let message = message_.unarchive::<queue::Message>()?;
+                    if message.is_tenant_domain(&tenant_domains) {
+                        return Ok(JsonResponse::new(json!({
+                                "data": Message::from(message),
+                        }))
+                        .into_http_response());
+                    }
                 }
+                Err(trc::ResourceEvent::NotFound.into_err())
             }
             ("messages", None, &Method::PATCH) => {
                 // Validate the access token
@@ -406,7 +406,7 @@ impl QueueManagement for Server {
                                     let mut total_completed = 0;
 
                                     for rcpt in &message.recipients {
-                                        if rcpt.domain_idx == domain_idx {
+                                        if rcpt.domain_idx == domain_idx as u32 {
                                             total_rcpt += 1;
                                             if matches!(
                                                 rcpt.status,
@@ -604,65 +604,65 @@ impl QueueManagement for Server {
     }
 }
 
-impl From<&queue::Message> for Message {
-    fn from(message: &queue::Message) -> Self {
+impl From<&ArchivedMessage> for Message {
+    fn from(message: &ArchivedMessage) -> Self {
         let now = now();
 
         Message {
-            id: message.queue_id,
-            return_path: message.return_path.clone(),
-            created: DateTime::from_timestamp(message.created as i64),
-            size: message.size,
-            priority: message.priority,
-            env_id: message.env_id.clone(),
+            id: message.queue_id.into(),
+            return_path: message.return_path.to_string(),
+            created: DateTime::from_timestamp(u64::from(message.created) as i64),
+            size: message.size.into(),
+            priority: message.priority.into(),
+            env_id: message.env_id.as_ref().map(|id| id.to_string()),
             domains: message
                 .domains
                 .iter()
                 .enumerate()
                 .map(|(idx, domain)| Domain {
-                    name: domain.domain.clone(),
+                    name: domain.domain.to_string(),
                     status: match &domain.status {
-                        Status::Scheduled => Status::Scheduled,
-                        Status::Completed(_) => Status::Completed(String::new()),
-                        Status::TemporaryFailure(status) => {
+                        ArchivedStatus::Scheduled => Status::Scheduled,
+                        ArchivedStatus::Completed(_) => Status::Completed(String::new()),
+                        ArchivedStatus::TemporaryFailure(status) => {
                             Status::TemporaryFailure(status.to_string())
                         }
-                        Status::PermanentFailure(status) => {
+                        ArchivedStatus::PermanentFailure(status) => {
                             Status::PermanentFailure(status.to_string())
                         }
                     },
-                    retry_num: domain.retry.inner,
-                    next_retry: Some(DateTime::from_timestamp(domain.retry.due as i64)),
+                    retry_num: domain.retry.inner.into(),
+                    next_retry: Some(DateTime::from_timestamp(u64::from(domain.retry.due) as i64)),
                     next_notify: if domain.notify.due > now {
-                        DateTime::from_timestamp(domain.notify.due as i64).into()
+                        DateTime::from_timestamp(u64::from(domain.notify.due) as i64).into()
                     } else {
                         None
                     },
                     recipients: message
                         .recipients
                         .iter()
-                        .filter(|rcpt| rcpt.domain_idx == idx)
+                        .filter(|rcpt| u32::from(rcpt.domain_idx) == idx as u32)
                         .map(|rcpt| Recipient {
-                            address: rcpt.address.clone(),
+                            address: rcpt.address.to_string(),
                             status: match &rcpt.status {
-                                Status::Scheduled => Status::Scheduled,
-                                Status::Completed(status) => {
+                                ArchivedStatus::Scheduled => Status::Scheduled,
+                                ArchivedStatus::Completed(status) => {
                                     Status::Completed(status.response.to_string())
                                 }
-                                Status::TemporaryFailure(status) => {
+                                ArchivedStatus::TemporaryFailure(status) => {
                                     Status::TemporaryFailure(status.response.to_string())
                                 }
-                                Status::PermanentFailure(status) => {
+                                ArchivedStatus::PermanentFailure(status) => {
                                     Status::PermanentFailure(status.response.to_string())
                                 }
                             },
-                            orcpt: rcpt.orcpt.clone(),
+                            orcpt: rcpt.orcpt.as_ref().map(|orcpt| orcpt.to_string()),
                         })
                         .collect(),
-                    expires: DateTime::from_timestamp(domain.expires as i64),
+                    expires: DateTime::from_timestamp(u64::from(domain.expires) as i64),
                 })
                 .collect(),
-            blob_hash: URL_SAFE_NO_PAD.encode::<&[u8]>(message.blob_hash.as_ref()),
+            blob_hash: URL_SAFE_NO_PAD.encode::<&[u8]>(message.blob_hash.0.as_slice()),
         }
     }
 }
@@ -714,9 +714,11 @@ async fn fetch_queued_messages(
         .iterate(
             IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
-                let message = LegacyBincode::<queue::Message>::deserialize(value)
-                    .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?
-                    .inner;
+                let message_ = <Archive as Deserialize>::deserialize(value)
+                    .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?;
+                let message = message_
+                    .unarchive::<queue::Message>()
+                    .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?;
                 let matches = tenant_domains
                     .as_ref()
                     .is_none_or(|domains| message.has_domain(domains))
@@ -751,7 +753,7 @@ async fn fetch_queued_messages(
                     if offset == 0 {
                         if limit == 0 || total_returned < limit {
                             if values {
-                                result.values.push(Message::from(&message));
+                                result.values.push(Message::from(message));
                             } else {
                                 result.ids.push(key.deserialize_be_u64(0)?);
                             }
@@ -967,4 +969,15 @@ where
 
 fn is_zero(num: &i16) -> bool {
     *num == 0
+}
+
+trait IsTenantDomain {
+    fn is_tenant_domain(&self, tenant_domains: &Option<Vec<String>>) -> bool;
+}
+impl IsTenantDomain for ArchivedMessage {
+    fn is_tenant_domain(&self, tenant_domains: &Option<Vec<String>>) -> bool {
+        tenant_domains
+            .as_ref()
+            .is_none_or(|domains| self.has_domain(domains))
+    }
 }

@@ -16,10 +16,13 @@ use super::{ArchivedUidMailbox, Mailbox, UidMailbox};
 impl IndexableObject for Mailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::queryable_text(Property::Name, &self.name),
+            IndexValue::Text {
+                field: Property::Name.into(),
+                value: self.name.to_lowercase().into(),
+            },
             IndexValue::Text {
                 field: Property::Role.into(),
-                value: self.role.as_str().unwrap_or_default().as_bytes().into(),
+                value: self.role.as_str().unwrap_or_default().into(),
             },
             IndexValue::Tag {
                 field: Property::Role.into(),

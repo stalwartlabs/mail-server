@@ -54,7 +54,7 @@ impl EmailImport for Server {
 
         let valid_mailbox_ids = self.mailbox_get_or_create(account_id).await?;
         let can_add_mailbox_ids = if access_token.is_shared(account_id) {
-            self.shared_documents(access_token, account_id, Collection::Mailbox, Acl::AddItems)
+            self.shared_containers(access_token, account_id, Collection::Mailbox, Acl::AddItems)
                 .await?
                 .into()
         } else {

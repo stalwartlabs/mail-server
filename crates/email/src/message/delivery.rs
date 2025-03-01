@@ -21,7 +21,7 @@ pub struct IngestMessage {
     pub sender_address: String,
     pub recipients: Vec<String>,
     pub message_blob: BlobHash,
-    pub message_size: usize,
+    pub message_size: u64,
     pub session_id: u64,
 }
 

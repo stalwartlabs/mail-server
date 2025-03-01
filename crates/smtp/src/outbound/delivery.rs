@@ -245,7 +245,9 @@ impl QueuedMessage {
                     // Deliver message locally
                     let delivery_result = message
                         .deliver_local(
-                            recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
+                            recipients
+                                .iter_mut()
+                                .filter(|r| r.domain_idx == domain_idx as u32),
                             &server,
                         )
                         .await;
@@ -1112,7 +1114,7 @@ impl QueuedMessage {
                                             smtp_client,
                                             recipients
                                                 .iter_mut()
-                                                .filter(|r| r.domain_idx == domain_idx),
+                                                .filter(|r| r.domain_idx == domain_idx as u32),
                                             params,
                                         )
                                         .await
@@ -1170,7 +1172,7 @@ impl QueuedMessage {
                                                 smtp_client,
                                                 recipients
                                                     .iter_mut()
-                                                    .filter(|r| r.domain_idx == domain_idx),
+                                                    .filter(|r| r.domain_idx == domain_idx as u32),
                                                 params,
                                             )
                                             .await
@@ -1227,7 +1229,9 @@ impl QueuedMessage {
                             message
                                 .deliver(
                                     smtp_client,
-                                    recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
+                                    recipients
+                                        .iter_mut()
+                                        .filter(|r| r.domain_idx == domain_idx as u32),
                                     params,
                                 )
                                 .await
@@ -1277,7 +1281,9 @@ impl QueuedMessage {
                         message
                             .deliver(
                                 smtp_client,
-                                recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
+                                recipients
+                                    .iter_mut()
+                                    .filter(|r| r.domain_idx == domain_idx as u32),
                                 params,
                             )
                             .await
@@ -1357,7 +1363,7 @@ impl Message {
                     );
 
                     for rcpt in &mut self.recipients {
-                        if rcpt.domain_idx == idx {
+                        if rcpt.domain_idx == idx as u32 {
                             rcpt.status = std::mem::replace(&mut rcpt.status, Status::Scheduled)
                                 .into_permanent();
                         }
@@ -1375,7 +1381,7 @@ impl Message {
                     );
 
                     for rcpt in &mut self.recipients {
-                        if rcpt.domain_idx == idx {
+                        if rcpt.domain_idx == idx as u32 {
                             rcpt.status = std::mem::replace(&mut rcpt.status, Status::Scheduled)
                                 .into_permanent();
                         }

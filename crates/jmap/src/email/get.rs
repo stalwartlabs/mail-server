@@ -104,10 +104,12 @@ impl EmailGet for Server {
 
         let account_id = request.account_id.document_id();
         let message_ids = self
-            .owned_or_shared_document_children(
+            .owned_or_shared_items(
                 access_token,
                 account_id,
                 Collection::Mailbox,
+                Collection::Email,
+                Property::MailboxIds,
                 Acl::ReadItems,
             )
             .await?;

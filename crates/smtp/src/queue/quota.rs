@@ -6,10 +6,10 @@
 
 use std::future::Future;
 
-use common::{config::smtp::queue::QueueQuota, expr::functions::ResolveVariable, Server};
+use common::{Server, config::smtp::queue::QueueQuota, expr::functions::ResolveVariable};
 use store::{
-    write::{BatchBuilder, QueueClass, ValueClass},
     ValueKey,
+    write::{BatchBuilder, QueueClass, ValueClass},
 };
 use trc::QueueEvent;
 
@@ -23,7 +23,7 @@ pub trait HasQueueQuota: Sync + Send {
         &'x self,
         quota: &'x QueueQuota,
         envelope: &impl ResolveVariable,
-        size: usize,
+        size: u64,
         id: u64,
         refs: &mut Vec<QuotaKey>,
         session_id: u64,
@@ -89,7 +89,7 @@ impl HasQueueQuota for Server {
                 if !self
                     .check_quota(
                         quota,
-                        &QueueEnvelope::new_rcpt(message, rcpt.domain_idx, rcpt_idx),
+                        &QueueEnvelope::new_rcpt(message, rcpt.domain_idx as usize, rcpt_idx),
                         message.size,
                         (rcpt_idx + 1) as u64,
                         &mut quota_keys,
@@ -118,7 +118,7 @@ impl HasQueueQuota for Server {
         &'x self,
         quota: &'x QueueQuota,
         envelope: &impl ResolveVariable,
-        size: usize,
+        size: u64,
         id: u64,
         refs: &mut Vec<QuotaKey>,
         session_id: u64,
@@ -139,7 +139,7 @@ impl HasQueueQuota for Server {
                         key.as_ref().to_vec(),
                     ))))
                     .await
-                    .unwrap_or(0) as usize;
+                    .unwrap_or(0) as u64;
                 if used_size + size > max_size {
                     return false;
                 } else {
@@ -159,7 +159,7 @@ impl HasQueueQuota for Server {
                         key.as_ref().to_vec(),
                     ))))
                     .await
-                    .unwrap_or(0) as usize;
+                    .unwrap_or(0) as u64;
                 if total_messages + 1 > max_messages {
                     return false;
                 } else {

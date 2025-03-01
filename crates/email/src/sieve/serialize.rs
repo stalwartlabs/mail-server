@@ -7,17 +7,9 @@
 use std::collections::HashSet;
 
 use serde::ser::SerializeSeq;
-use store::{Serialize, ahash::RandomState, write::now};
+use store::{ahash::RandomState, write::now};
 
-use super::{SeenIdHash, SeenIds, SieveScript};
-
-impl Serialize for SieveScript {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        rkyv::to_bytes::<rkyv::rancor::Error>(self)
-            .map(|r| r.into_vec())
-            .map_err(Into::into)
-    }
-}
+use super::{SeenIdHash, SeenIds};
 
 // SeenIds serializer
 impl serde::Serialize for SeenIds {
