@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use email::sieve::ArchivedSieveScript;
+use email::sieve::SieveScript;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::Archive;
 use trc::AddContext;
@@ -49,7 +49,7 @@ impl<T: SessionStream> Session<T> {
                 .caused_by(trc::location!())?
             {
                 let script = script_
-                    .unarchive::<ArchivedSieveScript>()
+                    .unarchive::<SieveScript>()
                     .caused_by(trc::location!())?;
                 response.push(b'\"');
                 for ch in script.name.as_bytes() {

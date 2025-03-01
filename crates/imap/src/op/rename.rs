@@ -12,7 +12,6 @@ use crate::{
 };
 use common::{listener::SessionStream, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::mailbox::ArchivedMailbox;
 use imap_proto::{
     Command, ResponseCode, StatusResponse, protocol::rename::Arguments, receiver::Request,
 };
@@ -105,7 +104,7 @@ impl<T: SessionStream> SessionData<T> {
                     .code(ResponseCode::NonExistent)
                     .id(arguments.tag.clone())
             })?
-            .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
+            .into_deserialized::<email::mailbox::Mailbox>()
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Validate ACL

@@ -12,7 +12,6 @@ use crate::{
 };
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::mailbox::ArchivedMailbox;
 use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
 use jmap_proto::types::{
     collection::Collection, property::Property, state::StateChange, type_state::DataType,
@@ -113,7 +112,7 @@ impl<T: SessionStream> SessionData<T> {
                     .id(tag.clone())
                     .caused_by(trc::location!())
             })?
-            .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
+            .into_deserialized::<email::mailbox::Mailbox>()
             .imap_ctx(&tag, trc::location!())?;
 
         if (subscribe && !mailbox.inner.is_subscribed(self.account_id))

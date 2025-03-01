@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::sieve::{ArchivedSieveScript, SieveScript};
+use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
 use jmap_proto::types::{blob::BlobId, collection::Collection, property::Property};
 use sieve::compiler::ErrorType;
@@ -115,7 +115,7 @@ impl<T: SessionStream> Session<T> {
                         .details("Script not found")
                         .code(ResponseCode::NonExistent)
                 })?
-                .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                .into_deserialized::<SieveScript>()
                 .caused_by(trc::location!())?;
 
             // Write script blob
@@ -137,7 +137,13 @@ impl<T: SessionStream> Session<T> {
 
             // Write record
             let mut obj = ObjectIndexBuilder::new()
-                .with_changes(script.inner.clone().with_blob_hash(blob_hash.clone()))
+                .with_changes(
+                    script
+                        .inner
+                        .clone()
+                        .with_size(script_size as u32)
+                        .with_blob_hash(blob_hash.clone()),
+                )
                 .with_current(script);
 
             // Update tenant quota

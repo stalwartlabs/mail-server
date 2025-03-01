@@ -10,7 +10,7 @@ use common::{
     storage::index::ObjectIndexBuilder,
 };
 use email::sieve::{
-    ArchivedSieveScript, SieveScript, activate::SieveScriptActivate, delete::SieveScriptDelete,
+    SieveScript, activate::SieveScriptActivate, delete::SieveScriptDelete,
 };
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -193,7 +193,7 @@ impl SieveScriptSet for Server {
                 .await?
             {
                 let sieve = sieve
-                    .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                    .into_deserialized::<SieveScript>()
                     .caused_by(trc::location!())?;
                 let prev_blob_hash = sieve.inner.blob_hash.clone();
 

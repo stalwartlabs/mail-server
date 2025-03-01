@@ -11,9 +11,7 @@ use directory::{
     Type,
     backend::internal::{PrincipalField, manage::ManageDirectory},
 };
-use email::message::{
-    bayes::EmailBayesTrain, index::IndexMessageText, metadata::ArchivedMessageMetadata,
-};
+use email::message::{bayes::EmailBayesTrain, index::IndexMessageText, metadata::MessageMetadata};
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_parser::MessageParser;
 use store::{
@@ -176,7 +174,7 @@ impl Indexer for Server {
                         .await
                     {
                         Ok(Some(metadata_)) => {
-                            match metadata_.unarchive::<ArchivedMessageMetadata>() {
+                            match metadata_.unarchive::<MessageMetadata>() {
                                 Ok(metadata)
                                     if metadata.blob_hash.0.as_slice() == event.hash.as_slice() =>
                                 {
@@ -187,7 +185,7 @@ impl Indexer for Server {
                                     .with_account_id(event.account_id)
                                     .with_collection(Collection::Email)
                                     .with_document_id(event.document_id)
-                                    .index_message(&metadata, &raw_message);
+                                    .index_message(metadata, &raw_message);
                                     if let Err(err) = self.core.storage.fts.index(document).await {
                                         trc::error!(
                                             err.account_id(event.account_id)

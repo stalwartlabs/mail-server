@@ -10,9 +10,8 @@ use crate::api::{HttpResponse, JsonResponse, http::ToHttpResponse};
 use common::{Server, auth::AccessToken};
 use directory::backend::internal::manage;
 use email::message::crypto::{
-    Algorithm, ArchivedAlgorithm, ArchivedEncryptionMethod, ArchivedEncryptionParams,
-    EncryptMessage, EncryptMessageError, EncryptionMethod, EncryptionParams, EncryptionType,
-    try_parse_certs,
+    Algorithm, ArchivedAlgorithm, ArchivedEncryptionMethod, EncryptMessage, EncryptMessageError,
+    EncryptionMethod, EncryptionParams, EncryptionType, try_parse_certs,
 };
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::encoders::base64::base64_encode_mime;
@@ -49,7 +48,7 @@ impl CryptoHandler for Server {
             .await?
         {
             let params = params_
-                .unarchive::<ArchivedEncryptionParams>()
+                .unarchive::<EncryptionParams>()
                 .caused_by(trc::location!())?;
             let algo = match &params.algo {
                 ArchivedAlgorithm::Aes128 => Algorithm::Aes128,
@@ -132,7 +131,7 @@ impl CryptoHandler for Server {
         if let Err(EncryptMessageError::Error(message)) = MessageParser::new()
             .parse("Subject: test\r\ntest\r\n".as_bytes())
             .unwrap()
-            .encrypt(rkyv_unarchive(&params)?)
+            .encrypt(rkyv_unarchive::<EncryptionParams>(&params)?)
             .await
         {
             return Err(manage::error(message, None::<u32>));

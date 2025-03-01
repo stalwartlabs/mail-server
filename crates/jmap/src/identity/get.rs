@@ -6,7 +6,7 @@
 
 use common::Server;
 use directory::{QueryBy, backend::internal::PrincipalField};
-use email::identity::{ArchivedEmailAddress, ArchivedIdentity, Identity};
+use email::identity::{ArchivedEmailAddress, Identity};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -99,7 +99,7 @@ impl IdentityGet for Server {
                 continue;
             };
             let identity = _identity
-                .unarchive::<ArchivedIdentity>()
+                .unarchive::<Identity>()
                 .caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {

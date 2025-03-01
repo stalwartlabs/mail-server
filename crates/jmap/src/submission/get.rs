@@ -6,8 +6,7 @@
 
 use common::Server;
 use email::submission::{
-    ArchivedAddress, ArchivedEmailSubmission, ArchivedEnvelope, Delivered, DeliveryStatus,
-    UndoStatus,
+    ArchivedAddress, ArchivedEnvelope, Delivered, DeliveryStatus, EmailSubmission, UndoStatus,
 };
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
@@ -21,10 +20,7 @@ use jmap_proto::{
 };
 use smtp::queue::{self, spool::SmtpSpool};
 use std::future::Future;
-use store::{
-    rkyv::option::ArchivedOption,
-    write::{Archive},
-};
+use store::{rkyv::option::ArchivedOption, write::Archive};
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
@@ -101,7 +97,7 @@ impl EmailSubmissionGet for Server {
                 continue;
             };
             let submission = submission_
-                .unarchive::<ArchivedEmailSubmission>()
+                .unarchive::<EmailSubmission>()
                 .caused_by(trc::location!())?;
 
             // Obtain queueId

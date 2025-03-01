@@ -5,7 +5,7 @@
  */
 
 use common::Server;
-use email::sieve::ArchivedSieveScript;
+use email::sieve::SieveScript;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -15,10 +15,7 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use store::{
-    BlobClass,
-    write::{Archive},
-};
+use store::{BlobClass, write::Archive};
 use trc::AddContext;
 
 use crate::changes::state::StateManager;
@@ -90,7 +87,7 @@ impl SieveScriptGet for Server {
                 continue;
             };
             let sieve = sieve_
-                .unarchive::<ArchivedSieveScript>()
+                .unarchive::<SieveScript>()
                 .caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {

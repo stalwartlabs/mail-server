@@ -6,8 +6,8 @@
 
 use common::{Server, auth::AccessToken};
 use email::message::metadata::{
-    ArchivedGetHeader, ArchivedHeaderName, ArchivedMessageMetadata, ArchivedMetadataPartType,
-    DecodedPartContent,
+    ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
+    MessageMetadata,
 };
 use jmap_proto::{
     method::{
@@ -135,12 +135,12 @@ impl EmailSearchSnippet for Server {
                 }
             };
             let metadata = metadata_
-                .unarchive::<ArchivedMessageMetadata>()
+                .unarchive::<MessageMetadata>()
                 .caused_by(trc::location!())?;
 
             // Add subject snippet
-            if let Some(subject) = metadata
-                .contents
+            let contents = &metadata.contents[0];
+            if let Some(subject) = contents
                 .root_part()
                 .headers
                 .header_value(&ArchivedHeaderName::Subject)
@@ -176,7 +176,7 @@ impl EmailSearchSnippet for Server {
             };
 
             // Find a matching part
-            'outer: for part in metadata.contents.parts.iter() {
+            'outer: for part in contents.parts.iter() {
                 match &part.body {
                     ArchivedMetadataPartType::Text => {
                         let text = match part.decode_contents(&raw_message) {
@@ -201,7 +201,7 @@ impl EmailSearchSnippet for Server {
                         }
                     }
                     ArchivedMetadataPartType::Message(message) => {
-                        for part in message.parts.iter() {
+                        for part in metadata.contents[u16::from(message) as usize].parts.iter() {
                             if let ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html =
                                 part.body
                             {

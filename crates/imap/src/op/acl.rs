@@ -14,7 +14,6 @@ use directory::{
     Permission, QueryBy, Type,
     backend::internal::{PrincipalField, manage::ChangedPrincipals},
 };
-use email::mailbox::ArchivedMailbox;
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     protocol::acl::{
@@ -54,7 +53,7 @@ impl<T: SessionStream> Session<T> {
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let mut permissions = Vec::new();
             let mailbox = mailbox_
-                .to_unarchived::<ArchivedMailbox>()
+                .to_unarchived::<email::mailbox::Mailbox>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
             for item in mailbox.inner.acls.iter() {
@@ -152,7 +151,7 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let mailbox = mailbox_
-                .to_unarchived::<ArchivedMailbox>()
+                .to_unarchived::<email::mailbox::Mailbox>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let rights = if access_token.is_shared(mailbox_id.account_id) {
                 let acl = mailbox.inner.acls.effective_acl(&access_token);
@@ -241,7 +240,7 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let current_mailbox = current_mailbox
-                .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
+                .into_deserialized::<email::mailbox::Mailbox>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
             // Obtain principal id
@@ -454,7 +453,7 @@ impl<T: SessionStream> SessionData<T> {
                     || access_token.is_member(mailbox.account_id)
                     || values
                         .inner
-                        .unarchive::<ArchivedMailbox>()
+                        .unarchive::<email::mailbox::Mailbox>()
                         .caused_by(trc::location!())?
                         .acls
                         .effective_acl(&access_token)

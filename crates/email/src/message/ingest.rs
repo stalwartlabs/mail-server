@@ -50,7 +50,7 @@ use utils::map::vec_map::VecMap;
 use crate::{
     mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
     message::{
-        crypto::ArchivedEncryptionParams,
+        crypto::EncryptionParams,
         index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
     },
     thread::cache::ThreadCache,
@@ -394,7 +394,7 @@ impl EmailIngest for Server {
                 .caused_by(trc::location!())?
             {
                 let encrypt_params = encrypt_params_
-                    .unarchive::<ArchivedEncryptionParams>()
+                    .unarchive::<EncryptionParams>()
                     .caused_by(trc::location!())?;
                 match message.encrypt(encrypt_params).await {
                     Ok(new_raw_message) => {

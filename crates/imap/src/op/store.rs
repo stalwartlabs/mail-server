@@ -14,7 +14,7 @@ use ahash::AHashSet;
 use common::{listener::SessionStream, storage::tag::TagManager};
 use directory::Permission;
 use email::{
-    mailbox::ArchivedUidMailbox,
+    mailbox::UidMailbox,
     message::{bayes::EmailBayesTrain, ingest::EmailIngest},
 };
 use imap_proto::{
@@ -27,18 +27,12 @@ use imap_proto::{
     receiver::Request,
 };
 use jmap_proto::types::{
-    acl::Acl,
-    collection::Collection,
-    id::Id,
-    keyword::{ArchivedKeyword, Keyword},
-    property::Property,
-    state::StateChange,
-    type_state::DataType,
+    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
+    state::StateChange, type_state::DataType,
 };
 use store::{
     SerializeInfallible,
     query::log::{Change, Query},
-    rkyv::vec::ArchivedVec,
     write::{Archive, BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
@@ -229,7 +223,7 @@ impl<T: SessionStream> SessionData<T> {
                     (
                         TagManager::new(
                             keywords
-                                .into_deserialized::<ArchivedVec<ArchivedKeyword>, Vec<Keyword>>()
+                                .into_deserialized::<Vec<Keyword>>()
                                 .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
                         ),
                         thread_id,
@@ -346,7 +340,7 @@ impl<T: SessionStream> SessionData<T> {
                                     .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                                 {
                                     for mailbox_id in mailboxes
-                                        .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                                        .unarchive::<Vec<UidMailbox>>()
                                         .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                                         .iter()
                                     {

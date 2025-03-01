@@ -5,7 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
-use email::mailbox::{ArchivedMailbox, manage::MailboxFnc};
+use email::mailbox::manage::MailboxFnc;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -15,7 +15,7 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use store::write::{Archive};
+use store::write::Archive;
 use trc::AddContext;
 
 use crate::changes::state::StateManager;
@@ -118,7 +118,7 @@ impl MailboxGet for Server {
             };
             let archived_mailbox = if let Some(archived_mailbox) = &archived_mailbox_ {
                 archived_mailbox
-                    .unarchive::<ArchivedMailbox>()
+                    .unarchive::<email::mailbox::Mailbox>()
                     .caused_by(trc::location!())?
                     .into()
             } else {

@@ -220,7 +220,10 @@ pub async fn import_certs_and_encrypt() {
             let arch =
                 Archive::deserialize_owned(Archiver::new(params.clone()).serialize().unwrap())
                     .unwrap();
-            message.encrypt(arch.unarchive().unwrap()).await.unwrap();
+            message
+                .encrypt(arch.unarchive::<EncryptionParams>().unwrap())
+                .await
+                .unwrap();
         }
     }
 

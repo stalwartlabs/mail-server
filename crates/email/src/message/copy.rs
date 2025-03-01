@@ -27,7 +27,7 @@ use crate::mailbox::UidMailbox;
 use super::{
     index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue},
     ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
-    metadata::{ArchivedMessageMetadata, HeaderName, HeaderValue, MessageMetadata},
+    metadata::{HeaderName, HeaderValue, MessageMetadata},
 };
 
 pub trait EmailCopy: Sync + Send {
@@ -68,7 +68,7 @@ impl EmailCopy for Server {
             .await?
         {
             metadata
-                .deserialize::<ArchivedMessageMetadata, MessageMetadata>()
+                .deserialize::<MessageMetadata>()
                 .caused_by(trc::location!())?
         } else {
             return Ok(Err(SetError::not_found().with_description(format!(
@@ -103,7 +103,7 @@ impl EmailCopy for Server {
         // Obtain threadId
         let mut references = Vec::with_capacity(5);
         let mut subject = "";
-        for header in &metadata.contents.parts[0].headers {
+        for header in &metadata.contents[0].parts[0].headers {
             match &header.name {
                 HeaderName::MessageId
                 | HeaderName::InReplyTo

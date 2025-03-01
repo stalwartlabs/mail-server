@@ -12,11 +12,9 @@ use common::{
     storage::index::ObjectIndexBuilder,
 };
 use email::{
-    identity::ArchivedIdentity,
-    message::metadata::{ArchivedHeaderName, ArchivedHeaderValue, ArchivedMessageMetadata},
-    submission::{
-        Address, ArchivedEmailSubmission, Delivered, DeliveryStatus, EmailSubmission, UndoStatus,
-    },
+    identity::Identity,
+    message::metadata::{ArchivedHeaderName, ArchivedHeaderValue, MessageMetadata},
+    submission::{Address, Delivered, DeliveryStatus, EmailSubmission, UndoStatus},
 };
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -132,7 +130,7 @@ impl EmailSubmissionSet for Server {
                 .await?
             {
                 submission
-                    .into_deserialized::<ArchivedEmailSubmission, EmailSubmission>()
+                    .into_deserialized::<EmailSubmission>()
                     .caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());
@@ -244,7 +242,7 @@ impl EmailSubmissionSet for Server {
                     .custom(
                         ObjectIndexBuilder::new().with_current(
                             submission
-                                .into_deserialized::<ArchivedEmailSubmission, EmailSubmission>()
+                                .into_deserialized::<EmailSubmission>()
                                 .caused_by(trc::location!())?,
                         ),
                     )
@@ -469,7 +467,7 @@ impl EmailSubmissionSet for Server {
             .await?
         {
             identity
-                .unarchive::<ArchivedIdentity>()
+                .unarchive::<Identity>()
                 .caused_by(trc::location!())?
                 .email
                 .to_string()
@@ -516,13 +514,13 @@ impl EmailSubmissionSet for Server {
                 .with_description("Email not found.")));
         };
         let metadata = metadata_
-            .unarchive::<ArchivedMessageMetadata>()
+            .unarchive::<MessageMetadata>()
             .caused_by(trc::location!())?;
 
         // Add recipients to envelope if missing
         let mut bcc_header = None;
         if rcpt_to.is_empty() {
-            for header in metadata.contents.parts[0].headers.iter() {
+            for header in metadata.contents[0].parts[0].headers.iter() {
                 if matches!(
                     header.name,
                     ArchivedHeaderName::To | ArchivedHeaderName::Cc | ArchivedHeaderName::Bcc
@@ -554,7 +552,7 @@ impl EmailSubmissionSet for Server {
                     .with_description("No recipients found in email.")));
             }
         } else {
-            bcc_header = metadata.contents.parts[0]
+            bcc_header = metadata.contents[0].parts[0]
                 .headers
                 .iter()
                 .find(|header| matches!(header.name, ArchivedHeaderName::Bcc));

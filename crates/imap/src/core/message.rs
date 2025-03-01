@@ -8,10 +8,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
 use common::{NextMailboxState, listener::SessionStream};
-use email::mailbox::{ArchivedMailbox, ArchivedUidMailbox};
+use email::mailbox::UidMailbox;
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::{rkyv::vec::ArchivedVec, write::Archive};
+use store::write::Archive;
 use trc::AddContext;
 
 use crate::core::ImapId;
@@ -62,7 +62,7 @@ impl<T: SessionStream> SessionData<T> {
             .into_iter()
         {
             let uid_mailbox = uid_mailbox_
-                .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                .unarchive::<Vec<UidMailbox>>()
                 .caused_by(trc::location!())?;
             // Make sure the message is still in this mailbox
             if let Some(item) = uid_mailbox
@@ -243,7 +243,7 @@ impl<T: SessionStream> SessionData<T> {
                     .document_id(mailbox.mailbox_id)
             })
             .and_then(|m| {
-                m.unarchive::<ArchivedMailbox>()
+                m.unarchive::<email::mailbox::Mailbox>()
                     .map(|m| u32::from(m.uid_validity))
             })
     }

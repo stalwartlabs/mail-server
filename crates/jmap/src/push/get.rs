@@ -9,7 +9,6 @@ use common::{
     auth::AccessToken,
     ipc::{StateEvent, UpdateSubscription},
 };
-use email::push::ArchivedPushSubscription;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -99,7 +98,7 @@ impl PushSubscriptionFetch for Server {
                 continue;
             };
             let push = push_
-                .unarchive::<ArchivedPushSubscription>()
+                .unarchive::<email::push::PushSubscription>()
                 .caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {
@@ -181,7 +180,7 @@ impl PushSubscriptionFetch for Server {
                         .caused_by(trc::location!())
                         .document_id(document_id)
                 })?
-                .deserialize::<ArchivedPushSubscription, email::push::PushSubscription>()
+                .deserialize::<email::push::PushSubscription>()
                 .caused_by(trc::location!())?;
 
             if subscription.expires > current_time {

@@ -8,7 +8,7 @@ use std::borrow::Cow;
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use email::sieve::{
-    ArchivedSieveScript, SieveScript, VacationResponse, activate::SieveScriptActivate,
+    SieveScript, VacationResponse, activate::SieveScriptActivate,
     delete::SieveScriptDelete,
 };
 use jmap_proto::{
@@ -232,7 +232,7 @@ impl VacationResponseSet for Server {
                             .caused_by(trc::location!())
                     })?;
                 let prev_sieve = prev_sieve
-                    .into_deserialized::<ArchivedSieveScript, SieveScript>()
+                    .into_deserialized::<SieveScript>()
                     .caused_by(trc::location!())?;
                 was_active = prev_sieve.inner.is_active;
                 let mut sieve = prev_sieve.inner.clone();

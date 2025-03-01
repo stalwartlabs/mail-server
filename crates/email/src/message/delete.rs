@@ -8,10 +8,9 @@ use std::time::Duration;
 
 use common::{KV_LOCK_PURGE_ACCOUNT, Server};
 use jmap_proto::types::{
-    collection::Collection, id::Id, keyword::ArchivedKeyword, property::Property,
-    state::StateChange, type_state::DataType,
+    collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
+    type_state::DataType,
 };
-use rkyv::vec::ArchivedVec;
 use store::{
     BitmapKey, IterateParams, U32_LEN, ValueKey,
     ahash::AHashMap,
@@ -27,7 +26,7 @@ use utils::{BlobHash, codec::leb128::Leb128Reader};
 use std::future::Future;
 use store::rand::prelude::SliceRandom;
 
-use crate::{mailbox::*, message::metadata::ArchivedMessageMetadata};
+use crate::{mailbox::*, message::metadata::MessageMetadata};
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_tombstone(
@@ -77,7 +76,7 @@ impl EmailDeletion for Server {
                 document_id,
                 DeleteProperties {
                     mailboxes: mailboxes
-                        .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                        .unarchive::<Vec<UidMailbox>>()
                         .caused_by(trc::location!())?
                         .iter()
                         .map(|m| u32::from(m.mailbox_id))
@@ -455,7 +454,7 @@ impl EmailDeletion for Server {
                 .await?
             {
                 let keywords = keywords_
-                    .unarchive::<ArchivedVec<ArchivedKeyword>>()
+                    .unarchive::<Vec<Keyword>>()
                     .caused_by(trc::location!())?;
                 batch
                     .untag_many(Property::Keywords, keywords.iter())
@@ -484,7 +483,7 @@ impl EmailDeletion for Server {
                 .await?
             {
                 let metadata = metadata_
-                    .unarchive::<ArchivedMessageMetadata>()
+                    .unarchive::<MessageMetadata>()
                     .caused_by(trc::location!())?;
 
                 // SPDX-SnippetBegin

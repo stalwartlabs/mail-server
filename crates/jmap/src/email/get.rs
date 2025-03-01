@@ -7,9 +7,9 @@
 use common::{Server, auth::AccessToken};
 
 use email::{
-    mailbox::ArchivedUidMailbox,
+    mailbox::UidMailbox,
     message::metadata::{
-        ArchivedGetHeader, ArchivedHeaderName, ArchivedMessageMetadata, ArchivedMetadataPartType,
+        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageMetadata,
     },
     thread::cache::ThreadCache,
 };
@@ -22,13 +22,13 @@ use jmap_proto::{
         collection::Collection,
         date::UTCDate,
         id::Id,
-        keyword::ArchivedKeyword,
+        keyword::Keyword,
         property::{HeaderForm, Property},
         value::{Object, Value},
     },
 };
 
-use store::{BlobClass, rkyv::vec::ArchivedVec, write::Archive};
+use store::{BlobClass, write::Archive};
 use trc::{AddContext, StoreEvent};
 use utils::BlobHash;
 
@@ -172,7 +172,7 @@ impl EmailGet for Server {
                 }
             };
             let metadata = metadata_
-                .unarchive::<ArchivedMessageMetadata>()
+                .unarchive::<MessageMetadata>()
                 .caused_by(trc::location!())?;
 
             // Retrieve raw message if needed
@@ -209,6 +209,8 @@ impl EmailGet for Server {
 
             // Prepare response
             let mut email = Object::with_capacity(properties.len());
+            let contents = &metadata.contents[0];
+            let root_part = &contents.parts[0];
             for property in &properties {
                 match property {
                     Property::Id => {
@@ -231,7 +233,7 @@ impl EmailGet for Server {
                             .await?
                         {
                             let mailboxes = mailboxes_
-                                .unarchive::<ArchivedVec<ArchivedUidMailbox>>()
+                                .unarchive::<Vec<UidMailbox>>()
                                 .caused_by(trc::location!())?;
                             let mut obj = Object::with_capacity(mailboxes.len());
                             for id in mailboxes.iter() {
@@ -268,7 +270,7 @@ impl EmailGet for Server {
                             .await?
                         {
                             let keywords = keywords_
-                                .unarchive::<ArchivedVec<ArchivedKeyword>>()
+                                .unarchive::<Vec<Keyword>>()
                                 .caused_by(trc::location!())?;
                             let mut obj = Object::with_capacity(keywords.len());
                             for keyword in keywords.iter() {
@@ -311,7 +313,7 @@ impl EmailGet for Server {
                     Property::Subject => {
                         email.append(
                             Property::Subject,
-                            metadata.contents.parts[0]
+                            root_part
                                 .headers
                                 .convert_header(&ArchivedHeaderName::Subject)
                                 .map(|value| value.into_form(&HeaderForm::Text))
@@ -321,7 +323,7 @@ impl EmailGet for Server {
                     Property::SentAt => {
                         email.append(
                             Property::SentAt,
-                            metadata.contents.parts[0]
+                            root_part
                                 .headers
                                 .convert_header(&ArchivedHeaderName::Date)
                                 .map(|value| value.into_form(&HeaderForm::Date))
@@ -331,7 +333,7 @@ impl EmailGet for Server {
                     Property::MessageId | Property::InReplyTo | Property::References => {
                         email.append(
                             property.clone(),
-                            metadata.contents.parts[0]
+                            root_part
                                 .headers
                                 .convert_header(&match property {
                                     Property::MessageId => ArchivedHeaderName::MessageId,
@@ -352,7 +354,7 @@ impl EmailGet for Server {
                     | Property::ReplyTo => {
                         email.append(
                             property.clone(),
-                            metadata.contents.parts[0]
+                            root_part
                                 .headers
                                 .convert_header(&match property {
                                     Property::Sender => ArchivedHeaderName::Sender,
@@ -370,31 +372,27 @@ impl EmailGet for Server {
                     Property::Header(_) => {
                         email.append(
                             property.clone(),
-                            metadata.contents.parts[0]
-                                .headers
-                                .header_to_value(property, &raw_message),
+                            root_part.headers.header_to_value(property, &raw_message),
                         );
                     }
                     Property::Headers => {
                         email.append(
                             Property::Headers,
-                            metadata.contents.parts[0]
-                                .headers
-                                .headers_to_value(&raw_message),
+                            root_part.headers.headers_to_value(&raw_message),
                         );
                     }
                     Property::TextBody | Property::HtmlBody | Property::Attachments => {
                         let list = match property {
-                            Property::TextBody => &metadata.contents.text_body,
-                            Property::HtmlBody => &metadata.contents.html_body,
-                            Property::Attachments => &metadata.contents.attachments,
+                            Property::TextBody => &contents.text_body,
+                            Property::HtmlBody => &contents.html_body,
+                            Property::Attachments => &contents.attachments,
                             _ => unreachable!(),
                         }
                         .iter();
                         email.append(
                             property.clone(),
                             list.map(|part_id| {
-                                metadata.contents.to_body_part(
+                                contents.to_body_part(
                                     u16::from(part_id) as usize,
                                     &body_properties,
                                     &raw_message,
@@ -407,20 +405,15 @@ impl EmailGet for Server {
                     Property::BodyStructure => {
                         email.append(
                             Property::BodyStructure,
-                            metadata.contents.to_body_part(
-                                0,
-                                &body_properties,
-                                &raw_message,
-                                &blob_id,
-                            ),
+                            contents.to_body_part(0, &body_properties, &raw_message, &blob_id),
                         );
                     }
                     Property::BodyValues => {
-                        let mut body_values = Object::with_capacity(metadata.contents.parts.len());
-                        for (part_id, part) in metadata.contents.parts.iter().enumerate() {
-                            if ((metadata.contents.is_html_part(part_id as u16)
+                        let mut body_values = Object::with_capacity(contents.parts.len());
+                        for (part_id, part) in contents.parts.iter().enumerate() {
+                            if ((contents.is_html_part(part_id as u16)
                                 && (fetch_all_body_values || fetch_html_body_values))
-                                || (metadata.contents.is_text_part(part_id as u16)
+                                || (contents.is_text_part(part_id as u16)
                                     && (fetch_all_body_values || fetch_text_body_values)))
                                 && matches!(
                                     part.body,

@@ -16,16 +16,12 @@ use directory::{
     Permission,
     backend::internal::manage::{self, ManageDirectory},
 };
-use email::{
-    mailbox::{ArchivedMailbox, ArchivedUidMailbox, UidMailbox},
-    message::ingest::EmailIngest,
-};
+use email::{mailbox::UidMailbox, message::ingest::EmailIngest};
 use hyper::Method;
 use jmap_proto::types::{collection::Collection, property::Property};
 use serde_json::json;
 use store::{
     Serialize,
-    rkyv::vec::ArchivedVec,
     write::{Archive, Archiver, BatchBuilder, ValueClass, assert::HashedValue},
 };
 use trc::AddContext;
@@ -351,7 +347,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?
-            .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
+            .into_deserialized::<email::mailbox::Mailbox>()
             .caused_by(trc::location!())?;
         let mut new_mailbox = mailbox.inner.clone();
         new_mailbox.uid_validity = rand::random::<u32>();
@@ -392,7 +388,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .await
             .caused_by(trc::location!())?;
         let mut uids = if let Some(uids) = uids {
-            uids.into_deserialized::<ArchivedVec<ArchivedUidMailbox>, Vec<UidMailbox>>()
+            uids.into_deserialized::<Vec<UidMailbox>>()
                 .caused_by(trc::location!())?
         } else {
             continue;

@@ -9,7 +9,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::{Archive, BatchBuilder, BlobOp, assert::HashedValue};
 use trc::AddContext;
 
-use super::{ArchivedSieveScript, SieveScript};
+use super::SieveScript;
 
 pub trait SieveScriptDelete: Sync + Send {
     fn sieve_script_delete(
@@ -43,7 +43,7 @@ impl SieveScriptDelete for Server {
                     .caused_by(trc::location!())
                     .document_id(document_id)
             })?
-            .into_deserialized::<ArchivedSieveScript, SieveScript>()
+            .into_deserialized::<SieveScript>()
             .caused_by(trc::location!())?;
 
         // Make sure the script is not active

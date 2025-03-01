@@ -14,7 +14,7 @@ impl IndexableObject for EmailSubmission {
         [
             IndexValue::Text {
                 field: Property::UndoStatus.into(),
-                value: self.undo_status.as_index().into(),
+                value: self.undo_status.as_index().as_bytes().into(),
             },
             IndexValue::U32 {
                 field: Property::EmailId.into(),

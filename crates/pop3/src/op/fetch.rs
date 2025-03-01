@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use email::message::metadata::ArchivedMessageMetadata;
+use email::message::metadata::MessageMetadata;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::Archive;
 use trc::AddContext;
@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
                 .caused_by(trc::location!())?
             {
                 let metadata = metadata_
-                    .unarchive::<ArchivedMessageMetadata>()
+                    .unarchive::<MessageMetadata>()
                     .caused_by(trc::location!())?;
                 if let Some(bytes) = self
                     .server

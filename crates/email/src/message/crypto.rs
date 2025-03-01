@@ -529,9 +529,7 @@ fn try_parse_pem(
             .ok_or(Cow::from("Failed to decode base64"))
             .and_then(|bytes| {
                 Archive::deserialize_owned(bytes)
-                    .and_then(|arch| {
-                        arch.deserialize::<ArchivedEncryptionParams, EncryptionParams>()
-                    })
+                    .and_then(|arch| arch.deserialize::<EncryptionParams>())
                     .map_err(|_| Cow::from("Failed to deserialize internal certificate"))
             })
             .map(|params| Some((params.method, params.certs)));

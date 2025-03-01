@@ -9,7 +9,7 @@ use common::{
     storage::index::ObjectIndexBuilder,
 };
 
-use email::mailbox::{ArchivedMailbox, Mailbox, destroy::MailboxDestroy, manage::MailboxFnc};
+use email::mailbox::{Mailbox, destroy::MailboxDestroy, manage::MailboxFnc};
 use jmap_proto::{
     error::set::SetError,
     method::set::{SetRequest, SetResponse},
@@ -168,7 +168,7 @@ impl MailboxSet for Server {
             {
                 // Validate ACL
                 let mailbox = mailbox
-                    .into_deserialized::<ArchivedMailbox, email::mailbox::Mailbox>()
+                    .into_deserialized::<email::mailbox::Mailbox>()
                     .caused_by(trc::location!())?;
                 if ctx.is_shared {
                     let acl = mailbox.inner.acls.effective_acl(access_token);
@@ -417,7 +417,7 @@ impl MailboxSet for Server {
                 .await?
             {
                 let mailbox = mailbox_
-                    .unarchive::<ArchivedMailbox>()
+                    .unarchive::<email::mailbox::Mailbox>()
                     .caused_by(trc::location!())?;
                 if depth == 0
                     && ctx.is_shared
