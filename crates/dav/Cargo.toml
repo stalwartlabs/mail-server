@@ -1,0 +1,13 @@
+[package]
+name = "dav"
+version = "0.11.5"
+edition = "2024"
+resolver = "2"
+
+[dependencies]
+
+[dev-dependencies]
+
+[features]
+test_mode = []
+enterprise = []

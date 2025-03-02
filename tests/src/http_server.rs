@@ -7,14 +7,14 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::{config::server::Listeners, listener::SessionData, Caches, Core, Data, Inner};
-use hyper::{body, server::conn::http1, service::service_fn, Method, Uri};
+use common::{Caches, Core, Data, Inner, config::server::Listeners, listener::SessionData};
+use http_proto::{HttpResponse, request::fetch_body};
+use hyper::{Method, Uri, body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
-use jmap::api::{http::fetch_body, HttpResponse};
 use tokio::sync::watch;
 use utils::config::Config;
 
-use crate::{add_test_certs, AssertConfig};
+use crate::{AssertConfig, add_test_certs};
 
 const MOCK_HTTP_SERVER: &str = r#"
 [server]

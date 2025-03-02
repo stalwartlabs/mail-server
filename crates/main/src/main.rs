@@ -8,11 +8,12 @@ use std::time::Duration;
 
 use common::{config::server::ServerProtocol, core::BuildServer, manager::boot::BootManager};
 use directory::backend::internal::MigrateDirectory;
+use http::HttpSessionManager;
 use imap::core::ImapSessionManager;
-use jmap::{api::JmapSessionManager, services::gossip::spawn::GossiperBuilder, StartServices};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
-use smtp::{core::SmtpSessionManager, StartQueueManager};
+use services::{StartServices, gossip::spawn::GossiperBuilder};
+use smtp::{StartQueueManager, core::SmtpSessionManager};
 use trc::Collector;
 use utils::wait_for_shutdown;
 
@@ -61,7 +62,7 @@ async fn main() -> std::io::Result<()> {
                 shutdown_rx,
             ),
             ServerProtocol::Http => server.spawn(
-                JmapSessionManager::new(init.inner.clone()),
+                HttpSessionManager::new(init.inner.clone()),
                 init.inner.clone(),
                 acceptor,
                 shutdown_rx,

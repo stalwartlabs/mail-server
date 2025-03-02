@@ -6,6 +6,7 @@
 
 pub mod references;
 pub mod serialize;
+pub mod status;
 
 use std::collections::HashMap;
 
@@ -25,7 +26,7 @@ use crate::{
         upload::BlobUploadResponse,
         validate::ValidateSieveScriptResponse,
     },
-    request::{echo::Echo, method::MethodName, Call},
+    request::{Call, echo::Echo, method::MethodName},
     types::any_id::AnyId,
 };
 

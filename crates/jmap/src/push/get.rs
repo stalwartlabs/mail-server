@@ -7,7 +7,7 @@
 use common::{
     Server,
     auth::AccessToken,
-    ipc::{StateEvent, UpdateSubscription},
+    ipc::{EncryptionKeys, PushSubscription, StateEvent, UpdateSubscription},
 };
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
@@ -22,10 +22,9 @@ use store::{
     BitmapKey, ValueKey,
     write::{Archive, ValueClass, now},
 };
-use trc::AddContext;
+use trc::{AddContext, ServerEvent};
 use utils::map::bitmap::Bitmap;
 
-use super::{EncryptionKeys, PushSubscription};
 use std::future::Future;
 
 pub trait PushSubscriptionFetch: Sync + Send {
@@ -39,6 +38,8 @@ pub trait PushSubscriptionFetch: Sync + Send {
         &self,
         account_id: u32,
     ) -> impl Future<Output = trc::Result<StateEvent>> + Send;
+
+    fn update_push_subscriptions(&self, account_id: u32) -> impl Future<Output = bool> + Send;
 }
 
 impl PushSubscriptionFetch for Server {
@@ -215,5 +216,33 @@ impl PushSubscriptionFetch for Server {
             account_id,
             subscriptions,
         })
+    }
+
+    async fn update_push_subscriptions(&self, account_id: u32) -> bool {
+        let push_subs = match self.fetch_push_subscriptions(account_id).await {
+            Ok(push_subs) => push_subs,
+            Err(err) => {
+                trc::error!(
+                    err.account_id(account_id)
+                        .details("Failed to fetch push subscriptions")
+                );
+                return false;
+            }
+        };
+
+        let state_tx = self.inner.ipc.state_tx.clone();
+        for event in [StateEvent::UpdateSharedAccounts { account_id }, push_subs] {
+            if state_tx.send(event).await.is_err() {
+                trc::event!(
+                    Server(ServerEvent::ThreadError),
+                    Details = "Error sending state change.",
+                    CausedBy = trc::location!()
+                );
+
+                return false;
+            }
+        }
+
+        true
     }
 }

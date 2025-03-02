@@ -21,9 +21,3 @@ pub struct UploadResponse {
     c_type: String,
     size: usize,
 }
-
-pub struct DownloadResponse {
-    pub filename: String,
-    pub content_type: String,
-    pub blob: Vec<u8>,
-}

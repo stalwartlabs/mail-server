@@ -9,6 +9,7 @@ use email::{
     mailbox::manage::MailboxFnc,
     message::ingest::{EmailIngest, IngestEmail, IngestSource},
 };
+use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::import::{ImportEmailRequest, ImportEmailResponse},
@@ -24,9 +25,7 @@ use jmap_proto::{
 use mail_parser::MessageParser;
 use utils::map::vec_map::VecMap;
 
-use crate::{
-    api::http::HttpSessionData, blob::download::BlobDownload, changes::state::StateManager,
-};
+use crate::{blob::download::BlobDownload, changes::state::StateManager};
 
 use std::future::Future;
 

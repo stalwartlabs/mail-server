@@ -7,6 +7,7 @@
 use common::{Server, auth::AccessToken};
 
 use email::{mailbox::manage::MailboxFnc, message::copy::EmailCopy};
+use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::SetError,
     method::{
@@ -29,7 +30,7 @@ use jmap_proto::{
     },
 };
 
-use crate::{api::http::HttpSessionData, changes::state::StateManager};
+use crate::changes::state::StateManager;
 use std::future::Future;
 use utils::map::vec_map::VecMap;
 

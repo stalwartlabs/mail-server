@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/main",
+    "crates/http",
+    "crates/http-proto",
     "crates/jmap",
     "crates/jmap-proto",
     "crates/email",
@@ -10,11 +12,13 @@ members = [
     "crates/smtp",
     "crates/managesieve",
     "crates/pop3",
+    "crates/dav",
     "crates/groupware",
     "crates/spam-filter",
     "crates/nlp",
     "crates/store",
     "crates/directory",
+    "crates/services",
     "crates/utils",
     "crates/common",
     "crates/trc",

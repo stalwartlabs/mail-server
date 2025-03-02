@@ -27,6 +27,10 @@ managesieve = { path = "../managesieve" }
 common = { path = "../common" }
 email = { path = "../email" }
 directory = { path = "../directory" }
+http = { path = "../http" }
+dav = { path = "../dav" }
+groupware = { path = "../groupware" }
+services = { path = "../services" }
 trc = { path = "../trc" }
 utils = { path = "../utils" }
 tokio = { version = "1.23", features = ["full"] }
@@ -53,4 +57,8 @@ enterprise = [ "jmap/enterprise",
                "managesieve/enterprise", 
                "directory/enterprise", 
                "email/enterprise",
-               "spam-filter/enterprise" ]
+               "spam-filter/enterprise",
+               "http/enterprise",
+               "dav/enterprise",
+               "groupware/enterprise",
+               "services/enterprise" ]

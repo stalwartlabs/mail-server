@@ -8,6 +8,7 @@ use std::{sync::Arc, time::Instant};
 
 use common::{Server, auth::AccessToken};
 use futures_util::{SinkExt, StreamExt};
+use http_proto::HttpSessionData;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use jmap_proto::{
@@ -22,10 +23,7 @@ use trc::JmapEvent;
 use tungstenite::Message;
 use utils::map::bitmap::Bitmap;
 
-use crate::api::{
-    http::{HttpSessionData, ToRequestError},
-    request::RequestHandler,
-};
+use crate::api::{ToRequestError, request::RequestHandler};
 use std::future::Future;
 
 pub trait WebSocketHandler: Sync + Send {

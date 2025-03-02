@@ -9,9 +9,8 @@ use common::{
     auth::{AccessToken, ResourceToken},
     storage::index::ObjectIndexBuilder,
 };
-use email::sieve::{
-    SieveScript, activate::SieveScriptActivate, delete::SieveScriptDelete,
-};
+use email::sieve::{SieveScript, activate::SieveScriptActivate, delete::SieveScriptDelete};
+use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
@@ -36,7 +35,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{JmapMethods, api::http::HttpSessionData, blob::download::BlobDownload};
+use crate::{JmapMethods, blob::download::BlobDownload};
 use std::future::Future;
 
 pub struct SetContext<'x> {

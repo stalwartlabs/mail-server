@@ -6,36 +6,33 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
-use base64::{engine::general_purpose, Engine};
-use common::{config::server::Listeners, listener::SessionData, Caches, Core, Data, Inner};
+use base64::{Engine, engine::general_purpose};
+use common::{Caches, Core, Data, Inner, config::server::Listeners, listener::SessionData};
 use ece::EcKeyComponents;
-use hyper::{body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn, StatusCode};
+use http_proto::{HtmlResponse, ToHttpResponse, request::fetch_body};
+use hyper::{StatusCode, body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
-use jmap::{
-    api::{
-        http::{fetch_body, ToHttpResponse},
-        HtmlResponse, StateChangeResponse,
-    },
-    push::ece::ece_encrypt,
-};
 use jmap_client::{mailbox::Role, push_subscription::Keys};
-use jmap_proto::types::{id::Id, type_state::DataType};
+use jmap_proto::{
+    response::status::StateChangeResponse,
+    types::{id::Id, type_state::DataType},
+};
+use services::state_manager::ece::ece_encrypt;
 use store::ahash::AHashSet;
 
 use tokio::sync::mpsc;
 use utils::config::Config;
 
 use crate::{
-    add_test_certs,
+    AssertConfig, add_test_certs,
     directory::internal::TestInternalDirectory,
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
-    AssertConfig,
 };
 
 use super::JMAPTest;
@@ -313,9 +310,7 @@ impl common::listener::SessionManager for SessionManager {
                             let is_encrypted = req
                                 .headers()
                                 .get(CONTENT_ENCODING)
-                                .is_some_and(|encoding| {
-                                    encoding.to_str().unwrap() == "aes128gcm"
-                                });
+                                .is_some_and(|encoding| encoding.to_str().unwrap() == "aes128gcm");
                             let body = fetch_body(&mut req, 1024 * 1024, 0).await.unwrap();
                             let message = serde_json::from_slice::<PushMessage>(&if is_encrypted {
                                 ece::decrypt(

@@ -6,17 +6,18 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use common::manager::webadmin::Resource;
+use http_proto::{ToHttpResponse, request::fetch_body};
 use hyper::{body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
-use jmap::api::http::{fetch_body, ToHttpResponse};
+use jmap::api::ToJmapHttpResponse;
 use jmap_proto::error::request::RequestError;
 use ring::hmac;
 use store::parking_lot::Mutex;

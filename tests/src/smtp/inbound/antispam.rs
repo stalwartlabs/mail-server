@@ -7,22 +7,22 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use common::{
+    Core,
     auth::AccessToken,
     config::spamfilter::SpamFilterAction,
     enterprise::{
+        SpamFilterLlmConfig,
         llm::{
             AiApiConfig, ChatCompletionChoice, ChatCompletionRequest, ChatCompletionResponse,
             Message,
         },
-        SpamFilterLlmConfig,
     },
-    Core,
 };
+use http_proto::{JsonResponse, ToHttpResponse};
 use hyper::Method;
-use jmap::api::{http::ToHttpResponse, JsonResponse};
 use mail_auth::{
-    dkim::Signature, dmarc::Policy, ArcOutput, DkimOutput, DkimResult, DmarcResult, IprevOutput,
-    IprevResult, SpfOutput, SpfResult, MX,
+    ArcOutput, DkimOutput, DkimResult, DmarcResult, IprevOutput, IprevResult, MX, SpfOutput,
+    SpfResult, dkim::Signature, dmarc::Policy,
 };
 use mail_parser::MessageParser;
 use smtp::core::{Session, SessionAddress};
@@ -40,15 +40,15 @@ use spam_filter::{
         subject::SpamFilterAnalyzeSubject, trusted_reply::SpamFilterAnalyzeTrustedReply,
         url::SpamFilterAnalyzeUrl,
     },
-    modules::html::{html_to_tokens, HtmlToken},
+    modules::html::{HtmlToken, html_to_tokens},
 };
 use store::Stores;
 use utils::config::Config;
 
 use crate::{
-    http_server::{spawn_mock_http_server, HttpMessage},
+    http_server::{HttpMessage, spawn_mock_http_server},
     jmap::enterprise::EnterpriseCore,
-    smtp::{session::TestSession, DnsCache, TempDir, TestSMTP},
+    smtp::{DnsCache, TempDir, TestSMTP, session::TestSession},
 };
 
 const CONFIG: &str = r#"

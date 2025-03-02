@@ -36,13 +36,14 @@ use common::{
     core::BuildServer,
     manager::boot::build_ipc,
 };
+use http::HttpSessionManager;
 
 use ::store::Stores;
 use ahash::AHashSet;
 use imap::core::ImapSessionManager;
 use imap_proto::ResponseType;
-use jmap::{SpawnServices, api::JmapSessionManager};
 use pop3::Pop3SessionManager;
+use services::SpawnServices;
 use smtp::{SpawnQueueManager, core::SmtpSessionManager};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
@@ -363,7 +364,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
                 shutdown_rx,
             ),
             ServerProtocol::Http => server.spawn(
-                JmapSessionManager::new(inner.clone()),
+                HttpSessionManager::new(inner.clone()),
                 inner.clone(),
                 acceptor,
                 shutdown_rx,

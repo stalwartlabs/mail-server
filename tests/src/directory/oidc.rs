@@ -10,17 +10,17 @@
 
 use std::sync::Arc;
 
-use base64::{engine::general_purpose, Engine};
-use directory::{backend::internal::PrincipalField, QueryBy};
+use base64::{Engine, engine::general_purpose};
+use directory::{QueryBy, backend::internal::PrincipalField};
+use http_proto::{JsonProblemResponse, JsonResponse, ToHttpResponse};
 use hyper::{Method, StatusCode};
-use jmap::api::{http::ToHttpResponse, JsonResponse};
 use mail_send::Credentials;
 use serde_json::json;
 use trc::{AuthEvent, EventType};
 
 use crate::{
     directory::DirectoryTest,
-    http_server::{spawn_mock_http_server, HttpMessage},
+    http_server::{HttpMessage, spawn_mock_http_server},
 };
 
 static TEST_TOKEN: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ";
@@ -42,7 +42,7 @@ async fn oidc_directory() {
         match (req.method.clone(), req.uri.path().split('/').nth(1)) {
             (Method::GET, Some("userinfo")) => match req.headers.get("authorization") {
                 Some(auth) if auth == &format!("Bearer {TEST_TOKEN}") => success_response,
-                Some(_) => StatusCode::UNAUTHORIZED.into_http_response(),
+                Some(_) => JsonProblemResponse(StatusCode::UNAUTHORIZED).into_http_response(),
                 None => panic!("Missing Authorization header: {req:#?}"),
             },
             (Method::POST, Some("introspect-none")) => {
@@ -50,7 +50,7 @@ async fn oidc_directory() {
                 if req.get_url_encoded("token").as_deref() == Some(TEST_TOKEN) {
                     success_response
                 } else {
-                    StatusCode::UNAUTHORIZED.into_http_response()
+                    JsonProblemResponse(StatusCode::UNAUTHORIZED).into_http_response()
                 }
             }
             (Method::POST, Some("introspect-user-token")) => match req.headers.get("authorization")
@@ -61,7 +61,7 @@ async fn oidc_directory() {
                 {
                     success_response
                 }
-                Some(_) => StatusCode::UNAUTHORIZED.into_http_response(),
+                Some(_) => JsonProblemResponse(StatusCode::UNAUTHORIZED).into_http_response(),
                 None => panic!("Missing Authorization header: {req:#?}"),
             },
             (Method::POST, Some("introspect-token")) => match req.headers.get("authorization") {
@@ -71,7 +71,7 @@ async fn oidc_directory() {
                 {
                     success_response
                 }
-                Some(_) => StatusCode::UNAUTHORIZED.into_http_response(),
+                Some(_) => JsonProblemResponse(StatusCode::UNAUTHORIZED).into_http_response(),
                 None => panic!("Missing Authorization header: {req:#?}"),
             },
             (Method::POST, Some("introspect-basic")) => match req.headers.get("authorization") {
@@ -85,7 +85,7 @@ async fn oidc_directory() {
                 {
                     success_response
                 }
-                Some(_) => StatusCode::UNAUTHORIZED.into_http_response(),
+                Some(_) => JsonProblemResponse(StatusCode::UNAUTHORIZED).into_http_response(),
                 None => panic!("Missing Authorization header: {req:#?}"),
             },
             _ => panic!("Unexpected request: {:?}", req),

@@ -6,31 +6,29 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Instant,
 };
 
-use crate::config::telemetry::WebhookTracer;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use crate::{LONG_1Y_SLUMBER, config::telemetry::WebhookTracer};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use ring::hmac;
 use serde::Serialize;
 use store::write::now;
 use tokio::sync::mpsc;
 use trc::{
+    Event, EventDetails, ServerEvent, TelemetryEvent,
     ipc::subscriber::{EventBatch, SubscriberBuilder},
     serializers::json::JsonEventSerializer,
-    Event, EventDetails, ServerEvent, TelemetryEvent,
 };
-
-use super::LONG_SLUMBER;
 
 pub(crate) fn spawn_webhook_tracer(builder: SubscriberBuilder, settings: WebhookTracer) {
     let (tx, mut rx) = builder.register();
     tokio::spawn(async move {
         let settings = Arc::new(settings);
-        let mut wakeup_time = LONG_SLUMBER;
+        let mut wakeup_time = LONG_1Y_SLUMBER;
         let discard_after = settings.discard_after.as_secs();
         let mut pending_events = Vec::new();
         let mut next_delivery = Instant::now();
@@ -91,7 +89,7 @@ pub(crate) fn spawn_webhook_tracer(builder: SubscriberBuilder, settings: Webhook
                     }
                 }
             }
-            wakeup_time = next_retry.unwrap_or(LONG_SLUMBER);
+            wakeup_time = next_retry.unwrap_or(LONG_1Y_SLUMBER);
         }
     });
 }
