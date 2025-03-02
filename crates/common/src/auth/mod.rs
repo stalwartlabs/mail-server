@@ -7,7 +7,7 @@
 use std::{net::IpAddr, sync::Arc};
 
 use directory::{
-    core::secret::verify_secret_hash, Directory, Permission, Permissions, Principal, QueryBy,
+    Directory, Permission, Permissions, Principal, QueryBy, core::secret::verify_secret_hash,
 };
 use jmap_proto::types::collection::Collection;
 use mail_send::Credentials;
@@ -17,10 +17,11 @@ use utils::{
     map::{bitmap::Bitmap, vec_map::VecMap},
 };
 
-use crate::{listener::limiter::ConcurrencyLimiter, Server};
+use crate::{Server, listener::limiter::ConcurrencyLimiter};
 
 pub mod access_token;
 pub mod oauth;
+pub mod rate_limit;
 pub mod roles;
 pub mod sasl;
 

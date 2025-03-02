@@ -12,6 +12,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU8},
     },
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -67,6 +68,9 @@ pub use psl;
 
 pub static USER_AGENT: &str = concat!("Stalwart/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
+
+pub const LONG_1D_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
+pub const LONG_1Y_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
 
 pub const IPC_CHANNEL_BUFFER: usize = 1024;
 

@@ -7,6 +7,7 @@
 use std::{sync::Arc, time::Instant};
 
 use common::{Server, auth::AccessToken};
+use http_proto::HttpSessionData;
 use jmap_proto::{
     method::{
         get, query,
@@ -39,7 +40,6 @@ use crate::{
     vacation::{get::VacationResponseGet, set::VacationResponseSet},
 };
 
-use super::http::HttpSessionData;
 use std::future::Future;
 
 pub trait RequestHandler: Sync + Send {

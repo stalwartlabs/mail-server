@@ -4,13 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{fmt::Display, future::Future, sync::Arc, time::Duration};
+use std::{fmt::Display, future::Future};
 
 use changes::state::StateManager;
-use common::{
-    manager::boot::{BootManager, IpcReceivers},
-    Inner, Server,
-};
+use common::Server;
 use jmap_proto::{
     method::{
         query::{QueryRequest, QueryResponse},
@@ -18,19 +15,15 @@ use jmap_proto::{
     },
     types::collection::Collection,
 };
-use services::{
-    housekeeper::spawn_housekeeper, index::spawn_email_queue_task, state::spawn_state_manager,
-};
 
 use store::{
     fts::FtsFilter,
-    query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
+    query::{Comparator, Filter, ResultSet, SortedResultSet, sort::Pagination},
     roaring::RoaringBitmap,
 };
 use trc::AddContext;
 
 pub mod api;
-pub mod auth;
 pub mod blob;
 pub mod changes;
 pub mod email;
@@ -39,56 +32,11 @@ pub mod mailbox;
 pub mod principal;
 pub mod push;
 pub mod quota;
-pub mod services;
 pub mod sieve;
 pub mod submission;
 pub mod thread;
 pub mod vacation;
 pub mod websocket;
-
-pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
-
-pub trait StartServices: Sync + Send {
-    fn start_services(&mut self) -> impl Future<Output = ()> + Send;
-}
-
-pub trait SpawnServices {
-    fn spawn_services(&mut self, inner: Arc<Inner>);
-}
-
-impl StartServices for BootManager {
-    async fn start_services(&mut self) {
-        // Unpack webadmin
-        if let Err(err) = self
-            .inner
-            .data
-            .webadmin
-            .unpack(&self.inner.shared_core.load().storage.blob)
-            .await
-        {
-            trc::event!(
-                Resource(trc::ResourceEvent::Error),
-                Reason = err,
-                Details = "Failed to unpack webadmin bundle"
-            );
-        }
-
-        self.ipc_rxs.spawn_services(self.inner.clone());
-    }
-}
-
-impl SpawnServices for IpcReceivers {
-    fn spawn_services(&mut self, inner: Arc<Inner>) {
-        // Spawn state manager
-        spawn_state_manager(inner.clone(), self.state_rx.take().unwrap());
-
-        // Spawn housekeeper
-        spawn_housekeeper(inner.clone(), self.housekeeper_rx.take().unwrap());
-
-        // Spawn index task
-        spawn_email_queue_task(inner);
-    }
-}
 
 impl JmapMethods for Server {
     async fn prepare_set_response<T: Sync + Send>(
@@ -218,13 +166,6 @@ impl JmapMethods for Server {
 
         Ok(response)
     }
-
-    fn increment_config_version(&self) {
-        self.inner
-            .data
-            .config_version
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
 }
 
 pub trait JmapMethods: Sync + Send {
@@ -261,8 +202,6 @@ pub trait JmapMethods: Sync + Send {
         paginate: Pagination,
         response: QueryResponse,
     ) -> impl Future<Output = trc::Result<QueryResponse>> + Send;
-
-    fn increment_config_version(&self);
 }
 
 trait UpdateResults: Sized {

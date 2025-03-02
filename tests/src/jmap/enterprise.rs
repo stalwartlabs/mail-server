@@ -11,20 +11,20 @@
 use std::{sync::Arc, time::Duration};
 
 use common::{
+    Core, Server,
     config::telemetry::{StoreTracer, TelemetrySubscriberType},
     core::BuildServer,
     enterprise::{
-        config::parse_metric_alerts, license::LicenseKey, undelete::DeletedBlob, Enterprise,
-        MetricStore, TraceStore, Undelete,
+        Enterprise, MetricStore, TraceStore, Undelete, config::parse_metric_alerts,
+        license::LicenseKey, undelete::DeletedBlob,
     },
     telemetry::{
         metrics::store::{Metric, MetricsStore, SharedMetricHistory},
         tracers::store::{TracingQuery, TracingStore},
     },
-    Core, Server,
 };
+use http::management::enterprise::undelete::{UndeleteRequest, UndeleteResponse};
 use imap_proto::ResponseType;
-use jmap::api::management::enterprise::undelete::{UndeleteRequest, UndeleteResponse};
 use store::{
     rand::{self, Rng},
     write::now,
@@ -33,16 +33,16 @@ use trc::{
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
     *,
 };
-use utils::config::{cron::SimpleCron, Config};
+use utils::config::{Config, cron::SimpleCron};
 
 use crate::{
+    AssertConfig,
     directory::internal::TestInternalDirectory,
     imap::{ImapConnection, Type},
     jmap::delivery::SmtpConnection,
-    AssertConfig,
 };
 
-use super::{delivery::AssertResult, JMAPTest, ManagementApi};
+use super::{JMAPTest, ManagementApi, delivery::AssertResult};
 
 const METRICS_CONFIG: &str = r#"
 [metrics.alerts.expected]
@@ -114,12 +114,14 @@ pub async fn test(params: &mut JMAPTest) {
     config.assert_no_errors();
     assert_ne!(core.enterprise.as_ref().unwrap().metrics_alerts.len(), 0);
     params.server.inner.shared_core.store(core.into());
-    assert!(params
-        .server
-        .inner
-        .shared_core
-        .load()
-        .is_enterprise_edition());
+    assert!(
+        params
+            .server
+            .inner
+            .shared_core
+            .load()
+            .is_enterprise_edition()
+    );
 
     // Create test account
     params
@@ -475,10 +477,7 @@ pub async fn insert_test_metrics(core: Arc<Core>) {
             Collector::update_event_counter(event_type, rand::rng().random_range(0..=100))
         }
 
-        Collector::update_gauge(
-            MetricType::QueueCount,
-            rand::rng().random_range(0..=1000),
-        );
+        Collector::update_gauge(MetricType::QueueCount, rand::rng().random_range(0..=1000));
         Collector::update_gauge(
             MetricType::ServerMemory,
             rand::rng().random_range(100 * 1024 * 1024..=300 * 1024 * 1024),

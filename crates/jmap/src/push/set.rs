@@ -29,7 +29,7 @@ use store::{
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
-use crate::services::state::StateManager;
+use super::get::PushSubscriptionFetch;
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
 const VERIFICATION_CODE_LEN: usize = 32;

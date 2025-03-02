@@ -47,7 +47,7 @@ pub const SMFIC_RCPT: u8 = b'R'; /* RCPT to */
 pub const SMFIC_DATA: u8 = b'T'; /* DATA */
 pub const SMFIC_UNKNOWN: u8 = b'U'; /* Any unknown command */
 
-impl<'x> Command<'x> {
+impl Command<'_> {
     fn build(command: u8, len: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(len as usize + 1 + std::mem::size_of::<u32>());
         buf.extend_from_slice((len + 1).to_be_bytes().as_ref());
@@ -182,7 +182,7 @@ impl<'x> Command<'x> {
     }
 
     #[cfg(feature = "test_mode")]
-    pub fn deserialize(bytes: &'x [u8]) -> Command<'x> {
+    pub fn deserialize(bytes: &[u8]) -> Command<'_> {
         let mut reader = PacketReader::new(bytes);
         match reader.byte() {
             SMFIC_ABORT => Command::Abort,

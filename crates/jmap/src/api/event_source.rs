@@ -9,18 +9,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{Server, auth::AccessToken};
+use common::{LONG_1D_SLUMBER, Server, auth::AccessToken};
 use http_body_util::{StreamBody, combinators::BoxBody};
 use hyper::{
     StatusCode,
     body::{Bytes, Frame},
 };
-use jmap_proto::types::type_state::DataType;
+use jmap_proto::{response::status::StateChangeResponse, types::type_state::DataType};
 use utils::map::bitmap::Bitmap;
 
-use crate::LONG_SLUMBER;
-
-use super::{HttpRequest, HttpResponse, HttpResponseBody, StateChangeResponse};
+use http_proto::*;
 use std::future::Future;
 
 struct Ping {
@@ -48,7 +46,8 @@ impl EventSourceHandler for Server {
         let mut types = Bitmap::default();
         let mut close_after_state = false;
 
-        for (key, value) in form_urlencoded::parse(req.uri().query().unwrap_or_default().as_bytes())
+        for (key, value) in
+            http_proto::form_urlencoded::parse(req.uri().query().unwrap_or_default().as_bytes())
         {
             match key.as_ref() {
                 "types" => {
@@ -114,7 +113,7 @@ impl EventSourceHandler for Server {
             body: HttpResponseBody::Stream(BoxBody::new(StreamBody::new(async_stream::stream! {
                 let mut last_message = Instant::now() - throttle;
                 let mut timeout =
-                    ping.as_ref().map(|p| p.interval).unwrap_or(LONG_SLUMBER);
+                    ping.as_ref().map(|p| p.interval).unwrap_or(LONG_1D_SLUMBER);
 
                 loop {
                     match tokio::time::timeout(timeout, change_rx.recv()).await {
@@ -146,7 +145,7 @@ impl EventSourceHandler for Server {
                             }
 
                             response.changed.clear();
-                                ping.as_ref().map(|p| p.interval).unwrap_or(LONG_SLUMBER)
+                                ping.as_ref().map(|p| p.interval).unwrap_or(LONG_1D_SLUMBER)
                         } else {
                             throttle - elapsed
                         }
@@ -160,7 +159,7 @@ impl EventSourceHandler for Server {
                             ping.interval - elapsed
                         }
                     } else {
-                        LONG_SLUMBER
+                        LONG_1D_SLUMBER
                     };
                 }
             }))),

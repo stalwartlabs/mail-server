@@ -1667,6 +1667,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
 
 [[package]]
+name = "dav"
+version = "0.11.5"
+
+[[package]]
 name = "dbl"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2978,6 +2982,48 @@ dependencies = [
 
 [[package]]
 name = "http"
+version = "0.11.5"
+dependencies = [
+ "async-stream",
+ "base64 0.22.1",
+ "chrono",
+ "common",
+ "directory",
+ "email",
+ "form-data",
+ "http-body-util",
+ "http_proto",
+ "hyper 1.6.0",
+ "hyper-util",
+ "jmap",
+ "jmap_proto",
+ "mail-auth",
+ "mail-builder",
+ "mail-parser",
+ "mail-send",
+ "mime",
+ "pkcs8",
+ "quick-xml 0.37.2",
+ "rev_lines",
+ "rkyv 0.8.10",
+ "rsa",
+ "serde",
+ "serde_json",
+ "services",
+ "sha1",
+ "sha2 0.10.8",
+ "smtp",
+ "smtp-proto",
+ "spam-filter",
+ "store",
+ "tokio",
+ "trc",
+ "utils",
+ "x509-parser 0.16.0",
+]
+
+[[package]]
+name = "http"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f16ca2af56261c99fba8bac40a10251ce8188205a4c448fbb745a2e4daa76fea"
@@ -3039,6 +3085,20 @@ dependencies = [
  "serde_qs",
  "serde_urlencoded",
  "url",
+]
+
+[[package]]
+name = "http_proto"
+version = "0.11.5"
+dependencies = [
+ "common",
+ "form_urlencoded",
+ "http-body-util",
+ "hyper 1.6.0",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "trc",
 ]
 
 [[package]]
@@ -3623,11 +3683,10 @@ dependencies = [
  "common",
  "directory",
  "email",
- "form-data",
- "form_urlencoded",
  "futures-util",
  "hkdf",
  "http-body-util",
+ "http_proto",
  "hyper 1.6.0",
  "hyper-util",
  "jmap_proto",
@@ -3636,19 +3695,16 @@ dependencies = [
  "mail-builder",
  "mail-parser",
  "mail-send",
- "memory-stats",
- "mime",
  "nlp",
  "p256",
  "pkcs8",
- "quick-xml 0.37.2",
  "rand 0.9.0",
  "reqwest 0.12.12",
- "rev_lines",
  "rkyv 0.8.10",
  "rsa",
  "serde",
  "serde_json",
+ "services",
  "sha1",
  "sha2 0.10.8",
  "sieve-rs",
@@ -3661,7 +3717,6 @@ dependencies = [
  "trc",
  "tungstenite 0.26.2",
  "utils",
- "x509-parser 0.16.0",
 ]
 
 [[package]]
@@ -4074,14 +4129,18 @@ name = "mail-server"
 version = "0.11.8"
 dependencies = [
  "common",
+ "dav",
  "directory",
  "email",
+ "groupware",
+ "http 0.11.5",
  "imap",
  "jemallocator",
  "jmap",
  "jmap_proto",
  "managesieve",
  "pop3",
+ "services",
  "smtp",
  "spam-filter",
  "store",
@@ -6531,6 +6590,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "services"
+version = "0.11.5"
+dependencies = [
+ "aes-gcm",
+ "aes-gcm-siv",
+ "base64 0.22.1",
+ "common",
+ "directory",
+ "email",
+ "hkdf",
+ "jmap_proto",
+ "mail-parser",
+ "memory-stats",
+ "p256",
+ "reqwest 0.12.12",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "smtp",
+ "store",
+ "tokio",
+ "trc",
+ "utils",
+]
+
+[[package]]
 name = "sha-1"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7071,7 +7157,9 @@ dependencies = [
  "flate2",
  "form_urlencoded",
  "futures",
+ "http 0.11.5",
  "http-body-util",
+ "http_proto",
  "hyper 1.6.0",
  "hyper-util",
  "imap",
@@ -7097,6 +7185,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "services",
  "sieve-rs",
  "smtp",
  "smtp-proto",

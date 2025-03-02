@@ -1,4 +1,10 @@
-use std::{cmp::Ordering, net::IpAddr, vec::IntoIter};
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use std::{cmp::Ordering, net::IpAddr, vec::IntoIter};
 
 use directory::backend::RcptType;
 use mail_auth::IpLookupStrategy;

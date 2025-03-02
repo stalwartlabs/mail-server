@@ -6,14 +6,14 @@
 
 use std::sync::Arc;
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
 use tokio_tungstenite::WebSocketStream;
 use trc::JmapEvent;
 use tungstenite::{handshake::derive_accept_key, protocol::Role};
 
-use crate::api::{http::HttpSessionData, HttpRequest, HttpResponse, HttpResponseBody};
+use http_proto::*;
 use std::future::Future;
 
 use super::stream::WebSocketHandler;

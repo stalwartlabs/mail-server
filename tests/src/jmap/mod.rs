@@ -25,15 +25,16 @@ use common::{
 };
 use email::message::delete::EmailDeletion;
 use enterprise::{EnterpriseCore, insert_test_metrics};
+use http::HttpSessionManager;
 use hyper::{Method, header::AUTHORIZATION};
 use imap::core::ImapSessionManager;
-use jmap::{SpawnServices, api::JmapSessionManager};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use reqwest::header;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use services::SpawnServices;
 use smtp::{SpawnQueueManager, core::SmtpSessionManager};
 
 use store::{
@@ -625,7 +626,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
                 shutdown_rx,
             ),
             ServerProtocol::Http => server.spawn(
-                JmapSessionManager::new(inner.clone()),
+                HttpSessionManager::new(inner.clone()),
                 inner.clone(),
                 acceptor,
                 shutdown_rx,

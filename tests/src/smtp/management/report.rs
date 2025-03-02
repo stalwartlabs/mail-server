@@ -12,23 +12,23 @@ use common::{
     ipc::{DmarcEvent, PolicyType, TlsEvent},
 };
 
-use jmap::api::management::queue::Report;
+use http::management::queue::Report;
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::Dmarc,
     mta_sts::TlsRpt,
     report::{
-        tlsrpt::{FailureDetails, ResultType},
         ActionDisposition, DmarcResult, Record,
+        tlsrpt::{FailureDetails, ResultType},
     },
 };
 use reqwest::Method;
 
 use crate::{
     jmap::ManagementApi,
-    smtp::{management::queue::List, TestSMTP},
+    smtp::{TestSMTP, management::queue::List},
 };
-use smtp::reporting::{scheduler::SpawnReport, SmtpReporting};
+use smtp::reporting::{SmtpReporting, scheduler::SpawnReport};
 
 const CONFIG: &str = r#"
 [storage]
@@ -225,11 +225,12 @@ async fn manage_reports() {
     assert!(ids.next().unwrap().is_some());
 
     // Cancel all reports
-    assert!(api
-        .request::<bool>(Method::DELETE, "/api/queue/reports")
-        .await
-        .unwrap()
-        .unwrap_data());
+    assert!(
+        api.request::<bool>(Method::DELETE, "/api/queue/reports")
+            .await
+            .unwrap()
+            .unwrap_data()
+    );
     assert_eq!(
         api.request::<List<String>>(Method::GET, "/api/queue/reports")
             .await

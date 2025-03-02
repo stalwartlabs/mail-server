@@ -667,6 +667,13 @@ impl Server {
         })
     }
 
+    pub fn increment_config_version(&self) {
+        self.inner
+            .data
+            .config_version
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     pub async fn total_accounts(&self) -> trc::Result<u64> {
         self.store()
             .count_principals(None, Type::Individual.into(), None)

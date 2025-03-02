@@ -8,14 +8,14 @@ use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use ahash::AHashSet;
 use common::{
+    Core,
     config::smtp::session::{Milter, MilterVersion, Stage},
     expr::if_block::IfBlock,
     manager::webadmin::Resource,
-    Core,
 };
+use http_proto::{ToHttpResponse, request::fetch_body};
 use hyper::{body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
-use jmap::api::http::{fetch_body, ToHttpResponse};
 use mail_auth::AuthenticatedMessage;
 use mail_parser::MessageParser;
 use serde::Deserialize;
@@ -24,8 +24,8 @@ use smtp::{
     inbound::{
         hooks::{self, Request, SmtpResponse},
         milter::{
-            receiver::{FrameResult, Receiver},
             Action, Command, Macros, MilterClient, Modification, Options, Response,
+            receiver::{FrameResult, Receiver},
         },
     },
 };
@@ -38,9 +38,9 @@ use tokio::{
 use utils::config::Config;
 
 use crate::smtp::{
-    inbound::TestMessage,
-    session::{load_test_message, TestSession, VerifyResponse},
     TempDir, TestSMTP,
+    inbound::TestMessage,
+    session::{TestSession, VerifyResponse, load_test_message},
 };
 
 #[derive(Debug, Deserialize)]
@@ -377,38 +377,40 @@ fn milter_address_modifications() {
     );
 
     // ChangeFrom
-    assert!(data
-        .apply_milter_modifications(
+    assert!(
+        data.apply_milter_modifications(
             vec![Modification::ChangeFrom {
                 sender: "<>".to_string(),
                 args: String::new()
             }],
             &parsed_test_message
         )
-        .is_none());
+        .is_none()
+    );
     let addr = data.mail_from.as_ref().unwrap();
     assert_eq!(addr.address_lcase, "");
     assert_eq!(addr.dsn_info, None);
     assert_eq!(addr.flags, 0);
 
     // ChangeFrom with parameters
-    assert!(data
-        .apply_milter_modifications(
+    assert!(
+        data.apply_milter_modifications(
             vec![Modification::ChangeFrom {
                 sender: "john@example.org".to_string(),
                 args: "REQUIRETLS ENVID=abc123".to_string(), //"NOTIFY=SUCCESS,FAILURE ENVID=abc123\n".to_string()
             }],
             &parsed_test_message
         )
-        .is_none());
+        .is_none()
+    );
     let addr = data.mail_from.as_ref().unwrap();
     assert_eq!(addr.address_lcase, "john@example.org");
     assert_ne!(addr.flags, 0);
     assert_eq!(addr.dsn_info, Some("abc123".to_string()));
 
     // Add recipients
-    assert!(data
-        .apply_milter_modifications(
+    assert!(
+        data.apply_milter_modifications(
             vec![
                 Modification::AddRcpt {
                     recipient: "bill@example.org".to_string(),
@@ -429,7 +431,8 @@ fn milter_address_modifications() {
             ],
             &parsed_test_message
         )
-        .is_none());
+        .is_none()
+    );
     assert_eq!(data.rcpt_to.len(), 2);
     let addr = data.rcpt_to.first().unwrap();
     assert_eq!(addr.address_lcase, "bill@example.org");
@@ -441,8 +444,8 @@ fn milter_address_modifications() {
     assert_eq!(addr.dsn_info, Some("Jane.Doe@Foobar.org".to_string()));
 
     // Remove recipients
-    assert!(data
-        .apply_milter_modifications(
+    assert!(
+        data.apply_milter_modifications(
             vec![
                 Modification::DeleteRcpt {
                     recipient: "bill@example.org".to_string(),
@@ -453,7 +456,8 @@ fn milter_address_modifications() {
             ],
             &parsed_test_message
         )
-        .is_none());
+        .is_none()
+    );
     assert_eq!(data.rcpt_to.len(), 1);
     let addr = data.rcpt_to.last().unwrap();
     assert_eq!(addr.address_lcase, "jane@foobar.org");

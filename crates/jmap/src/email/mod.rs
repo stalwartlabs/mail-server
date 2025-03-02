@@ -6,7 +6,6 @@
 
 pub mod body;
 pub mod copy;
-pub mod crypto;
 pub mod get;
 pub mod headers;
 pub mod import;

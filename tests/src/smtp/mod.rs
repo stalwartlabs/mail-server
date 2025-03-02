@@ -11,18 +11,18 @@ use std::{
 };
 
 use common::{
+    Core, Data, Inner, Server,
     config::{
         server::{Listeners, ServerProtocol},
         smtp::resolver::Tlsa,
         spamfilter::IpResolver,
     },
     ipc::{QueueEvent, ReportingEvent},
-    manager::boot::{build_ipc, IpcReceivers},
-    Core, Data, Inner, Server,
+    manager::boot::{IpcReceivers, build_ipc},
 };
 
-use jmap::api::JmapSessionManager;
-use mail_auth::{common::resolver::IntoFqdn, Txt, MX};
+use http::HttpSessionManager;
+use mail_auth::{MX, Txt, common::resolver::IntoFqdn};
 use session::{DummyIo, TestSession};
 use smtp::core::{Session, SmtpSessionManager};
 use store::{BlobStore, Store, Stores};
@@ -265,7 +265,7 @@ impl TestSMTP {
                         shutdown_rx,
                     ),
                     ServerProtocol::Http => server.spawn(
-                        JmapSessionManager::new(self.server.inner.clone()),
+                        HttpSessionManager::new(self.server.inner.clone()),
                         self.server.inner.clone(),
                         acceptor,
                         shutdown_rx,

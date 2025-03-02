@@ -6,13 +6,14 @@
 
 use common::Server;
 use directory::QueryBy;
+use http_proto::HttpSessionData;
 use jmap_proto::{
     method::query::{Filter, QueryRequest, QueryResponse, RequestArguments},
     types::collection::Collection,
 };
 use store::{query::ResultSet, roaring::RoaringBitmap};
 
-use crate::{api::http::HttpSessionData, JmapMethods};
+use crate::JmapMethods;
 use std::future::Future;
 
 pub trait PrincipalQuery: Sync + Send {
@@ -77,7 +78,7 @@ impl PrincipalQuery for Server {
                 other => {
                     return Err(trc::JmapEvent::UnsupportedFilter
                         .into_err()
-                        .details(other.to_string()))
+                        .details(other.to_string()));
                 }
             }
         }

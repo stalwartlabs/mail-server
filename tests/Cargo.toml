@@ -26,6 +26,9 @@ jmap = { path = "../crates/jmap", features = ["test_mode", "enterprise"] }
 jmap_proto = { path = "../crates/jmap-proto" }
 imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }
+http = { path = "../crates/http", features = ["test_mode", "enterprise"] }
+http_proto = { path = "../crates/http-proto" }
+services = { path = "../crates/services", features = ["test_mode", "enterprise"] }
 pop3 = { path = "../crates/pop3", features = ["test_mode"] }
 smtp = { path = "../crates/smtp", features = ["test_mode", "enterprise"] }
 common = { path = "../crates/common", features = ["test_mode", "enterprise"] }

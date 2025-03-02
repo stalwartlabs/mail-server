@@ -14,6 +14,7 @@ use email::{
         ingest::{EmailIngest, IngestEmail, IngestSource},
     },
 };
+use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -45,10 +46,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{
-    JmapMethods, api::http::HttpSessionData, blob::download::BlobDownload,
-    changes::state::StateManager,
-};
+use crate::{JmapMethods, blob::download::BlobDownload, changes::state::StateManager};
 use std::future::Future;
 
 use super::headers::{BuildHeader, ValueToHeader};

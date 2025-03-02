@@ -9,16 +9,16 @@ use std::time::{Duration, Instant};
 use ahash::{AHashMap, HashMap, HashSet};
 use common::config::server::ServerProtocol;
 
-use jmap::api::management::queue::Message;
+use http::management::queue::Message;
 use mail_auth::MX;
 use mail_parser::DateTime;
-use reqwest::{header::AUTHORIZATION, Method, StatusCode};
+use reqwest::{Method, StatusCode, header::AUTHORIZATION};
 
 use crate::{
     jmap::ManagementApi,
-    smtp::{session::TestSession, DnsCache, TestSMTP},
+    smtp::{DnsCache, TestSMTP, session::TestSession},
 };
-use smtp::queue::{manager::SpawnQueue, QueueId, Status};
+use smtp::queue::{QueueId, Status, manager::SpawnQueue};
 
 const LOCAL: &str = r#"
 [storage]
@@ -296,14 +296,15 @@ async fn manage_queue() {
 
     // Retry delivery
     for id in [id_map.get("e").unwrap(), id_map.get("f").unwrap()] {
-        assert!(api
-            .request::<bool>(Method::PATCH, &format!("/api/queue/messages/{id}",))
-            .await
-            .unwrap()
-            .unwrap_data(),);
+        assert!(
+            api.request::<bool>(Method::PATCH, &format!("/api/queue/messages/{id}",))
+                .await
+                .unwrap()
+                .unwrap_data(),
+        );
     }
-    assert!(api
-        .request::<bool>(
+    assert!(
+        api.request::<bool>(
             Method::PATCH,
             &format!(
                 "/api/queue/messages/{}?filter=example1.org&at=2200-01-01T00:00:00Z",
@@ -312,7 +313,8 @@ async fn manage_queue() {
         )
         .await
         .unwrap()
-        .unwrap_data());
+        .unwrap_data()
+    );
 
     // Expect delivery to john@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -456,11 +458,12 @@ async fn manage_queue() {
             .len(),
         3
     );
-    assert!(api
-        .request::<bool>(Method::DELETE, "/api/queue/messages?text=example2.com")
-        .await
-        .unwrap()
-        .unwrap_data());
+    assert!(
+        api.request::<bool>(Method::DELETE, "/api/queue/messages?text=example2.com")
+            .await
+            .unwrap()
+            .unwrap_data()
+    );
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         api.request::<List<QueueId>>(Method::GET, "/api/queue/messages")
@@ -471,11 +474,12 @@ async fn manage_queue() {
             .len(),
         2
     );
-    assert!(api
-        .request::<bool>(Method::DELETE, "/api/queue/messages")
-        .await
-        .unwrap()
-        .unwrap_data());
+    assert!(
+        api.request::<bool>(Method::DELETE, "/api/queue/messages")
+            .await
+            .unwrap()
+            .unwrap_data()
+    );
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         api.request::<List<QueueId>>(Method::GET, "/api/queue/messages")
@@ -508,7 +512,9 @@ fn assert_timestamp(timestamp: &DateTime, expected: i64, ctx: &str, message: &Me
     let timestamp = timestamp.to_timestamp();
     let diff = timestamp - expected;
     if ![-2, -1, 0, 1, 2].contains(&diff) {
-        panic!("Got timestamp {timestamp}, expected {expected} (diff {diff} for {ctx}) for {message:?}");
+        panic!(
+            "Got timestamp {timestamp}, expected {expected} (diff {diff} for {ctx}) for {message:?}"
+        );
     }
 }
 
