@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
 use std::{net::IpAddr, sync::Arc};
 
 use common::{
@@ -8,6 +14,7 @@ use common::{
     listener::{SessionData, SessionManager, SessionStream},
     manager::webadmin::Resource,
 };
+use dav::{DavMethod, DavResource, request::DavRequestHandler};
 use directory::Permission;
 use http_proto::{
     DownloadResponse, HttpContext, HttpRequest, HttpResponse, HttpResponseBody, HttpSessionData,
@@ -107,7 +114,7 @@ impl ParseHttp for Server {
                         })?;
 
                         return Ok(self
-                            .handle_request(request, access_token, &session)
+                            .handle_jmap_request(request, access_token, &session)
                             .await
                             .into_http_response());
                     }
@@ -197,6 +204,41 @@ impl ParseHttp for Server {
                     _ => (),
                 }
             }
+            "dav" => {
+                let response = match (
+                    path.next().and_then(DavResource::parse),
+                    DavMethod::parse(req.method()),
+                ) {
+                    (Some(resource), Some(DavMethod::OPTIONS)) => resource.into_options_response(),
+                    (Some(resource), Some(method)) => {
+                        // Authenticate request
+                        let (_in_flight, access_token) =
+                            self.authenticate_headers(&req, &session, false).await?;
+                        let body = if method.has_body() {
+                            fetch_body(
+                                &mut req,
+                                if !access_token.has_permission(Permission::UnlimitedUploads) {
+                                    self.core.jmap.upload_max_size
+                                } else {
+                                    0
+                                },
+                                session.session_id,
+                            )
+                            .await
+                            .ok_or_else(|| trc::LimitEvent::SizeRequest.into_err())?
+                        } else {
+                            Vec::new()
+                        };
+
+                        self.handle_dav_request(req, access_token, &session, resource, method, body)
+                            .await
+                    }
+                    (_, None) => HttpResponse::new(StatusCode::METHOD_NOT_ALLOWED),
+                    (None, _) => HttpResponse::new(StatusCode::NOT_FOUND),
+                };
+
+                return Ok(response);
+            }
             ".well-known" => match (path.next().unwrap_or_default(), req.method()) {
                 ("jmap", &Method::GET) => {
                     // Authenticate request
@@ -207,6 +249,18 @@ impl ParseHttp for Server {
                         .handle_session_resource(ctx.resolve_response_url(self).await, access_token)
                         .await
                         .map(|s| s.into_http_response());
+                }
+                ("caldav", &Method::GET) => {
+                    let base_url = ctx.resolve_response_url(self).await;
+                    return Ok(HttpResponse::new(StatusCode::TEMPORARY_REDIRECT)
+                        .with_no_cache()
+                        .with_location(format!("{base_url}/dav/cal")));
+                }
+                ("carddav", &Method::GET) => {
+                    let base_url = ctx.resolve_response_url(self).await;
+                    return Ok(HttpResponse::new(StatusCode::TEMPORARY_REDIRECT)
+                        .with_no_cache()
+                        .with_location(format!("{base_url}/dav/card")));
                 }
                 ("oauth-authorization-server", &Method::GET) => {
                     // Limit anonymous requests
@@ -690,13 +744,13 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
                     trc::event!(
                         Http(trc::HttpEvent::ResponseBody),
                         SpanId = session.session_id,
-                        Contents = match &response.body {
+                        Contents = match response.body() {
                             HttpResponseBody::Text(value) => trc::Value::String(value.clone()),
                             HttpResponseBody::Binary(_) => trc::Value::Static("[binary data]"),
                             HttpResponseBody::Stream(_) => trc::Value::Static("[stream]"),
                             _ => trc::Value::None,
                         },
-                        Code = response.status.as_u16(),
+                        Code = response.status().as_u16(),
                         Size = response.size(),
                     );
 

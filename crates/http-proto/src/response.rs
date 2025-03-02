@@ -4,11 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::borrow::Cow;
-
 use common::manager::webadmin::Resource;
 use http_body_util::{BodyExt, Full};
-use hyper::{StatusCode, body::Bytes, header};
+use hyper::{
+    StatusCode,
+    body::Bytes,
+    header::{self, HeaderName, HeaderValue},
+};
 use serde_json::json;
 
 use crate::{
@@ -17,42 +19,91 @@ use crate::{
 };
 
 impl HttpResponse {
-    pub fn new_empty(status: StatusCode) -> Self {
+    pub fn new(status: StatusCode) -> Self {
         HttpResponse {
             status,
-            content_type: "".into(),
-            content_disposition: "".into(),
-            cache_control: "".into(),
+            builder: hyper::Response::builder().status(status),
             body: HttpResponseBody::Empty,
         }
     }
 
-    pub fn new_text(
-        status: StatusCode,
-        content_type: impl Into<Cow<'static, str>>,
-        body: impl Into<String>,
-    ) -> Self {
-        HttpResponse {
-            status,
-            content_type: content_type.into(),
-            content_disposition: "".into(),
-            cache_control: "".into(),
-            body: HttpResponseBody::Text(body.into()),
-        }
+    pub fn with_content_type<V>(mut self, content_type: V) -> Self
+    where
+        V: TryInto<HeaderValue>,
+        <V as TryInto<HeaderValue>>::Error: Into<hyper::http::Error>,
+    {
+        self.builder = self.builder.header(header::CONTENT_TYPE, content_type);
+        self
     }
 
-    pub fn new_binary(
-        status: StatusCode,
-        content_type: impl Into<Cow<'static, str>>,
-        body: impl Into<Vec<u8>>,
+    pub fn with_header<K, V>(mut self, name: K, value: V) -> Self
+    where
+        K: TryInto<HeaderName>,
+        <K as TryInto<HeaderName>>::Error: Into<hyper::http::Error>,
+        V: TryInto<HeaderValue>,
+        <V as TryInto<HeaderValue>>::Error: Into<hyper::http::Error>,
+    {
+        self.builder = self.builder.header(name, value);
+        self
+    }
+
+    pub fn with_text_body(mut self, body: impl Into<String>) -> Self {
+        self.body = HttpResponseBody::Text(body.into());
+        self
+    }
+
+    pub fn with_binary_body(mut self, body: impl Into<Vec<u8>>) -> Self {
+        self.body = HttpResponseBody::Binary(body.into());
+        self
+    }
+
+    pub fn with_stream_body(
+        mut self,
+        stream: http_body_util::combinators::BoxBody<hyper::body::Bytes, hyper::Error>,
     ) -> Self {
-        HttpResponse {
-            status,
-            content_type: content_type.into(),
-            content_disposition: "".into(),
-            cache_control: "".into(),
-            body: HttpResponseBody::Binary(body.into()),
-        }
+        self.body = HttpResponseBody::Stream(stream);
+        self
+    }
+
+    pub fn with_websocket_upgrade(mut self, derived_key: String) -> Self {
+        self.body = HttpResponseBody::WebsocketUpgrade(derived_key);
+        self
+    }
+
+    pub fn with_content_disposition<V>(mut self, content_disposition: V) -> Self
+    where
+        V: TryInto<HeaderValue>,
+        <V as TryInto<HeaderValue>>::Error: Into<hyper::http::Error>,
+    {
+        self.builder = self
+            .builder
+            .header(header::CONTENT_DISPOSITION, content_disposition);
+        self
+    }
+
+    pub fn with_cache_control<V>(mut self, cache_control: V) -> Self
+    where
+        V: TryInto<HeaderValue>,
+        <V as TryInto<HeaderValue>>::Error: Into<hyper::http::Error>,
+    {
+        self.builder = self.builder.header(header::CACHE_CONTROL, cache_control);
+        self
+    }
+
+    pub fn with_no_cache(mut self) -> Self {
+        self.builder = self
+            .builder
+            .header(header::CACHE_CONTROL, "no-store, no-cache, must-revalidate");
+        self
+    }
+
+    pub fn with_location<V>(mut self, location: V) -> Self
+    where
+        V: TryInto<HeaderValue>,
+        <V as TryInto<HeaderValue>>::Error: Into<hyper::http::Error>,
+    {
+        self.builder = self.builder.header(header::LOCATION, location);
+        self
     }
 
     pub fn size(&self) -> usize {
@@ -67,46 +118,25 @@ impl HttpResponse {
         self,
     ) -> hyper::Response<http_body_util::combinators::BoxBody<hyper::body::Bytes, hyper::Error>>
     {
-        let builder = hyper::Response::builder().status(self.status);
-
         match self.body {
-            HttpResponseBody::Text(body) => builder
-                .header(header::CONTENT_TYPE, self.content_type.as_ref())
-                .body(
-                    Full::new(Bytes::from(body))
-                        .map_err(|never| match never {})
-                        .boxed(),
-                ),
-            HttpResponseBody::Binary(body) => {
-                let mut builder = builder.header(header::CONTENT_TYPE, self.content_type.as_ref());
-
-                if !self.content_disposition.is_empty() {
-                    builder = builder.header(
-                        header::CONTENT_DISPOSITION,
-                        self.content_disposition.as_ref(),
-                    );
-                }
-
-                if !self.cache_control.is_empty() {
-                    builder = builder.header(header::CACHE_CONTROL, self.cache_control.as_ref());
-                }
-
-                builder.body(
-                    Full::new(Bytes::from(body))
-                        .map_err(|never| match never {})
-                        .boxed(),
-                )
-            }
-            HttpResponseBody::Empty => builder.body(
+            HttpResponseBody::Text(body) => self.builder.body(
+                Full::new(Bytes::from(body))
+                    .map_err(|never| match never {})
+                    .boxed(),
+            ),
+            HttpResponseBody::Binary(body) => self.builder.body(
+                Full::new(Bytes::from(body))
+                    .map_err(|never| match never {})
+                    .boxed(),
+            ),
+            HttpResponseBody::Empty => self.builder.body(
                 Full::new(Bytes::new())
                     .map_err(|never| match never {})
                     .boxed(),
             ),
-            HttpResponseBody::Stream(stream) => builder
-                .header(header::CONTENT_TYPE, self.content_type.as_ref())
-                .header(header::CACHE_CONTROL, self.cache_control.as_ref())
-                .body(stream),
-            HttpResponseBody::WebsocketUpgrade(derived_key) => builder
+            HttpResponseBody::Stream(stream) => self.builder.body(stream),
+            HttpResponseBody::WebsocketUpgrade(derived_key) => self
+                .builder
                 .header(header::CONNECTION, "upgrade")
                 .header(header::UPGRADE, "websocket")
                 .header("Sec-WebSocket-Accept", &derived_key)
@@ -119,67 +149,73 @@ impl HttpResponse {
         }
         .unwrap()
     }
+
+    pub fn body(&self) -> &HttpResponseBody {
+        &self.body
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
 }
 
 impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
     fn into_http_response(self) -> HttpResponse {
-        HttpResponse {
-            status: self.status,
-            content_type: "application/json; charset=utf-8".into(),
-            content_disposition: "".into(),
-            cache_control: if !self.no_cache {
-                ""
-            } else {
-                "no-store, no-cache, must-revalidate"
-            }
-            .into(),
-            body: HttpResponseBody::Text(serde_json::to_string(&self.inner).unwrap_or_default()),
+        let response = HttpResponse::new(self.status)
+            .with_content_type("application/json; charset=utf-8")
+            .with_text_body(serde_json::to_string(&self.inner).unwrap_or_default());
+
+        if self.no_cache {
+            response.with_no_cache()
+        } else {
+            response
         }
     }
 }
 
 impl ToHttpResponse for DownloadResponse {
     fn into_http_response(self) -> HttpResponse {
-        HttpResponse {
-            status: StatusCode::OK,
-            content_type: self.content_type.into(),
-            content_disposition: format!(
+        HttpResponse::new(StatusCode::OK)
+            .with_content_type(self.content_type)
+            .with_content_disposition(format!(
                 "attachment; filename=\"{}\"",
                 self.filename.replace('\"', "\\\"")
-            )
-            .into(),
-            cache_control: "private, immutable, max-age=31536000".into(),
-            body: HttpResponseBody::Binary(self.blob),
-        }
+            ))
+            .with_cache_control("private, immutable, max-age=31536000")
+            .with_binary_body(self.blob)
     }
 }
 
 impl ToHttpResponse for Resource<Vec<u8>> {
     fn into_http_response(self) -> HttpResponse {
-        HttpResponse::new_binary(StatusCode::OK, self.content_type, self.contents)
+        HttpResponse::new(StatusCode::OK)
+            .with_content_type(self.content_type.as_ref())
+            .with_binary_body(self.contents)
     }
 }
 
 impl ToHttpResponse for HtmlResponse {
     fn into_http_response(self) -> HttpResponse {
-        HttpResponse::new_text(self.status, "text/html; charset=utf-8", self.body)
+        HttpResponse::new(self.status)
+            .with_content_type("text/html; charset=utf-8")
+            .with_text_body(self.body)
     }
 }
 
 impl ToHttpResponse for JsonProblemResponse {
     fn into_http_response(self) -> HttpResponse {
-        HttpResponse::new_text(
-            self.0,
-            "application/problem+json",
-            serde_json::to_string(&json!(
-                {
-                    "type": "about:blank",
-                    "title": self.0.canonical_reason().unwrap_or_default(),
-                    "status": self.0.as_u16(),
-                    "detail": self.0.canonical_reason().unwrap_or_default(),
-                }
-            ))
-            .unwrap_or_default(),
-        )
+        HttpResponse::new(self.0)
+            .with_content_type("application/problem+json")
+            .with_text_body(
+                serde_json::to_string(&json!(
+                    {
+                        "type": "about:blank",
+                        "title": self.0.canonical_reason().unwrap_or_default(),
+                        "status": self.0.as_u16(),
+                        "detail": self.0.canonical_reason().unwrap_or_default(),
+                    }
+                ))
+                .unwrap_or_default(),
+            )
     }
 }

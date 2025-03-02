@@ -102,12 +102,6 @@ impl WebSocketUpgrade for Server {
             }
         });
 
-        Ok(HttpResponse {
-            status: StatusCode::SWITCHING_PROTOCOLS,
-            content_type: "".into(),
-            content_disposition: "".into(),
-            cache_control: "".into(),
-            body: HttpResponseBody::WebsocketUpgrade(derived_key),
-        })
+        Ok(HttpResponse::new(StatusCode::SWITCHING_PROTOCOLS).with_websocket_upgrade(derived_key))
     }
 }

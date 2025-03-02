@@ -203,107 +203,104 @@ impl TelemetryApi for Server {
                 let mut events = Vec::new();
                 let mut active_span_ids = AHashSet::new();
 
-                Ok(HttpResponse {
-                    status: StatusCode::OK,
-                    content_type: "text/event-stream".into(),
-                    content_disposition: "".into(),
-                    cache_control: "no-store".into(),
-                    body: HttpResponseBody::Stream(BoxBody::new(StreamBody::new(
-                        async_stream::stream! {
-                            let mut last_message = Instant::now() - throttle;
-                            let mut timeout = ping_interval;
+                Ok(HttpResponse::new(StatusCode::OK)
+                .with_content_type("text/event-stream")
+                .with_cache_control("no-store")
+                .with_stream_body(BoxBody::new(StreamBody::new(
+                    async_stream::stream! {
+                        let mut last_message = Instant::now() - throttle;
+                        let mut timeout = ping_interval;
 
-                            loop {
-                                match tokio::time::timeout(timeout, rx.recv()).await {
-                                    Ok(Some(event_batch)) => {
-                                        for event in event_batch {
-                                            if (filter.is_none() && key_filters.is_empty())
-                                                || event
-                                                    .span_id()
-                                                    .is_some_and(|span_id| active_span_ids.contains(&span_id))
+                        loop {
+                            match tokio::time::timeout(timeout, rx.recv()).await {
+                                Ok(Some(event_batch)) => {
+                                    for event in event_batch {
+                                        if (filter.is_none() && key_filters.is_empty())
+                                            || event
+                                                .span_id()
+                                                .is_some_and(|span_id| active_span_ids.contains(&span_id))
+                                        {
+                                            events.push(event);
+                                        } else {
+                                            let mut matched_keys = AHashSet::new();
+                                            for (key, value) in event
+                                                .keys
+                                                .iter()
+                                                .chain(event.inner.span.as_ref().map_or(([]).iter(), |s| s.keys.iter()))
                                             {
-                                                events.push(event);
-                                            } else {
-                                                let mut matched_keys = AHashSet::new();
-                                                for (key, value) in event
-                                                    .keys
-                                                    .iter()
-                                                    .chain(event.inner.span.as_ref().map_or(([]).iter(), |s| s.keys.iter()))
-                                                {
-                                                    if let Some(needle) = key_filters.get(key).or(filter.as_ref()) {
-                                                        let matches = match value {
-                                                            Value::Static(haystack) => haystack.contains(needle),
-                                                            Value::String(haystack) => haystack.contains(needle),
-                                                            Value::Timestamp(haystack) => {
-                                                                DateTime::from_timestamp(*haystack as i64)
-                                                                    .to_rfc3339()
-                                                                    .contains(needle)
-                                                            }
-                                                            Value::Bool(true) => needle == "true",
-                                                            Value::Bool(false) => needle == "false",
-                                                            Value::Ipv4(haystack) => haystack.to_string().contains(needle),
-                                                            Value::Ipv6(haystack) => haystack.to_string().contains(needle),
-                                                            Value::Event(_) |
-                                                            Value::Array(_) |
-                                                            Value::UInt(_) |
-                                                            Value::Int(_) |
-                                                            Value::Float(_) |
-                                                            Value::Duration(_) |
-                                                            Value::Bytes(_) |
-                                                            Value::None => false,
-                                                        };
+                                                if let Some(needle) = key_filters.get(key).or(filter.as_ref()) {
+                                                    let matches = match value {
+                                                        Value::Static(haystack) => haystack.contains(needle),
+                                                        Value::String(haystack) => haystack.contains(needle),
+                                                        Value::Timestamp(haystack) => {
+                                                            DateTime::from_timestamp(*haystack as i64)
+                                                                .to_rfc3339()
+                                                                .contains(needle)
+                                                        }
+                                                        Value::Bool(true) => needle == "true",
+                                                        Value::Bool(false) => needle == "false",
+                                                        Value::Ipv4(haystack) => haystack.to_string().contains(needle),
+                                                        Value::Ipv6(haystack) => haystack.to_string().contains(needle),
+                                                        Value::Event(_) |
+                                                        Value::Array(_) |
+                                                        Value::UInt(_) |
+                                                        Value::Int(_) |
+                                                        Value::Float(_) |
+                                                        Value::Duration(_) |
+                                                        Value::Bytes(_) |
+                                                        Value::None => false,
+                                                    };
 
-                                                        if matches {
-                                                            matched_keys.insert(*key);
-                                                            if filter.is_some() || matched_keys.len() == key_filters.len() {
-                                                                if let Some(span_id) = event.span_id() {
-                                                                    active_span_ids.insert(span_id);
-                                                                }
-                                                                events.push(event);
-                                                                break;
+                                                    if matches {
+                                                        matched_keys.insert(*key);
+                                                        if filter.is_some() || matched_keys.len() == key_filters.len() {
+                                                            if let Some(span_id) = event.span_id() {
+                                                                active_span_ids.insert(span_id);
                                                             }
+                                                            events.push(event);
+                                                            break;
                                                         }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                    Ok(None) => {
-                                        break;
-                                    }
-                                    Err(_) => (),
                                 }
-
-                                timeout = if !events.is_empty() {
-                                    let elapsed = last_message.elapsed();
-                                    if elapsed >= throttle {
-                                        last_message = Instant::now();
-                                        yield Ok(Frame::data(Bytes::from(format!(
-                                            "event: trace\ndata: {}\n\n",
-                                            serde_json::to_string(
-                                                &JsonEventSerializer::new(std::mem::take(&mut events))
-                                                .with_description()
-                                                .with_explanation()).unwrap_or_default()
-                                        ))));
-
-                                        ping_interval
-                                    } else {
-                                        throttle - elapsed
-                                    }
-                                } else {
-                                    let elapsed = last_ping.elapsed();
-                                    if elapsed >= ping_interval {
-                                        last_ping = Instant::now();
-                                        yield Ok(Frame::data(ping_payload.clone()));
-                                        ping_interval
-                                    } else {
-                                        ping_interval - elapsed
-                                    }
-                                };
+                                Ok(None) => {
+                                    break;
+                                }
+                                Err(_) => (),
                             }
-                        },
-                    ))),
-                })
+
+                            timeout = if !events.is_empty() {
+                                let elapsed = last_message.elapsed();
+                                if elapsed >= throttle {
+                                    last_message = Instant::now();
+                                    yield Ok(Frame::data(Bytes::from(format!(
+                                        "event: trace\ndata: {}\n\n",
+                                        serde_json::to_string(
+                                            &JsonEventSerializer::new(std::mem::take(&mut events))
+                                            .with_description()
+                                            .with_explanation()).unwrap_or_default()
+                                    ))));
+
+                                    ping_interval
+                                } else {
+                                    throttle - elapsed
+                                }
+                            } else {
+                                let elapsed = last_ping.elapsed();
+                                if elapsed >= ping_interval {
+                                    last_ping = Instant::now();
+                                    yield Ok(Frame::data(ping_payload.clone()));
+                                    ping_interval
+                                } else {
+                                    ping_interval - elapsed
+                                }
+                            };
+                        }
+                    },
+                ))))
             }
             ("trace", id, &Method::GET) => {
                 // Validate the access token
@@ -474,73 +471,69 @@ impl TelemetryApi for Server {
                     }
                 }
 
-                Ok(HttpResponse {
-                    status: StatusCode::OK,
-                    content_type: "text/event-stream".into(),
-                    content_disposition: "".into(),
-                    cache_control: "no-store".into(),
-                    body: HttpResponseBody::Stream(BoxBody::new(StreamBody::new(
-                        async_stream::stream! {
+                Ok(HttpResponse::new(StatusCode::OK)
+                .with_content_type("text/event-stream")
+                .with_cache_control("no-store")
+                .with_stream_body(BoxBody::new(StreamBody::new(
+                    async_stream::stream! {
+                        loop {
+                            let mut metrics = String::with_capacity(512);
+                            metrics.push_str("event: metrics\ndata: [");
+                            let mut is_first = true;
 
-                            loop {
-                                let mut metrics = String::with_capacity(512);
-                                metrics.push_str("event: metrics\ndata: [");
-                                let mut is_first = true;
-
-                                for counter in Collector::collect_counters(true) {
-                                    if event_types.is_empty() || event_types.contains(&counter.id()) {
-                                        if !is_first {
-                                            metrics.push(',');
-                                        } else {
-                                            is_first = false;
-                                        }
-                                        let _ = write!(
-                                            &mut metrics,
-                                            "{{\"id\":\"{}\",\"type\":\"counter\",\"value\":{}}}",
-                                            counter.id().name(),
-                                            counter.value()
-                                        );
+                            for counter in Collector::collect_counters(true) {
+                                if event_types.is_empty() || event_types.contains(&counter.id()) {
+                                    if !is_first {
+                                        metrics.push(',');
+                                    } else {
+                                        is_first = false;
                                     }
+                                    let _ = write!(
+                                        &mut metrics,
+                                        "{{\"id\":\"{}\",\"type\":\"counter\",\"value\":{}}}",
+                                        counter.id().name(),
+                                        counter.value()
+                                    );
                                 }
-                                for gauge in Collector::collect_gauges(true) {
-                                    if metric_types.is_empty() || metric_types.contains(&gauge.id()) {
-                                        if !is_first {
-                                            metrics.push(',');
-                                        } else {
-                                            is_first = false;
-                                        }
-                                        let _ = write!(
-                                            &mut metrics,
-                                            "{{\"id\":\"{}\",\"type\":\"gauge\",\"value\":{}}}",
-                                            gauge.id().name(),
-                                            gauge.get()
-                                        );
-                                    }
-                                }
-                                for histogram in Collector::collect_histograms(true) {
-                                    if metric_types.is_empty() || metric_types.contains(&histogram.id()) {
-                                        if !is_first {
-                                            metrics.push(',');
-                                        } else {
-                                            is_first = false;
-                                        }
-                                        let _ = write!(
-                                            &mut metrics,
-                                            "{{\"id\":\"{}\",\"type\":\"histogram\",\"count\":{},\"sum\":{}}}",
-                                            histogram.id().name(),
-                                            histogram.count(),
-                                            histogram.sum()
-                                        );
-                                    }
-                                }
-                                metrics.push_str("]\n\n");
-
-                                yield Ok(Frame::data(Bytes::from(metrics)));
-                                tokio::time::sleep(interval).await;
                             }
-                        },
-                    ))),
-                })
+                            for gauge in Collector::collect_gauges(true) {
+                                if metric_types.is_empty() || metric_types.contains(&gauge.id()) {
+                                    if !is_first {
+                                        metrics.push(',');
+                                    } else {
+                                        is_first = false;
+                                    }
+                                    let _ = write!(
+                                        &mut metrics,
+                                        "{{\"id\":\"{}\",\"type\":\"gauge\",\"value\":{}}}",
+                                        gauge.id().name(),
+                                        gauge.get()
+                                    );
+                                }
+                            }
+                            for histogram in Collector::collect_histograms(true) {
+                                if metric_types.is_empty() || metric_types.contains(&histogram.id()) {
+                                    if !is_first {
+                                        metrics.push(',');
+                                    } else {
+                                        is_first = false;
+                                    }
+                                    let _ = write!(
+                                        &mut metrics,
+                                        "{{\"id\":\"{}\",\"type\":\"histogram\",\"count\":{},\"sum\":{}}}",
+                                        histogram.id().name(),
+                                        histogram.count(),
+                                        histogram.sum()
+                                    );
+                                }
+                            }
+                            metrics.push_str("]\n\n");
+
+                            yield Ok(Frame::data(Bytes::from(metrics)));
+                            tokio::time::sleep(interval).await;
+                        }
+                    },
+                ))))
             }
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }

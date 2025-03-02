@@ -89,20 +89,15 @@ impl TroubleshootApi for Server {
                     timeout,
                 );
 
-                Ok(HttpResponse {
-                    status: StatusCode::OK,
-                    content_type: "text/event-stream".into(),
-                    content_disposition: "".into(),
-                    cache_control: "no-store".into(),
-                    body: HttpResponseBody::Stream(BoxBody::new(StreamBody::new(
-                        async_stream::stream! {
-                            while let Some(stage) = rx.recv().await {
-                                yield Ok(stage.to_frame());
-                            }
-                            yield Ok(DeliveryStage::Completed.to_frame());
-                        },
-                    ))),
-                })
+                Ok(HttpResponse::new(StatusCode::OK)
+                    .with_content_type("text/event-stream")
+                    .with_cache_control("no-store")
+                    .with_stream_body(BoxBody::new(StreamBody::new(async_stream::stream! {
+                        while let Some(stage) = rx.recv().await {
+                            yield Ok(stage.to_frame());
+                        }
+                        yield Ok(DeliveryStage::Completed.to_frame());
+                    }))))
             }
             ("dmarc", None, &Method::POST) => {
                 let request = serde_json::from_slice::<DmarcTroubleshootRequest>(

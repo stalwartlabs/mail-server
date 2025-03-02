@@ -42,11 +42,9 @@ impl ToJmapHttpResponse for Session {
 
 impl ToJmapHttpResponse for RequestError<'_> {
     fn into_http_response(self) -> HttpResponse {
-        HttpResponse::new_text(
-            StatusCode::from_u16(self.status).unwrap_or(StatusCode::BAD_REQUEST),
-            "application/problem+json",
-            serde_json::to_string(&self).unwrap_or_default(),
-        )
+        HttpResponse::new(StatusCode::from_u16(self.status).unwrap_or(StatusCode::BAD_REQUEST))
+            .with_content_type("application/problem+json")
+            .with_text_body(serde_json::to_string(&self).unwrap_or_default())
     }
 }
 

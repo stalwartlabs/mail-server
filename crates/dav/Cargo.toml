@@ -5,6 +5,12 @@ edition = "2024"
 resolver = "2"
 
 [dependencies]
+dav-proto = { path =  "/Users/me/code/dav-proto" }
+common = { path = "../common" }
+groupware = { path = "../groupware" }
+http_proto = { path = "../http-proto" }
+hashify = { version = "0.2" }
+hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 
 [dev-dependencies]
 

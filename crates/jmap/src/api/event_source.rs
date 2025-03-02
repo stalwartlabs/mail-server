@@ -105,12 +105,10 @@ impl EventSourceHandler for Server {
             .subscribe_state_manager(access_token.primary_id(), types)
             .await?;
 
-        Ok(HttpResponse {
-            status: StatusCode::OK,
-            content_type: "text/event-stream".into(),
-            content_disposition: "".into(),
-            cache_control: "no-store".into(),
-            body: HttpResponseBody::Stream(BoxBody::new(StreamBody::new(async_stream::stream! {
+        Ok(HttpResponse::new(StatusCode::OK)
+            .with_content_type("text/event-stream")
+            .with_cache_control("no-store")
+            .with_stream_body(BoxBody::new(StreamBody::new(async_stream::stream! {
                 let mut last_message = Instant::now() - throttle;
                 let mut timeout =
                     ping.as_ref().map(|p| p.interval).unwrap_or(LONG_1D_SLUMBER);
@@ -162,7 +160,6 @@ impl EventSourceHandler for Server {
                         LONG_1D_SLUMBER
                     };
                 }
-            }))),
-        })
+            }))))
     }
 }

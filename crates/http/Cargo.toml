@@ -12,6 +12,7 @@ trc = { path = "../trc" }
 email = { path = "../email" }
 smtp = { path = "../smtp" }
 jmap = { path = "../jmap" }
+dav = { path = "../dav" }
 spam-filter = { path = "../spam-filter" }
 http_proto = { path = "../http-proto" }
 jmap_proto = { path = "../jmap-proto" }
