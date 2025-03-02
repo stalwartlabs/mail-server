@@ -1669,6 +1669,25 @@ checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
 [[package]]
 name = "dav"
 version = "0.11.5"
+dependencies = [
+ "common",
+ "dav-proto",
+ "groupware",
+ "hashify",
+ "http_proto",
+ "hyper 1.6.0",
+]
+
+[[package]]
+name = "dav-proto"
+version = "0.1.0"
+dependencies = [
+ "calcard",
+ "hashify",
+ "hyper 1.6.0",
+ "mail-parser",
+ "quick-xml 0.37.2",
+]
 
 [[package]]
 name = "dbl"
@@ -2988,6 +3007,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "common",
+ "dav",
  "directory",
  "email",
  "form-data",

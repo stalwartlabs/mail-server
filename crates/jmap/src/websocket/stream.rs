@@ -97,7 +97,7 @@ impl WebSocketHandler for Server {
                                     ) {
                                         Ok(WebSocketMessage::Request(request)) => {
                                             let response = self
-                                                .handle_request(
+                                                .handle_jmap_request(
                                                     request.request,
                                                     access_token.clone(),
                                                     &session,

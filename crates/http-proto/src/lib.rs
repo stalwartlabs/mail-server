@@ -10,7 +10,7 @@ pub mod response;
 
 pub use form_urlencoded;
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
+use std::{net::IpAddr, sync::Arc};
 
 use common::listener::ServerInstance;
 use hyper::StatusCode;
@@ -37,11 +37,9 @@ pub enum HttpResponseBody {
 }
 
 pub struct HttpResponse {
-    pub status: StatusCode,
-    pub content_type: Cow<'static, str>,
-    pub content_disposition: Cow<'static, str>,
-    pub cache_control: Cow<'static, str>,
-    pub body: HttpResponseBody,
+    status: StatusCode,
+    builder: hyper::http::response::Builder,
+    body: HttpResponseBody,
 }
 
 pub struct HttpContext<'x> {

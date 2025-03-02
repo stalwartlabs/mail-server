@@ -43,7 +43,7 @@ use crate::{
 use std::future::Future;
 
 pub trait RequestHandler: Sync + Send {
-    fn handle_request(
+    fn handle_jmap_request(
         &self,
         request: Request,
         access_token: Arc<AccessToken>,
@@ -61,7 +61,7 @@ pub trait RequestHandler: Sync + Send {
 }
 
 impl RequestHandler for Server {
-    async fn handle_request(
+    async fn handle_jmap_request(
         &self,
         request: Request,
         access_token: Arc<AccessToken>,
