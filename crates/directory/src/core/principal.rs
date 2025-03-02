@@ -7,15 +7,15 @@
 use std::{collections::hash_map::Entry, fmt, str::FromStr};
 
 use serde::{
+    Deserializer, Serializer,
     de::{self, IgnoredAny, Visitor},
     ser::SerializeMap,
-    Deserializer, Serializer,
 };
 use store::U64_LEN;
 
 use crate::{
+    Permission, Principal, ROLE_ADMIN, Type,
     backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
-    Permission, Principal, Type, ROLE_ADMIN,
 };
 
 impl Principal {
@@ -369,7 +369,10 @@ impl Principal {
 
     pub fn update_external(&mut self, mut external: Principal) -> Vec<PrincipalUpdate> {
         let mut updates = Vec::new();
-        if let Some(name) = external.take_str(PrincipalField::Description) {
+        if let Some(name) = external
+            .take_str(PrincipalField::Description)
+            .filter(|s| !s.is_empty())
+        {
             if self.get_str(PrincipalField::Description) != Some(name.as_str()) {
                 updates.push(PrincipalUpdate::set(
                     PrincipalField::Description,

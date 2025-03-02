@@ -6,11 +6,11 @@
 
 use crate::{Error, Event, EventDetails, Key, Value};
 use ahash::AHashSet;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use mail_parser::DateTime;
 use serde::{
-    ser::{SerializeMap, SerializeSeq},
     Serialize, Serializer,
+    ser::{SerializeMap, SerializeSeq},
 };
 
 struct Keys<'x> {
@@ -135,7 +135,7 @@ impl Serialize for JsonEventSerializer<Keys<'_>> {
         let keys_len = self.inner.keys.len() + self.inner.span_keys.len();
         let mut seen_keys = AHashSet::with_capacity(keys_len);
         let mut keys = serializer.serialize_map(Some(keys_len))?;
-        for (key, value) in self.inner.span_keys.iter().chain(self.inner.keys.iter()) {
+        for (key, value) in self.inner.keys.iter().chain(self.inner.span_keys.iter()) {
             if !matches!(value, Value::None)
                 && (self.with_spans || !matches!(key, Key::SpanId))
                 && seen_keys.insert(*key)
