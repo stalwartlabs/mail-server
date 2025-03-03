@@ -54,7 +54,7 @@ pub fn sasl_decode_challenge_xoauth(challenge: &[u8]) -> Option<Credentials<Stri
     }
     match (String::from_utf8(b_username), String::from_utf8(b_secret)) {
         (Ok(s_username), Ok(s_secret)) if !s_username.is_empty() => {
-            Some(Credentials::XOauth2{ username: s_username, secret: extract_xoauth_bearer(s_secret.as_bytes()).expect("cannot extract bearer token").into()})
+            Some(Credentials::XOauth2{ username: s_username, secret: extract_xoauth_bearer(s_secret.as_bytes())?.into()})
         }
         _ => None,
     }
