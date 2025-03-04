@@ -109,6 +109,10 @@ impl Resolvers {
             "quad9-tls" => (ResolverConfig::quad9_tls(), ResolverOpts::default()),
             "google" => (ResolverConfig::google(), ResolverOpts::default()),
             "system" => read_system_conf()
+                .map(|(conf, mut opts)| {
+                    opts.edns0 = true;
+                    (conf, opts)
+                })
                 .map_err(|err| {
                     config.new_build_error(
                         "resolver.type",
