@@ -77,7 +77,10 @@ impl EmailSubmissionSet for Server {
         let mut changes = ChangeLogBuilder::new();
         let mut success_email_ids = HashMap::new();
         for (id, object) in request.unwrap_create() {
-            match Box::pin(self.send_message(account_id, &response, instance, object)).await? {
+            match self
+                .send_message(account_id, &response, instance, object)
+                .await?
+            {
                 Ok(submission) => {
                     // Add id mapping
                     success_email_ids.insert(
@@ -597,7 +600,7 @@ impl EmailSubmissionSet for Server {
             Session::<NullIo>::local(self.clone(), instance.clone(), SessionData::default());
 
         // MAIL FROM
-        let _ = session.handle_mail_from(mail_from).await;
+        let _ = Box::pin(session.handle_mail_from(mail_from)).await;
         if let Some(error) = session.has_failed() {
             return Ok(Err(SetError::new(SetErrorType::ForbiddenMailFrom)
                 .with_description(format!(
@@ -611,7 +614,7 @@ impl EmailSubmissionSet for Server {
         let mut has_success = false;
         for rcpt in rcpt_to {
             let addr = rcpt.address.clone();
-            let _ = session.handle_rcpt_to(rcpt).await;
+            let _ = Box::pin(session.handle_rcpt_to(rcpt)).await;
             let response = session.has_failed();
             if response.is_none() {
                 has_success = true;
@@ -622,7 +625,7 @@ impl EmailSubmissionSet for Server {
         // DATA
         if has_success {
             session.data.message = message;
-            let response = session.queue_message().await;
+            let response = Box::pin(session.queue_message()).await;
             if let State::Accepted(queue_id) = session.state {
                 submission.queue_id = Some(queue_id);
             } else {

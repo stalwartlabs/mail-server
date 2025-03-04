@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken};
+use common::{Server, auth::AccessToken, storage::folder::TopologyBuilder};
 use email::mailbox::manage::MailboxFnc;
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
@@ -16,7 +16,6 @@ use store::{
     ahash::{AHashMap, AHashSet},
     query::{self, sort::Pagination},
     roaring::RoaringBitmap,
-    write::Archive,
 };
 
 use crate::{JmapMethods, UpdateResults};
@@ -115,29 +114,18 @@ impl MailboxQuery for Server {
         let (mut response, mut paginate) = self.build_query_response(&result_set, &request).await?;
 
         // Build mailbox tree
-        let mut hierarchy = AHashMap::default();
-        let mut tree = AHashMap::default();
+        let mut topology;
         if (filter_as_tree || sort_as_tree)
             && (paginate.is_some()
                 || (response.total.is_some_and(|total| total > 0) && filter_as_tree))
         {
-            for (document_id, value) in self
-                .get_properties::<Archive, _, _>(
-                    account_id,
-                    Collection::Mailbox,
-                    &mailbox_ids,
-                    Property::Value,
-                )
-                .await?
-            {
-                let todo = "use index";
-                let mailbox = value.unarchive::<email::mailbox::Mailbox>()?;
-                let parent_id = u32::from(mailbox.parent_id);
-                hierarchy.insert(document_id + 1, parent_id);
-                tree.entry(parent_id)
-                    .or_insert_with(AHashSet::default)
-                    .insert(document_id + 1);
-            }
+            topology = FolderTopology::with_capacity(mailbox_ids.len() as usize);
+            self.fetch_folder_topology::<FolderTopology>(
+                account_id,
+                Collection::Mailbox,
+                &mut topology,
+            )
+            .await?;
 
             if filter_as_tree {
                 let mut filtered_ids = RoaringBitmap::new();
@@ -147,7 +135,7 @@ impl MailboxQuery for Server {
                     let mut jmap_id = document_id + 1;
 
                     for _ in 0..self.core.jmap.mailbox_max_depth {
-                        if let Some(&parent_id) = hierarchy.get(&jmap_id) {
+                        if let Some(&parent_id) = topology.hierarchy.get(&jmap_id) {
                             if parent_id == 0 {
                                 keep = true;
                                 break;
@@ -178,6 +166,8 @@ impl MailboxQuery for Server {
                     result_set.results = filtered_ids;
                 }
             }
+        } else {
+            topology = FolderTopology::with_capacity(0);
         }
 
         if let Some(mut paginate) = paginate {
@@ -218,13 +208,14 @@ impl MailboxQuery for Server {
                 let mut jmap_id = 0;
 
                 'outer: for _ in 0..(response.ids.len() * 10 * self.core.jmap.mailbox_max_depth) {
-                    let (mut children, mut it) = if let Some(children) = tree.remove(&jmap_id) {
-                        (children, response.ids.iter())
-                    } else if let Some(prev) = stack.pop() {
-                        prev
-                    } else {
-                        break;
-                    };
+                    let (mut children, mut it) =
+                        if let Some(children) = topology.tree.remove(&jmap_id) {
+                            (children, response.ids.iter())
+                        } else if let Some(prev) = stack.pop() {
+                            prev
+                        } else {
+                            break;
+                        };
 
                     while let Some(&id) = it.next() {
                         let next_id = id.document_id() + 1;
@@ -254,5 +245,29 @@ impl MailboxQuery for Server {
         }
 
         Ok(response)
+    }
+}
+
+struct FolderTopology {
+    hierarchy: AHashMap<u32, u32>,
+    tree: AHashMap<u32, AHashSet<u32>>,
+}
+
+impl FolderTopology {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            hierarchy: AHashMap::with_capacity(capacity),
+            tree: AHashMap::with_capacity(capacity),
+        }
+    }
+}
+
+impl TopologyBuilder for FolderTopology {
+    fn insert(&mut self, document_id: u32, parent_id: u32) {
+        self.hierarchy.insert(document_id + 1, parent_id);
+        self.tree
+            .entry(parent_id)
+            .or_default()
+            .insert(document_id + 1);
     }
 }

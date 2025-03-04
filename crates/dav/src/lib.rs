@@ -4,16 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod calendar;
+pub mod card;
+pub mod file;
+pub mod principal;
 pub mod request;
 
+use dav_proto::schema::request::Report;
 use http_proto::HttpResponse;
 use hyper::{Method, StatusCode};
+
+pub(crate) type Result<T> = std::result::Result<T, DavError>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DavResource {
     Card,
     Cal,
     File,
+    Principal,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -22,6 +30,7 @@ pub enum DavMethod {
     PUT,
     POST,
     DELETE,
+    HEAD,
     PATCH,
     PROPFIND,
     PROPPATCH,
@@ -32,6 +41,13 @@ pub enum DavMethod {
     LOCK,
     UNLOCK,
     OPTIONS,
+    ACL,
+}
+
+pub(crate) enum DavError {
+    Parse(dav_proto::parser::Error),
+    Internal(trc::Error),
+    UnsupportedReport(Report),
 }
 
 impl DavResource {
@@ -39,7 +55,8 @@ impl DavResource {
         hashify::tiny_map!(service.as_bytes(),
             "card" => DavResource::Card,
             "cal" => DavResource::Cal,
-            "file" => DavResource::File
+            "file" => DavResource::File,
+            "pri" => DavResource::Principal,
         )
     }
 
@@ -59,6 +76,7 @@ impl DavMethod {
             Method::OPTIONS => Some(DavMethod::OPTIONS),
             Method::POST => Some(DavMethod::POST),
             Method::PATCH => Some(DavMethod::PATCH),
+            Method::HEAD => Some(DavMethod::HEAD),
             _ => {
                 hashify::tiny_map!(method.as_str().as_bytes(),
                     "PROPFIND" => DavMethod::PROPFIND,
@@ -68,7 +86,8 @@ impl DavMethod {
                     "COPY" => DavMethod::COPY,
                     "MOVE" => DavMethod::MOVE,
                     "LOCK" => DavMethod::LOCK,
-                    "UNLOCK" => DavMethod::UNLOCK
+                    "UNLOCK" => DavMethod::UNLOCK,
+                    "ACL" => DavMethod::ACL
                 )
             }
         }
@@ -84,9 +103,8 @@ impl DavMethod {
                 | DavMethod::PROPPATCH
                 | DavMethod::PROPFIND
                 | DavMethod::REPORT
-                | DavMethod::MKCOL
-                | DavMethod::COPY
-                | DavMethod::MOVE
+                | DavMethod::LOCK
+                | DavMethod::ACL
         )
     }
 }

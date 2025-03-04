@@ -11,6 +11,7 @@ jmap_proto = { path =  "../jmap-proto" }
 directory = { path =  "../directory" }
 calcard = { path =  "/Users/me/code/calcard" }
 hashify = "0.2"
+rkyv = { version = "0.8.10", features = ["little_endian"] }
 
 [features]
 test_mode = []

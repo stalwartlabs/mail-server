@@ -48,13 +48,17 @@ impl HttpResponse {
     }
 
     pub fn with_text_body(mut self, body: impl Into<String>) -> Self {
-        self.body = HttpResponseBody::Text(body.into());
-        self
+        let body = body.into();
+        let body_len = body.len();
+        self.body = HttpResponseBody::Text(body);
+        self.with_header(header::CONTENT_LENGTH, body_len)
     }
 
     pub fn with_binary_body(mut self, body: impl Into<Vec<u8>>) -> Self {
-        self.body = HttpResponseBody::Binary(body.into());
-        self
+        let body = body.into();
+        let body_len = body.len();
+        self.body = HttpResponseBody::Binary(body);
+        self.with_header(header::CONTENT_LENGTH, body_len)
     }
 
     pub fn with_stream_body(

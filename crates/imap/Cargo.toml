@@ -24,6 +24,7 @@ parking_lot = "0.12"
 ahash = { version = "0.8" }
 md5 = "0.7.0"
 rand = "0.9.0"
+indexmap = "2.7.1"
 
 
 [features]

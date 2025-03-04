@@ -2,12 +2,12 @@ require ["fileinto", "mailbox", "mailboxid", "special-use", "ihave", "imap4flags
 
 # SpecialUse extension tests
 if not specialuse_exists ["inbox", "trash"] {
-    error "Special-use mailboxes INBOX or TRASH do not exist.";
+    error "Special-use mailboxes INBOX or TRASH do not exist (lowercase).";
 }
 
 if not anyof(specialuse_exists "Inbox" "inbox",
              specialuse_exists "Deleted Items" "trash") {
-    error "Special-use mailboxes INBOX or TRASH do not exist.";
+    error "Special-use mailboxes INBOX or TRASH do not exist (mixed-case).";
 }
 
 if specialuse_exists "dingleberry" {

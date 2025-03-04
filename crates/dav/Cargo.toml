@@ -8,7 +8,9 @@ resolver = "2"
 dav-proto = { path =  "/Users/me/code/dav-proto" }
 common = { path = "../common" }
 groupware = { path = "../groupware" }
+directory = { path = "../directory" }
 http_proto = { path = "../http-proto" }
+trc = { path = "../trc" }
 hashify = { version = "0.2" }
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 

@@ -68,6 +68,7 @@ p384 = { version = "0.13", features = ["ecdh"] }
 num_cpus = "1.13.1"
 hashify = "0.2"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
+indexmap = "2.7.1"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

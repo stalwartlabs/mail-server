@@ -10,10 +10,10 @@ use common::{Server, config::jmap::settings::SpecialUse, storage::index::ObjectI
 use jmap_proto::types::{collection::Collection, keyword::Keyword, property::Property};
 use store::{
     SerializeInfallible,
-    ahash::AHashSet,
+    ahash::{AHashMap, AHashSet},
     query::Filter,
     roaring::RoaringBitmap,
-    write::{Archive, BatchBuilder},
+    write::BatchBuilder,
 };
 use trc::AddContext;
 
@@ -45,13 +45,6 @@ pub trait MailboxFnc: Sync + Send {
         document_id: u32,
         message_ids: &Option<RoaringBitmap>,
     ) -> impl Future<Output = trc::Result<Option<RoaringBitmap>>> + Send;
-
-    fn mailbox_expand_path<'x>(
-        &self,
-        account_id: u32,
-        path: &'x str,
-        exact_match: bool,
-    ) -> impl Future<Output = trc::Result<Option<ExpandPath<'x>>>> + Send;
 
     fn mailbox_get_by_name(
         &self,
@@ -128,35 +121,53 @@ impl MailboxFnc for Server {
         account_id: u32,
         path: &str,
     ) -> trc::Result<Option<(u32, Option<u64>)>> {
-        let expanded_path =
-            if let Some(expand_path) = self.mailbox_expand_path(account_id, path, false).await? {
-                expand_path
-            } else {
-                return Ok(None);
-            };
+        let folders = self
+            .fetch_folders::<Mailbox>(account_id, Collection::Mailbox)
+            .await
+            .caused_by(trc::location!())?
+            .format(|mailbox_id, name| {
+                if mailbox_id == INBOX_ID {
+                    Some("inbox".to_string())
+                } else {
+                    Some(name.to_lowercase())
+                }
+            })
+            .into_iterator()
+            .map(|(document_id, name)| (name, document_id))
+            .collect::<AHashMap<String, u32>>();
 
         let mut next_parent_id = 0;
-        let mut path = expanded_path.path.into_iter().enumerate().peekable();
-        'outer: while let Some((pos, name)) = path.peek() {
-            let is_inbox = *pos == 0 && name.eq_ignore_ascii_case("inbox");
+        let mut create_paths = Vec::with_capacity(2);
 
-            for (part, parent_id, document_id) in &expanded_path.found_names {
-                if (part.eq(name) || (is_inbox && part.eq_ignore_ascii_case("inbox")))
-                    && *parent_id == next_parent_id
-                {
-                    next_parent_id = *document_id;
-                    path.next();
-                    continue 'outer;
+        let mut path = path.split('/').map(|v| v.trim());
+        let mut found_path = String::with_capacity(16);
+        {
+            while let Some(name) = path.next() {
+                if !found_path.is_empty() {
+                    found_path.push('/');
+                }
+
+                for ch in name.chars() {
+                    for ch in ch.to_lowercase() {
+                        found_path.push(ch);
+                    }
+                }
+
+                if let Some(document_id) = folders.get(&found_path) {
+                    next_parent_id = *document_id + 1;
+                } else {
+                    create_paths.push(name.to_string());
+                    create_paths.extend(path.map(|v| v.to_string()));
+                    break;
                 }
             }
-            break;
         }
 
         // Create missing folders
-        if path.peek().is_some() {
+        if !create_paths.is_empty() {
             let mut changes = self.begin_changes(account_id)?;
 
-            for (_, name) in path {
+            for name in create_paths {
                 if name.len() > self.core.jmap.mailbox_name_max_len {
                     return Ok(None);
                 }
@@ -257,97 +268,16 @@ impl MailboxFnc for Server {
         }
     }
 
-    async fn mailbox_expand_path<'x>(
-        &self,
-        account_id: u32,
-        path: &'x str,
-        exact_match: bool,
-    ) -> trc::Result<Option<ExpandPath<'x>>> {
-        let path = path
-            .split('/')
-            .filter_map(|p| {
-                let p = p.trim();
-                if !p.is_empty() { p.into() } else { None }
-            })
-            .collect::<Vec<_>>();
-        if path.is_empty() || path.len() > self.core.jmap.mailbox_max_depth {
-            return Ok(None);
-        }
-
-        let mut filter = Vec::with_capacity(path.len() + 2);
-        let mut has_inbox = false;
-        filter.push(Filter::Or);
-        for (pos, item) in path.iter().enumerate() {
-            if pos == 0 && item.eq_ignore_ascii_case("inbox") {
-                has_inbox = true;
-            } else {
-                filter.push(Filter::eq(Property::Name, item.to_lowercase().into_bytes()));
-            }
-        }
-        filter.push(Filter::End);
-
-        let mut document_ids = if filter.len() > 2 {
-            self.store()
-                .filter(account_id, Collection::Mailbox, filter)
-                .await
-                .caused_by(trc::location!())?
-                .results
-        } else {
-            RoaringBitmap::new()
-        };
-        if has_inbox {
-            document_ids.insert(INBOX_ID);
-        }
-        if exact_match && (document_ids.len() as usize) < path.len() {
-            return Ok(None);
-        }
-
-        let mut found_names = Vec::new();
-        for document_id in document_ids {
-            if let Some(obj) = self
-                .get_property::<Archive>(
-                    account_id,
-                    Collection::Mailbox,
-                    document_id,
-                    Property::Value,
-                )
-                .await?
-            {
-                let obj = obj.unarchive::<Mailbox>()?;
-                found_names.push((
-                    obj.name.to_string(),
-                    u32::from(obj.parent_id),
-                    document_id + 1,
-                ));
-            } else {
-                return Ok(None);
-            }
-        }
-
-        Ok(Some(ExpandPath { path, found_names }))
-    }
-
     async fn mailbox_get_by_name(&self, account_id: u32, path: &str) -> trc::Result<Option<u32>> {
-        Ok(self
-            .mailbox_expand_path(account_id, path, true)
-            .await?
-            .and_then(|ep| {
-                let mut next_parent_id = 0;
-                'outer: for (pos, name) in ep.path.iter().enumerate() {
-                    let is_inbox = pos == 0 && name.eq_ignore_ascii_case("inbox");
-
-                    for (part, parent_id, document_id) in &ep.found_names {
-                        if (part.eq(name) || (is_inbox && part.eq_ignore_ascii_case("inbox")))
-                            && *parent_id == next_parent_id
-                        {
-                            next_parent_id = *document_id;
-                            continue 'outer;
-                        }
-                    }
-                    return None;
-                }
-                Some(next_parent_id - 1)
-            }))
+        self.fetch_folders::<Mailbox>(account_id, Collection::Mailbox)
+            .await
+            .map(|folders| {
+                folders
+                    .format(|mailbox_id, _| (mailbox_id == INBOX_ID).then(|| "INBOX".to_string()))
+                    .into_iterator()
+                    .find(|(_, folder_name)| folder_name.eq_ignore_ascii_case(path))
+                    .map(|(document_id, _)| document_id)
+            })
     }
 
     async fn mailbox_get_by_role(
