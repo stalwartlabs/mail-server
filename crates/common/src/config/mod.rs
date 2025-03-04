@@ -7,21 +7,22 @@
 use std::{str::FromStr, sync::Arc};
 
 use arc_swap::ArcSwap;
-use base64::{engine::general_purpose, Engine};
+use base64::{Engine, engine::general_purpose};
+use dav::DavConfig;
 use directory::{Directories, Directory};
 use hyper::{
-    header::{HeaderName, HeaderValue, AUTHORIZATION},
     HeaderMap,
+    header::{AUTHORIZATION, HeaderName, HeaderValue},
 };
 use ring::signature::{EcdsaKeyPair, RsaKeyPair};
 use spamfilter::SpamFilterConfig;
 use store::{BlobBackend, BlobStore, FtsStore, InMemoryStore, Store, Stores};
 use telemetry::Metrics;
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::{
-    auth::oauth::config::OAuthConfig, expr::*, listener::tls::AcmeProviders,
-    manager::config::ConfigManager, Core, Network, Security,
+    Core, Network, Security, auth::oauth::config::OAuthConfig, expr::*,
+    listener::tls::AcmeProviders, manager::config::ConfigManager,
 };
 
 use self::{
@@ -29,6 +30,7 @@ use self::{
     storage::Storage,
 };
 
+pub mod dav;
 pub mod imap;
 pub mod inner;
 pub mod jmap;
@@ -186,6 +188,7 @@ impl Core {
             acme: AcmeProviders::parse(config),
             metrics: Metrics::parse(config),
             spam: SpamFilterConfig::parse(config).await,
+            dav: DavConfig::parse(config),
             storage: Storage {
                 data,
                 blob,

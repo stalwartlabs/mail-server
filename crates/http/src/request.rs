@@ -214,23 +214,8 @@ impl ParseHttp for Server {
                         // Authenticate request
                         let (_in_flight, access_token) =
                             self.authenticate_headers(&req, &session, false).await?;
-                        let body = if method.has_body() {
-                            fetch_body(
-                                &mut req,
-                                if !access_token.has_permission(Permission::UnlimitedUploads) {
-                                    self.core.jmap.upload_max_size
-                                } else {
-                                    0
-                                },
-                                session.session_id,
-                            )
-                            .await
-                            .ok_or_else(|| trc::LimitEvent::SizeRequest.into_err())?
-                        } else {
-                            Vec::new()
-                        };
 
-                        self.handle_dav_request(req, access_token, &session, resource, method, body)
+                        self.handle_dav_request(req, access_token, &session, resource, method)
                             .await
                     }
                     (_, None) => HttpResponse::new(StatusCode::METHOD_NOT_ALLOWED),

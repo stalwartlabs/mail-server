@@ -4,11 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{
-    collections::BTreeMap,
-    sync::{Arc, atomic::Ordering},
-};
-
 use ahash::AHashMap;
 use common::{
     AccountId, Mailbox,
@@ -20,13 +15,16 @@ use common::{
 use directory::{QueryBy, backend::internal::PrincipalField};
 use email::mailbox::{INBOX_ID, manage::MailboxFnc};
 use imap_proto::protocol::list::Attribute;
+use indexmap::IndexMap;
 use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, property::Property};
 use parking_lot::Mutex;
+use std::sync::{Arc, atomic::Ordering};
 use store::{
     query::log::{Change, Query},
     write::Archive,
 };
 use trc::AddContext;
+use utils::topological::TopologicalSort;
 
 use super::{Account, MailboxId, MailboxSync, Session, SessionData};
 
@@ -157,8 +155,10 @@ impl<T: SessionStream> SessionData<T> {
             is_subscribed: bool,
         }
 
-        let mut mailboxes = Vec::with_capacity(10);
+        let mut mailboxes = AHashMap::with_capacity(10);
         let mut special_uses = AHashMap::new();
+        let mut mailbox_topology = TopologicalSort::with_capacity(10);
+
         for (mailbox_id, mailbox_) in self
             .server
             .get_properties::<Archive, _, _>(
@@ -179,35 +179,30 @@ impl<T: SessionStream> SessionData<T> {
                 special_uses.insert(role, mailbox_id);
             }
 
-            // Add mailbox id
-            mailboxes.push(MailboxData {
+            // Build mailbox data
+            let mailbox = MailboxData {
                 mailbox_id,
                 parent_id: u32::from(mailbox.parent_id),
                 role,
                 name: mailbox.name.to_string(),
                 is_subscribed: mailbox.is_subscribed(access_token.primary_id()),
-            });
+            };
+            mailbox_topology.insert(mailbox.parent_id, mailbox.mailbox_id + 1);
+
+            // Add mailbox id
+            mailboxes.insert(mailbox.mailbox_id, mailbox);
         }
 
-        // Build tree
-        let mut iter = mailboxes.iter();
-        let mut parent_id = 0;
-        let mut path = Vec::new();
-        let mut iter_stack = Vec::new();
+        // Build account
         let message_ids = self
             .server
             .get_document_ids(account_id, Collection::Email)
             .await
             .caused_by(trc::location!())?;
-
-        if let Some(mailbox_prefix) = &mailbox_prefix {
-            path.push(mailbox_prefix.to_string());
-        };
-
         let mut account = Account {
             account_id,
             prefix: mailbox_prefix,
-            mailbox_names: BTreeMap::new(),
+            mailbox_names: IndexMap::with_capacity(mailboxes.len()),
             mailbox_state: AHashMap::with_capacity(mailboxes.len()),
             state_mailbox,
             state_email,
@@ -224,99 +219,122 @@ impl<T: SessionStream> SessionData<T> {
                 * (std::mem::size_of::<email::mailbox::Mailbox>() + std::mem::size_of::<u32>())))
             as u64;
 
-        loop {
-            while let Some(mailbox) = iter.next() {
-                if mailbox.parent_id == parent_id {
-                    let mut mailbox_path = path.clone();
-                    if mailbox.mailbox_id != INBOX_ID || account.prefix.is_some() {
-                        mailbox_path.push(mailbox.name.clone());
-                    } else {
-                        mailbox_path.push("INBOX".to_string());
-                    }
-                    let has_children = mailboxes
-                        .iter()
-                        .any(|child| child.parent_id == mailbox.mailbox_id + 1);
-
-                    account.mailbox_state.insert(
-                        mailbox.mailbox_id,
-                        Mailbox {
-                            has_children,
-                            is_subscribed: mailbox.is_subscribed,
-                            special_use: match mailbox.role {
-                                SpecialUse::Trash => Some(Attribute::Trash),
-                                SpecialUse::Junk => Some(Attribute::Junk),
-                                SpecialUse::Drafts => Some(Attribute::Drafts),
-                                SpecialUse::Archive => Some(Attribute::Archive),
-                                SpecialUse::Sent => Some(Attribute::Sent),
-                                SpecialUse::Important => Some(Attribute::Important),
-                                _ => None,
-                            },
-                            total_messages: self
-                                .server
-                                .get_tag(
-                                    account_id,
-                                    Collection::Email,
-                                    Property::MailboxIds,
-                                    mailbox.mailbox_id,
-                                )
-                                .await
-                                .caused_by(trc::location!())?
-                                .map(|v| v.len())
-                                .unwrap_or(0)
-                                .into(),
-                            total_unseen: self
-                                .server
-                                .mailbox_unread_tags(account_id, mailbox.mailbox_id, &message_ids)
-                                .await
-                                .caused_by(trc::location!())?
-                                .map(|v| v.len())
-                                .unwrap_or(0)
-                                .into(),
-                            ..Default::default()
-                        },
-                    );
-
-                    let mut mailbox_name = mailbox_path.join("/");
-                    if mailbox_name.eq_ignore_ascii_case("inbox") && mailbox.mailbox_id != INBOX_ID
-                    {
-                        // If there is another mailbox called Inbox, rename it to avoid conflicts
-                        mailbox_name = format!("{mailbox_name} 2");
-                    }
-
-                    // Map special use folder aliases to their internal ids
-                    let effective_mailbox_id = self
+        // Build mailbox state
+        for mailbox in mailboxes.values() {
+            account.mailbox_state.insert(
+                mailbox.mailbox_id,
+                Mailbox {
+                    has_children: mailboxes
+                        .values()
+                        .any(|child| child.parent_id == mailbox.mailbox_id + 1),
+                    is_subscribed: mailbox.is_subscribed,
+                    special_use: match mailbox.role {
+                        SpecialUse::Trash => Some(Attribute::Trash),
+                        SpecialUse::Junk => Some(Attribute::Junk),
+                        SpecialUse::Drafts => Some(Attribute::Drafts),
+                        SpecialUse::Archive => Some(Attribute::Archive),
+                        SpecialUse::Sent => Some(Attribute::Sent),
+                        SpecialUse::Important => Some(Attribute::Important),
+                        _ => None,
+                    },
+                    total_messages: self
                         .server
-                        .core
-                        .jmap
-                        .default_folders
-                        .iter()
-                        .find(|f| {
-                            f.name == mailbox_name || f.aliases.iter().any(|a| a == &mailbox_name)
-                        })
-                        .and_then(|f| special_uses.get(&f.special_use))
-                        .copied()
-                        .unwrap_or(mailbox.mailbox_id);
+                        .get_tag(
+                            account_id,
+                            Collection::Email,
+                            Property::MailboxIds,
+                            mailbox.mailbox_id,
+                        )
+                        .await
+                        .caused_by(trc::location!())?
+                        .map(|v| v.len())
+                        .unwrap_or(0)
+                        .into(),
+                    total_unseen: self
+                        .server
+                        .mailbox_unread_tags(account_id, mailbox.mailbox_id, &message_ids)
+                        .await
+                        .caused_by(trc::location!())?
+                        .map(|v| v.len())
+                        .unwrap_or(0)
+                        .into(),
+                    ..Default::default()
+                },
+            );
+        }
 
-                    account
-                        .mailbox_names
-                        .insert(mailbox_name, effective_mailbox_id);
+        // Build mailbox tree
+        for mailbox_id in mailbox_topology.into_iterator() {
+            if mailbox_id == 0 {
+                continue;
+            }
+            let mailbox_id = mailbox_id - 1;
+            let (mailbox_name, parent_id) = mailboxes
+                .get(&mailbox_id)
+                .map(|m| {
+                    (
+                        m.name.as_str(),
+                        if m.parent_id == 0 {
+                            None
+                        } else {
+                            Some(m.parent_id - 1)
+                        },
+                    )
+                })
+                .unwrap();
 
-                    if has_children && iter_stack.len() < 100 {
-                        iter_stack.push((iter, parent_id, path));
-                        parent_id = mailbox.mailbox_id + 1;
-                        path = mailbox_path;
-                        iter = mailboxes.iter();
-                    }
+            // Obtain folder name
+            let (mailbox_name, did_rename) = if mailbox_id != INBOX_ID || account.prefix.is_some() {
+                // If there is another mailbox called Inbox, rename it to avoid conflicts
+                if parent_id.is_none() || !mailbox_name.eq_ignore_ascii_case("inbox") {
+                    (mailbox_name, false)
+                } else {
+                    ("INBOX 2", true)
                 }
-            }
-
-            if let Some((prev_iter, prev_parent_id, prev_path)) = iter_stack.pop() {
-                iter = prev_iter;
-                parent_id = prev_parent_id;
-                path = prev_path;
             } else {
-                break;
-            }
+                ("INBOX", true)
+            };
+
+            // Map special use folder aliases to their internal ids
+            let effective_mailbox_id = self
+                .server
+                .core
+                .jmap
+                .default_folders
+                .iter()
+                .find(|f| f.name == mailbox_name || f.aliases.iter().any(|a| a == mailbox_name))
+                .and_then(|f| special_uses.get(&f.special_use))
+                .copied()
+                .unwrap_or(mailbox_id);
+
+            // Update mailbox name
+            let full_name = if let Some(parent_id) = parent_id {
+                let full_name = format!(
+                    "{}/{}",
+                    mailboxes
+                        .get(&parent_id)
+                        .map(|m| m.name.as_str())
+                        .unwrap_or_default(),
+                    mailbox_name
+                );
+                mailboxes.get_mut(&mailbox_id).unwrap().name = full_name.clone();
+                full_name
+            } else if let Some(prefix) = &account.prefix {
+                let full_name = format!("{prefix}/{mailbox_name}");
+                mailboxes.get_mut(&mailbox_id).unwrap().name = full_name.clone();
+                full_name
+            } else if did_rename {
+                let full_name = mailbox_name.to_string();
+                mailboxes.get_mut(&mailbox_id).unwrap().name = full_name.clone();
+                full_name
+            } else {
+                mailbox_name.to_string()
+            };
+
+            // Insert mailbox
+            account
+                .mailbox_names
+                .insert(full_name, effective_mailbox_id);
         }
 
         // Update cache

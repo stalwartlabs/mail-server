@@ -1252,6 +1252,7 @@ dependencies = [
  "idna",
  "imagesize",
  "imap_proto",
+ "indexmap 2.7.1",
  "infer 0.16.0",
  "jmap_proto",
  "libc",
@@ -1672,10 +1673,12 @@ version = "0.11.5"
 dependencies = [
  "common",
  "dav-proto",
+ "directory",
  "groupware",
  "hashify",
  "http_proto",
  "hyper 1.6.0",
+ "trc",
 ]
 
 [[package]]
@@ -2733,6 +2736,7 @@ dependencies = [
  "directory",
  "hashify",
  "jmap_proto",
+ "rkyv 0.8.10",
  "tokio",
  "utils",
 ]
@@ -3440,6 +3444,7 @@ dependencies = [
  "directory",
  "email",
  "imap_proto",
+ "indexmap 2.7.1",
  "jmap_proto",
  "mail-parser",
  "mail-send",

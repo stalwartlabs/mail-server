@@ -241,7 +241,7 @@ impl<T: SessionStream> SessionData<T> {
                     }
                 }
                 new_mailbox_names.insert(params.full_path, mailbox_id);
-                account.mailbox_names = new_mailbox_names;
+                account.mailbox_names = new_mailbox_names.into_iter().collect();
                 break;
             }
         }

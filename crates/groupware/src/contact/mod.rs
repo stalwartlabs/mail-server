@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use calcard::vcard::VCard;
+use calcard::vcard::VCard;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
 
 pub struct AddressBook {
     pub name: String,
+    pub display_name: Option<String>,
     pub description: Option<String>,
     pub sort_order: u32,
     pub is_default: bool,
@@ -25,6 +26,7 @@ pub enum AddressBookRight {
 
 pub struct ContactCard {
     pub name: Option<String>,
+    pub display_name: Option<String>,
     pub addressbook_ids: Vec<u32>,
     pub card: VCard,
     pub created: u64,

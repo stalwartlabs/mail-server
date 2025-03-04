@@ -114,7 +114,7 @@ impl<T: SessionStream> SessionData<T> {
         // Update mailbox cache
         for account in self.mailboxes.lock().iter_mut() {
             if account.account_id == account_id {
-                account.mailbox_names.remove(&arguments.mailbox_name);
+                account.mailbox_names.shift_remove(&arguments.mailbox_name);
                 account.mailbox_state.remove(&mailbox_id);
                 break;
             }

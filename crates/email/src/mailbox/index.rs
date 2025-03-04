@@ -6,12 +6,15 @@
 
 use common::{
     config::jmap::settings::SpecialUse,
-    storage::index::{IndexValue, IndexableObject},
+    storage::{
+        folder::FolderHierarchy,
+        index::{IndexValue, IndexableObject},
+    },
 };
 use jmap_proto::types::property::Property;
 use store::write::{MaybeDynamicId, TagValue};
 
-use super::{ArchivedUidMailbox, Mailbox, UidMailbox};
+use super::{ArchivedMailbox, ArchivedUidMailbox, Mailbox, UidMailbox};
 
 impl IndexableObject for Mailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -43,6 +46,16 @@ impl IndexableObject for Mailbox {
             IndexValue::Acl { value: &self.acls },
         ]
         .into_iter()
+    }
+}
+
+impl FolderHierarchy for ArchivedMailbox {
+    fn name(&self) -> String {
+        self.name.to_string()
+    }
+
+    fn parent_id(&self) -> u32 {
+        u32::from(self.parent_id)
     }
 }
 

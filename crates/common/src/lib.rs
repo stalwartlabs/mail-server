@@ -5,7 +5,6 @@
  */
 
 use std::{
-    collections::BTreeMap,
     hash::{BuildHasher, Hasher},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{
@@ -19,6 +18,7 @@ use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use auth::{AccessToken, oauth::config::OAuthConfig, roles::RolePermissions};
 use config::{
+    dav::DavConfig,
     imap::ImapConfig,
     jmap::settings::JmapConfig,
     network::Network,
@@ -33,6 +33,7 @@ use config::{
 };
 
 use imap_proto::protocol::list::Attribute;
+use indexmap::IndexMap;
 use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 
@@ -191,7 +192,7 @@ pub struct MailboxId {
 pub struct Account {
     pub account_id: u32,
     pub prefix: Option<String>,
-    pub mailbox_names: BTreeMap<String, u32>,
+    pub mailbox_names: IndexMap<String, u32>,
     pub mailbox_state: AHashMap<u32, Mailbox>,
     pub state_email: Option<u64>,
     pub state_mailbox: Option<u64>,
@@ -252,6 +253,7 @@ pub struct Core {
     pub oauth: OAuthConfig,
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
+    pub dav: DavConfig,
     pub spam: SpamFilterConfig,
     pub imap: ImapConfig,
     pub metrics: Metrics,
