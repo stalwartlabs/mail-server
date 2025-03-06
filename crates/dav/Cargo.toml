@@ -7,12 +7,16 @@ resolver = "2"
 [dependencies]
 dav-proto = { path =  "/Users/me/code/dav-proto" }
 common = { path = "../common" }
+store = { path = "../store" }
+utils = { path = "../utils" }
 groupware = { path = "../groupware" }
 directory = { path = "../directory" }
 http_proto = { path = "../http-proto" }
+jmap_proto = { path =  "../jmap-proto" }
 trc = { path = "../trc" }
 hashify = { version = "0.2" }
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
+percent-encoding = "2.3.1"
 
 [dev-dependencies]
 

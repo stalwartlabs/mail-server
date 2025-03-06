@@ -6,6 +6,7 @@
 
 use std::{fmt::Display, sync::Arc};
 
+pub mod bimap;
 pub mod cache;
 pub mod codec;
 pub mod config;

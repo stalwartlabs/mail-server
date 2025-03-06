@@ -6,7 +6,7 @@
 
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{Archive, BatchBuilder, BlobOp, assert::HashedValue};
+use store::write::{Archive, BatchBuilder, assert::HashedValue};
 use trc::AddContext;
 
 use super::SieveScript;
@@ -51,16 +51,6 @@ impl SieveScriptDelete for Server {
             return Ok(false);
         }
 
-        let blob_hash = obj.inner.blob_hash.clone();
-        let mut builder = ObjectIndexBuilder::new().with_current(obj);
-        // Update tenant quota
-        #[cfg(feature = "enterprise")]
-        if self.core.is_enterprise_edition() {
-            if let Some(tenant) = resource_token.tenant {
-                builder.set_tenant_id(tenant.id);
-            }
-        }
-
         // Delete record
         let mut batch = BatchBuilder::new();
         batch
@@ -68,8 +58,11 @@ impl SieveScriptDelete for Server {
             .with_collection(Collection::SieveScript)
             .delete_document(document_id)
             .clear(Property::EmailIds)
-            .clear(BlobOp::Link { hash: blob_hash })
-            .custom(builder)
+            .custom(
+                ObjectIndexBuilder::new()
+                    .with_current(obj)
+                    .with_tenant_id(resource_token),
+            )
             .caused_by(trc::location!())?;
 
         self.store()

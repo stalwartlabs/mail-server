@@ -36,6 +36,21 @@ impl HttpResponse {
         self
     }
 
+    pub fn with_content_length(mut self, content_length: usize) -> Self {
+        self.builder = self.builder.header(header::CONTENT_LENGTH, content_length);
+        self
+    }
+
+    pub fn with_etag(mut self, etag: u64) -> Self {
+        self.builder = self.builder.header(header::ETAG, format!("\"{etag}\""));
+        self
+    }
+
+    pub fn with_last_modified(mut self, last_modified: String) -> Self {
+        self.builder = self.builder.header(header::LAST_MODIFIED, last_modified);
+        self
+    }
+
     pub fn with_header<K, V>(mut self, name: K, value: V) -> Self
     where
         K: TryInto<HeaderName>,
@@ -47,18 +62,23 @@ impl HttpResponse {
         self
     }
 
+    pub fn with_xml_body(self, body: impl Into<String>) -> Self {
+        self.with_text_body(body)
+            .with_content_type("application/xml; charset=utf-8")
+    }
+
     pub fn with_text_body(mut self, body: impl Into<String>) -> Self {
         let body = body.into();
         let body_len = body.len();
         self.body = HttpResponseBody::Text(body);
-        self.with_header(header::CONTENT_LENGTH, body_len)
+        self.with_content_length(body_len)
     }
 
     pub fn with_binary_body(mut self, body: impl Into<Vec<u8>>) -> Self {
         let body = body.into();
         let body_len = body.len();
         self.body = HttpResponseBody::Binary(body);
-        self.with_header(header::CONTENT_LENGTH, body_len)
+        self.with_content_length(body_len)
     }
 
     pub fn with_stream_body(
@@ -94,10 +114,15 @@ impl HttpResponse {
         self
     }
 
-    pub fn with_no_cache(mut self) -> Self {
+    pub fn with_no_store(mut self) -> Self {
         self.builder = self
             .builder
             .header(header::CACHE_CONTROL, "no-store, no-cache, must-revalidate");
+        self
+    }
+
+    pub fn with_no_cache(mut self) -> Self {
+        self.builder = self.builder.header(header::CACHE_CONTROL, "no-cache");
         self
     }
 
@@ -170,7 +195,7 @@ impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
             .with_text_body(serde_json::to_string(&self.inner).unwrap_or_default());
 
         if self.no_cache {
-            response.with_no_cache()
+            response.with_no_store()
         } else {
             response
         }

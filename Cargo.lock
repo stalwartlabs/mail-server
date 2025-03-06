@@ -1678,7 +1678,11 @@ dependencies = [
  "hashify",
  "http_proto",
  "hyper 1.6.0",
+ "jmap_proto",
+ "percent-encoding",
+ "store",
  "trc",
+ "utils",
 ]
 
 [[package]]
@@ -1690,6 +1694,7 @@ dependencies = [
  "hyper 1.6.0",
  "mail-parser",
  "quick-xml 0.37.2",
+ "rkyv 0.8.10",
 ]
 
 [[package]]
@@ -2733,11 +2738,14 @@ version = "0.11.5"
 dependencies = [
  "calcard",
  "common",
+ "dav-proto",
  "directory",
  "hashify",
  "jmap_proto",
+ "percent-encoding",
  "rkyv 0.8.10",
  "tokio",
+ "trc",
  "utils",
 ]
 
@@ -3120,6 +3128,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.6.0",
  "hyper-util",
+ "percent-encoding",
  "serde",
  "serde_json",
  "trc",

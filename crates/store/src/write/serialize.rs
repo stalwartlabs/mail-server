@@ -223,6 +223,30 @@ impl HashedValue<Archive> {
     }
 }
 
+impl<T> HashedValue<&T>
+where
+    T: rkyv::Portable
+        + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
+        + Sync
+        + Send,
+{
+    pub fn into_deserialized<V>(&self) -> trc::Result<HashedValue<V>>
+    where
+        T: rkyv::Deserialize<V, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
+    {
+        rkyv::deserialize::<V, rkyv::rancor::Error>(self.inner)
+            .map_err(|err| {
+                trc::StoreEvent::DeserializeError
+                    .caused_by(trc::location!())
+                    .reason(err)
+            })
+            .map(|inner| HashedValue {
+                hash: self.hash,
+                inner,
+            })
+    }
+}
+
 #[inline]
 pub fn rkyv_deserialize<T, V>(input: &T) -> trc::Result<V>
 where

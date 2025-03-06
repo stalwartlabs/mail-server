@@ -20,6 +20,9 @@ impl IndexableObject for SieveScript {
                 field: Property::IsActive.into(),
                 value: Some(self.is_active as u32),
             },
+            IndexValue::Blob {
+                value: self.blob_hash.clone(),
+            },
             IndexValue::Quota { used: self.size },
         ]
         .into_iter()

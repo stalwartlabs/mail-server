@@ -8,10 +8,13 @@ resolver = "2"
 utils = { path = "../utils" }
 common = { path =  "../common" }
 jmap_proto = { path =  "../jmap-proto" }
+trc = { path = "../trc" }
 directory = { path =  "../directory" }
+dav-proto = { path =  "/Users/me/code/dav-proto" }
 calcard = { path =  "/Users/me/code/calcard" }
 hashify = "0.2"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
+percent-encoding = "2.3.1"
 
 [features]
 test_mode = []

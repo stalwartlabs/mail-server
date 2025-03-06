@@ -10,12 +10,11 @@ use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
-use jmap_proto::types::{blob::BlobId, collection::Collection, property::Property};
+use jmap_proto::types::{collection::Collection, property::Property};
 use sieve::compiler::ErrorType;
 use store::{
-    BlobClass,
     query::Filter,
-    write::{Archive, BatchBuilder, BlobOp, assert::HashedValue, log::LogInsert},
+    write::{Archive, BatchBuilder, assert::HashedValue, log::LogInsert},
 };
 use trc::AddContext;
 
@@ -119,51 +118,31 @@ impl<T: SessionStream> Session<T> {
                 .caused_by(trc::location!())?;
 
             // Write script blob
-            let blob_id = BlobId::new(
-                self.server
-                    .put_blob(account_id, &script_bytes, false)
-                    .await
-                    .caused_by(trc::location!())?
-                    .hash,
-                BlobClass::Linked {
-                    account_id,
-                    collection: Collection::SieveScript.into(),
-                    document_id,
-                },
-            )
-            .with_section_size(script_size as usize);
-            let prev_blob_hash = script.inner.blob_hash.clone();
-            let blob_hash = blob_id.hash.clone();
+            let blob_hash = self
+                .server
+                .put_blob(account_id, &script_bytes, false)
+                .await
+                .caused_by(trc::location!())?
+                .hash;
 
             // Write record
-            let mut obj = ObjectIndexBuilder::new()
-                .with_changes(
-                    script
-                        .inner
-                        .clone()
-                        .with_size(script_size as u32)
-                        .with_blob_hash(blob_hash.clone()),
-                )
-                .with_current(script);
-
-            // Update tenant quota
-            #[cfg(feature = "enterprise")]
-            if self.server.core.is_enterprise_edition() {
-                if let Some(tenant) = resource_token.tenant {
-                    obj.set_tenant_id(tenant.id);
-                }
-            }
-
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .update_document(document_id)
-                .clear(BlobOp::Link {
-                    hash: prev_blob_hash,
-                })
-                .set(BlobOp::Link { hash: blob_hash }, Vec::new())
-                .custom(obj)
+                .custom(
+                    ObjectIndexBuilder::new()
+                        .with_changes(
+                            script
+                                .inner
+                                .clone()
+                                .with_size(script_size as u32)
+                                .with_blob_hash(blob_hash.clone()),
+                        )
+                        .with_current(script)
+                        .with_tenant_id(&resource_token),
+                )
                 .caused_by(trc::location!())?;
 
             self.server
@@ -189,28 +168,21 @@ impl<T: SessionStream> Session<T> {
                 .hash;
 
             // Write record
-            let mut obj = ObjectIndexBuilder::new().with_changes(
-                SieveScript::new(name.clone(), blob_hash.clone())
-                    .with_is_active(false)
-                    .with_size(script_size as u32),
-            );
-
-            // Update tenant quota
-            #[cfg(feature = "enterprise")]
-            if self.server.core.is_enterprise_edition() {
-                if let Some(tenant) = resource_token.tenant {
-                    obj.set_tenant_id(tenant.id);
-                }
-            }
-
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .create_document()
                 .log(LogInsert())
-                .set(BlobOp::Link { hash: blob_hash }, Vec::new())
-                .custom(obj)
+                .custom(
+                    ObjectIndexBuilder::new()
+                        .with_changes(
+                            SieveScript::new(name.clone(), blob_hash.clone())
+                                .with_is_active(false)
+                                .with_size(script_size as u32),
+                        )
+                        .with_tenant_id(&resource_token),
+                )
                 .caused_by(trc::location!())?;
 
             let assigned_ids = self

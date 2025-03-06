@@ -26,7 +26,7 @@ use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use std::future::Future;
 use store::write::{
-    Archive, BatchBuilder, BlobOp,
+    Archive, BatchBuilder,
     assert::HashedValue,
     log::{Changes, LogInsert},
 };
@@ -255,7 +255,8 @@ impl VacationResponseSet for Server {
 
             let mut obj = ObjectIndexBuilder::new()
                 .with_current_opt(prev_sieve)
-                .with_changes(sieve);
+                .with_changes(sieve)
+                .with_tenant_id(&resource_token);
 
             // Update id
             if let Some(document_id) = document_id {
@@ -270,7 +271,7 @@ impl VacationResponseSet for Server {
             // Create sieve script only if there are changes
             if build_script {
                 // Upload new blob
-                let hash = self
+                obj.changes_mut().unwrap().blob_hash = self
                     .put_blob(
                         account_id,
                         &self.build_script(obj.changes_mut().unwrap())?,
@@ -278,31 +279,6 @@ impl VacationResponseSet for Server {
                     )
                     .await?
                     .hash;
-                let sieve = &mut obj.changes_mut().unwrap();
-                sieve.blob_hash = hash;
-
-                // Link blob
-                batch.set(
-                    BlobOp::Link {
-                        hash: sieve.blob_hash.clone(),
-                    },
-                    Vec::new(),
-                );
-
-                // Unlink previous blob
-                if let Some(current) = obj.current() {
-                    batch.clear(BlobOp::Link {
-                        hash: current.inner.blob_hash.clone(),
-                    });
-                }
-
-                // Update tenant quota
-                #[cfg(feature = "enterprise")]
-                if self.core.is_enterprise_edition() {
-                    if let Some(tenant) = resource_token.tenant {
-                        obj.set_tenant_id(tenant.id);
-                    }
-                }
             };
 
             // Write changes

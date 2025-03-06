@@ -142,6 +142,14 @@ impl Server {
 }
 
 impl ExpandedFolders {
+    pub fn len(&self) -> usize {
+        self.names.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+
     pub fn format<T>(mut self, formatter: T) -> Self
     where
         T: Fn(u32, &str) -> Option<String>,

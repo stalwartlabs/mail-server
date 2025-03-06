@@ -45,6 +45,7 @@ use rustls::sign::CertifiedKey;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
 use utils::{
+    bimap::IdBimap,
     cache::{Cache, CacheItemWeight, CacheWithTtl},
     snowflake::SnowflakeIdGenerator,
 };
@@ -143,6 +144,7 @@ pub struct Caches {
     pub account: Cache<AccountId, Arc<Account>>,
     pub mailbox: Cache<MailboxId, Arc<MailboxState>>,
     pub threads: Cache<u32, Arc<Threads>>,
+    pub files: Cache<u32, Arc<Files>>,
 
     pub bayes: CacheWithTtl<TokenHash, Weights>,
 
@@ -244,6 +246,15 @@ pub struct Threads {
     pub modseq: Option<u64>,
 }
 
+pub struct NameWrapper(pub String);
+
+#[derive(Debug, Default)]
+pub struct Files {
+    pub files: IdBimap,
+    pub size: u64,
+    pub modseq: Option<u64>,
+}
+
 #[derive(Clone, Default)]
 pub struct Core {
     pub storage: Storage,
@@ -294,6 +305,12 @@ impl CacheItemWeight for Account {
 impl CacheItemWeight for HttpAuthCache {
     fn weight(&self) -> u64 {
         std::mem::size_of::<HttpAuthCache>() as u64
+    }
+}
+
+impl CacheItemWeight for Files {
+    fn weight(&self) -> u64 {
+        self.size
     }
 }
 
@@ -412,6 +429,7 @@ impl Default for Caches {
             account: Cache::new(1024, 10 * 1024 * 1024),
             mailbox: Cache::new(1024, 10 * 1024 * 1024),
             threads: Cache::new(1024, 10 * 1024 * 1024),
+            files: Cache::new(1024, 10 * 1024 * 1024),
             bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_rbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_txt: CacheWithTtl::new(1024, 10 * 1024 * 1024),
