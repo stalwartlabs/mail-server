@@ -254,3 +254,25 @@ impl CredentialsUsername for Credentials<String> {
         }
     }
 }
+
+pub trait AsTenantId {
+    fn tenant_id(&self) -> Option<u32>;
+}
+
+impl AsTenantId for Option<u32> {
+    fn tenant_id(&self) -> Option<u32> {
+        *self
+    }
+}
+
+impl AsTenantId for AccessToken {
+    fn tenant_id(&self) -> Option<u32> {
+        self.tenant.map(|t| t.id)
+    }
+}
+
+impl AsTenantId for ResourceToken {
+    fn tenant_id(&self) -> Option<u32> {
+        self.tenant.map(|t| t.id)
+    }
+}

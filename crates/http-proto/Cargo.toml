@@ -13,6 +13,7 @@ hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.1", features = ["tokio"] }
 http-body-util = "0.1.0"
 form_urlencoded = "1.1.0"
+percent-encoding = "2.3.1"
 
 [dev-dependencies]
 

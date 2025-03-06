@@ -14,8 +14,13 @@ use super::{ArchivedFileNode, FileNode};
 
 impl IndexableObject for FileNode {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
-        let mut filters = Vec::with_capacity(5);
-        filters.extend([
+        let size = self.dead_properties.size() as u32
+            + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
+            + self.name.len() as u32;
+
+        let mut values = Vec::with_capacity(6);
+
+        values.extend([
             IndexValue::Text {
                 field: Property::Name.into(),
                 value: self.name.to_lowercase().into(),
@@ -28,16 +33,22 @@ impl IndexableObject for FileNode {
         ]);
 
         if let Some(file) = &self.file {
-            filters.extend([
+            let size = size + file.size;
+            values.extend([
+                IndexValue::Blob {
+                    value: file.blob_hash.clone(),
+                },
                 IndexValue::U32 {
                     field: Property::Size.into(),
-                    value: file.size.into(),
+                    value: size.into(),
                 },
-                IndexValue::Quota { used: file.size },
+                IndexValue::Quota { used: size },
             ]);
+        } else {
+            values.push(IndexValue::Quota { used: size });
         }
 
-        filters.into_iter()
+        values.into_iter()
     }
 }
 

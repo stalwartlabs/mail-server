@@ -129,6 +129,7 @@ impl ManageDirectory for Store {
         self.get_principal_info(name).await.map(|v| v.map(|v| v.id))
     }
     async fn get_principal_info(&self, name: &str) -> trc::Result<Option<PrincipalInfo>> {
+        let todo = "cache";
         self.get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
             DirectoryClass::NameToId(name.as_bytes().to_vec()),
         )))

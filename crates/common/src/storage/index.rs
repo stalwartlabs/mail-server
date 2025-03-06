@@ -9,10 +9,13 @@ use std::{borrow::Cow, collections::HashSet, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible,
     write::{
-        Archiver, BatchBuilder, BitmapClass, DirectoryClass, IntoOperations, Operation, ValueOp,
-        assert::HashedValue,
+        Archiver, BatchBuilder, BitmapClass, BlobOp, DirectoryClass, IntoOperations, Operation,
+        ValueOp, assert::HashedValue,
     },
 };
+use utils::BlobHash;
+
+use crate::auth::AsTenantId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexValue<'x> {
@@ -21,6 +24,7 @@ pub enum IndexValue<'x> {
     U64 { field: u8, value: Option<u64> },
     U32List { field: u8, value: &'x [u32] },
     Tag { field: u8, is_set: bool },
+    Blob { value: BlobHash },
     Quota { used: u32 },
     Acl { value: &'x [AclGrant] },
 }
@@ -91,13 +95,9 @@ impl<T: IndexableObject> ObjectIndexBuilder<T> {
         self.current.as_ref()
     }
 
-    pub fn with_tenant_id(mut self, tenant_id: Option<u32>) -> Self {
-        self.tenant_id = tenant_id;
+    pub fn with_tenant_id(mut self, tenant: &impl AsTenantId) -> Self {
+        self.tenant_id = tenant.tenant_id();
         self
-    }
-
-    pub fn set_tenant_id(&mut self, tenant_id: u32) {
-        self.tenant_id = tenant_id.into();
     }
 }
 
@@ -180,6 +180,13 @@ fn build_batch<T: IndexableObject>(
                         },
                         set,
                     });
+                }
+            }
+            IndexValue::Blob { value } => {
+                if set {
+                    batch.set(BlobOp::Link { hash: value }, vec![]);
+                } else {
+                    batch.clear(BlobOp::Link { hash: value });
                 }
             }
             IndexValue::Acl { value } => {
@@ -353,6 +360,10 @@ fn merge_batch<T: IndexableObject>(
                         set: true,
                     });
                 }
+            }
+            (IndexValue::Blob { value: old_hash }, IndexValue::Blob { value: new_hash }) => {
+                batch.clear(BlobOp::Link { hash: old_hash });
+                batch.set(BlobOp::Link { hash: new_hash }, vec![]);
             }
             (IndexValue::Acl { value: old_acl }, IndexValue::Acl { value: new_acl }) => {
                 match (!old_acl.is_empty(), !new_acl.is_empty()) {

@@ -125,6 +125,12 @@ impl Caches {
                 MB_10,
                 (std::mem::size_of::<Threads>() + (500 * std::mem::size_of::<u64>())) as u64,
             ),
+            files: Cache::from_config(
+                config,
+                "file",
+                MB_10,
+                (std::mem::size_of::<Threads>() + (500 * std::mem::size_of::<u64>())) as u64,
+            ),
             bayes: CacheWithTtl::from_config(
                 config,
                 "bayes",

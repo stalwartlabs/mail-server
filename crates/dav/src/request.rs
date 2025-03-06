@@ -10,7 +10,11 @@ use common::{Server, auth::AccessToken};
 use dav_proto::{
     RequestHeaders,
     parser::{DavParser, tokenizer::Tokenizer},
-    schema::request::{Acl, LockInfo, MkCol, PropFind, PropertyUpdate, Report},
+    schema::{
+        Namespace,
+        request::{Acl, LockInfo, MkCol, PropFind, PropertyUpdate, Report},
+        response::{BaseCondition, ErrorResponse},
+    },
 };
 use directory::Permission;
 use http_proto::{HttpRequest, HttpResponse, HttpSessionData, request::fetch_body};
@@ -19,7 +23,7 @@ use hyper::{StatusCode, header};
 use crate::{
     DavError, DavMethod, DavResource,
     file::{
-        UpdateType, acl::FileAclRequestHandler, changes::FileChangesRequestHandler,
+        acl::FileAclRequestHandler, changes::FileChangesRequestHandler,
         copy_move::FileCopyMoveRequestHandler, delete::FileDeleteRequestHandler,
         get::FileGetRequestHandler, lock::FileLockRequestHandler, mkcol::FileMkColRequestHandler,
         propfind::FilePropFindRequestHandler, proppatch::FilePropPatchRequestHandler,
@@ -65,6 +69,7 @@ impl DavRequestDispatcher for Server {
         }
 
         // Dispatch
+        let todo = "lock tokens, headers, etc";
         match resource {
             DavResource::Card => {
                 todo!()
@@ -116,16 +121,12 @@ impl DavRequestDispatcher for Server {
                     self.handle_file_delete_request(&access_token, headers)
                         .await
                 }
-                DavMethod::PUT => {
-                    self.handle_file_update_request(&access_token, headers, UpdateType::Put(body))
-                        .await
-                }
-                DavMethod::POST => {
-                    self.handle_file_update_request(&access_token, headers, UpdateType::Post(body))
+                DavMethod::PUT | DavMethod::POST => {
+                    self.handle_file_update_request(&access_token, headers, body, false)
                         .await
                 }
                 DavMethod::PATCH => {
-                    self.handle_file_update_request(&access_token, headers, UpdateType::Patch(body))
+                    self.handle_file_update_request(&access_token, headers, body, true)
                         .await
                 }
                 DavMethod::COPY => {
@@ -161,7 +162,7 @@ impl DavRequestDispatcher for Server {
                         self.handle_file_changes_request(&access_token, headers, sync_collection)
                             .await
                     }
-                    report => Err(DavError::UnsupportedReport(report)),
+                    _ => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
                 },
                 DavMethod::OPTIONS => unreachable!(),
             },
@@ -217,12 +218,36 @@ impl DavRequestHandler for Server {
         {
             Ok(response) => response,
             Err(DavError::Internal(err)) => {
+                let is_quota_error = matches!(
+                    err.event_type(),
+                    trc::EventType::Limit(trc::LimitEvent::Quota | trc::LimitEvent::TenantQuota)
+                );
+
                 trc::error!(err.span_id(session.session_id));
 
-                HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR)
+                if is_quota_error {
+                    HttpResponse::new(StatusCode::PRECONDITION_FAILED)
+                        .with_xml_body(
+                            ErrorResponse::new(BaseCondition::QuotaNotExceeded)
+                                .with_namespace(resource)
+                                .to_string(),
+                        )
+                        .with_no_cache()
+                } else {
+                    HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR)
+                }
             }
-            Err(DavError::UnsupportedReport(report)) => HttpResponse::new(StatusCode::BAD_REQUEST),
             Err(DavError::Parse(err)) => HttpResponse::new(StatusCode::BAD_REQUEST),
+            Err(DavError::Condition(condition)) => {
+                HttpResponse::new(StatusCode::PRECONDITION_FAILED)
+                    .with_xml_body(
+                        ErrorResponse::new(condition)
+                            .with_namespace(resource)
+                            .to_string(),
+                    )
+                    .with_no_cache()
+            }
+            Err(DavError::Code(code)) => HttpResponse::new(code),
         }
     }
 }
@@ -236,5 +261,15 @@ impl From<dav_proto::parser::Error> for DavError {
 impl From<trc::Error> for DavError {
     fn from(err: trc::Error) -> Self {
         DavError::Internal(err)
+    }
+}
+
+impl From<DavResource> for Namespace {
+    fn from(value: DavResource) -> Self {
+        match value {
+            DavResource::Card => Namespace::CardDav,
+            DavResource::Cal => Namespace::CalDav,
+            DavResource::File | DavResource::Principal => Namespace::Dav,
+        }
     }
 }

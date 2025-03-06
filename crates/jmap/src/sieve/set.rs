@@ -31,7 +31,7 @@ use store::{
     BlobClass,
     query::Filter,
     rand::{Rng, rng},
-    write::{Archive, BatchBuilder, BlobOp, assert::HashedValue, log::ChangeLogBuilder},
+    write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -100,27 +100,13 @@ impl SieveScriptSet for Server {
                         let blob_size = sieve.size as usize;
                         let blob_hash = sieve.blob_hash.clone();
 
-                        // Increment tenant quota
-                        #[cfg(feature = "enterprise")]
-                        if self.core.is_enterprise_edition() {
-                            if let Some(tenant) = ctx.resource_token.tenant {
-                                builder.set_tenant_id(tenant.id);
-                            }
-                        }
-
                         // Write record
                         let mut batch = BatchBuilder::new();
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
                             .create_document()
-                            .set(
-                                BlobOp::Link {
-                                    hash: blob_hash.clone(),
-                                },
-                                Vec::new(),
-                            )
-                            .custom(builder)
+                            .custom(builder.with_tenant_id(&ctx.resource_token))
                             .caused_by(trc::location!())?;
 
                         let document_id = self
@@ -194,7 +180,6 @@ impl SieveScriptSet for Server {
                 let sieve = sieve
                     .into_deserialized::<SieveScript>()
                     .caused_by(trc::location!())?;
-                let prev_blob_hash = sieve.inner.blob_hash.clone();
 
                 match self
                     .sieve_set_item(
@@ -217,38 +202,16 @@ impl SieveScriptSet for Server {
                             // Store blob
                             let sieve = &mut builder.changes_mut().unwrap();
                             sieve.blob_hash = self.put_blob(account_id, &blob, false).await?.hash;
-                            let blob_hash = sieve.blob_hash.clone();
-                            let blob_size = sieve.size as usize;
-
-                            // Update tenant quota
-                            #[cfg(feature = "enterprise")]
-                            if self.core.is_enterprise_edition() {
-                                if let Some(tenant) = ctx.resource_token.tenant {
-                                    builder.set_tenant_id(tenant.id);
-                                }
-                            }
-
-                            // Update blobId
-                            batch
-                                .clear(BlobOp::Link {
-                                    hash: prev_blob_hash,
-                                })
-                                .set(
-                                    BlobOp::Link {
-                                        hash: blob_hash.clone(),
-                                    },
-                                    Vec::new(),
-                                );
 
                             BlobId {
-                                hash: blob_hash,
+                                hash: sieve.blob_hash.clone(),
                                 class: BlobClass::Linked {
                                     account_id,
                                     collection: Collection::SieveScript.into(),
                                     document_id,
                                 },
                                 section: BlobSection {
-                                    size: blob_size,
+                                    size: sieve.size as usize,
                                     ..Default::default()
                                 }
                                 .into(),
@@ -259,7 +222,9 @@ impl SieveScriptSet for Server {
                         };
 
                         // Write record
-                        batch.custom(builder).caused_by(trc::location!())?;
+                        batch
+                            .custom(builder.with_tenant_id(&ctx.resource_token))
+                            .caused_by(trc::location!())?;
 
                         if !batch.is_empty() {
                             changes.log_update(Collection::SieveScript, document_id);

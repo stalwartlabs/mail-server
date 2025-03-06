@@ -10,13 +10,11 @@ use http_body_util::BodyExt;
 
 use crate::HttpRequest;
 
+#[inline]
 pub fn decode_path_element(item: &str) -> Cow<'_, str> {
-    // Bit hackish but avoids an extra dependency
-    form_urlencoded::parse(item.as_bytes())
-        .into_iter()
-        .next()
-        .map(|(k, _)| k)
-        .unwrap_or_else(|| item.into())
+    percent_encoding::percent_decode_str(item)
+        .decode_utf8()
+        .unwrap_or_else(|_| item.into())
 }
 
 pub async fn fetch_body(

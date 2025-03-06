@@ -4,8 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod hierarchy;
 pub mod index;
 
+use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::value::AclGrant;
 use utils::BlobHash;
 
@@ -17,8 +19,10 @@ pub struct FileNode {
     pub name: String,
     pub display_name: Option<String>,
     pub file: Option<FileProperties>,
-    pub created: u64,
-    pub modified: u64,
+    pub created: i64,
+    pub modified: i64,
+    pub change_id: u64,
+    pub dead_properties: DeadProperty,
     pub acls: Vec<AclGrant>,
 }
 

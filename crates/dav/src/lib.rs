@@ -6,13 +6,15 @@
 
 pub mod calendar;
 pub mod card;
+pub mod common;
 pub mod file;
 pub mod principal;
 pub mod request;
 
-use dav_proto::schema::request::Report;
+use dav_proto::schema::{request::Report, response::Condition};
 use http_proto::HttpResponse;
 use hyper::{Method, StatusCode};
+use jmap_proto::types::collection::Collection;
 
 pub(crate) type Result<T> = std::result::Result<T, DavError>;
 
@@ -47,7 +49,19 @@ pub enum DavMethod {
 pub(crate) enum DavError {
     Parse(dav_proto::parser::Error),
     Internal(trc::Error),
-    UnsupportedReport(Report),
+    Condition(Condition),
+    Code(StatusCode),
+}
+
+impl From<DavResource> for Collection {
+    fn from(value: DavResource) -> Self {
+        match value {
+            DavResource::Card => Collection::AddressBook,
+            DavResource::Cal => Collection::Calendar,
+            DavResource::File => Collection::FileNode,
+            DavResource::Principal => Collection::Principal,
+        }
+    }
 }
 
 impl DavResource {
@@ -56,7 +70,7 @@ impl DavResource {
             "card" => DavResource::Card,
             "cal" => DavResource::Cal,
             "file" => DavResource::File,
-            "pri" => DavResource::Principal,
+            "pal" => DavResource::Principal,
         )
     }
 
