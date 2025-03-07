@@ -43,6 +43,8 @@ pub const BLOB_HASH_LEN: usize = 32;
     serde::Serialize,
     serde::Deserialize,
 )]
+#[rkyv(derive(Debug))]
+#[repr(transparent)]
 pub struct BlobHash(pub [u8; BLOB_HASH_LEN]);
 
 impl BlobHash {

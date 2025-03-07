@@ -65,7 +65,7 @@ pub trait MailboxSet: Sync + Send {
         changes_: Object<SetValue>,
         update: Option<(u32, HashedValue<Mailbox>)>,
         ctx: &SetContext,
-    ) -> impl Future<Output = trc::Result<Result<ObjectIndexBuilder<Mailbox>, SetError>>> + Send;
+    ) -> impl Future<Output = trc::Result<Result<ObjectIndexBuilder<Mailbox, Mailbox>, SetError>>> + Send;
 }
 
 impl MailboxSet for Server {
@@ -289,7 +289,7 @@ impl MailboxSet for Server {
         changes_: Object<SetValue>,
         update: Option<(u32, HashedValue<Mailbox>)>,
         ctx: &SetContext<'_>,
-    ) -> trc::Result<Result<ObjectIndexBuilder<Mailbox>, SetError>> {
+    ) -> trc::Result<Result<ObjectIndexBuilder<Mailbox, Mailbox>, SetError>> {
         // Parse properties
         let mut changes = update
             .as_ref()

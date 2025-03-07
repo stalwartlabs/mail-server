@@ -124,7 +124,7 @@ impl<T: SessionStream> Session<T> {
         // Sort by UID
         for (message_id, uid_mailbox) in self
             .server
-            .get_properties::<Archive, _, _>(
+            .get_properties::<Archive, _>(
                 account_id,
                 Collection::Email,
                 &message_ids,

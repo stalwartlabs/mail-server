@@ -9,7 +9,9 @@ use dav_proto::RequestHeaders;
 use groupware::file::{FileNode, FileProperties, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
+use jmap_proto::types::{
+    acl::Acl, collection::Collection, property::Property, type_state::DataType,
+};
 use store::write::{
     Archive, BatchBuilder,
     assert::HashedValue,
@@ -56,7 +58,7 @@ impl FileUpdateRequestHandler for Server {
             .resource
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
 
-        if let Some(document_id) = files.files.by_name(resource_name) {
+        if let Some(document_id) = files.files.by_name(resource_name).map(|r| r.document_id) {
             // Update
             let node_archive_ = self
                 .get_property::<HashedValue<Archive>>(
@@ -140,6 +142,10 @@ impl FileUpdateRequestHandler for Server {
                 .await
                 .caused_by(trc::location!())?;
 
+            // Broadcast state change
+            self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
+                .await;
+
             Ok(HttpResponse::new(StatusCode::OK))
         } else {
             // Insert
@@ -218,7 +224,7 @@ impl FileUpdateRequestHandler for Server {
                 .create_document()
                 .log(LogInsert())
                 .custom(
-                    ObjectIndexBuilder::new()
+                    ObjectIndexBuilder::<(), _>::new()
                         .with_changes(node)
                         .with_tenant_id(access_token),
                 )
@@ -227,6 +233,10 @@ impl FileUpdateRequestHandler for Server {
                 .write(batch)
                 .await
                 .caused_by(trc::location!())?;
+
+            // Broadcast state change
+            self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
+                .await;
 
             Ok(HttpResponse::new(StatusCode::CREATED))
         }

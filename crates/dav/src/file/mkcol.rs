@@ -12,7 +12,7 @@ use dav_proto::{
 use groupware::file::{FileNode, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{acl::Acl, collection::Collection, type_state::DataType};
 use store::write::{BatchBuilder, log::LogInsert, now};
 use trc::AddContext;
 
@@ -92,12 +92,16 @@ impl FileMkColRequestHandler for Server {
             .with_collection(Collection::FileNode)
             .create_document()
             .log(LogInsert())
-            .custom(ObjectIndexBuilder::new().with_changes(node))
+            .custom(ObjectIndexBuilder::<(), _>::new().with_changes(node))
             .caused_by(trc::location!())?;
         self.store()
             .write(batch)
             .await
             .caused_by(trc::location!())?;
+
+        // Broadcast state change
+        self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
+            .await;
 
         Ok(HttpResponse::new(StatusCode::CREATED))
     }

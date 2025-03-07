@@ -16,7 +16,9 @@ use dav_proto::{
 use groupware::file::{FileNode, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
+use jmap_proto::types::{
+    acl::Acl, collection::Collection, property::Property, type_state::DataType,
+};
 use store::write::{Archive, BatchBuilder, assert::HashedValue, log::Changes, now};
 use trc::AddContext;
 
@@ -131,8 +133,9 @@ impl FilePropPatchRequestHandler for Server {
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
+            let change_id = new_node.change_id;
             batch
-                .with_change_id(new_node.change_id)
+                .with_change_id(change_id)
                 .with_account_id(account_id)
                 .with_collection(Collection::FileNode)
                 .update_document(resource.resource)
@@ -148,6 +151,10 @@ impl FilePropPatchRequestHandler for Server {
                 .write(batch)
                 .await
                 .caused_by(trc::location!())?;
+
+            // Broadcast state change
+            self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
+                .await;
         }
 
         Ok(HttpResponse::new(StatusCode::MULTI_STATUS)

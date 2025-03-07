@@ -87,6 +87,7 @@ pub struct DefaultFolder {
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
 )]
+#[rkyv(derive(Debug))]
 pub enum SpecialUse {
     Inbox,
     Trash,

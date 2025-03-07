@@ -194,7 +194,7 @@ impl<T: SessionStream> SessionData<T> {
 
         for (id, mailbox_ids) in self
             .server
-            .get_properties::<HashedValue<Archive>, _, _>(
+            .get_properties::<HashedValue<Archive>, _>(
                 account_id,
                 Collection::Email,
                 deleted_ids,

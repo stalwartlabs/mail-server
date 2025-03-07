@@ -175,7 +175,7 @@ impl<T: SessionStream> Session<T> {
                 .create_document()
                 .log(LogInsert())
                 .custom(
-                    ObjectIndexBuilder::new()
+                    ObjectIndexBuilder::<(), _>::new()
                         .with_changes(
                             SieveScript::new(name.clone(), blob_hash.clone())
                                 .with_is_active(false)

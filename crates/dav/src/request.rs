@@ -218,23 +218,24 @@ impl DavRequestHandler for Server {
         {
             Ok(response) => response,
             Err(DavError::Internal(err)) => {
-                let is_quota_error = matches!(
-                    err.event_type(),
-                    trc::EventType::Limit(trc::LimitEvent::Quota | trc::LimitEvent::TenantQuota)
-                );
+                let err_type = err.event_type();
 
                 trc::error!(err.span_id(session.session_id));
 
-                if is_quota_error {
-                    HttpResponse::new(StatusCode::PRECONDITION_FAILED)
+                match err_type {
+                    trc::EventType::Limit(
+                        trc::LimitEvent::Quota | trc::LimitEvent::TenantQuota,
+                    ) => HttpResponse::new(StatusCode::PRECONDITION_FAILED)
                         .with_xml_body(
                             ErrorResponse::new(BaseCondition::QuotaNotExceeded)
                                 .with_namespace(resource)
                                 .to_string(),
                         )
-                        .with_no_cache()
-                } else {
-                    HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR)
+                        .with_no_cache(),
+                    trc::EventType::Store(trc::StoreEvent::AssertValueFailed) => {
+                        HttpResponse::new(StatusCode::CONFLICT)
+                    }
+                    _ => HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR),
                 }
             }
             Err(DavError::Parse(err)) => HttpResponse::new(StatusCode::BAD_REQUEST),

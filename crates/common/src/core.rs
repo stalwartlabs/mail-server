@@ -9,6 +9,7 @@ use std::{sync::Arc, time::Duration};
 use directory::{Directory, QueryBy, Type, backend::internal::manage::ManageDirectory};
 use jmap_proto::types::{
     blob::BlobId, collection::Collection, property::Property, state::StateChange,
+    type_state::DataType,
 };
 use sieve::Sieve;
 use store::{
@@ -379,16 +380,15 @@ impl Server {
             })
     }
 
-    pub async fn get_properties<U, I, P>(
+    pub async fn get_properties<U, I>(
         &self,
         account_id: u32,
         collection: Collection,
         iterate: &I,
-        property: P,
+        property: Property,
     ) -> trc::Result<Vec<(u32, U)>>
     where
         I: DocumentSet + Send + Sync,
-        P: AsRef<Property> + Sync + Send,
         U: Deserialize + 'static,
     {
         let property: u8 = property.as_ref().into();
@@ -602,6 +602,17 @@ impl Server {
                 false
             }
         }
+    }
+
+    #[inline]
+    pub async fn broadcast_single_state_change(
+        &self,
+        account_id: u32,
+        change_id: u64,
+        data_type: DataType,
+    ) {
+        self.broadcast_state_change(StateChange::new(account_id).with_change(data_type, change_id))
+            .await;
     }
 
     #[allow(clippy::blocks_in_conditions)]

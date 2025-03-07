@@ -52,7 +52,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut uid_map = BTreeMap::new();
         for (message_id, uid_mailbox_) in self
             .server
-            .get_properties::<Archive, _, _>(
+            .get_properties::<Archive, _>(
                 mailbox.account_id,
                 Collection::Email,
                 &message_ids,

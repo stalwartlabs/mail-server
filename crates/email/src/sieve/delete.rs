@@ -29,7 +29,7 @@ impl SieveScriptDelete for Server {
     ) -> trc::Result<bool> {
         // Fetch record
         let account_id = resource_token.account_id;
-        let obj = self
+        let obj_ = self
             .get_property::<HashedValue<Archive>>(
                 account_id,
                 Collection::SieveScript,
@@ -42,8 +42,9 @@ impl SieveScriptDelete for Server {
                     .into_err()
                     .caused_by(trc::location!())
                     .document_id(document_id)
-            })?
-            .into_deserialized::<SieveScript>()
+            })?;
+        let obj = obj_
+            .to_unarchived::<SieveScript>()
             .caused_by(trc::location!())?;
 
         // Make sure the script is not active
@@ -59,7 +60,7 @@ impl SieveScriptDelete for Server {
             .delete_document(document_id)
             .clear(Property::EmailIds)
             .custom(
-                ObjectIndexBuilder::new()
+                ObjectIndexBuilder::<_, ()>::new()
                     .with_current(obj)
                     .with_tenant_id(resource_token),
             )

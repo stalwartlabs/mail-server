@@ -47,7 +47,7 @@ impl ThreadCache for Server {
         } else {
             let thread_cache = Arc::new(Threads {
                 threads: self
-                    .get_properties::<u32, _, _>(
+                    .get_properties::<u32, _>(
                         account_id,
                         Collection::Email,
                         &(),

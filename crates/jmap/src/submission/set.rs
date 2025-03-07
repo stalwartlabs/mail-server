@@ -94,7 +94,7 @@ impl EmailSubmissionSet for Server {
                         .with_account_id(account_id)
                         .with_collection(Collection::EmailSubmission)
                         .create_document()
-                        .custom(ObjectIndexBuilder::new().with_changes(submission))
+                        .custom(ObjectIndexBuilder::<(), _>::new().with_changes(submission))
                         .caused_by(trc::location!())?;
                     let document_id = self
                         .store()
@@ -240,9 +240,9 @@ impl EmailSubmissionSet for Server {
                     .with_collection(Collection::EmailSubmission)
                     .delete_document(document_id)
                     .custom(
-                        ObjectIndexBuilder::new().with_current(
+                        ObjectIndexBuilder::<_, ()>::new().with_current(
                             submission
-                                .into_deserialized::<EmailSubmission>()
+                                .to_unarchived::<EmailSubmission>()
                                 .caused_by(trc::location!())?,
                         ),
                     )

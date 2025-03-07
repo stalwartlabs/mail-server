@@ -64,7 +64,7 @@ impl EmailDeletion for Server {
         // Fetch mailboxes and threadIds
         let mut thread_ids: AHashMap<u32, i32> = AHashMap::new();
         for (document_id, mailboxes) in self
-            .get_properties::<Archive, _, _>(
+            .get_properties::<Archive, _>(
                 account_id,
                 Collection::Email,
                 &document_ids,
@@ -86,7 +86,7 @@ impl EmailDeletion for Server {
             );
         }
         for (document_id, thread_id) in self
-            .get_properties::<u32, _, _>(
+            .get_properties::<u32, _>(
                 account_id,
                 Collection::Email,
                 &document_ids,
@@ -343,7 +343,7 @@ impl EmailDeletion for Server {
         // Find messages to destroy
         let mut destroy_ids = RoaringBitmap::new();
         for (document_id, cid) in self
-            .get_properties::<u64, _, _>(
+            .get_properties::<u64, _>(
                 account_id,
                 Collection::Email,
                 &deletion_candidates,
