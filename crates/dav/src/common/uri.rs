@@ -32,7 +32,10 @@ impl DavUriResource for Server {
             .split_once("/dav/")
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
 
-        let mut uri_parts = uri_parts.splitn(3, '/').filter(|x| !x.is_empty());
+        let mut uri_parts = uri_parts
+            .trim_end_matches('/')
+            .splitn(3, '/')
+            .filter(|x| !x.is_empty());
         let mut resource = UriResource {
             collection: uri_parts
                 .next()
@@ -70,7 +73,7 @@ impl DavUriResource for Server {
 
             // Obtain remaining path
             resource.account_id = Some(account_id);
-            resource.resource = uri_parts.next().map(|uri| uri.trim_end_matches('/'));
+            resource.resource = uri_parts.next();
         }
 
         Ok(resource)
@@ -79,6 +82,16 @@ impl DavUriResource for Server {
 
 impl<T> UriResource<T> {
     pub fn account_id(&self) -> crate::Result<u32> {
-        self.account_id.ok_or(DavError::Code(StatusCode::NOT_FOUND))
+        self.account_id.ok_or(DavError::Code(StatusCode::FORBIDDEN))
+    }
+}
+
+impl<T> UriResource<Option<T>> {
+    pub fn unwrap(self) -> UriResource<T> {
+        UriResource {
+            collection: self.collection,
+            account_id: self.account_id,
+            resource: self.resource.unwrap(),
+        }
     }
 }

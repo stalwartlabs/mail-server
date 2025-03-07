@@ -45,7 +45,7 @@ use rustls::sign::CertifiedKey;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
 use utils::{
-    bimap::IdBimap,
+    bimap::{IdBimap, IdBimapItem},
     cache::{Cache, CacheItemWeight, CacheWithTtl},
     snowflake::SnowflakeIdGenerator,
 };
@@ -250,9 +250,17 @@ pub struct NameWrapper(pub String);
 
 #[derive(Debug, Default)]
 pub struct Files {
-    pub files: IdBimap,
+    pub files: IdBimap<FileItem>,
     pub size: u64,
     pub modseq: Option<u64>,
+}
+
+#[derive(Debug, Default)]
+pub struct FileItem {
+    pub document_id: u32,
+    pub parent_id: Option<u32>,
+    pub name: String,
+    pub is_container: bool,
 }
 
 #[derive(Clone, Default)]
@@ -478,5 +486,32 @@ pub fn ip_to_bytes_prefix(prefix: u8, ip: &IpAddr) -> Vec<u8> {
             buf.extend_from_slice(&ip.octets());
             buf
         }
+    }
+}
+
+impl Files {
+    pub fn subtree(&self, search_path: &str) -> impl Iterator<Item = &FileItem> {
+        let prefix = format!("{search_path}/");
+        self.files
+            .iter()
+            .filter(move |item| item.name.starts_with(&prefix) || item.name == search_path)
+    }
+
+    pub fn is_ancestor_of(&self, ancestor: u32, descendant: u32) -> bool {
+        let ancestor = &self.files.by_id(ancestor).unwrap().name;
+        let descendant = &self.files.by_id(descendant).unwrap().name;
+
+        let prefix = format!("{ancestor}/");
+        descendant.starts_with(&prefix) || descendant == ancestor
+    }
+}
+
+impl IdBimapItem for FileItem {
+    fn id(&self) -> &u32 {
+        &self.document_id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
     }
 }

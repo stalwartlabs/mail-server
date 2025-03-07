@@ -607,3 +607,12 @@ impl JsonQueryable for Value {
         }
     }
 }
+
+impl From<&ArchivedAclGrant> for AclGrant {
+    fn from(value: &ArchivedAclGrant) -> Self {
+        Self {
+            account_id: u32::from(value.account_id),
+            grants: (&value.grants).into(),
+        }
+    }
+}

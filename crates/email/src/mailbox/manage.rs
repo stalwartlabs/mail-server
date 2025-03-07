@@ -102,7 +102,7 @@ impl MailboxFnc for Server {
             }
             batch
                 .create_document_with_id(document_id)
-                .custom(ObjectIndexBuilder::new().with_changes(object))
+                .custom(ObjectIndexBuilder::<(), _>::new().with_changes(object))
                 .caused_by(trc::location!())?;
             mailbox_ids.insert(document_id);
         }
@@ -133,7 +133,7 @@ impl MailboxFnc for Server {
                 }
             })
             .into_iterator()
-            .map(|(document_id, name)| (name, document_id))
+            .map(|e| (e.name, e.document_id))
             .collect::<AHashMap<String, u32>>();
 
         let mut next_parent_id = 0;
@@ -177,7 +177,7 @@ impl MailboxFnc for Server {
                     .with_collection(Collection::Mailbox)
                     .create_document()
                     .custom(
-                        ObjectIndexBuilder::new()
+                        ObjectIndexBuilder::<(), _>::new()
                             .with_changes(Mailbox::new(name).with_parent_id(next_parent_id)),
                     )
                     .caused_by(trc::location!())?;
@@ -275,8 +275,8 @@ impl MailboxFnc for Server {
                 folders
                     .format(|mailbox_id, _| (mailbox_id == INBOX_ID).then(|| "INBOX".to_string()))
                     .into_iterator()
-                    .find(|(_, folder_name)| folder_name.eq_ignore_ascii_case(path))
-                    .map(|(document_id, _)| document_id)
+                    .find(|e| e.name.eq_ignore_ascii_case(path))
+                    .map(|e| e.document_id)
             })
     }
 

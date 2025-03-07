@@ -60,7 +60,15 @@ pub trait SieveScriptSet: Sync + Send {
         ctx: &SetContext,
         session_id: u64,
     ) -> impl Future<
-        Output = trc::Result<Result<(ObjectIndexBuilder<SieveScript>, Option<Vec<u8>>), SetError>>,
+        Output = trc::Result<
+            Result<
+                (
+                    ObjectIndexBuilder<SieveScript, SieveScript>,
+                    Option<Vec<u8>>,
+                ),
+                SetError,
+            >,
+        >,
     > + Send;
 }
 
@@ -332,7 +340,15 @@ impl SieveScriptSet for Server {
         update: Option<(u32, HashedValue<SieveScript>)>,
         ctx: &SetContext<'_>,
         session_id: u64,
-    ) -> trc::Result<Result<(ObjectIndexBuilder<SieveScript>, Option<Vec<u8>>), SetError>> {
+    ) -> trc::Result<
+        Result<
+            (
+                ObjectIndexBuilder<SieveScript, SieveScript>,
+                Option<Vec<u8>>,
+            ),
+            SetError,
+        >,
+    > {
         // Vacation script cannot be modified
         if update
             .as_ref()

@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use common::{Files, Server};
+use common::{FileItem, Files, Server};
 use jmap_proto::types::collection::Collection;
 use percent_encoding::NON_ALPHANUMERIC;
 use trc::AddContext;
@@ -62,10 +62,16 @@ async fn build_file_hierarchy(server: &Server, account_id: u32) -> trc::Result<F
         modseq: None,
     };
 
-    for (id, name) in list.into_iterator() {
-        files.size +=
-            (std::mem::size_of::<u32>() + std::mem::size_of::<String>() + name.len()) as u64;
-        files.files.insert(id, name);
+    for expanded in list.into_iterator() {
+        files.size += (std::mem::size_of::<u32>()
+            + std::mem::size_of::<String>()
+            + expanded.name.len()) as u64;
+        files.files.insert(FileItem {
+            document_id: expanded.document_id,
+            parent_id: expanded.parent_id,
+            name: expanded.name,
+            is_container: expanded.is_container,
+        });
     }
 
     Ok(files)

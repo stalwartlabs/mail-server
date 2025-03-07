@@ -161,7 +161,7 @@ impl<T: SessionStream> SessionData<T> {
 
         for (mailbox_id, mailbox_) in self
             .server
-            .get_properties::<Archive, _, _>(
+            .get_properties::<Archive, _>(
                 account_id,
                 Collection::Mailbox,
                 &mailbox_ids,

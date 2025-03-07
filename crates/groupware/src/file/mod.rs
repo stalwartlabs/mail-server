@@ -14,6 +14,7 @@ use utils::BlobHash;
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
+#[rkyv(derive(Debug))]
 pub struct FileNode {
     pub parent_id: u32,
     pub name: String,
@@ -29,6 +30,7 @@ pub struct FileNode {
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
+#[rkyv(derive(Debug))]
 pub struct FileProperties {
     pub blob_hash: BlobHash,
     pub size: u32,

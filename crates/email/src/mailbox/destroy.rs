@@ -101,7 +101,7 @@ impl MailboxDestroy for Server {
                 // otherwise delete it.
                 let mut destroy_ids = RoaringBitmap::new();
                 for (message_id, mailbox_ids) in self
-                    .get_properties::<HashedValue<Archive>, _, _>(
+                    .get_properties::<HashedValue<Archive>, _>(
                         account_id,
                         Collection::Email,
                         &message_ids,
@@ -190,7 +190,7 @@ impl MailboxDestroy for Server {
         }
 
         // Obtain mailbox
-        if let Some(mailbox) = self
+        if let Some(mailbox_) = self
             .get_property::<HashedValue<Archive>>(
                 account_id,
                 Collection::Mailbox,
@@ -200,8 +200,8 @@ impl MailboxDestroy for Server {
             .await
             .caused_by(trc::location!())?
         {
-            let mailbox = mailbox
-                .into_deserialized::<Mailbox>()
+            let mailbox = mailbox_
+                .to_unarchived::<Mailbox>()
                 .caused_by(trc::location!())?;
             // Validate ACLs
             if access_token.is_shared(account_id) {
@@ -224,7 +224,7 @@ impl MailboxDestroy for Server {
                 .with_collection(Collection::Mailbox)
                 .delete_document(document_id)
                 .clear(Property::EmailIds)
-                .custom(ObjectIndexBuilder::new().with_current(mailbox))
+                .custom(ObjectIndexBuilder::<_, ()>::new().with_current(mailbox))
                 .caused_by(trc::location!())?;
 
             match self.core.storage.data.write(batch.build()).await {

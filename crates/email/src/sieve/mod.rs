@@ -40,6 +40,7 @@ pub struct SeenIds {
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
+#[rkyv(derive(Debug))]
 pub struct SieveScript {
     pub name: String,
     pub is_active: bool,
@@ -51,6 +52,7 @@ pub struct SieveScript {
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
+#[rkyv(derive(Debug))]
 pub struct VacationResponse {
     pub from_date: Option<u64>,
     pub to_date: Option<u64>,

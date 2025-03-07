@@ -143,7 +143,7 @@ impl<T: SessionStream> SessionData<T> {
                 .with_account_id(params.account_id)
                 .with_collection(Collection::Mailbox)
                 .create_document()
-                .custom(ObjectIndexBuilder::new().with_changes(
+                .custom(ObjectIndexBuilder::<(), _>::new().with_changes(
                     email::mailbox::Mailbox::new(path_item).with_parent_id(parent_id),
                 ))
                 .imap_ctx(&arguments.tag, trc::location!())?;

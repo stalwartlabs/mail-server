@@ -16,13 +16,22 @@ use utils::topological::{TopologicalSort, TopologicalSortIterator};
 use crate::Server;
 
 pub struct ExpandedFolders {
-    names: AHashMap<u32, (String, u32)>,
+    names: AHashMap<u32, (String, u32, bool)>,
     iter: TopologicalSortIterator<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpandedFolder {
+    pub name: String,
+    pub document_id: u32,
+    pub parent_id: Option<u32>,
+    pub is_container: bool,
 }
 
 pub trait FolderHierarchy: Sync + Send {
     fn name(&self) -> String;
     fn parent_id(&self) -> u32;
+    fn is_container(&self) -> bool;
 }
 
 pub trait TopologyBuilder: Sync + Send {
@@ -72,7 +81,10 @@ impl Server {
                     let parent_id = folder.parent_id();
 
                     topological_sort.insert(parent_id, document_id);
-                    names.insert(document_id, (folder.name(), parent_id));
+                    names.insert(
+                        document_id,
+                        (folder.name(), parent_id, folder.is_container()),
+                    );
 
                     Ok(true)
                 },
@@ -154,7 +166,7 @@ impl ExpandedFolders {
     where
         T: Fn(u32, &str) -> Option<String>,
     {
-        for (document_id, (name, _)) in &mut self.names {
+        for (document_id, (name, _, _)) in &mut self.names {
             if let Some(new_name) = formatter(*document_id - 1, name) {
                 *name = new_name;
             }
@@ -162,22 +174,36 @@ impl ExpandedFolders {
         self
     }
 
-    pub fn into_iterator(mut self) -> impl Iterator<Item = (u32, String)> + Sync + Send {
+    pub fn into_iterator(mut self) -> impl Iterator<Item = ExpandedFolder> + Sync + Send {
         for folder_id in self.iter.by_ref() {
             if folder_id != 0 {
-                if let Some((name, parent_name, parent_id)) =
-                    self.names.get(&folder_id).and_then(|(name, parent_id)| {
-                        self.names
-                            .get(parent_id)
-                            .map(|(parent_name, _)| (name, parent_name, *parent_id))
+                if let Some((name, parent_name, parent_id, is_container)) = self
+                    .names
+                    .get(&folder_id)
+                    .and_then(|(name, parent_id, is_container)| {
+                        self.names.get(parent_id).map(|(parent_name, _, _)| {
+                            (name, parent_name, *parent_id, *is_container)
+                        })
                     })
                 {
                     let name = format!("{parent_name}/{name}");
-                    self.names.insert(folder_id, (name, parent_id));
+                    self.names
+                        .insert(folder_id, (name, parent_id, is_container));
                 }
             }
         }
 
-        self.names.into_iter().map(|(id, (name, _))| (id - 1, name))
+        self.names
+            .into_iter()
+            .map(|(id, (name, parent_id, is_container))| ExpandedFolder {
+                name,
+                document_id: id - 1,
+                is_container,
+                parent_id: if parent_id == 0 {
+                    None
+                } else {
+                    Some(parent_id - 1)
+                },
+            })
     }
 }
