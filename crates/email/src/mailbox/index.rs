@@ -110,6 +110,10 @@ impl FolderHierarchy for ArchivedMailbox {
     fn is_container(&self) -> bool {
         true
     }
+
+    fn size(&self) -> u32 {
+        0
+    }
 }
 
 impl From<&UidMailbox> for TagValue<MaybeDynamicId> {

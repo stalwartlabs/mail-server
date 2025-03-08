@@ -125,12 +125,12 @@ impl MailboxFnc for Server {
             .fetch_folders::<Mailbox>(account_id, Collection::Mailbox)
             .await
             .caused_by(trc::location!())?
-            .format(|mailbox_id, name| {
-                if mailbox_id == INBOX_ID {
-                    Some("inbox".to_string())
+            .format(|f| {
+                f.name = if f.document_id == INBOX_ID {
+                    "inbox".to_string()
                 } else {
-                    Some(name.to_lowercase())
-                }
+                    f.name.to_lowercase()
+                };
             })
             .into_iterator()
             .map(|e| (e.name, e.document_id))
@@ -273,7 +273,11 @@ impl MailboxFnc for Server {
             .await
             .map(|folders| {
                 folders
-                    .format(|mailbox_id, _| (mailbox_id == INBOX_ID).then(|| "INBOX".to_string()))
+                    .format(|f| {
+                        if f.document_id == INBOX_ID {
+                            f.name = "INBOX".to_string();
+                        }
+                    })
                     .into_iterator()
                     .find(|e| e.name.eq_ignore_ascii_case(path))
                     .map(|e| e.document_id)

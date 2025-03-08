@@ -11,7 +11,7 @@ pub mod file;
 pub mod principal;
 pub mod request;
 
-use dav_proto::schema::{request::Report, response::Condition};
+use dav_proto::schema::response::Condition;
 use http_proto::HttpResponse;
 use hyper::{Method, StatusCode};
 use jmap_proto::types::collection::Collection;

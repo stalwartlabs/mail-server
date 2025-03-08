@@ -1,4 +1,10 @@
-use common::{Server, auth::AccessToken};
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use common::{Server, auth::AccessToken};
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
 use trc::AddContext;

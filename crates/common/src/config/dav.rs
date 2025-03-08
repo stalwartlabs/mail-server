@@ -11,6 +11,7 @@ pub struct DavConfig {
     pub max_request_size: usize,
     pub dead_property_size: Option<usize>,
     pub live_property_size: usize,
+    pub max_lock_timeout: u64,
 }
 
 impl DavConfig {
@@ -25,6 +26,7 @@ impl DavConfig {
             live_property_size: config
                 .property("dav.limits.size.live-property")
                 .unwrap_or(250),
+            max_lock_timeout: config.property("dav.limits.timeout.max-lock").unwrap_or(60),
         }
     }
 }

@@ -6,8 +6,16 @@
 
 use std::borrow::Cow;
 
-use common::{FileItem, Files};
+use common::{FileItem, Files, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use groupware::file::FileNode;
 use hyper::StatusCode;
+use jmap_proto::types::{collection::Collection, type_state::DataType};
+use store::write::{
+    BatchBuilder,
+    assert::HashedValue,
+    log::{Changes, LogInsert},
+    now,
+};
 
 use crate::{DavError, common::uri::UriResource};
 
@@ -16,7 +24,6 @@ pub mod changes;
 pub mod copy_move;
 pub mod delete;
 pub mod get;
-pub mod lock;
 pub mod mkcol;
 pub mod propfind;
 pub mod proppatch;
@@ -38,15 +45,10 @@ pub(crate) trait DavFileResource {
         resource: UriResource<Option<&str>>,
     ) -> crate::Result<UriResource<T>>;
 
-    fn map_destination<T: FromFileItem>(
-        &self,
-        resource: UriResource<Option<&str>>,
-    ) -> crate::Result<UriResource<Option<T>>>;
-
     fn map_parent<'x, T: FromFileItem>(
         &self,
         resource: &'x str,
-    ) -> crate::Result<(Option<T>, Cow<'x, str>)>;
+    ) -> Option<(Option<T>, Cow<'x, str>)>;
 
     fn map_parent_resource<'x, T: FromFileItem>(
         &self,
@@ -70,45 +72,20 @@ impl DavFileResource for Files {
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))
     }
 
-    fn map_destination<T: FromFileItem>(
-        &self,
-        resource: UriResource<Option<&str>>,
-    ) -> crate::Result<UriResource<Option<T>>> {
-        Ok(UriResource {
-            collection: resource.collection,
-            account_id: resource.account_id,
-            resource: if let Some(resource) = resource.resource {
-                Some(
-                    self.files
-                        .by_name(resource)
-                        .map(T::from_file_item)
-                        .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?,
-                )
-            } else {
-                None
-            },
-        })
-    }
-
     fn map_parent<'x, T: FromFileItem>(
         &self,
         resource: &'x str,
-    ) -> crate::Result<(Option<T>, Cow<'x, str>)> {
+    ) -> Option<(Option<T>, Cow<'x, str>)> {
         let (parent, child) = if let Some((parent, child)) = resource.rsplit_once('/') {
             (
-                Some(
-                    self.files
-                        .by_name(parent)
-                        .map(T::from_file_item)
-                        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?,
-                ),
+                Some(self.files.by_name(parent).map(T::from_file_item)?),
                 child,
             )
         } else {
             (None, resource)
         };
 
-        Ok((
+        Some((
             parent,
             percent_encoding::percent_decode_str(child)
                 .decode_utf8()
@@ -122,11 +99,13 @@ impl DavFileResource for Files {
     ) -> crate::Result<UriResource<(Option<T>, Cow<'x, str>)>> {
         if let Some(r) = resource.resource {
             if self.files.by_name(r).is_none() {
-                self.map_parent(r).map(|r| UriResource {
-                    collection: resource.collection,
-                    account_id: resource.account_id,
-                    resource: r,
-                })
+                self.map_parent(r)
+                    .map(|r| UriResource {
+                        collection: resource.collection,
+                        account_id: resource.account_id,
+                        resource: r,
+                    })
+                    .ok_or(DavError::Code(StatusCode::NOT_FOUND))
             } else {
                 Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
             }
@@ -150,4 +129,107 @@ impl FromFileItem for FileItemId {
             is_container: item.is_container,
         }
     }
+}
+
+pub(crate) async fn update_file_node(
+    server: &Server,
+    access_token: &AccessToken,
+    node: HashedValue<FileNode>,
+    mut new_node: FileNode,
+    account_id: u32,
+    document_id: u32,
+) -> trc::Result<()> {
+    // Build node
+    new_node.modified = now() as i64;
+    new_node.change_id = server.generate_snowflake_id()?;
+
+    // Prepare write batch
+    let mut batch = BatchBuilder::new();
+    let change_id = new_node.change_id;
+    batch
+        .with_change_id(change_id)
+        .with_account_id(account_id)
+        .with_collection(Collection::FileNode)
+        .update_document(document_id)
+        .log(Changes::update([document_id]))
+        .custom(
+            ObjectIndexBuilder::new()
+                .with_current(node)
+                .with_changes(new_node)
+                .with_tenant_id(access_token),
+        )?;
+    server.store().write(batch).await?;
+
+    // Broadcast state change
+    server
+        .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
+        .await;
+
+    Ok(())
+}
+
+pub(crate) async fn insert_file_node(
+    server: &Server,
+    access_token: &AccessToken,
+    mut node: FileNode,
+    account_id: u32,
+) -> trc::Result<()> {
+    // Build node
+    let now = now() as i64;
+    node.modified = now;
+    node.created = now;
+    node.change_id = server.generate_snowflake_id()?;
+
+    // Prepare write batch
+    let mut batch = BatchBuilder::new();
+    let change_id = node.change_id;
+    batch
+        .with_change_id(change_id)
+        .with_account_id(account_id)
+        .with_collection(Collection::FileNode)
+        .create_document()
+        .log(LogInsert())
+        .custom(
+            ObjectIndexBuilder::<(), _>::new()
+                .with_changes(node)
+                .with_tenant_id(access_token),
+        )?;
+    server.store().write(batch).await?;
+
+    // Broadcast state change
+    server
+        .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
+        .await;
+
+    Ok(())
+}
+
+pub(crate) async fn delete_file_node(
+    server: &Server,
+    access_token: &AccessToken,
+    node: HashedValue<FileNode>,
+    account_id: u32,
+    document_id: u32,
+) -> trc::Result<()> {
+    // Prepare write batch
+    let mut batch = BatchBuilder::new();
+    let change_id = server.generate_snowflake_id()?;
+    batch
+        .with_change_id(change_id)
+        .with_account_id(account_id)
+        .with_collection(Collection::FileNode)
+        .create_document()
+        .log(Changes::delete([document_id]))
+        .custom(
+            ObjectIndexBuilder::<_, ()>::new()
+                .with_current(node)
+                .with_tenant_id(access_token),
+        )?;
+    server.store().write(batch).await?;
+
+    // Broadcast state change
+    server
+        .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
+        .await;
+    Ok(())
 }

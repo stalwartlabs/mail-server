@@ -98,8 +98,11 @@ impl FileUpdateRequestHandler for Server {
             let extra_bytes = (bytes.len() as u64)
                 .saturating_sub(u32::from(node.file.as_ref().unwrap().size) as u64);
             if extra_bytes > 0 {
-                self.has_available_quota(&access_token.as_resource_token(), extra_bytes)
-                    .await?;
+                self.has_available_quota(
+                    &self.get_resource_token(access_token, account_id).await?,
+                    extra_bytes,
+                )
+                .await?;
             }
 
             // Write blob
@@ -149,7 +152,9 @@ impl FileUpdateRequestHandler for Server {
             Ok(HttpResponse::new(StatusCode::OK))
         } else {
             // Insert
-            let (parent_id, resource_name) = files.map_parent(resource_name)?;
+            let (parent_id, resource_name) = files
+                .map_parent(resource_name)
+                .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
 
             // Validate ACL
             let parent_id = self
@@ -184,8 +189,11 @@ impl FileUpdateRequestHandler for Server {
 
             // Validate quota
             if !bytes.is_empty() {
-                self.has_available_quota(&access_token.as_resource_token(), bytes.len() as u64)
-                    .await?;
+                self.has_available_quota(
+                    &self.get_resource_token(access_token, account_id).await?,
+                    bytes.len() as u64,
+                )
+                .await?;
             }
 
             // Write blob

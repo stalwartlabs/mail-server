@@ -54,7 +54,7 @@ impl FileDeleteRequestHandler for Server {
         }
 
         // Sort ids descending from the deepest to the root
-        ids.sort_unstable_by(|a, b| b.name.len().cmp(&a.name.len()));
+        ids.sort_unstable_by(|a, b| b.hierarchy_sequence.cmp(&a.hierarchy_sequence));
         let (document_id, parent_id, is_container) = ids
             .last()
             .map(|a| (a.document_id, a.parent_id, a.is_container))
@@ -83,7 +83,7 @@ impl FileDeleteRequestHandler for Server {
         // Process deletions
         let mut changes = ChangeLogBuilder::new();
         for document_id in sorted_ids {
-            if let Some(submission) = self
+            if let Some(node) = self
                 .get_property::<HashedValue<Archive>>(
                     account_id,
                     Collection::FileNode,
@@ -92,7 +92,7 @@ impl FileDeleteRequestHandler for Server {
                 )
                 .await?
             {
-                // Update record
+                // Delete record
                 let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)
@@ -102,8 +102,7 @@ impl FileDeleteRequestHandler for Server {
                         ObjectIndexBuilder::<_, ()>::new()
                             .with_tenant_id(access_token)
                             .with_current(
-                                submission
-                                    .to_unarchived::<FileNode>()
+                                node.to_unarchived::<FileNode>()
                                     .caused_by(trc::location!())?,
                             ),
                     )
