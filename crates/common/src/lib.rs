@@ -101,6 +101,7 @@ pub const KV_LOCK_QUEUE_MESSAGE: u8 = 21;
 pub const KV_LOCK_QUEUE_REPORT: u8 = 22;
 pub const KV_LOCK_EMAIL_TASK: u8 = 23;
 pub const KV_LOCK_HOUSEKEEPER: u8 = 24;
+pub const KV_LOCK_DAV: u8 = 25;
 
 #[derive(Clone)]
 pub struct Server {
@@ -260,6 +261,8 @@ pub struct FileItem {
     pub document_id: u32,
     pub parent_id: Option<u32>,
     pub name: String,
+    pub size: u32,
+    pub hierarchy_sequence: u32,
     pub is_container: bool,
 }
 
@@ -495,6 +498,20 @@ impl Files {
         self.files
             .iter()
             .filter(move |item| item.name.starts_with(&prefix) || item.name == search_path)
+    }
+
+    pub fn subtree_with_depth(
+        &self,
+        search_path: &str,
+        depth: usize,
+    ) -> impl Iterator<Item = &FileItem> {
+        let prefix = format!("{search_path}/");
+        self.files.iter().filter(move |item| {
+            item.name
+                .strip_prefix(&prefix)
+                .is_some_and(|name| name.as_bytes().iter().filter(|&&c| c == b'/').count() <= depth)
+                || item.name == search_path
+        })
     }
 
     pub fn is_ancestor_of(&self, ancestor: u32, descendant: u32) -> bool {

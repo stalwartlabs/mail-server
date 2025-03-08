@@ -22,10 +22,11 @@ use hyper::{StatusCode, header};
 
 use crate::{
     DavError, DavMethod, DavResource,
+    common::lock::LockRequestHandler,
     file::{
         acl::FileAclRequestHandler, changes::FileChangesRequestHandler,
         copy_move::FileCopyMoveRequestHandler, delete::FileDeleteRequestHandler,
-        get::FileGetRequestHandler, lock::FileLockRequestHandler, mkcol::FileMkColRequestHandler,
+        get::FileGetRequestHandler, mkcol::FileMkColRequestHandler,
         propfind::FilePropFindRequestHandler, proppatch::FilePropPatchRequestHandler,
         update::FileUpdateRequestHandler,
     },
@@ -70,18 +71,13 @@ impl DavRequestDispatcher for Server {
 
         // Dispatch
         let todo = "lock tokens, headers, etc";
-        match resource {
-            DavResource::Card => {
-                todo!()
-            }
-            DavResource::Cal => {
-                todo!()
-            }
-            DavResource::Principal => {
-                todo!()
-            }
-            DavResource::File => match method {
-                DavMethod::PROPFIND => {
+
+        match method {
+            DavMethod::PROPFIND => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_propfind_request(
                         &access_token,
                         headers,
@@ -89,7 +85,12 @@ impl DavRequestDispatcher for Server {
                     )
                     .await
                 }
-                DavMethod::PROPPATCH => {
+            },
+            DavMethod::PROPPATCH => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_proppatch_request(
                         &access_token,
                         headers,
@@ -97,7 +98,12 @@ impl DavRequestDispatcher for Server {
                     )
                     .await
                 }
-                DavMethod::MKCOL => {
+            },
+            DavMethod::MKCOL => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_mkcol_request(
                         &access_token,
                         headers,
@@ -109,63 +115,108 @@ impl DavRequestDispatcher for Server {
                     )
                     .await
                 }
-                DavMethod::GET => {
+            },
+            DavMethod::GET => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_get_request(&access_token, headers, false)
                         .await
                 }
-                DavMethod::HEAD => {
+            },
+            DavMethod::HEAD => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_get_request(&access_token, headers, true)
                         .await
                 }
-                DavMethod::DELETE => {
+            },
+            DavMethod::DELETE => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_delete_request(&access_token, headers)
                         .await
                 }
-                DavMethod::PUT | DavMethod::POST => {
+            },
+            DavMethod::PUT | DavMethod::POST => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_update_request(&access_token, headers, body, false)
                         .await
                 }
-                DavMethod::PATCH => {
+            },
+            DavMethod::PATCH => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_update_request(&access_token, headers, body, true)
                         .await
                 }
-                DavMethod::COPY => {
+            },
+            DavMethod::COPY => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_copy_move_request(&access_token, headers, false)
                         .await
                 }
-                DavMethod::MOVE => {
+            },
+            DavMethod::MOVE => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
                     self.handle_file_copy_move_request(&access_token, headers, true)
                         .await
                 }
-                DavMethod::LOCK => {
-                    self.handle_file_lock_request(
+            },
+            DavMethod::LOCK => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::Principal => todo!(),
+                DavResource::File => {
+                    self.handle_lock_request(
                         &access_token,
                         headers,
                         LockInfo::parse(&mut Tokenizer::new(&body))?.into(),
                     )
                     .await
                 }
-                DavMethod::UNLOCK => {
-                    self.handle_file_lock_request(&access_token, headers, None)
+            },
+            DavMethod::UNLOCK => self.handle_lock_request(&access_token, headers, None).await,
+            DavMethod::ACL => {
+                self.handle_file_acl_request(
+                    &access_token,
+                    headers,
+                    Acl::parse(&mut Tokenizer::new(&body))?,
+                )
+                .await
+            }
+            DavMethod::REPORT => match Report::parse(&mut Tokenizer::new(&body))? {
+                Report::SyncCollection(sync_collection) => {
+                    self.handle_file_changes_request(&access_token, headers, sync_collection)
                         .await
                 }
-                DavMethod::ACL => {
-                    self.handle_file_acl_request(
-                        &access_token,
-                        headers,
-                        Acl::parse(&mut Tokenizer::new(&body))?,
-                    )
-                    .await
-                }
-                DavMethod::REPORT => match Report::parse(&mut Tokenizer::new(&body))? {
-                    Report::SyncCollection(sync_collection) => {
-                        self.handle_file_changes_request(&access_token, headers, sync_collection)
-                            .await
-                    }
-                    _ => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-                },
-                DavMethod::OPTIONS => unreachable!(),
+                Report::Addressbook(addressbook_query) => todo!(),
+                Report::AdressbookMultiGet(multi_get) => todo!(),
+                Report::CalendarQuery(calendar_query) => todo!(),
+                Report::CalendarMultiGet(multi_get) => todo!(),
+                Report::FreeBusyQuery(free_busy_query) => todo!(),
+                Report::AclPrincipalPropSet(acl_principal_prop_set) => todo!(),
+                Report::PrincipalMatch(principal_match) => todo!(),
+                Report::PrincipalPropertySearch(principal_property_search) => todo!(),
+                Report::PrincipalSearchPropertySet => todo!(),
             },
+            DavMethod::OPTIONS => unreachable!(),
         }
     }
 }

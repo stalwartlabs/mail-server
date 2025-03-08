@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{Server, auth::AccessToken};
 use dav_proto::{
     RequestHeaders,
     schema::{
@@ -16,10 +16,8 @@ use dav_proto::{
 use groupware::file::{FileNode, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, property::Property, type_state::DataType,
-};
-use store::write::{Archive, BatchBuilder, assert::HashedValue, log::Changes, now};
+use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
+use store::write::{Archive, assert::HashedValue};
 use trc::AddContext;
 
 use crate::{
@@ -27,6 +25,8 @@ use crate::{
     common::uri::DavUriResource,
     file::{DavFileResource, acl::FileAclRequestHandler},
 };
+
+use super::update_file_node;
 
 pub(crate) trait FilePropPatchRequestHandler: Sync + Send {
     fn handle_file_proppatch_request(
@@ -127,34 +127,16 @@ impl FilePropPatchRequestHandler for Server {
         self.apply_file_properties(&mut new_node, true, request.set, &mut items);
 
         if new_node != node.inner {
-            // Build node
-            new_node.modified = now() as i64;
-            new_node.change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
-
-            // Prepare write batch
-            let mut batch = BatchBuilder::new();
-            let change_id = new_node.change_id;
-            batch
-                .with_change_id(change_id)
-                .with_account_id(account_id)
-                .with_collection(Collection::FileNode)
-                .update_document(resource.resource)
-                .log(Changes::update([resource.resource]))
-                .custom(
-                    ObjectIndexBuilder::new()
-                        .with_current(node)
-                        .with_changes(new_node)
-                        .with_tenant_id(access_token),
-                )
-                .caused_by(trc::location!())?;
-            self.store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-
-            // Broadcast state change
-            self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-                .await;
+            update_file_node(
+                self,
+                access_token,
+                node,
+                new_node,
+                account_id,
+                resource.resource,
+            )
+            .await
+            .caused_by(trc::location!())?;
         }
 
         Ok(HttpResponse::new(StatusCode::MULTI_STATUS)

@@ -56,10 +56,6 @@ impl IndexableObject for FileNode {
 
 impl IndexableObject for &ArchivedFileNode {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
-        let size = self.dead_properties.size() as u32
-            + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
-            + self.name.len() as u32;
-
         let mut values = Vec::with_capacity(6);
 
         values.extend([
@@ -81,8 +77,8 @@ impl IndexableObject for &ArchivedFileNode {
             },
         ]);
 
+        let size = self.size();
         if let Some(file) = self.file.as_ref() {
-            let size = size + file.size;
             values.extend([
                 IndexValue::Blob {
                     value: (&file.blob_hash).into(),
@@ -114,5 +110,12 @@ impl FolderHierarchy for ArchivedFileNode {
 
     fn is_container(&self) -> bool {
         self.file.is_none()
+    }
+
+    fn size(&self) -> u32 {
+        self.dead_properties.size() as u32
+            + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
+            + self.name.len() as u32
+            + self.file.as_ref().map_or(0, |f| u32::from(f.size))
     }
 }

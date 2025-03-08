@@ -16,7 +16,7 @@ use utils::topological::{TopologicalSort, TopologicalSortIterator};
 use crate::Server;
 
 pub struct ExpandedFolders {
-    names: AHashMap<u32, (String, u32, bool)>,
+    names: AHashMap<u32, ExpandedFolder>,
     iter: TopologicalSortIterator<u32>,
 }
 
@@ -26,12 +26,15 @@ pub struct ExpandedFolder {
     pub document_id: u32,
     pub parent_id: Option<u32>,
     pub is_container: bool,
+    pub size: u32,
+    pub hierarchy_sequence: u32,
 }
 
 pub trait FolderHierarchy: Sync + Send {
     fn name(&self) -> String;
     fn parent_id(&self) -> u32;
     fn is_container(&self) -> bool;
+    fn size(&self) -> u32;
 }
 
 pub trait TopologyBuilder: Sync + Send {
@@ -75,15 +78,26 @@ impl Server {
                     },
                 ),
                 |key, value| {
-                    let document_id = key.deserialize_be_u32(key.len() - U32_LEN)? + 1;
+                    let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
                     let archive = <Archive as Deserialize>::deserialize(value)?;
                     let folder = archive.unarchive::<T>()?;
                     let parent_id = folder.parent_id();
 
-                    topological_sort.insert(parent_id, document_id);
+                    topological_sort.insert(parent_id, document_id + 1);
                     names.insert(
                         document_id,
-                        (folder.name(), parent_id, folder.is_container()),
+                        ExpandedFolder {
+                            name: folder.name(),
+                            document_id,
+                            parent_id: if parent_id > 0 {
+                                Some(parent_id - 1)
+                            } else {
+                                None
+                            },
+                            is_container: folder.is_container(),
+                            size: folder.size(),
+                            hierarchy_sequence: 0,
+                        },
                     );
 
                     Ok(true)
@@ -164,46 +178,39 @@ impl ExpandedFolders {
 
     pub fn format<T>(mut self, formatter: T) -> Self
     where
-        T: Fn(u32, &str) -> Option<String>,
+        T: Fn(&mut ExpandedFolder),
     {
-        for (document_id, (name, _, _)) in &mut self.names {
-            if let Some(new_name) = formatter(*document_id - 1, name) {
-                *name = new_name;
-            }
+        for folder in self.names.values_mut() {
+            formatter(folder);
         }
         self
     }
 
     pub fn into_iterator(mut self) -> impl Iterator<Item = ExpandedFolder> + Sync + Send {
-        for folder_id in self.iter.by_ref() {
+        for (hierarchy_sequence, folder_id) in self.iter.by_ref().enumerate() {
             if folder_id != 0 {
-                if let Some((name, parent_name, parent_id, is_container)) = self
+                let folder_id = folder_id - 1;
+                if let Some((name, parent_name)) = self
                     .names
                     .get(&folder_id)
-                    .and_then(|(name, parent_id, is_container)| {
-                        self.names.get(parent_id).map(|(parent_name, _, _)| {
-                            (name, parent_name, *parent_id, *is_container)
-                        })
+                    .and_then(|folder| folder.parent_id.map(|parent_id| (&folder.name, parent_id)))
+                    .and_then(|(name, parent_id)| {
+                        self.names
+                            .get(&parent_id)
+                            .map(|folder| (name, &folder.name))
                     })
                 {
                     let name = format!("{parent_name}/{name}");
-                    self.names
-                        .insert(folder_id, (name, parent_id, is_container));
+                    let folder = self.names.get_mut(&folder_id).unwrap();
+                    folder.name = name;
+                    folder.hierarchy_sequence = hierarchy_sequence as u32;
+                } else {
+                    self.names.get_mut(&folder_id).unwrap().hierarchy_sequence =
+                        hierarchy_sequence as u32;
                 }
             }
         }
 
-        self.names
-            .into_iter()
-            .map(|(id, (name, parent_id, is_container))| ExpandedFolder {
-                name,
-                document_id: id - 1,
-                is_container,
-                parent_id: if parent_id == 0 {
-                    None
-                } else {
-                    Some(parent_id - 1)
-                },
-            })
+        self.names.into_values()
     }
 }

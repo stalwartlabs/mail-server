@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
 use common::{Server, auth::AccessToken};
 
 use directory::backend::internal::manage::ManageDirectory;
@@ -83,15 +89,5 @@ impl DavUriResource for Server {
 impl<T> UriResource<T> {
     pub fn account_id(&self) -> crate::Result<u32> {
         self.account_id.ok_or(DavError::Code(StatusCode::FORBIDDEN))
-    }
-}
-
-impl<T> UriResource<Option<T>> {
-    pub fn unwrap(self) -> UriResource<T> {
-        UriResource {
-            collection: self.collection,
-            account_id: self.account_id,
-            resource: self.resource.unwrap(),
-        }
     }
 }

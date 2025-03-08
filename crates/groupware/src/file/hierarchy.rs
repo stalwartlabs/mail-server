@@ -51,10 +51,8 @@ async fn build_file_hierarchy(server: &Server, account_id: u32) -> trc::Result<F
         .fetch_folders::<FileNode>(account_id, Collection::FileNode)
         .await
         .caused_by(trc::location!())?
-        .format(|_, name| {
-            percent_encoding::utf8_percent_encode(name, NON_ALPHANUMERIC)
-                .to_string()
-                .into()
+        .format(|f| {
+            f.name = percent_encoding::utf8_percent_encode(&f.name, NON_ALPHANUMERIC).to_string();
         });
     let mut files = Files {
         files: IdBimap::with_capacity(list.len()),
@@ -70,7 +68,9 @@ async fn build_file_hierarchy(server: &Server, account_id: u32) -> trc::Result<F
             document_id: expanded.document_id,
             parent_id: expanded.parent_id,
             name: expanded.name,
+            size: expanded.size,
             is_container: expanded.is_container,
+            hierarchy_sequence: expanded.hierarchy_sequence,
         });
     }
 

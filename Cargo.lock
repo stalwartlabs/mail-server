@@ -1680,6 +1680,7 @@ dependencies = [
  "hyper 1.6.0",
  "jmap_proto",
  "percent-encoding",
+ "rkyv 0.8.10",
  "store",
  "trc",
  "utils",
