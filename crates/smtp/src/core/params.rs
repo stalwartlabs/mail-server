@@ -93,11 +93,6 @@ impl<T: SessionStream> Session<T> {
             .eval_if(&ac.errors_wait, self, self.data.session_id)
             .await
             .unwrap_or_else(|| Duration::from_secs(30));
-        self.params.auth_match_sender = self
-            .server
-            .eval_if(&ac.must_match_sender, self, self.data.session_id)
-            .await
-            .unwrap_or(true);
 
         // VRFY/EXPN parameters
         let ec = &self.server.core.smtp.session.extensions;
@@ -126,15 +121,6 @@ impl<T: SessionStream> Session<T> {
             .eval_if(&ec.vrfy, self, self.data.session_id)
             .await
             .unwrap_or(false);
-        self.params.auth_match_sender = self
-            .server
-            .eval_if(
-                &self.server.core.smtp.session.auth.must_match_sender,
-                self,
-                self.data.session_id,
-            )
-            .await
-            .unwrap_or(true);
     }
 
     pub async fn eval_rcpt_params(&mut self) {

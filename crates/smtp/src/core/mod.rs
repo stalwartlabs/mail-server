@@ -12,10 +12,10 @@ use std::{
 };
 
 use common::{
+    Inner, Server,
     auth::AccessToken,
     config::smtp::auth::VerifyStrategy,
-    listener::{asn::AsnGeoLookupResult, ServerInstance},
-    Inner, Server,
+    listener::{ServerInstance, asn::AsnGeoLookupResult},
 };
 use directory::Directory;
 use mail_auth::{IprevOutput, SpfOutput};
@@ -121,7 +121,6 @@ pub struct SessionParameters {
     pub auth_require: bool,
     pub auth_errors_max: usize,
     pub auth_errors_wait: Duration,
-    pub auth_match_sender: bool,
 
     // Rcpt parameters
     pub rcpt_errors_max: usize,
@@ -239,7 +238,6 @@ impl Session<common::listener::stream::NullIo> {
                 rcpt_max: Default::default(),
                 rcpt_dsn: Default::default(),
                 max_message_size: Default::default(),
-                auth_match_sender: false,
                 iprev: VerifyStrategy::Disable,
                 spf_ehlo: VerifyStrategy::Disable,
                 spf_mail_from: VerifyStrategy::Disable,
@@ -250,7 +248,7 @@ impl Session<common::listener::stream::NullIo> {
     }
 
     pub fn has_failed(&mut self) -> Option<String> {
-        if self.stream.tx_buf.first().is_none_or( |&c| c == b'2') {
+        if self.stream.tx_buf.first().is_none_or(|&c| c == b'2') {
             self.stream.tx_buf.clear();
             None
         } else {

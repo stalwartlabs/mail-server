@@ -7,8 +7,8 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
-use mail_auth::{spf::verify::SpfParameters, IprevOutput, IprevResult, SpfOutput, SpfResult};
-use smtp_proto::{MailFrom, MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
+use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult, spf::verify::SpfParameters};
+use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS, MailFrom, MtPriority};
 use trc::SmtpEvent;
 use utils::config::Rate;
 
@@ -231,7 +231,17 @@ impl<T: SessionStream> Session<T> {
 
         // Make sure that the authenticated user is allowed to send from this address
         match self.authenticated_as() {
-            Some(authenticated_as) if self.params.auth_match_sender => {
+            Some(authenticated_as)
+                if self
+                    .server
+                    .eval_if(
+                        &self.server.core.smtp.session.auth.must_match_sender,
+                        self,
+                        self.data.session_id,
+                    )
+                    .await
+                    .unwrap_or(true) =>
+            {
                 let address_lcase = self.data.mail_from.as_ref().unwrap().address_lcase.as_str();
                 if authenticated_as != address_lcase
                     && !self.authenticated_emails().iter().any(|e| {
@@ -563,10 +573,11 @@ impl<T: SessionStream> Session<T> {
                 Ok(true) => return Ok(result),
                 Ok(false) => (),
                 Err(err) => {
-                    trc::error!(err
-                        .caused_by(trc::location!())
-                        .span_id(self.data.session_id)
-                        .details("Failed to lookup local domain"));
+                    trc::error!(
+                        err.caused_by(trc::location!())
+                            .span_id(self.data.session_id)
+                            .details("Failed to lookup local domain")
+                    );
                 }
             }
 
