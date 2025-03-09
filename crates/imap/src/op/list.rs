@@ -22,6 +22,7 @@ use imap_proto::{
     },
     receiver::Request,
 };
+use trc::StoreEvent;
 
 use super::ImapContext;
 
@@ -202,7 +203,22 @@ impl<T: SessionStream> SessionData<T> {
 
             for (mailbox_name, mailbox_id) in &account.mailbox_names {
                 if matches_pattern(&patterns, mailbox_name) {
-                    let mailbox = account.mailbox_state.get(mailbox_id).unwrap();
+                    let mailbox = if let Some(mailbox) = account.mailbox_state.get(mailbox_id) {
+                        mailbox
+                    } else {
+                        trc::event!(
+                            Store(StoreEvent::UnexpectedError),
+                            Details = "IMAP mailbox no longer present in account state",
+                            Id = *mailbox_id,
+                            Details = account
+                                .mailbox_state
+                                .keys()
+                                .copied()
+                                .map(trc::Value::from)
+                                .collect::<Vec<_>>()
+                        );
+                        continue;
+                    };
                     let mut has_recursive_match = false;
                     if recursive_match {
                         let prefix = format!("{}/", mailbox_name);
