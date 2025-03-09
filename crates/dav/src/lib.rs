@@ -49,8 +49,37 @@ pub enum DavMethod {
 pub(crate) enum DavError {
     Parse(dav_proto::parser::Error),
     Internal(trc::Error),
-    Condition(Condition),
+    Condition(DavErrorCondition),
     Code(StatusCode),
+}
+
+struct DavErrorCondition {
+    pub code: StatusCode,
+    pub condition: Condition,
+}
+
+impl From<DavErrorCondition> for DavError {
+    fn from(value: DavErrorCondition) -> Self {
+        DavError::Condition(value)
+    }
+}
+
+impl From<Condition> for DavErrorCondition {
+    fn from(value: Condition) -> Self {
+        DavErrorCondition {
+            code: StatusCode::CONFLICT,
+            condition: value,
+        }
+    }
+}
+
+impl DavErrorCondition {
+    pub fn new(code: StatusCode, condition: impl Into<Condition>) -> Self {
+        DavErrorCondition {
+            code,
+            condition: condition.into(),
+        }
+    }
 }
 
 impl From<DavResource> for Collection {

@@ -51,6 +51,11 @@ impl HttpResponse {
         self
     }
 
+    pub fn with_lock_token(mut self, token_uri: &str) -> Self {
+        self.builder = self.builder.header("Lock-Token", format!("<{token_uri}>"));
+        self
+    }
+
     pub fn with_header<K, V>(mut self, name: K, value: V) -> Self
     where
         K: TryInto<HeaderName>,
