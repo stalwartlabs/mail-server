@@ -290,15 +290,13 @@ impl DavRequestHandler for Server {
                 }
             }
             Err(DavError::Parse(err)) => HttpResponse::new(StatusCode::BAD_REQUEST),
-            Err(DavError::Condition(condition)) => {
-                HttpResponse::new(StatusCode::PRECONDITION_FAILED)
-                    .with_xml_body(
-                        ErrorResponse::new(condition)
-                            .with_namespace(resource)
-                            .to_string(),
-                    )
-                    .with_no_cache()
-            }
+            Err(DavError::Condition(condition)) => HttpResponse::new(condition.code)
+                .with_xml_body(
+                    ErrorResponse::new(condition.condition)
+                        .with_namespace(resource)
+                        .to_string(),
+                )
+                .with_no_cache(),
             Err(DavError::Code(code)) => HttpResponse::new(code),
         }
     }
