@@ -48,3 +48,22 @@ target "image" {
     ""
   ]
 }
+target "fdb" {
+  inherits = ["docker-metadata-action"]
+  platforms = [
+    ""
+  ]
+  args = {
+    TARGET = "${TARGET}"
+    BUILD_ENV = equal("", "${BUILD_ENV}") ? null : "${BUILD_ENV}"
+  }
+  target = "fdb"
+  cache-from = [
+    "type=registry,ref=${GHCR_REPO}-buildcache:${TARGET}"
+  ]
+  context = "./"
+  dockerfile = "Dockerfile.build"
+  output = [
+    ""
+  ]
+}
