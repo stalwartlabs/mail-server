@@ -17,8 +17,12 @@ use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    DavError,
-    common::{acl::DavAclHandler, uri::DavUriResource},
+    DavError, DavMethod,
+    common::{
+        acl::DavAclHandler,
+        lock::{LockRequestHandler, ResourceState},
+        uri::DavUriResource,
+    },
 };
 
 pub(crate) trait FileDeleteRequestHandler: Sync + Send {
@@ -77,6 +81,23 @@ impl FileDeleteRequestHandler for Server {
                 Bitmap::new().with_item(Acl::RemoveItems)
             },
             Acl::RemoveItems,
+        )
+        .await?;
+
+        // Validate headers
+        self.validate_headers(
+            access_token,
+            &headers,
+            vec![ResourceState {
+                account_id,
+                collection: resource.collection,
+                document_id: document_id.into(),
+                etag: None,
+                lock_token: None,
+                path: delete_path,
+            }],
+            Default::default(),
+            DavMethod::DELETE,
         )
         .await?;
 

@@ -22,7 +22,6 @@ pub struct FileNode {
     pub file: Option<FileProperties>,
     pub created: i64,
     pub modified: i64,
-    pub change_id: u64,
     pub dead_properties: DeadProperty,
     pub acls: Vec<AclGrant>,
 }

@@ -13,7 +13,7 @@ use utils::map::bitmap::BitmapItem;
 
 use super::{property::Property, type_state::DataType};
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum Collection {
     Email = 0,
@@ -30,6 +30,7 @@ pub enum Collection {
     AddressBook = 11,
     ContactCard = 12,
     FileNode = 13,
+    #[default]
     None = 14,
 }
 

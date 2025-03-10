@@ -21,8 +21,12 @@ use store::write::{Archive, assert::HashedValue};
 use trc::AddContext;
 
 use crate::{
-    DavError,
-    common::uri::DavUriResource,
+    DavError, DavMethod,
+    common::{
+        ETag,
+        lock::{LockRequestHandler, ResourceState},
+        uri::DavUriResource,
+    },
     file::{DavFileResource, acl::FileAclRequestHandler},
 };
 
@@ -53,14 +57,14 @@ impl FilePropPatchRequestHandler for Server {
         request: PropertyUpdate,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
-        let resource = self.validate_uri(access_token, headers.uri).await?;
+        let resource_ = self.validate_uri(access_token, headers.uri).await?;
         let uri = headers.uri;
-        let account_id = resource.account_id()?;
+        let account_id = resource_.account_id()?;
         let files = self
             .fetch_file_hierarchy(account_id)
             .await
             .caused_by(trc::location!())?;
-        let resource = files.map_resource(resource)?;
+        let resource = files.map_resource(&resource_)?;
 
         // Fetch node
         let node_ = self
@@ -86,6 +90,25 @@ impl FilePropPatchRequestHandler for Server {
             Acl::ModifyItems,
         )
         .await?;
+
+        // Validate headers
+        self.validate_headers(
+            access_token,
+            &headers,
+            vec![ResourceState {
+                account_id,
+                collection: resource.collection,
+                document_id: resource.resource.into(),
+                etag: node_.inner.etag().clone().into(),
+                lock_token: None,
+                path: resource_.resource.unwrap(),
+            }],
+            Default::default(),
+            DavMethod::PROPPATCH,
+        )
+        .await?;
+
+        // Deserialize
         let node = node.into_deserialized().caused_by(trc::location!())?;
         let mut new_node = node.inner.clone();
 
@@ -126,7 +149,7 @@ impl FilePropPatchRequestHandler for Server {
         // Set properties
         self.apply_file_properties(&mut new_node, true, request.set, &mut items);
 
-        if new_node != node.inner {
+        let etag = if new_node != node.inner {
             update_file_node(
                 self,
                 access_token,
@@ -134,13 +157,17 @@ impl FilePropPatchRequestHandler for Server {
                 new_node,
                 account_id,
                 resource.resource,
+                true,
             )
             .await
-            .caused_by(trc::location!())?;
-        }
+            .caused_by(trc::location!())?
+        } else {
+            node_.inner.etag().into()
+        };
 
         Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
-            .with_xml_body(MultiStatus::new(vec![Response::new_propstat(uri, items)]).to_string()))
+            .with_xml_body(MultiStatus::new(vec![Response::new_propstat(uri, items)]).to_string())
+            .with_etag_opt(etag))
     }
 
     fn apply_file_properties(

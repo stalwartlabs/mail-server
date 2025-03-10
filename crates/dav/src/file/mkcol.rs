@@ -17,7 +17,12 @@ use store::write::{BatchBuilder, log::LogInsert, now};
 use trc::AddContext;
 
 use crate::{
-    common::{acl::DavAclHandler, uri::DavUriResource},
+    DavMethod,
+    common::{
+        acl::DavAclHandler,
+        lock::{LockRequestHandler, ResourceState},
+        uri::DavUriResource,
+    },
     file::DavFileResource,
 };
 
@@ -40,15 +45,15 @@ impl FileMkColRequestHandler for Server {
         request: Option<MkCol>,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
-        let resource = self.validate_uri(access_token, headers.uri).await?;
-        let account_id = resource.account_id()?;
+        let resource_ = self.validate_uri(access_token, headers.uri).await?;
+        let account_id = resource_.account_id()?;
         let files = self
             .fetch_file_hierarchy(account_id)
             .await
             .caused_by(trc::location!())?;
-        let resource = files.map_parent_resource(resource)?;
+        let resource = files.map_parent_resource(&resource_)?;
 
-        // Build collection
+        // Validate and map parent ACL
         let parent_id = self
             .validate_and_map_parent_acl(
                 access_token,
@@ -58,6 +63,25 @@ impl FileMkColRequestHandler for Server {
                 Acl::CreateChild,
             )
             .await?;
+
+        // Validate headers
+        self.validate_headers(
+            access_token,
+            &headers,
+            vec![ResourceState {
+                account_id,
+                collection: resource.collection,
+                document_id: Some(u32::MAX),
+                etag: None,
+                lock_token: None,
+                path: resource_.resource.unwrap(),
+            }],
+            Default::default(),
+            DavMethod::MKCOL,
+        )
+        .await?;
+
+        // Build file container
         let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
         let now = now();
         let mut node = FileNode {
@@ -67,7 +91,6 @@ impl FileMkColRequestHandler for Server {
             file: None,
             created: now as i64,
             modified: now as i64,
-            change_id,
             dead_properties: Default::default(),
             acls: Default::default(),
         };
