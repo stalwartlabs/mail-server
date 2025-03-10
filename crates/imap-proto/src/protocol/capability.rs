@@ -174,6 +174,7 @@ impl Capability {
         } else {
             capabilities.extend([
                 Capability::Auth(Mechanism::OAuthBearer),
+                Capability::Auth(Mechanism::XOauth2),
                 Capability::Auth(Mechanism::Plain),
             ]);
         }
