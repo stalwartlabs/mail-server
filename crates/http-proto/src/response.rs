@@ -41,9 +41,17 @@ impl HttpResponse {
         self
     }
 
-    pub fn with_etag(mut self, etag: u64) -> Self {
-        self.builder = self.builder.header(header::ETAG, format!("\"{etag}\""));
+    pub fn with_etag(mut self, etag: String) -> Self {
+        self.builder = self.builder.header(header::ETAG, etag);
         self
+    }
+
+    pub fn with_etag_opt(self, etag: Option<String>) -> Self {
+        if let Some(etag) = etag {
+            self.with_etag(etag)
+        } else {
+            self
+        }
     }
 
     pub fn with_last_modified(mut self, last_modified: String) -> Self {

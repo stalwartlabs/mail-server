@@ -22,8 +22,13 @@ use trc::AddContext;
 use utils::BlobHash;
 
 use crate::{
-    DavError,
-    common::{acl::DavAclHandler, uri::DavUriResource},
+    DavError, DavMethod,
+    common::{
+        ETag, ExtractETag,
+        acl::DavAclHandler,
+        lock::{LockRequestHandler, ResourceState},
+        uri::DavUriResource,
+    },
     file::DavFileResource,
 };
 
@@ -85,6 +90,23 @@ impl FileUpdateRequestHandler for Server {
             )
             .await?;
 
+            // Validate headers
+            self.validate_headers(
+                access_token,
+                &headers,
+                vec![ResourceState {
+                    account_id,
+                    collection: resource.collection,
+                    document_id: Some(document_id),
+                    etag: node_archive_.inner.etag().into(),
+                    lock_token: None,
+                    path: resource_name,
+                }],
+                Default::default(),
+                DavMethod::PUT,
+            )
+            .await?;
+
             // Verify that the node is a file
             if let Some(file) = node.file.as_ref() {
                 if BlobHash::generate(&bytes).as_slice() == file.blob_hash.0.as_slice() {
@@ -123,7 +145,6 @@ impl FileUpdateRequestHandler for Server {
             new_file.media_type = headers.content_type.map(|v| v.to_string());
             new_file.size = bytes.len() as u32;
             new_node.modified = now() as i64;
-            new_node.change_id = change_id;
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
@@ -140,6 +161,7 @@ impl FileUpdateRequestHandler for Server {
                         .with_tenant_id(access_token),
                 )
                 .caused_by(trc::location!())?;
+            let etag = batch.etag();
             self.store()
                 .write(batch)
                 .await
@@ -149,9 +171,10 @@ impl FileUpdateRequestHandler for Server {
             self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
                 .await;
 
-            Ok(HttpResponse::new(StatusCode::OK))
+            Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
         } else {
             // Insert
+            let orig_resource_name = resource_name;
             let (parent_id, resource_name) = files
                 .map_parent(resource_name)
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -187,6 +210,23 @@ impl FileUpdateRequestHandler for Server {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 
+            // Validate headers
+            self.validate_headers(
+                access_token,
+                &headers,
+                vec![ResourceState {
+                    account_id,
+                    collection: resource.collection,
+                    document_id: Some(u32::MAX),
+                    etag: None,
+                    lock_token: None,
+                    path: orig_resource_name,
+                }],
+                Default::default(),
+                DavMethod::PUT,
+            )
+            .await?;
+
             // Validate quota
             if !bytes.is_empty() {
                 self.has_available_quota(
@@ -218,7 +258,6 @@ impl FileUpdateRequestHandler for Server {
                 }),
                 created: now as i64,
                 modified: now as i64,
-                change_id,
                 dead_properties: Default::default(),
                 acls: Default::default(),
             };
@@ -237,6 +276,7 @@ impl FileUpdateRequestHandler for Server {
                         .with_tenant_id(access_token),
                 )
                 .caused_by(trc::location!())?;
+            let etag = batch.etag();
             self.store()
                 .write(batch)
                 .await
@@ -246,7 +286,7 @@ impl FileUpdateRequestHandler for Server {
             self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
                 .await;
 
-            Ok(HttpResponse::new(StatusCode::CREATED))
+            Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
         }
     }
 }

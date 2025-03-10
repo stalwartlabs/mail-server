@@ -11,18 +11,32 @@ use common::{Server, auth::AccessToken};
 use dav_proto::schema::property::{ActiveLock, LockScope, WebDavProperty};
 use dav_proto::schema::request::{DavPropertyValue, DeadProperty};
 use dav_proto::schema::response::{BaseCondition, List, PropResponse};
-use dav_proto::{Depth, ResourceState, Timeout};
+use dav_proto::{Condition, Depth, Timeout};
 use dav_proto::{RequestHeaders, schema::request::LockInfo};
+use groupware::file::hierarchy::FileHierarchy;
 use http_proto::HttpResponse;
 use hyper::StatusCode;
+use jmap_proto::types::collection::Collection;
+use jmap_proto::types::property::Property;
 use store::dispatch::lookup::KeyValue;
 use store::write::serialize::rkyv_deserialize;
 use store::write::{Archive, Archiver, now};
 use store::{Serialize, U32_LEN};
 use trc::AddContext;
 
+use super::ETag;
 use super::uri::{DavUriResource, UriResource};
-use crate::{DavError, DavErrorCondition};
+use crate::{DavError, DavErrorCondition, DavMethod};
+
+#[derive(Debug, Clone)]
+pub struct ResourceState<'x> {
+    pub account_id: u32,
+    pub collection: Collection,
+    pub document_id: Option<u32>,
+    pub etag: Option<String>,
+    pub lock_token: Option<String>,
+    pub path: &'x str,
+}
 
 pub(crate) trait LockRequestHandler: Sync + Send {
     fn handle_lock_request(
@@ -31,6 +45,15 @@ pub(crate) trait LockRequestHandler: Sync + Send {
         headers: RequestHeaders<'_>,
         lock_info: Option<LockInfo>,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
+
+    fn validate_headers(
+        &self,
+        access_token: &AccessToken,
+        headers: &RequestHeaders<'_>,
+        resources: Vec<ResourceState<'_>>,
+        locks: LockCaches<'_>,
+        method: DavMethod,
+    ) -> impl Future<Output = crate::Result<()>> + Send;
 }
 
 impl LockRequestHandler for Server {
@@ -47,9 +70,19 @@ impl LockRequestHandler for Server {
         let resource_path = resource
             .resource
             .ok_or(DavError::Code(StatusCode::CONFLICT))?;
-        if !access_token.is_member(resource.account_id.unwrap()) {
+        let account_id = resource.account_id.unwrap();
+        if !access_token.is_member(account_id) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
+
+        let resources = vec![ResourceState {
+            account_id,
+            collection: resource.collection,
+            path: resource_path,
+            document_id: None,
+            etag: None,
+            lock_token: None,
+        }];
 
         let mut lock_data = if let Some(lock_data) = self
             .in_memory_store()
@@ -60,29 +93,17 @@ impl LockRequestHandler for Server {
             let lock_data = lock_data
                 .unarchive::<LockData>()
                 .caused_by(trc::location!())?;
-            if let Some((lock_path, lock_item)) = lock_data.find_lock(resource_path) {
-                if !lock_item.is_lock_owner(access_token) {
-                    return Err(DavErrorCondition::new(
-                        StatusCode::LOCKED,
-                        BaseCondition::LockTokenSubmitted(List(vec![
-                            headers.format_to_base_uri(lock_path).into(),
-                        ])),
-                    )
-                    .into());
-                } else if headers.has_if()
-                    && !headers.eval_if(&[ResourceState {
-                        resource: None,
-                        etag: String::new(),
-                        state_token: lock_item.uuid(),
-                    }])
-                {
-                    return Err(DavErrorCondition::new(
-                        StatusCode::PRECONDITION_FAILED,
-                        BaseCondition::LockTokenMatchesRequestUri,
-                    )
-                    .into());
-                }
-            } else if lock_info.is_some() {
+
+            self.validate_headers(
+                access_token,
+                &headers,
+                resources,
+                LockCaches::new_shared(account_id, resource.collection, lock_data),
+                DavMethod::LOCK,
+            )
+            .await?;
+
+            if lock_info.is_some() {
                 if let Some((lock_path, lock_item)) = lock_data.can_lock(resource_path) {
                     if !lock_item.is_lock_owner(access_token) {
                         return Err(DavErrorCondition::new(
@@ -92,24 +113,21 @@ impl LockRequestHandler for Server {
                             ])),
                         )
                         .into());
-                    } else if headers.has_if()
-                        && !headers.eval_if(&[ResourceState {
-                            resource: None,
-                            etag: String::new(),
-                            state_token: lock_item.uuid(),
-                        }])
-                    {
-                        return Err(DavErrorCondition::new(
-                            StatusCode::PRECONDITION_FAILED,
-                            BaseCondition::LockTokenMatchesRequestUri,
-                        )
-                        .into());
                     }
                 }
             }
 
             rkyv_deserialize(lock_data).caused_by(trc::location!())?
         } else if lock_info.is_some() {
+            self.validate_headers(
+                access_token,
+                &headers,
+                resources,
+                Default::default(),
+                DavMethod::LOCK,
+            )
+            .await?;
+
             LockData::default()
         } else {
             return Err(DavErrorCondition::new(
@@ -214,6 +232,338 @@ impl LockRequestHandler for Server {
         }
 
         Ok(response)
+    }
+
+    async fn validate_headers(
+        &self,
+        access_token: &AccessToken,
+        headers: &RequestHeaders<'_>,
+        mut resources: Vec<ResourceState<'_>>,
+        mut locks_: LockCaches<'_>,
+        method: DavMethod,
+    ) -> crate::Result<()> {
+        let no_if_headers = headers.if_.is_empty();
+        match method {
+            DavMethod::GET | DavMethod::HEAD => {
+                // Return early for GET/HEAD requests without If headers
+                if no_if_headers {
+                    return Ok(());
+                }
+            }
+            DavMethod::COPY
+            | DavMethod::MOVE
+            | DavMethod::POST
+            | DavMethod::PUT
+            | DavMethod::PATCH => {
+                if headers.overwrite_fail && resources.last().is_some_and(|r| r.etag.is_some()) {
+                    return Err(DavError::Code(StatusCode::PRECONDITION_FAILED));
+                }
+            }
+            _ => {}
+        }
+
+        // Add lock data to the cache
+        for resource in &resources {
+            if locks_.is_cached(resource).is_none() {
+                locks_.insert_lock_data(self, resource).await?;
+            }
+        }
+
+        // Unarchive lock data
+        let mut locks = locks_.to_unarchived().caused_by(trc::location!())?;
+
+        // Validate locks
+        if !matches!(method, DavMethod::GET | DavMethod::HEAD) {
+            for resource in &resources {
+                if let Some(idx) = locks.find_cache_pos(self, resource).await? {
+                    if let Some((lock_path, lock_item)) = locks.find_lock_by_pos(idx, resource)? {
+                        if !lock_item.is_lock_owner(access_token) {
+                            return Err(DavErrorCondition::new(
+                                StatusCode::LOCKED,
+                                BaseCondition::LockTokenSubmitted(List(vec![
+                                    headers.format_to_base_uri(lock_path).into(),
+                                ])),
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
+        }
+
+        // There are no If headers, so we can return early
+        if no_if_headers {
+            return Ok(());
+        }
+
+        let mut resource_not_found = ResourceState {
+            account_id: u32::MAX,
+            collection: Collection::None,
+            document_id: None,
+            etag: None,
+            lock_token: None,
+            path: "",
+        };
+
+        'outer: for if_ in &headers.if_ {
+            if if_.list.is_empty() {
+                continue;
+            }
+
+            let mut resource_state = &mut resource_not_found;
+
+            if let Some(resource) = if_.resource {
+                if let Some(resource) = self
+                    .validate_uri(access_token, resource)
+                    .await
+                    .ok()
+                    .and_then(|r| {
+                        Some(ResourceState {
+                            account_id: r.account_id?,
+                            collection: r.collection,
+                            path: r.resource?,
+                            document_id: None,
+                            etag: None,
+                            lock_token: None,
+                        })
+                    })
+                {
+                    if let Some(known_resource) = resources.iter_mut().find(|r| {
+                        r.account_id == resource.account_id
+                            && r.collection == resource.collection
+                            && r.path == resource.path
+                    }) {
+                        resource_state = known_resource;
+                    } else if access_token.has_access(resource.account_id, resource.collection) {
+                        resources.push(resource);
+                        resource_state = resources.last_mut().unwrap();
+                    }
+                }
+            } else if let Some(resource) = resources.first_mut() {
+                resource_state = resource;
+            };
+
+            // Fill missing data for resource
+            if resource_state.collection != Collection::None
+                && (resource_state.etag.is_none() || resource_state.lock_token.is_none())
+            {
+                let mut needs_token = false;
+                let mut needs_etag = false;
+
+                for cond in &if_.list {
+                    match cond {
+                        Condition::StateToken { .. } => {
+                            needs_token = true;
+                        }
+                        Condition::ETag { .. } | Condition::Exists { .. } => {
+                            needs_etag = true;
+                        }
+                    }
+                }
+
+                // Fetch eTag
+                if needs_etag && resource_state.etag.is_none() {
+                    if resource_state.document_id.is_none() {
+                        let todo = "map cal, card";
+
+                        resource_state.document_id = match resource_state.collection {
+                            Collection::FileNode => self
+                                .fetch_file_hierarchy(resource_state.account_id)
+                                .await
+                                .caused_by(trc::location!())?
+                                .files
+                                .by_name(resource_state.path)
+                                .map(|f| f.document_id),
+                            Collection::Calendar => todo!(),
+                            Collection::CalendarEvent => todo!(),
+                            Collection::AddressBook => todo!(),
+                            Collection::ContactCard => todo!(),
+                            _ => None,
+                        }
+                        .unwrap_or(u32::MAX)
+                        .into();
+                    }
+
+                    if let Some(document_id) =
+                        resource_state.document_id.filter(|&id| id != u32::MAX)
+                    {
+                        if let Some(archive) = self
+                            .get_property::<Archive>(
+                                resource_state.account_id,
+                                resource_state.collection,
+                                document_id,
+                                Property::Value,
+                            )
+                            .await
+                            .caused_by(trc::location!())?
+                        {
+                            resource_state.etag = archive.etag().into();
+                        }
+                    }
+                }
+
+                // Fetch lock token
+                if needs_token && resource_state.lock_token.is_none() {
+                    if let Some(idx) = locks.find_cache_pos(self, resource_state).await? {
+                        if let Some((_, lock)) = locks.find_lock_by_pos(idx, resource_state)? {
+                            resource_state.lock_token = Some(lock.uuid());
+                        }
+                    }
+                }
+            }
+
+            for cond in &if_.list {
+                match cond {
+                    Condition::StateToken { is_not, token } => {
+                        if !((resource_state
+                            .lock_token
+                            .as_ref()
+                            .is_some_and(|lock_token| lock_token == token))
+                            ^ is_not)
+                        {
+                            continue 'outer;
+                        }
+                    }
+                    Condition::ETag { is_not, tag } => {
+                        if !((resource_state.etag.as_ref().is_some_and(|etag| etag == tag))
+                            ^ is_not)
+                        {
+                            continue 'outer;
+                        }
+                    }
+                    Condition::Exists { is_not } => {
+                        if !((resource_state.etag.is_some()) ^ is_not) {
+                            continue 'outer;
+                        }
+                    }
+                }
+            }
+
+            return Ok(());
+        }
+
+        Err(DavError::Code(StatusCode::PRECONDITION_FAILED))
+    }
+}
+
+struct LockCache<'x> {
+    account_id: u32,
+    collection: Collection,
+    lock_archive: LockArchive<'x>,
+}
+
+enum LockArchive<'x> {
+    Unarchived(&'x ArchivedLockData),
+    Archived(Archive),
+}
+
+#[derive(Default)]
+pub(crate) struct LockCaches<'x> {
+    caches: Vec<LockCache<'x>>,
+}
+
+impl<'x> LockArchive<'x> {
+    fn unarchive(&'x self) -> trc::Result<&'x ArchivedLockData> {
+        match self {
+            LockArchive::Unarchived(archived_lock_data) => Ok(archived_lock_data),
+            LockArchive::Archived(archive) => {
+                archive.unarchive::<LockData>().caused_by(trc::location!())
+            }
+        }
+    }
+}
+
+impl<'x> LockCaches<'x> {
+    pub(self) fn new_shared(
+        account_id: u32,
+        collection: Collection,
+        lock_data: &'x ArchivedLockData,
+    ) -> Self {
+        Self {
+            caches: vec![LockCache {
+                account_id,
+                collection,
+                lock_archive: LockArchive::Unarchived(lock_data),
+            }],
+        }
+    }
+
+    pub fn to_unarchived(&'x self) -> trc::Result<LockCaches<'x>> {
+        let caches = self
+            .caches
+            .iter()
+            .map(|cache| {
+                Ok(LockCache {
+                    account_id: cache.account_id,
+                    collection: cache.collection,
+                    lock_archive: LockArchive::Unarchived(
+                        cache.lock_archive.unarchive().caused_by(trc::location!())?,
+                    ),
+                })
+            })
+            .collect::<trc::Result<Vec<_>>>()?;
+
+        Ok(LockCaches { caches })
+    }
+
+    #[inline]
+    pub fn is_cached(&self, resource_state: &ResourceState<'_>) -> Option<usize> {
+        self.caches.iter().position(|cache| {
+            resource_state.account_id == cache.account_id
+                && resource_state.collection == cache.collection
+        })
+    }
+
+    pub async fn find_cache_pos(
+        &mut self,
+        server: &Server,
+        resource_state: &ResourceState<'_>,
+    ) -> trc::Result<Option<usize>> {
+        if let Some(idx) = self.is_cached(resource_state) {
+            Ok(Some(idx))
+        } else if resource_state.collection != Collection::None {
+            if self.insert_lock_data(server, resource_state).await? {
+                Ok(Some(self.caches.len() - 1))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn find_lock_by_pos<'y>(
+        &'x self,
+        pos: usize,
+        resource_state: &'y ResourceState<'_>,
+    ) -> trc::Result<Option<(&'y str, &'x ArchivedLockItem)>> {
+        self.caches[pos]
+            .lock_archive
+            .unarchive()
+            .map(|l| l.find_lock(resource_state.path))
+    }
+
+    async fn insert_lock_data(
+        &mut self,
+        server: &Server,
+        resource_state: &ResourceState<'_>,
+    ) -> trc::Result<bool> {
+        if let Some(lock_archive) = server
+            .in_memory_store()
+            .key_get::<Archive>(resource_state.lock_key().as_slice())
+            .await
+            .caused_by(trc::location!())?
+        {
+            self.caches.push(LockCache {
+                account_id: resource_state.account_id,
+                collection: resource_state.collection,
+                lock_archive: LockArchive::Archived(lock_archive),
+            });
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -353,3 +703,23 @@ impl UriResource<Option<&str>> {
         Some(result)
     }
 }
+
+impl ResourceState<'_> {
+    pub fn lock_key(&self) -> Vec<u8> {
+        let mut result = Vec::with_capacity(U32_LEN + 2);
+        result.push(KV_LOCK_DAV);
+        result.extend_from_slice(self.account_id.to_be_bytes().as_slice());
+        result.push(u8::from(self.collection));
+        result
+    }
+}
+
+impl PartialEq for ResourceState<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.account_id == other.account_id
+            && self.collection == other.collection
+            && self.document_id == other.document_id
+    }
+}
+
+impl Eq for ResourceState<'_> {}

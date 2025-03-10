@@ -14,8 +14,12 @@ use store::write::Archive;
 use trc::AddContext;
 
 use crate::{
-    DavError,
-    common::uri::DavUriResource,
+    DavError, DavMethod,
+    common::{
+        ETag,
+        lock::{LockRequestHandler, ResourceState},
+        uri::DavUriResource,
+    },
     file::{DavFileResource, acl::FileAclRequestHandler},
 };
 
@@ -36,13 +40,13 @@ impl FileGetRequestHandler for Server {
         is_head: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
-        let resource = self.validate_uri(access_token, headers.uri).await?;
-        let account_id = resource.account_id()?;
+        let resource_ = self.validate_uri(access_token, headers.uri).await?;
+        let account_id = resource_.account_id()?;
         let files = self
             .fetch_file_hierarchy(account_id)
             .await
             .caused_by(trc::location!())?;
-        let resource = files.map_resource(resource)?;
+        let resource = files.map_resource(&resource_)?;
 
         // Fetch node
         let node_ = self
@@ -71,9 +75,27 @@ impl FileGetRequestHandler for Server {
             return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
         };
 
+        // Validate headers
+        let etag = node_.etag();
+        self.validate_headers(
+            access_token,
+            &headers,
+            vec![ResourceState {
+                account_id,
+                collection: resource.collection,
+                document_id: resource.resource.into(),
+                etag: etag.clone().into(),
+                lock_token: None,
+                path: resource_.resource.unwrap(),
+            }],
+            Default::default(),
+            DavMethod::GET,
+        )
+        .await?;
+
         let response = HttpResponse::new(StatusCode::OK)
             .with_content_type(content_type.unwrap_or("application/octet-stream"))
-            .with_etag(u64::from(node.change_id))
+            .with_etag(etag)
             .with_last_modified(Rfc1123DateTime::new(i64::from(node.modified)).to_string());
 
         if !is_head {

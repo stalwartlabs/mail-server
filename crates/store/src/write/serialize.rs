@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::borrow::Cow;
+
 use rkyv::util::AlignedVec;
 
 use crate::{Deserialize, Serialize, SerializeInfallible, U32_LEN, Value};
@@ -127,6 +129,18 @@ where
 }
 
 impl Archive {
+    pub fn try_unpack_bytes(bytes: &[u8]) -> Option<Cow<[u8]>> {
+        match bytes.split_last() {
+            Some((&ARCHIVE_UNCOMPRESSED, archive)) => Some(archive.into()),
+            Some((&ARCHIVE_LZ4_COMPRESSED, archive)) => {
+                lz4_flex::decompress_size_prepended(archive)
+                    .ok()
+                    .map(Cow::Owned)
+            }
+            _ => None,
+        }
+    }
+
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         match self {

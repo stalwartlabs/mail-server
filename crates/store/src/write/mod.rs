@@ -583,3 +583,9 @@ impl QueueClass {
         }
     }
 }
+
+impl AsRef<[u8]> for Archive {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}

@@ -22,9 +22,10 @@ use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    DavError,
+    DavError, DavMethod,
     common::{
         acl::DavAclHandler,
+        lock::{LockRequestHandler, ResourceState},
         uri::{DavUriResource, UriResource},
     },
     file::{DavFileResource, FileItemId, insert_file_node, update_file_node},
@@ -49,13 +50,13 @@ impl FileCopyMoveRequestHandler for Server {
         is_move: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate source
-        let from_resource = self.validate_uri(access_token, headers.uri).await?;
-        let from_account_id = from_resource.account_id()?;
+        let from_resource_ = self.validate_uri(access_token, headers.uri).await?;
+        let from_account_id = from_resource_.account_id()?;
         let from_files = self
             .fetch_file_hierarchy(from_account_id)
             .await
             .caused_by(trc::location!())?;
-        let from_resource = from_files.map_resource::<FileItemId>(from_resource)?;
+        let from_resource = from_files.map_resource::<FileItemId>(&from_resource_)?;
 
         // Validate source ACLs
         let mut child_acl = Bitmap::new();
@@ -115,7 +116,10 @@ impl FileCopyMoveRequestHandler for Server {
         };
 
         // Map file item
+        let mut destination_resource_name = "";
         let mut destination = if let Some(resource) = destination.resource {
+            destination_resource_name = resource;
+
             // Check if the resource exists
             if let Some(destination) = to_files
                 .files
@@ -182,6 +186,33 @@ impl FileCopyMoveRequestHandler for Server {
         } else if !access_token.is_member(to_account_id) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
+
+        // Validate headers
+        self.validate_headers(
+            access_token,
+            &headers,
+            vec![
+                ResourceState {
+                    account_id: from_account_id,
+                    collection: Collection::FileNode,
+                    document_id: Some(from_resource.resource.document_id),
+                    etag: None,
+                    lock_token: None,
+                    path: from_resource_.resource.unwrap(),
+                },
+                ResourceState {
+                    account_id: to_account_id,
+                    collection: Collection::FileNode,
+                    document_id: Some(destination.document_id.unwrap_or(u32::MAX)),
+                    etag: None,
+                    lock_token: None,
+                    path: destination_resource_name,
+                },
+            ],
+            Default::default(),
+            DavMethod::MOVE,
+        )
+        .await?;
 
         // Validate quota
         if !is_move || from_account_id != to_account_id {
@@ -298,18 +329,19 @@ async fn move_container(
         if let Some(new_name) = destination.new_name {
             new_node.name = new_name;
         }
-        update_file_node(
+        let etag = update_file_node(
             server,
             access_token,
             node,
             new_node,
             from_account_id,
             from_document_id,
+            true,
         )
         .await
         .caused_by(trc::location!())?;
 
-        Ok(HttpResponse::new(StatusCode::CREATED))
+        Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
     } else {
         copy_container(
             server,
@@ -528,13 +560,14 @@ async fn overwrite_and_delete_item(
     };
     source_node.parent_id = dest_node.inner.parent_id;
 
-    update_file_node(
+    let etag = update_file_node(
         server,
         access_token,
         dest_node,
         source_node,
         to_account_id,
         to_document_id,
+        true,
     )
     .await
     .caused_by(trc::location!())?;
@@ -549,7 +582,7 @@ async fn overwrite_and_delete_item(
     .await
     .caused_by(trc::location!())?;
 
-    Ok(HttpResponse::new(StatusCode::CREATED))
+    Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
 }
 
 // Overwrites the contents of one file with another
@@ -598,18 +631,19 @@ async fn overwrite_item(
     };
     source_node.parent_id = dest_node.inner.parent_id;
 
-    update_file_node(
+    let etag = update_file_node(
         server,
         access_token,
         dest_node,
         source_node,
         to_account_id,
         to_document_id,
+        true,
     )
     .await
     .caused_by(trc::location!())?;
 
-    Ok(HttpResponse::new(StatusCode::CREATED))
+    Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
 }
 
 // Moves an item under an existing container
@@ -642,7 +676,7 @@ async fn move_item(
         new_node.name = new_name;
     }
 
-    if from_account_id == to_account_id {
+    let etag = if from_account_id == to_account_id {
         // Destination is in the same account: just update the parent id
         update_file_node(
             server,
@@ -651,12 +685,13 @@ async fn move_item(
             new_node,
             from_account_id,
             from_document_id,
+            true,
         )
         .await
-        .caused_by(trc::location!())?;
+        .caused_by(trc::location!())?
     } else {
         // Destination is in a different account: insert a new node, then delete the old one
-        insert_file_node(server, access_token, new_node, to_account_id)
+        let etag = insert_file_node(server, access_token, new_node, to_account_id, true)
             .await
             .caused_by(trc::location!())?;
         delete_file_node(
@@ -668,9 +703,10 @@ async fn move_item(
         )
         .await
         .caused_by(trc::location!())?;
-    }
+        etag
+    };
 
-    Ok(HttpResponse::new(StatusCode::CREATED))
+    Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
 }
 
 // Copies an item under an existing container
@@ -701,11 +737,11 @@ async fn copy_item(
     if let Some(new_name) = destination.new_name {
         node.name = new_name;
     }
-    insert_file_node(server, access_token, node, to_account_id)
+    let etag = insert_file_node(server, access_token, node, to_account_id, true)
         .await
         .caused_by(trc::location!())?;
 
-    Ok(HttpResponse::new(StatusCode::CREATED))
+    Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
 }
 
 // Renames an item
@@ -734,18 +770,19 @@ async fn rename_item(
     if let Some(new_name) = destination.new_name {
         new_node.name = new_name;
     }
-    update_file_node(
+    let etag = update_file_node(
         server,
         access_token,
         node,
         new_node,
         from_account_id,
         from_document_id,
+        true,
     )
     .await
     .caused_by(trc::location!())?;
 
-    Ok(HttpResponse::new(StatusCode::CREATED))
+    Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
 }
 
 impl FromFileItem for Destination {

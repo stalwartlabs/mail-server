@@ -17,7 +17,10 @@ use store::write::{
     now,
 };
 
-use crate::{DavError, common::uri::UriResource};
+use crate::{
+    DavError,
+    common::{ExtractETag, uri::UriResource},
+};
 
 pub mod acl;
 pub mod changes;
@@ -42,7 +45,7 @@ pub(crate) struct FileItemId {
 pub(crate) trait DavFileResource {
     fn map_resource<T: FromFileItem>(
         &self,
-        resource: UriResource<Option<&str>>,
+        resource: &UriResource<Option<&str>>,
     ) -> crate::Result<UriResource<T>>;
 
     fn map_parent<'x, T: FromFileItem>(
@@ -52,14 +55,14 @@ pub(crate) trait DavFileResource {
 
     fn map_parent_resource<'x, T: FromFileItem>(
         &self,
-        resource: UriResource<Option<&'x str>>,
+        resource: &UriResource<Option<&'x str>>,
     ) -> crate::Result<UriResource<(Option<T>, Cow<'x, str>)>>;
 }
 
 impl DavFileResource for Files {
     fn map_resource<T: FromFileItem>(
         &self,
-        resource: UriResource<Option<&str>>,
+        resource: &UriResource<Option<&str>>,
     ) -> crate::Result<UriResource<T>> {
         resource
             .resource
@@ -95,7 +98,7 @@ impl DavFileResource for Files {
 
     fn map_parent_resource<'x, T: FromFileItem>(
         &self,
-        resource: UriResource<Option<&'x str>>,
+        resource: &UriResource<Option<&'x str>>,
     ) -> crate::Result<UriResource<(Option<T>, Cow<'x, str>)>> {
         if let Some(r) = resource.resource {
             if self.files.by_name(r).is_none() {
@@ -138,14 +141,14 @@ pub(crate) async fn update_file_node(
     mut new_node: FileNode,
     account_id: u32,
     document_id: u32,
-) -> trc::Result<()> {
+    with_etag: bool,
+) -> trc::Result<Option<String>> {
     // Build node
     new_node.modified = now() as i64;
-    new_node.change_id = server.generate_snowflake_id()?;
+    let change_id = server.generate_snowflake_id()?;
 
     // Prepare write batch
     let mut batch = BatchBuilder::new();
-    let change_id = new_node.change_id;
     batch
         .with_change_id(change_id)
         .with_account_id(account_id)
@@ -158,6 +161,7 @@ pub(crate) async fn update_file_node(
                 .with_changes(new_node)
                 .with_tenant_id(access_token),
         )?;
+    let etag = if with_etag { batch.etag() } else { None };
     server.store().write(batch).await?;
 
     // Broadcast state change
@@ -165,7 +169,7 @@ pub(crate) async fn update_file_node(
         .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
         .await;
 
-    Ok(())
+    Ok(etag)
 }
 
 pub(crate) async fn insert_file_node(
@@ -173,16 +177,16 @@ pub(crate) async fn insert_file_node(
     access_token: &AccessToken,
     mut node: FileNode,
     account_id: u32,
-) -> trc::Result<()> {
+    with_etag: bool,
+) -> trc::Result<Option<String>> {
     // Build node
     let now = now() as i64;
     node.modified = now;
     node.created = now;
-    node.change_id = server.generate_snowflake_id()?;
 
     // Prepare write batch
     let mut batch = BatchBuilder::new();
-    let change_id = node.change_id;
+    let change_id = server.generate_snowflake_id()?;
     batch
         .with_change_id(change_id)
         .with_account_id(account_id)
@@ -194,6 +198,8 @@ pub(crate) async fn insert_file_node(
                 .with_changes(node)
                 .with_tenant_id(access_token),
         )?;
+    let etag = if with_etag { batch.etag() } else { None };
+
     server.store().write(batch).await?;
 
     // Broadcast state change
@@ -201,7 +207,7 @@ pub(crate) async fn insert_file_node(
         .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
         .await;
 
-    Ok(())
+    Ok(etag)
 }
 
 pub(crate) async fn delete_file_node(
