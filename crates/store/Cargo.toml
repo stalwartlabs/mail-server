@@ -51,6 +51,7 @@ arc-swap = "1.6.0"
 bitpacking = "0.9.2"
 memchr = { version = "2" }
 rkyv = { version = "0.8.10", features = ["little_endian"] }
+gxhash = "3.4.1"
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

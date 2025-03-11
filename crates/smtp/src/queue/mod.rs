@@ -12,7 +12,7 @@ use std::{
 
 use common::expr::{self, functions::ResolveVariable, *};
 use smtp_proto::{ArchivedResponse, Response};
-use store::write::now;
+use store::{SerializedVersion, write::now};
 use utils::BlobHash;
 
 pub mod dsn;
@@ -65,6 +65,12 @@ pub struct Message {
 
     #[rkyv(with = rkyv::with::Skip)]
     pub span_id: u64,
+}
+
+impl SerializedVersion for Message {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone, PartialEq, Eq)]

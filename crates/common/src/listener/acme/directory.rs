@@ -11,8 +11,8 @@ use reqwest::{Method, Response};
 use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
 use serde::Deserialize;
-use store::Serialize;
 use store::write::Archiver;
+use store::{Serialize, SerializedVersion};
 use trc::AddContext;
 use trc::event::conv::AssertSuccess;
 
@@ -208,6 +208,12 @@ impl Account {
 pub struct SerializedCert {
     pub certificate: Vec<u8>,
     pub private_key: Vec<u8>,
+}
+
+impl SerializedVersion for SerializedCert {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

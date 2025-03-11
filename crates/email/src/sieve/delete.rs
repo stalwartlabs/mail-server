@@ -6,7 +6,7 @@
 
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{Archive, BatchBuilder, assert::HashedValue};
+use store::write::{AlignedBytes, Archive, BatchBuilder};
 use trc::AddContext;
 
 use super::SieveScript;
@@ -30,7 +30,7 @@ impl SieveScriptDelete for Server {
         // Fetch record
         let account_id = resource_token.account_id;
         let obj_ = self
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,

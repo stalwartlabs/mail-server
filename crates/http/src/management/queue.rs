@@ -30,7 +30,9 @@ use smtp::{
 };
 use store::{
     Deserialize, IterateParams, ValueKey,
-    write::{Archive, QueueClass, ReportEvent, ValueClass, key::DeserializeBigEndian, now},
+    write::{
+        AlignedBytes, Archive, QueueClass, ReportEvent, ValueClass, key::DeserializeBigEndian, now,
+    },
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
@@ -713,7 +715,7 @@ async fn fetch_queued_messages(
         .iterate(
             IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
-                let message_ = <Archive as Deserialize>::deserialize(value)
+                let message_ = <Archive<AlignedBytes> as Deserialize>::deserialize(value)
                     .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?;
                 let message = message_
                     .unarchive::<queue::Message>()

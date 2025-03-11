@@ -16,10 +16,7 @@ use jmap_proto::{
     },
 };
 use store::{
-    Serialize,
-    rkyv::{option::ArchivedOption, vec::ArchivedVec},
-    roaring::RoaringBitmap,
-    write::{Archive, Archiver, BatchBuilder},
+    rkyv::{option::ArchivedOption, vec::ArchivedVec}, roaring::RoaringBitmap, write::{AlignedBytes, Archive, Archiver, BatchBuilder}, Serialize
 };
 use trc::AddContext;
 use utils::sanitize_email;
@@ -85,7 +82,7 @@ impl IdentityGet for Server {
                 continue;
             }
             let _identity = if let Some(identity) = self
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Identity,
                     document_id,

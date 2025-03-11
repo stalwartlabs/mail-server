@@ -11,10 +11,7 @@ use groupware::file::FileNode;
 use hyper::StatusCode;
 use jmap_proto::types::{collection::Collection, type_state::DataType};
 use store::write::{
-    BatchBuilder,
-    assert::HashedValue,
-    log::{Changes, LogInsert},
-    now,
+    log::{Changes, LogInsert}, now, Archive, BatchBuilder
 };
 
 use crate::{
@@ -137,7 +134,7 @@ impl FromFileItem for FileItemId {
 pub(crate) async fn update_file_node(
     server: &Server,
     access_token: &AccessToken,
-    node: HashedValue<FileNode>,
+    node: Archive<FileNode>,
     mut new_node: FileNode,
     account_id: u32,
     document_id: u32,
@@ -213,7 +210,7 @@ pub(crate) async fn insert_file_node(
 pub(crate) async fn delete_file_node(
     server: &Server,
     access_token: &AccessToken,
-    node: HashedValue<FileNode>,
+    node: Archive<FileNode>,
     account_id: u32,
     document_id: u32,
 ) -> trc::Result<()> {

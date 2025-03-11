@@ -7,8 +7,9 @@
 use ahash::AHashMap;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    Deserialize, IndexKey, IterateParams, SerializeInfallible, U32_LEN, ValueKey,
-    write::{Archive, ValueClass, key::DeserializeBigEndian},
+    Deserialize, IndexKey, IterateParams, SerializeInfallible, SerializedVersion, U32_LEN,
+    ValueKey,
+    write::{AlignedBytes, Archive, ValueClass, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 use utils::topological::{TopologicalSort, TopologicalSortIterator};
@@ -48,7 +49,7 @@ impl Server {
         collection: Collection,
     ) -> trc::Result<ExpandedFolders>
     where
-        T: rkyv::Archive,
+        T: rkyv::Archive + SerializedVersion,
         T::Archived: FolderHierarchy
             + for<'a> rkyv::bytecheck::CheckBytes<
                 rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
@@ -79,7 +80,7 @@ impl Server {
                 ),
                 |key, value| {
                     let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
-                    let archive = <Archive as Deserialize>::deserialize(value)?;
+                    let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?;
                     let folder = archive.unarchive::<T>()?;
                     let parent_id = folder.parent_id();
 

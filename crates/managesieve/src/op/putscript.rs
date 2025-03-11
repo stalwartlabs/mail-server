@@ -14,7 +14,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use sieve::compiler::ErrorType;
 use store::{
     query::Filter,
-    write::{Archive, BatchBuilder, assert::HashedValue, log::LogInsert},
+    write::{AlignedBytes, Archive, BatchBuilder, log::LogInsert},
 };
 use trc::AddContext;
 
@@ -100,7 +100,7 @@ impl<T: SessionStream> Session<T> {
             // Obtain script values
             let script = self
                 .server
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,

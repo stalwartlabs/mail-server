@@ -38,7 +38,7 @@ use smtp::{
     queue::spool::SmtpSpool,
 };
 use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
-use store::write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder, now};
+use store::write::{log::ChangeLogBuilder, now, AlignedBytes, Archive, BatchBuilder};
 use trc::AddContext;
 use utils::{BlobHash, map::vec_map::VecMap, sanitize_email};
 
@@ -121,7 +121,7 @@ impl EmailSubmissionSet for Server {
             // Obtain submission
             let document_id = id.document_id();
             let submission = if let Some(submission) = self
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::EmailSubmission,
                     document_id,
@@ -225,7 +225,7 @@ impl EmailSubmissionSet for Server {
         for id in will_destroy {
             let document_id = id.document_id();
             if let Some(submission) = self
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::EmailSubmission,
                     document_id,
@@ -458,7 +458,7 @@ impl EmailSubmissionSet for Server {
 
         // Fetch identity's mailFrom
         let identity_mail_from = if let Some(identity) = self
-            .get_property::<Archive>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::Identity,
                 submission.identity_id,
@@ -499,7 +499,7 @@ impl EmailSubmissionSet for Server {
 
         // Obtain message metadata
         let metadata_ = if let Some(metadata) = self
-            .get_property::<Archive>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::Email,
                 submission.email_id,

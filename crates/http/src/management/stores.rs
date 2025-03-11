@@ -23,7 +23,7 @@ use serde_json::json;
 use services::index::Indexer;
 use store::{
     Serialize, rand,
-    write::{Archive, Archiver, BatchBuilder, ValueClass, assert::HashedValue},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, ValueClass},
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
@@ -332,7 +332,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .unwrap_or_default()
     {
         let mailbox = server
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -373,7 +373,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .unwrap_or_default()
     {
         let uids = server
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::Email,
                 message_id,

@@ -7,10 +7,10 @@
 use jmap_proto::types::{property::Property, value::AclGrant};
 use std::{borrow::Cow, collections::HashSet, fmt::Debug};
 use store::{
-    Serialize, SerializeInfallible,
+    Serialize, SerializeInfallible, SerializedVersion,
     write::{
-        Archiver, BatchBuilder, BitmapClass, BlobOp, DirectoryClass, IntoOperations, Operation,
-        assert::HashedValue,
+        Archive, Archiver, BatchBuilder, BitmapClass, BlobOp, DirectoryClass, IntoOperations,
+        Operation,
     },
 };
 use utils::BlobHash;
@@ -35,6 +35,7 @@ pub trait IndexableObject: Sync + Send {
 
 pub trait IndexableAndSerializableObject:
     IndexableObject
+    + SerializedVersion
     + rkyv::Archive
     + for<'a> rkyv::Serialize<
         rkyv::api::high::HighSerializer<
@@ -49,7 +50,7 @@ pub trait IndexableAndSerializableObject:
 #[derive(Debug)]
 pub struct ObjectIndexBuilder<C: IndexableObject, N: IndexableAndSerializableObject> {
     tenant_id: Option<u32>,
-    current: Option<HashedValue<C>>,
+    current: Option<Archive<C>>,
     changes: Option<N>,
 }
 
@@ -68,7 +69,7 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> ObjectIndexBuilder<C
         }
     }
 
-    pub fn with_current(mut self, current: HashedValue<C>) -> Self {
+    pub fn with_current(mut self, current: Archive<C>) -> Self {
         self.current = Some(current);
         self
     }
@@ -78,7 +79,7 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> ObjectIndexBuilder<C
         self
     }
 
-    pub fn with_current_opt(mut self, current: Option<HashedValue<C>>) -> Self {
+    pub fn with_current_opt(mut self, current: Option<Archive<C>>) -> Self {
         self.current = current;
         self
     }
@@ -91,7 +92,7 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> ObjectIndexBuilder<C
         self.changes.as_mut()
     }
 
-    pub fn current(&self) -> Option<&HashedValue<C>> {
+    pub fn current(&self) -> Option<&Archive<C>> {
         self.current.as_ref()
     }
 

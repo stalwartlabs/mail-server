@@ -18,6 +18,7 @@ use rkyv::{
     string::ArchivedString,
     vec::ArchivedVec,
 };
+use store::SerializedVersion;
 use utils::BlobHash;
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
@@ -29,6 +30,12 @@ pub struct MessageMetadata {
     pub preview: String,
     pub has_attachments: bool,
     pub raw_headers: Vec<u8>,
+}
+
+impl SerializedVersion for MessageMetadata {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]

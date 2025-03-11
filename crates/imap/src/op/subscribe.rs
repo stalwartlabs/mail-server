@@ -16,7 +16,7 @@ use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
 use jmap_proto::types::{
     collection::Collection, property::Property, state::StateChange, type_state::DataType,
 };
-use store::write::{Archive, BatchBuilder, assert::HashedValue};
+use store::write::{AlignedBytes, Archive, BatchBuilder};
 
 use super::ImapContext;
 
@@ -96,7 +96,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox = self
             .server
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::Mailbox,
                 mailbox_id,

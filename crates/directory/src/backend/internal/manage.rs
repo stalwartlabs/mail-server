@@ -10,7 +10,7 @@ use store::{
     Deserialize, IterateParams, Serialize, Store, U32_LEN, ValueKey,
     write::{
         AssignedIds, BatchBuilder, DirectoryClass, MaybeDynamicId, MaybeDynamicValue,
-        SerializeWithId, ValueClass, assert::HashedValue, key::DeserializeBigEndian,
+        SerializeWithId, ValueClass, assert::LegacyHashedValue, key::DeserializeBigEndian,
     },
 };
 use trc::AddContext;
@@ -790,7 +790,7 @@ impl ManageDirectory for Store {
 
         // Fetch principal
         let mut principal = self
-            .get_value::<HashedValue<Principal>>(ValueKey::from(ValueClass::Directory(
+            .get_value::<LegacyHashedValue<Principal>>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::Principal(principal_id),
             )))
             .await

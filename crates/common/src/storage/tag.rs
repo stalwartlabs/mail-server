@@ -8,8 +8,8 @@ use std::slice::IterMut;
 
 use jmap_proto::types::property::Property;
 use store::{
-    Serialize,
-    write::{Archiver, BatchBuilder, MaybeDynamicId, TagValue, ValueClass, assert::HashedValue},
+    Serialize, SerializedVersion,
+    write::{Archive, Archiver, BatchBuilder, MaybeDynamicId, TagValue, ValueClass},
 };
 
 pub struct TagManager<
@@ -27,7 +27,7 @@ pub struct TagManager<
             >,
         >,
 > {
-    current: HashedValue<Vec<T>>,
+    current: Archive<Vec<T>>,
     added: Vec<T>,
     removed: Vec<T>,
     last: LastTag,
@@ -45,6 +45,7 @@ impl<
         + Clone
         + Sync
         + Send
+        + SerializedVersion
         + rkyv::Archive
         + for<'a> rkyv::Serialize<
             rkyv::api::high::HighSerializer<
@@ -55,7 +56,7 @@ impl<
         >,
 > TagManager<T>
 {
-    pub fn new(current: HashedValue<Vec<T>>) -> Self {
+    pub fn new(current: Archive<Vec<T>>) -> Self {
         Self {
             current,
             added: Vec::new(),

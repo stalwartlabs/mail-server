@@ -16,15 +16,18 @@ use common::{
 use serde::Deserialize;
 use serde_json::json;
 use std::future::Future;
-use store::rand::{
-    Rng,
-    distr::{Alphanumeric, StandardUniform},
-    rng,
-};
 use store::{
     Serialize,
     dispatch::lookup::KeyValue,
     write::{Archive, Archiver},
+};
+use store::{
+    rand::{
+        Rng,
+        distr::{Alphanumeric, StandardUniform},
+        rng,
+    },
+    write::AlignedBytes,
 };
 use trc::AddContext;
 
@@ -148,7 +151,10 @@ impl OAuthApiHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Archive>(KeyValue::<()>::build_key(KV_OAUTH, code.as_bytes()))
+                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
+                        KV_OAUTH,
+                        code.as_bytes(),
+                    ))
                     .await?
                 {
                     let oauth = auth_code_

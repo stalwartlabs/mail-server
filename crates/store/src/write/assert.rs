@@ -6,11 +6,7 @@
 
 use crate::{Deserialize, U32_LEN, U64_LEN};
 
-#[derive(Debug, Clone)]
-pub struct HashedValue<T> {
-    pub hash: u64,
-    pub inner: T,
-}
+use super::Archive;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AssertValue {
@@ -21,10 +17,10 @@ pub enum AssertValue {
     None,
 }
 
-impl<T: Deserialize + Default> HashedValue<T> {
-    pub fn take(&mut self) -> T {
-        std::mem::take(&mut self.inner)
-    }
+#[derive(Debug, Clone)]
+pub struct LegacyHashedValue<T: Deserialize> {
+    pub hash: u64,
+    pub inner: T,
 }
 
 pub trait ToAssertValue {
@@ -55,13 +51,25 @@ impl ToAssertValue for u32 {
     }
 }
 
-impl<T> ToAssertValue for HashedValue<T> {
+impl<T> ToAssertValue for Archive<T> {
+    fn to_assert_value(&self) -> AssertValue {
+        AssertValue::U32(self.hash)
+    }
+}
+
+impl<T> ToAssertValue for &Archive<T> {
+    fn to_assert_value(&self) -> AssertValue {
+        AssertValue::U32(self.hash)
+    }
+}
+
+impl<T: Deserialize> ToAssertValue for LegacyHashedValue<T> {
     fn to_assert_value(&self) -> AssertValue {
         AssertValue::Hash(self.hash)
     }
 }
 
-impl<T> ToAssertValue for &HashedValue<T> {
+impl<T: Deserialize> ToAssertValue for &LegacyHashedValue<T> {
     fn to_assert_value(&self) -> AssertValue {
         AssertValue::Hash(self.hash)
     }
@@ -70,8 +78,13 @@ impl<T> ToAssertValue for &HashedValue<T> {
 impl AssertValue {
     pub fn matches(&self, bytes: &[u8]) -> bool {
         match self {
-            AssertValue::U32(v) => bytes.len() == U32_LEN && u32::deserialize(bytes).unwrap() == *v,
-            AssertValue::U64(v) => bytes.len() == U64_LEN && u64::deserialize(bytes).unwrap() == *v,
+            AssertValue::U32(v) => bytes
+                .get(bytes.len() - U32_LEN..)
+                .is_some_and(|b| b == v.to_be_bytes()),
+
+            AssertValue::U64(v) => bytes
+                .get(bytes.len() - U64_LEN..)
+                .is_some_and(|b| b == v.to_be_bytes()),
             AssertValue::Hash(v) => xxhash_rust::xxh3::xxh3_64(bytes) == *v,
             AssertValue::None => false,
             AssertValue::Some => true,
@@ -83,18 +96,11 @@ impl AssertValue {
     }
 }
 
-impl<T: Deserialize> Deserialize for HashedValue<T> {
+impl<T: Deserialize> Deserialize for LegacyHashedValue<T> {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        Ok(HashedValue {
+        Ok(LegacyHashedValue {
             hash: xxhash_rust::xxh3::xxh3_64(bytes),
             inner: T::deserialize(bytes)?,
-        })
-    }
-
-    fn deserialize_owned(bytes: Vec<u8>) -> trc::Result<Self> {
-        Ok(HashedValue {
-            hash: xxhash_rust::xxh3::xxh3_64(&bytes),
-            inner: T::deserialize_owned(bytes)?,
         })
     }
 }

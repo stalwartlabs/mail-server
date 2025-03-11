@@ -26,8 +26,7 @@ use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use std::future::Future;
 use store::write::{
-    Archive, BatchBuilder,
-    assert::HashedValue,
+    AlignedBytes, Archive, BatchBuilder,
     log::{Changes, LogInsert},
 };
 use trc::AddContext;
@@ -131,7 +130,7 @@ impl VacationResponseSet for Server {
 
             let (mut sieve, prev_sieve) = if let Some(document_id) = document_id {
                 let prev_sieve = self
-                    .get_property::<HashedValue<Archive>>(
+                    .get_property::<Archive<AlignedBytes>>(
                         account_id,
                         Collection::SieveScript,
                         document_id,

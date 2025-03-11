@@ -8,10 +8,10 @@ use std::time::Instant;
 
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::sieve::{SieveScript};
+use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
+use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -60,7 +60,7 @@ impl<T: SessionStream> Session<T> {
         // Obtain script values
         let script = self
             .server
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,

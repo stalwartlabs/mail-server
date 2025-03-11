@@ -25,7 +25,7 @@ use jmap_proto::types::{
 use store::{
     SerializeInfallible,
     roaring::RoaringBitmap,
-    write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
+    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder},
 };
 
 use super::{ImapContext, ToModSeq};
@@ -194,7 +194,7 @@ impl<T: SessionStream> SessionData<T> {
 
         for (id, mailbox_ids) in self
             .server
-            .get_properties::<HashedValue<Archive>, _>(
+            .get_properties::<Archive<AlignedBytes>, _>(
                 account_id,
                 Collection::Email,
                 deleted_ids,
@@ -214,7 +214,7 @@ impl<T: SessionStream> SessionData<T> {
                     // Remove deleted flag
                     let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
                         self.server
-                            .get_property::<HashedValue<Archive>>(
+                            .get_property::<Archive<AlignedBytes>>(
                                 account_id,
                                 Collection::Email,
                                 id,

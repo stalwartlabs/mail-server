@@ -19,8 +19,7 @@ use jmap_proto::{
     },
 };
 use store::{
-    BitmapKey, ValueKey,
-    write::{Archive, ValueClass, now},
+    write::{now, AlignedBytes, Archive, ValueClass}, BitmapKey, ValueKey
 };
 use trc::{AddContext, ServerEvent};
 use utils::map::bitmap::Bitmap;
@@ -85,7 +84,7 @@ impl PushSubscriptionFetch for Server {
                 continue;
             }
             let push_ = if let Some(push) = self
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::PushSubscription,
                     document_id,
@@ -168,7 +167,7 @@ impl PushSubscriptionFetch for Server {
                 .core
                 .storage
                 .data
-                .get_value::<Archive>(ValueKey {
+                .get_value::<Archive<AlignedBytes>>(ValueKey {
                     account_id,
                     collection: Collection::PushSubscription.into(),
                     document_id,

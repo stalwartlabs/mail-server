@@ -4,29 +4,59 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
 use rkyv::util::AlignedVec;
 
-use crate::{Deserialize, Serialize, SerializeInfallible, U32_LEN, Value};
+use crate::{Deserialize, Serialize, SerializeInfallible, SerializedVersion, U32_LEN, Value};
 
-use super::{ARCHIVE_ALIGNMENT, Archive, Archiver, LegacyBincode, assert::HashedValue};
+use super::{ARCHIVE_ALIGNMENT, AlignedBytes, Archive, Archiver, LegacyBincode};
 
 const MAGIC_MARKER: u8 = 1 << 7;
-const LZ4_COMPRESSES: u8 = 1 << 6;
+const LZ4_COMPRESSED: u8 = 1 << 6;
 const ARCHIVE_UNCOMPRESSED: u8 = MAGIC_MARKER;
-const ARCHIVE_LZ4_COMPRESSED: u8 = MAGIC_MARKER | LZ4_COMPRESSES;
+const ARCHIVE_LZ4_COMPRESSED: u8 = MAGIC_MARKER | LZ4_COMPRESSED;
 const COMPRESS_WATERMARK: usize = 8192;
+const HASH_SEED: i64 = 791120;
 
-impl Deserialize for Archive {
+const MARKER_MASK: u8 = MAGIC_MARKER | LZ4_COMPRESSED;
+const VERSION_MASK: u8 = !MARKER_MASK;
+
+impl Deserialize for Archive<AlignedBytes> {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        match bytes.split_last() {
-            Some((&ARCHIVE_UNCOMPRESSED, archive)) => {
-                let mut bytes = AlignedVec::with_capacity(archive.len());
-                bytes.extend_from_slice(archive);
-                Ok(Archive::Aligned(bytes))
+        let (contents, marker, hash) = bytes
+            .split_at_checked(bytes.len() - (U32_LEN + 1))
+            .and_then(|(contents, marker)| {
+                marker.split_first().and_then(|(marker, archive_hash)| {
+                    let hash = gxhash::gxhash32(contents, HASH_SEED);
+                    if hash.to_be_bytes().as_slice() == archive_hash {
+                        Some((contents, *marker, hash))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .ok_or_else(|| {
+                trc::StoreEvent::DataCorruption
+                    .into_err()
+                    .details("Archive integrity compromised")
+                    .ctx(trc::Key::Value, bytes)
+                    .caused_by(trc::location!())
+            })?;
+
+        match marker & MARKER_MASK {
+            ARCHIVE_UNCOMPRESSED => {
+                let mut bytes = AlignedVec::with_capacity(contents.len());
+                bytes.extend_from_slice(contents);
+                Ok(Archive {
+                    hash,
+                    version: marker & VERSION_MASK,
+                    inner: AlignedBytes::Aligned(bytes),
+                })
             }
-            Some((&ARCHIVE_LZ4_COMPRESSED, archive)) => aligned_lz4_deflate(archive),
+            ARCHIVE_LZ4_COMPRESSED => aligned_lz4_deflate(contents).map(|inner| Archive {
+                hash,
+                version: marker & VERSION_MASK,
+                inner,
+            }),
             _ => Err(trc::StoreEvent::DataCorruption
                 .into_err()
                 .details("Invalid archive marker.")
@@ -36,20 +66,50 @@ impl Deserialize for Archive {
     }
 
     fn deserialize_owned(mut bytes: Vec<u8>) -> trc::Result<Self> {
-        match bytes.last() {
-            Some(&ARCHIVE_UNCOMPRESSED) => {
-                bytes.pop();
+        let (contents, marker, hash) = bytes
+            .split_at_checked(bytes.len() - (U32_LEN + 1))
+            .and_then(|(contents, marker)| {
+                marker.split_first().and_then(|(marker, archive_hash)| {
+                    let hash = gxhash::gxhash32(contents, HASH_SEED);
+                    if hash.to_be_bytes().as_slice() == archive_hash {
+                        Some((contents, *marker, hash))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .ok_or_else(|| {
+                trc::StoreEvent::DataCorruption
+                    .into_err()
+                    .details("Archive integrity compromised")
+                    .ctx(trc::Key::Value, bytes.as_slice())
+                    .caused_by(trc::location!())
+            })?;
+
+        match marker & MARKER_MASK {
+            ARCHIVE_UNCOMPRESSED => {
+                bytes.truncate(contents.len());
                 if bytes.as_ptr().addr() & (ARCHIVE_ALIGNMENT - 1) == 0 {
-                    Ok(Archive::Vec(bytes))
+                    Ok(Archive {
+                        hash,
+                        version: marker & VERSION_MASK,
+                        inner: AlignedBytes::Vec(bytes),
+                    })
                 } else {
                     let mut aligned = AlignedVec::with_capacity(bytes.len());
                     aligned.extend_from_slice(&bytes);
-                    Ok(Archive::Aligned(aligned))
+                    Ok(Archive {
+                        hash,
+                        version: marker & VERSION_MASK,
+                        inner: AlignedBytes::Aligned(aligned),
+                    })
                 }
             }
-            Some(&ARCHIVE_LZ4_COMPRESSED) => {
-                aligned_lz4_deflate(bytes.get(..bytes.len() - 1).unwrap_or_default())
-            }
+            ARCHIVE_LZ4_COMPRESSED => aligned_lz4_deflate(contents).map(|inner| Archive {
+                hash,
+                version: marker & VERSION_MASK,
+                inner,
+            }),
             _ => Err(trc::StoreEvent::DataCorruption
                 .into_err()
                 .details("Invalid archive marker.")
@@ -60,7 +120,7 @@ impl Deserialize for Archive {
 }
 
 #[inline]
-fn aligned_lz4_deflate(archive: &[u8]) -> trc::Result<Archive> {
+fn aligned_lz4_deflate(archive: &[u8]) -> trc::Result<AlignedBytes> {
     lz4_flex::block::uncompressed_size(archive)
         .and_then(|(uncompressed_size, archive)| {
             let mut bytes = AlignedVec::with_capacity(uncompressed_size);
@@ -69,7 +129,7 @@ fn aligned_lz4_deflate(archive: &[u8]) -> trc::Result<Archive> {
                 bytes.set_len(uncompressed_size);
             }
             lz4_flex::decompress_into(archive, &mut bytes)?;
-            Ok(Archive::Aligned(bytes))
+            Ok(AlignedBytes::Aligned(bytes))
         })
         .map_err(|err| {
             trc::StoreEvent::DecompressError
@@ -82,6 +142,7 @@ fn aligned_lz4_deflate(archive: &[u8]) -> trc::Result<Archive> {
 impl<T> Serialize for Archiver<T>
 where
     T: rkyv::Archive
+        + SerializedVersion
         + for<'a> rkyv::Serialize<
             rkyv::api::high::HighSerializer<
                 rkyv::util::AlignedVec,
@@ -103,88 +164,119 @@ where
                 if input_len > COMPRESS_WATERMARK {
                     let mut bytes =
                         vec![
-                            ARCHIVE_LZ4_COMPRESSED;
-                            lz4_flex::block::get_maximum_output_size(input_len) + U32_LEN + 1
+                            ARCHIVE_LZ4_COMPRESSED | (T::serialize_version() & VERSION_MASK);
+                            lz4_flex::block::get_maximum_output_size(input_len) + (U32_LEN * 2) + 1
                         ];
-                    bytes[0..U32_LEN].copy_from_slice(&(input_len as u32).to_le_bytes());
-                    let bytes_len = lz4_flex::compress_into(input, &mut bytes[U32_LEN..]).unwrap()
-                        + U32_LEN
-                        + 1;
-                    if bytes_len < input_len {
-                        bytes.truncate(bytes_len);
+                    let compressed_len =
+                        lz4_flex::compress_into(input, &mut bytes[U32_LEN..]).unwrap();
+                    if compressed_len < input_len {
+                        bytes[..U32_LEN].copy_from_slice(&(input_len as u32).to_le_bytes());
+                        let hash = gxhash::gxhash32(&bytes[..compressed_len + U32_LEN], HASH_SEED);
+                        bytes[compressed_len + U32_LEN + 1..compressed_len + (U32_LEN * 2) + 1]
+                            .copy_from_slice(&hash.to_be_bytes());
+                        bytes.truncate(compressed_len + (U32_LEN * 2) + 1);
                     } else {
                         bytes.clear();
                         bytes.extend_from_slice(input);
-                        bytes.push(ARCHIVE_UNCOMPRESSED);
+                        bytes.push(ARCHIVE_UNCOMPRESSED | (T::serialize_version() & VERSION_MASK));
+                        bytes.extend_from_slice(&gxhash::gxhash32(input, HASH_SEED).to_be_bytes());
                     }
                     bytes
                 } else {
-                    let mut bytes = Vec::with_capacity(input_len + 1);
+                    let mut bytes = Vec::with_capacity(input_len + U32_LEN + 1);
                     bytes.extend_from_slice(input);
-                    bytes.push(ARCHIVE_UNCOMPRESSED);
+                    bytes.push(ARCHIVE_UNCOMPRESSED | (T::serialize_version() & VERSION_MASK));
+                    bytes.extend_from_slice(&gxhash::gxhash32(input, HASH_SEED).to_be_bytes());
                     bytes
                 }
             })
     }
 }
 
-impl Archive {
-    pub fn try_unpack_bytes(bytes: &[u8]) -> Option<Cow<[u8]>> {
-        match bytes.split_last() {
-            Some((&ARCHIVE_UNCOMPRESSED, archive)) => Some(archive.into()),
-            Some((&ARCHIVE_LZ4_COMPRESSED, archive)) => {
-                lz4_flex::decompress_size_prepended(archive)
-                    .ok()
-                    .map(Cow::Owned)
-            }
-            _ => None,
-        }
-    }
-
+impl Archive<AlignedBytes> {
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            Archive::Vec(bytes) => bytes.as_slice(),
-            Archive::Aligned(bytes) => bytes.as_slice(),
+        match &self.inner {
+            AlignedBytes::Vec(bytes) => bytes.as_slice(),
+            AlignedBytes::Aligned(bytes) => bytes.as_slice(),
         }
     }
 
     pub fn unarchive<T>(&self) -> trc::Result<&<T as rkyv::Archive>::Archived>
     where
-        T: rkyv::Archive,
+        T: rkyv::Archive + SerializedVersion,
         T::Archived: for<'a> rkyv::bytecheck::CheckBytes<
                 rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
             > + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
     {
-        rkyv::access::<T::Archived, rkyv::rancor::Error>(self.as_bytes()).map_err(|err| {
-            trc::StoreEvent::DataCorruption
-                .caused_by(trc::location!())
+        if self.version == T::serialize_version() {
+            // SAFETY: Trusted and versioned input with integrity hash
+            Ok(unsafe { rkyv::access_unchecked::<T::Archived>(self.as_bytes()) })
+        } else {
+            Err(trc::StoreEvent::DataCorruption
+                .into_err()
+                .details(format!(
+                    "Archive version mismatch, expected {} but got {}",
+                    T::serialize_version(),
+                    self.version
+                ))
                 .ctx(trc::Key::Value, self.as_bytes())
-                .reason(err)
-        })
+                .caused_by(trc::location!()))
+        }
     }
 
     pub fn deserialize<T>(&self) -> trc::Result<T>
     where
-        T: rkyv::Archive,
+        T: rkyv::Archive + SerializedVersion,
         T::Archived: for<'a> rkyv::bytecheck::CheckBytes<
                 rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
             > + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
     {
-        rkyv::from_bytes(self.as_bytes()).map_err(|err| {
-            trc::StoreEvent::DeserializeError
-                .ctx(trc::Key::Value, self.as_bytes())
-                .caused_by(trc::location!())
-                .reason(err)
+        self.unarchive::<T>().and_then(|input| {
+            rkyv::deserialize(input).map_err(|err| {
+                trc::StoreEvent::DeserializeError
+                    .ctx(trc::Key::Value, self.as_bytes())
+                    .caused_by(trc::location!())
+                    .reason(err)
+            })
+        })
+    }
+
+    pub fn to_unarchived<T>(&self) -> trc::Result<Archive<&<T as rkyv::Archive>::Archived>>
+    where
+        T: rkyv::Archive + SerializedVersion,
+        T::Archived: for<'a> rkyv::bytecheck::CheckBytes<
+                rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
+            > + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
+    {
+        self.unarchive::<T>().map(|inner| Archive {
+            hash: self.hash,
+            version: self.version,
+            inner,
+        })
+    }
+
+    pub fn into_deserialized<T>(&self) -> trc::Result<Archive<T>>
+    where
+        T: rkyv::Archive + SerializedVersion,
+        T::Archived: for<'a> rkyv::bytecheck::CheckBytes<
+                rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
+            > + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
+    {
+        self.deserialize::<T>().map(|inner| Archive {
+            hash: self.hash,
+            version: self.version,
+            inner,
         })
     }
 
     pub fn into_inner(self) -> Vec<u8> {
-        let mut bytes = match self {
-            Archive::Vec(bytes) => bytes,
-            Archive::Aligned(bytes) => bytes.to_vec(),
+        let mut bytes = match self.inner {
+            AlignedBytes::Vec(bytes) => bytes,
+            AlignedBytes::Aligned(bytes) => bytes.to_vec(),
         };
         bytes.push(ARCHIVE_UNCOMPRESSED);
+        bytes.extend_from_slice(&self.hash.to_be_bytes());
         bytes
     }
 }
@@ -209,42 +301,14 @@ where
     }
 }
 
-impl HashedValue<Archive> {
-    pub fn to_unarchived<T>(&self) -> trc::Result<HashedValue<&<T as rkyv::Archive>::Archived>>
-    where
-        T: rkyv::Archive,
-        T::Archived: for<'a> rkyv::bytecheck::CheckBytes<
-                rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
-            > + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
-    {
-        self.inner.unarchive::<T>().map(|inner| HashedValue {
-            hash: self.hash,
-            inner,
-        })
-    }
-
-    pub fn into_deserialized<T>(&self) -> trc::Result<HashedValue<T>>
-    where
-        T: rkyv::Archive,
-        T::Archived: for<'a> rkyv::bytecheck::CheckBytes<
-                rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
-            > + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
-    {
-        self.inner.deserialize::<T>().map(|inner| HashedValue {
-            hash: self.hash,
-            inner,
-        })
-    }
-}
-
-impl<T> HashedValue<&T>
+impl<T> Archive<&T>
 where
     T: rkyv::Portable
         + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
         + Sync
         + Send,
 {
-    pub fn into_deserialized<V>(&self) -> trc::Result<HashedValue<V>>
+    pub fn into_deserialized<V>(&self) -> trc::Result<Archive<V>>
     where
         T: rkyv::Deserialize<V, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
     {
@@ -254,8 +318,9 @@ where
                     .caused_by(trc::location!())
                     .reason(err)
             })
-            .map(|inner| HashedValue {
+            .map(|inner| Archive {
                 hash: self.hash,
+                version: self.version,
                 inner,
             })
     }
@@ -409,7 +474,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> De
     }
 }
 
-impl From<Value<'static>> for Archive {
+impl<T> From<Value<'static>> for Archive<T> {
     fn from(_: Value<'static>) -> Self {
         unimplemented!()
     }

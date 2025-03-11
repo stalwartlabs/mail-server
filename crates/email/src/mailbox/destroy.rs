@@ -16,7 +16,7 @@ use store::{
     Serialize, SerializeInfallible,
     query::Filter,
     roaring::RoaringBitmap,
-    write::{Archive, Archiver, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -101,7 +101,7 @@ impl MailboxDestroy for Server {
                 // otherwise delete it.
                 let mut destroy_ids = RoaringBitmap::new();
                 for (message_id, mailbox_ids) in self
-                    .get_properties::<HashedValue<Archive>, _>(
+                    .get_properties::<Archive<AlignedBytes>, _>(
                         account_id,
                         Collection::Email,
                         &message_ids,
@@ -191,7 +191,7 @@ impl MailboxDestroy for Server {
 
         // Obtain mailbox
         if let Some(mailbox_) = self
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::Mailbox,
                 document_id,

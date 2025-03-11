@@ -26,7 +26,7 @@ use jmap_proto::types::{
     acl::Acl, collection::Collection, property::Property, state::StateChange, type_state::DataType,
     value::AclGrant,
 };
-use store::write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
+use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -435,11 +435,11 @@ impl<T: SessionStream> SessionData<T> {
         &self,
         arguments: &Arguments,
         validate: bool,
-    ) -> trc::Result<(MailboxId, HashedValue<Archive>, Arc<AccessToken>)> {
+    ) -> trc::Result<(MailboxId, Archive<AlignedBytes>, Arc<AccessToken>)> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(values) = self
                 .server
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     mailbox.account_id,
                     Collection::Mailbox,
                     mailbox.mailbox_id,
@@ -452,7 +452,6 @@ impl<T: SessionStream> SessionData<T> {
                 if !validate
                     || access_token.is_member(mailbox.account_id)
                     || values
-                        .inner
                         .unarchive::<email::mailbox::Mailbox>()
                         .caused_by(trc::location!())?
                         .acls

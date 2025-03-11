@@ -16,7 +16,7 @@ use store::{
     ahash::AHashMap,
     roaring::RoaringBitmap,
     write::{
-        Archive, BatchBuilder, BitmapClass, MaybeDynamicId, TagValue, ValueClass,
+        AlignedBytes, Archive, BatchBuilder, BitmapClass, MaybeDynamicId, TagValue, ValueClass,
         log::ChangeLogBuilder,
     },
 };
@@ -64,7 +64,7 @@ impl EmailDeletion for Server {
         // Fetch mailboxes and threadIds
         let mut thread_ids: AHashMap<u32, i32> = AHashMap::new();
         for (document_id, mailboxes) in self
-            .get_properties::<Archive, _>(
+            .get_properties::<Archive<AlignedBytes>, _>(
                 account_id,
                 Collection::Email,
                 &document_ids,
@@ -445,7 +445,7 @@ impl EmailDeletion for Server {
                 .core
                 .storage
                 .data
-                .get_value::<Archive>(ValueKey {
+                .get_value::<Archive<AlignedBytes>>(ValueKey {
                     account_id,
                     collection: Collection::Email.into(),
                     document_id,
@@ -474,7 +474,7 @@ impl EmailDeletion for Server {
                 .core
                 .storage
                 .data
-                .get_value::<Archive>(ValueKey {
+                .get_value::<Archive<AlignedBytes>>(ValueKey {
                     account_id,
                     collection: Collection::Email.into(),
                     document_id,

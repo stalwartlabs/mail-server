@@ -18,7 +18,7 @@ use jmap_proto::{
     },
 };
 use std::future::Future;
-use store::write::{Archive, BatchBuilder, log::ChangeLogBuilder};
+use store::write::{log::ChangeLogBuilder, AlignedBytes, Archive, BatchBuilder};
 use store::{Serialize, write::Archiver};
 use trc::AddContext;
 use utils::sanitize_email;
@@ -121,7 +121,7 @@ impl IdentitySet for Server {
             // Obtain identity
             let document_id = id.document_id();
             let mut identity = if let Some(identity) = self
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Identity,
                     document_id,

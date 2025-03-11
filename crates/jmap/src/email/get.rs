@@ -28,7 +28,10 @@ use jmap_proto::{
     },
 };
 
-use store::{BlobClass, write::Archive};
+use store::{
+    BlobClass,
+    write::{AlignedBytes, Archive},
+};
 use trc::{AddContext, StoreEvent};
 use utils::BlobHash;
 
@@ -159,7 +162,7 @@ impl EmailGet for Server {
                 continue;
             }
             let metadata_ = match self
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Email,
                     id.document_id(),
@@ -226,7 +229,7 @@ impl EmailGet for Server {
                     }
                     Property::MailboxIds => {
                         if let Some(mailboxes_) = self
-                            .get_property::<Archive>(
+                            .get_property::<Archive<AlignedBytes>>(
                                 account_id,
                                 Collection::Email,
                                 id.document_id(),
@@ -263,7 +266,7 @@ impl EmailGet for Server {
                     }
                     Property::Keywords => {
                         if let Some(keywords_) = self
-                            .get_property::<Archive>(
+                            .get_property::<Archive<AlignedBytes>>(
                                 account_id,
                                 Collection::Email,
                                 id.document_id(),

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use store::SerializedVersion;
 use utils::map::vec_map::VecMap;
 
 pub mod index;
@@ -20,6 +21,12 @@ pub struct EmailSubmission {
     pub undo_status: UndoStatus,
     pub envelope: Envelope,
     pub delivery_status: VecMap<String, DeliveryStatus>,
+}
+
+impl SerializedVersion for EmailSubmission {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 #[derive(

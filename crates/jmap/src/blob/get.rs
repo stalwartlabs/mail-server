@@ -24,7 +24,7 @@ use jmap_proto::{
 use mail_builder::encoders::base64::base64_encode;
 use sha1::{Digest, Sha1};
 use sha2::{Sha256, Sha512};
-use store::{BlobClass, write::Archive};
+use store::{write::{AlignedBytes, Archive}, BlobClass};
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
@@ -239,7 +239,7 @@ impl BlobOperations for Server {
                                 }
                                 if include_mailbox {
                                     if let Some(mailboxes) = self
-                                        .get_property::<Archive>(
+                                        .get_property::<Archive<AlignedBytes>>(
                                             req_account_id,
                                             Collection::Email,
                                             *document_id,

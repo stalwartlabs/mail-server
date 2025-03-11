@@ -16,7 +16,7 @@ use jmap_proto::types::{
 };
 use store::{
     ahash::AHashMap,
-    write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder, now},
+    write::{log::ChangeLogBuilder, now, AlignedBytes, Archive, BatchBuilder},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -313,7 +313,7 @@ async fn move_container(
             return Err(DavError::Code(StatusCode::BAD_GATEWAY));
         }
         let node = server
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 from_account_id,
                 Collection::FileNode,
                 from_document_id,
@@ -408,7 +408,7 @@ async fn copy_container(
     let now = now() as i64;
     for (document_id, _) in copy_files.into_iter() {
         let node_ = server
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 from_account_id,
                 Collection::FileNode,
                 document_id,
@@ -527,7 +527,7 @@ async fn overwrite_and_delete_item(
 
     // dest_node is the current file at the destination
     let dest_node = server
-        .get_property::<HashedValue<Archive>>(
+        .get_property::<Archive<AlignedBytes>>(
             to_account_id,
             Collection::FileNode,
             to_document_id,
@@ -541,7 +541,7 @@ async fn overwrite_and_delete_item(
 
     // source_node is the file to be copied
     let source_node_ = server
-        .get_property::<HashedValue<Archive>>(
+        .get_property::<Archive<AlignedBytes>>(
             from_account_id,
             Collection::FileNode,
             from_document_id,
@@ -599,7 +599,7 @@ async fn overwrite_item(
 
     // dest_node is the current file at the destination
     let dest_node = server
-        .get_property::<HashedValue<Archive>>(
+        .get_property::<Archive<AlignedBytes>>(
             to_account_id,
             Collection::FileNode,
             to_document_id,
@@ -613,7 +613,7 @@ async fn overwrite_item(
 
     // source_node is the file to be copied
     let mut source_node = server
-        .get_property::<Archive>(
+        .get_property::<Archive<AlignedBytes>>(
             from_account_id,
             Collection::FileNode,
             from_document_id,
@@ -659,7 +659,7 @@ async fn move_item(
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
 
     let node = server
-        .get_property::<HashedValue<Archive>>(
+        .get_property::<Archive<AlignedBytes>>(
             from_account_id,
             Collection::FileNode,
             from_document_id,
@@ -722,7 +722,7 @@ async fn copy_item(
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
 
     let mut node = server
-        .get_property::<Archive>(
+        .get_property::<Archive<AlignedBytes>>(
             from_account_id,
             Collection::FileNode,
             from_document_id,
@@ -755,7 +755,7 @@ async fn rename_item(
     let from_document_id = from_resource.resource.document_id;
 
     let node = server
-        .get_property::<HashedValue<Archive>>(
+        .get_property::<Archive<AlignedBytes>>(
             from_account_id,
             Collection::FileNode,
             from_document_id,
