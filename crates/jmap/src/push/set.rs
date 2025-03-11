@@ -22,9 +22,7 @@ use jmap_proto::{
 use rand::distr::Alphanumeric;
 use std::future::Future;
 use store::{
-    Serialize,
-    rand::{Rng, rng},
-    write::{Archive, Archiver, BatchBuilder, now},
+    rand::{rng, Rng}, write::{now, AlignedBytes, Archive, Archiver, BatchBuilder}, Serialize
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -138,7 +136,7 @@ impl PushSubscriptionSet for Server {
             // Obtain push subscription
             let document_id = id.document_id();
             let mut push = if let Some(push) = self
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::PushSubscription,
                     document_id,

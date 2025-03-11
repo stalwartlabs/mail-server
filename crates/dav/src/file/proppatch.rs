@@ -17,7 +17,7 @@ use groupware::file::{FileNode, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
-use store::write::{Archive, assert::HashedValue};
+use store::write::{AlignedBytes, Archive};
 use trc::AddContext;
 
 use crate::{
@@ -68,7 +68,7 @@ impl FilePropPatchRequestHandler for Server {
 
         // Fetch node
         let node_ = self
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::FileNode,
                 resource.resource,
@@ -99,7 +99,7 @@ impl FilePropPatchRequestHandler for Server {
                 account_id,
                 collection: resource.collection,
                 document_id: resource.resource.into(),
-                etag: node_.inner.etag().clone().into(),
+                etag: node_.etag().into(),
                 lock_token: None,
                 path: resource_.resource.unwrap(),
             }],
@@ -162,7 +162,7 @@ impl FilePropPatchRequestHandler for Server {
             .await
             .caused_by(trc::location!())?
         } else {
-            node_.inner.etag().into()
+            node_.etag().into()
         };
 
         Ok(HttpResponse::new(StatusCode::MULTI_STATUS)

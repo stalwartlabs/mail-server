@@ -12,7 +12,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     IndexKey, IterateParams, SerializeInfallible, U32_LEN,
     ahash::AHashMap,
-    write::{Archive, key::DeserializeBigEndian},
+    write::{AlignedBytes, Archive, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 
@@ -63,7 +63,7 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
         let uid_validity = u32::from(
             self.server
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Mailbox,
                     INBOX_ID,
@@ -124,7 +124,7 @@ impl<T: SessionStream> Session<T> {
         // Sort by UID
         for (message_id, uid_mailbox) in self
             .server
-            .get_properties::<Archive, _>(
+            .get_properties::<Archive<AlignedBytes>, _>(
                 account_id,
                 Collection::Email,
                 &message_ids,

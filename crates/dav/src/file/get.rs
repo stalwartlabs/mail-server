@@ -10,7 +10,7 @@ use groupware::file::{FileNode, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
-use store::write::Archive;
+use store::write::{AlignedBytes, Archive};
 use trc::AddContext;
 
 use crate::{
@@ -50,7 +50,7 @@ impl FileGetRequestHandler for Server {
 
         // Fetch node
         let node_ = self
-            .get_property::<Archive>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::FileNode,
                 resource.resource,

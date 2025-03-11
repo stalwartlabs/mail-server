@@ -39,10 +39,7 @@ use mail_builder::{
 };
 use mail_parser::MessageParser;
 use store::{
-    SerializeInfallible,
-    ahash::AHashSet,
-    roaring::RoaringBitmap,
-    write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
+    ahash::AHashSet, roaring::RoaringBitmap, write::{log::ChangeLogBuilder, AlignedBytes, Archive, BatchBuilder}, SerializeInfallible
 };
 use trc::AddContext;
 
@@ -768,14 +765,14 @@ impl EmailSet for Server {
             // Obtain current keywords and mailboxes
             let document_id = id.document_id();
             let (mut mailboxes, mut keywords) = if let (Some(mailboxes), Some(keywords)) = (
-                self.get_property::<HashedValue<Archive>>(
+                self.get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Email,
                     document_id,
                     Property::MailboxIds,
                 )
                 .await?,
-                self.get_property::<HashedValue<Archive>>(
+                self.get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Email,
                     document_id,

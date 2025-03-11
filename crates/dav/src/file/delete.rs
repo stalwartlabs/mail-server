@@ -12,7 +12,7 @@ use hyper::StatusCode;
 use jmap_proto::types::{
     acl::Acl, collection::Collection, property::Property, type_state::DataType,
 };
-use store::write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
+use store::write::{log::ChangeLogBuilder, AlignedBytes, Archive, BatchBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -105,7 +105,7 @@ impl FileDeleteRequestHandler for Server {
         let mut changes = ChangeLogBuilder::new();
         for document_id in sorted_ids {
             if let Some(node) = self
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::FileNode,
                     document_id,

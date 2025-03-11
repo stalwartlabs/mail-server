@@ -19,7 +19,10 @@ use jmap_proto::{
     },
 };
 use std::future::Future;
-use store::{query::Filter, write::Archive};
+use store::{
+    query::Filter,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 
 use crate::{JmapMethods, changes::state::StateManager};
@@ -81,7 +84,7 @@ impl VacationResponseGet for Server {
         if do_get {
             if let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await? {
                 if let Some(sieve_) = self
-                    .get_property::<Archive>(
+                    .get_property::<Archive<AlignedBytes>>(
                         account_id,
                         Collection::SieveScript,
                         document_id,

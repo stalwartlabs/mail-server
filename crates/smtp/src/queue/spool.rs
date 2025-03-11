@@ -11,7 +11,9 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
 use store::write::key::DeserializeBigEndian;
-use store::write::{Archive, Archiver, BatchBuilder, BlobOp, QueueClass, ValueClass, now};
+use store::write::{
+    AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, QueueClass, ValueClass, now,
+};
 use store::{IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
 use trc::ServerEvent;
 use utils::BlobHash;
@@ -44,7 +46,7 @@ pub trait SmtpSpool: Sync + Send {
     fn read_message_archive(
         &self,
         id: QueueId,
-    ) -> impl Future<Output = trc::Result<Option<Archive>>> + Send;
+    ) -> impl Future<Output = trc::Result<Option<Archive<AlignedBytes>>>> + Send;
 }
 
 impl SmtpSpool for Server {
@@ -171,9 +173,14 @@ impl SmtpSpool for Server {
         }
     }
 
-    async fn read_message_archive(&self, id: QueueId) -> trc::Result<Option<Archive>> {
+    async fn read_message_archive(
+        &self,
+        id: QueueId,
+    ) -> trc::Result<Option<Archive<AlignedBytes>>> {
         self.store()
-            .get_value::<Archive>(ValueKey::from(ValueClass::Queue(QueueClass::Message(id))))
+            .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
+                QueueClass::Message(id),
+            )))
             .await
     }
 }

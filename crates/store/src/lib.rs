@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 pub mod backend;
 pub mod config;
@@ -68,6 +68,10 @@ pub trait SerializeInfallible {
     fn serialize(&self) -> Vec<u8>;
 }
 
+pub trait SerializedVersion {
+    fn serialize_version() -> u8;
+}
+
 // Key serialization flags
 pub(crate) const WITH_SUBSPACE: u32 = 1;
 
@@ -117,6 +121,7 @@ pub struct LogKey {
 
 pub const U64_LEN: usize = std::mem::size_of::<u64>();
 pub const U32_LEN: usize = std::mem::size_of::<u32>();
+pub const U16_LEN: usize = std::mem::size_of::<u16>();
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BlobClass {
@@ -780,5 +785,23 @@ impl Stores {
             self.blob_stores
                 .retain(|_, store| !matches!(store.backend, BlobBackend::Sharded(_)));
         }
+    }
+}
+
+impl SerializedVersion for () {
+    fn serialize_version() -> u8 {
+        0
+    }
+}
+
+impl<T: SerializedVersion> SerializedVersion for Vec<T> {
+    fn serialize_version() -> u8 {
+        T::serialize_version()
+    }
+}
+
+impl<T: SerializedVersion, S> SerializedVersion for HashSet<T, S> {
+    fn serialize_version() -> u8 {
+        T::serialize_version()
     }
 }

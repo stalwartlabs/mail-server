@@ -10,7 +10,7 @@ use common::listener::SessionStream;
 use directory::Permission;
 use email::sieve::SieveScript;
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::Archive;
+use store::write::{AlignedBytes, Archive};
 use trc::AddContext;
 
 use crate::core::{Session, StatusResponse};
@@ -39,7 +39,7 @@ impl<T: SessionStream> Session<T> {
         for document_id in document_ids {
             if let Some(script_) = self
                 .server
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,

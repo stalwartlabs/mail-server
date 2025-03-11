@@ -6,6 +6,7 @@
 
 use common::config::jmap::settings::SpecialUse;
 use jmap_proto::types::value::AclGrant;
+use store::SerializedVersion;
 
 pub mod destroy;
 pub mod index;
@@ -36,6 +37,18 @@ pub struct Mailbox {
 pub struct UidMailbox {
     pub mailbox_id: u32,
     pub uid: u32,
+}
+
+impl SerializedVersion for Mailbox {
+    fn serialize_version() -> u8 {
+        0
+    }
+}
+
+impl SerializedVersion for UidMailbox {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 #[derive(Debug)]

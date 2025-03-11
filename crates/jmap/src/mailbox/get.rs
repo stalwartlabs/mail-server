@@ -15,7 +15,7 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use store::write::Archive;
+use store::write::{AlignedBytes, Archive};
 use trc::AddContext;
 
 use crate::changes::state::StateManager;
@@ -98,7 +98,7 @@ impl MailboxGet for Server {
 
             let archived_mailbox_ = if fetch_properties {
                 match self
-                    .get_property::<Archive>(
+                    .get_property::<Archive<AlignedBytes>>(
                         account_id,
                         Collection::Mailbox,
                         document_id,

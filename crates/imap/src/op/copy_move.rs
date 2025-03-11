@@ -32,7 +32,7 @@ use jmap_proto::{
 use store::{
     SerializeInfallible,
     roaring::RoaringBitmap,
-    write::{Archive, BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
+    write::{AlignedBytes, Archive, BatchBuilder, ValueClass, log::ChangeLogBuilder},
 };
 
 use super::ImapContext;
@@ -470,7 +470,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox tags
         if let (Some(mailboxes), Some(thread_id)) = (
             self.server
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Email,
                     id,

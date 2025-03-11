@@ -7,6 +7,7 @@
 use http_proto::{HttpRequest, request::fetch_body};
 use hyper::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
+use store::SerializedVersion;
 use utils::map::vec_map::VecMap;
 
 pub mod auth;
@@ -53,6 +54,12 @@ pub struct OAuthCode {
     pub client_id: String,
     pub nonce: Option<String>,
     pub params: String,
+}
+
+impl SerializedVersion for OAuthCode {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

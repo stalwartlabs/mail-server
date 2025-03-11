@@ -12,7 +12,9 @@ use common::{
 };
 use store::{
     Deserialize, IterateParams, U64_LEN, ValueKey,
-    write::{Archive, QueueClass, ReportEvent, ValueClass, key::DeserializeBigEndian},
+    write::{
+        AlignedBytes, Archive, QueueClass, ReportEvent, ValueClass, key::DeserializeBigEndian,
+    },
 };
 use tokio::sync::mpsc::error::TryRecvError;
 
@@ -186,8 +188,8 @@ impl QueueReceiver {
             .iterate(
                 IterateParams::new(from_key, to_key).descending(),
                 |key, value| {
-                    let value =
-                        <Archive as Deserialize>::deserialize(value)?.deserialize::<Message>()?;
+                    let value = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?
+                        .deserialize::<Message>()?;
                     assert_eq!(key.deserialize_be_u64(0)?, value.queue_id);
                     messages.push(value);
                     Ok(true)

@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fmt::Write;
-
 use jmap_proto::types::property::Property;
-use store::write::{Archive, BatchBuilder, MaybeDynamicValue, Operation, ValueClass, ValueOp};
+use store::{
+    U32_LEN,
+    write::{Archive, BatchBuilder, MaybeDynamicValue, Operation, ValueClass, ValueOp},
+};
 
 pub mod acl;
 pub mod lock;
@@ -21,19 +22,9 @@ pub trait ExtractETag {
     fn etag(&self) -> Option<String>;
 }
 
-impl<T: AsRef<[u8]>> ETag for T {
+impl<T> ETag for Archive<T> {
     fn etag(&self) -> String {
-        let mut hasher = store::blake3::Hasher::new();
-        hasher.update(self.as_ref());
-        let hash = hasher.finalize();
-
-        let mut etag = String::with_capacity(2 + hash.as_bytes().len() * 2);
-        etag.push('"');
-        for byte in hash.as_bytes() {
-            let _ = write!(&mut etag, "{:02x}", byte);
-        }
-        etag.push('"');
-        etag
+        format!("\"{}\"", self.hash)
     }
 }
 
@@ -46,7 +37,9 @@ impl ExtractETag for BatchBuilder {
                     class: ValueClass::Property(p_id),
                     op: ValueOp::Set(MaybeDynamicValue::Static(value)),
                 } if *p_id == p_value => {
-                    return Archive::try_unpack_bytes(value).map(|bytes| bytes.etag());
+                    return value
+                        .get(value.len() - U32_LEN..)
+                        .map(|v| format!("\"{}\"", u32::from_be_bytes(v.try_into().unwrap())));
                 }
                 _ => {}
             }

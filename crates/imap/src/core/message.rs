@@ -11,7 +11,7 @@ use common::{NextMailboxState, listener::SessionStream};
 use email::mailbox::UidMailbox;
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::Archive;
+use store::write::{AlignedBytes, Archive};
 use trc::AddContext;
 
 use crate::core::ImapId;
@@ -52,7 +52,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut uid_map = BTreeMap::new();
         for (message_id, uid_mailbox_) in self
             .server
-            .get_properties::<Archive, _>(
+            .get_properties::<Archive<AlignedBytes>, _>(
                 mailbox.account_id,
                 Collection::Email,
                 &message_ids,
@@ -227,7 +227,7 @@ impl<T: SessionStream> SessionData<T> {
 
     pub async fn get_uid_validity(&self, mailbox: &MailboxId) -> trc::Result<u32> {
         self.server
-            .get_property::<Archive>(
+            .get_property::<Archive<AlignedBytes>>(
                 mailbox.account_id,
                 Collection::Mailbox,
                 mailbox.mailbox_id,

@@ -20,7 +20,7 @@ use store::{
     fts::index::FtsDocument,
     roaring::RoaringBitmap,
     write::{
-        Archive, BatchBuilder, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
+        AlignedBytes, Archive, BatchBuilder, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
         now,
     },
@@ -166,7 +166,7 @@ impl Indexer for Server {
             match event.action {
                 EmailTaskAction::Index => {
                     match self
-                        .get_property::<Archive>(
+                        .get_property::<Archive<AlignedBytes>>(
                             event.account_id,
                             Collection::Email,
                             event.document_id,

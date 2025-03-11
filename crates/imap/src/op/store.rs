@@ -33,7 +33,7 @@ use jmap_proto::types::{
 use store::{
     SerializeInfallible,
     query::log::{Change, Query},
-    write::{Archive, BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
+    write::{AlignedBytes, Archive, BatchBuilder, ValueClass, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -207,7 +207,7 @@ impl<T: SessionStream> SessionData<T> {
                 // Obtain current keywords
                 let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
                     self.server
-                        .get_property::<HashedValue<Archive>>(
+                        .get_property::<Archive<AlignedBytes>>(
                             account_id,
                             Collection::Email,
                             *id,
@@ -330,7 +330,7 @@ impl<T: SessionStream> SessionData<T> {
                             if seen_changed {
                                 if let Some(mailboxes) = self
                                     .server
-                                    .get_property::<Archive>(
+                                    .get_property::<Archive<AlignedBytes>>(
                                         account_id,
                                         Collection::Email,
                                         *id,

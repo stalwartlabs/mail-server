@@ -9,7 +9,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     SerializeInfallible,
     query::Filter,
-    write::{Archive, BatchBuilder, assert::HashedValue},
+    write::{AlignedBytes, Archive, BatchBuilder},
 };
 use trc::AddContext;
 
@@ -59,7 +59,7 @@ impl SieveScriptActivate for Server {
         // Deactivate scripts
         for document_id in active_ids {
             if let Some(sieve) = self
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -88,7 +88,7 @@ impl SieveScriptActivate for Server {
         // Activate script
         if let Some(document_id) = activate_id {
             if let Some(sieve) = self
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,

@@ -24,7 +24,7 @@ use store::{
     Deserialize, Serialize, SerializeInfallible,
     ahash::{AHashSet, RandomState},
     query::Filter,
-    write::{Archive, Archiver, BatchBuilder, BlobOp, LegacyBincode, assert::HashedValue, now},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, LegacyBincode, now},
 };
 use trc::{AddContext, SieveEvent};
 use utils::config::utils::ParseValue;
@@ -575,7 +575,7 @@ impl SieveScriptIngest for Server {
             let (script, script_name) = self.sieve_script_compile(account_id, document_id).await?;
 
             let seen_ids = if let Some(seen_ids_archive_) = self
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -636,7 +636,7 @@ impl SieveScriptIngest for Server {
     ) -> trc::Result<(Sieve, String)> {
         // Obtain script object
         let script_object = self
-            .get_property::<HashedValue<Archive>>(
+            .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -652,7 +652,6 @@ impl SieveScriptIngest for Server {
 
         // Obtain the sieve script length
         let unarchived_script = script_object
-            .inner
             .unarchive::<SieveScript>()
             .caused_by(trc::location!())?;
         let script_offset = u32::from(unarchived_script.size) as usize;

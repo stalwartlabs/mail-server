@@ -6,6 +6,7 @@ resolver = "2"
 
 [dependencies]
 utils = { path = "../utils" }
+store = { path = "../store" }
 common = { path =  "../common" }
 jmap_proto = { path =  "../jmap-proto" }
 trc = { path = "../trc" }

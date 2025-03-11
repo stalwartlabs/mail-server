@@ -8,7 +8,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use rkyv::collections::swiss_table::ArchivedHashSet;
 use sieve::Sieve;
-use store::{ahash::RandomState, blake3, write::now};
+use store::{SerializedVersion, ahash::RandomState, blake3, write::now};
 use utils::BlobHash;
 
 pub mod activate;
@@ -37,6 +37,12 @@ pub struct SeenIds {
     pub has_changes: bool,
 }
 
+impl SerializedVersion for SeenIdHash {
+    fn serialize_version() -> u8 {
+        0
+    }
+}
+
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
@@ -47,6 +53,12 @@ pub struct SieveScript {
     pub blob_hash: BlobHash,
     pub size: u32,
     pub vacation_response: Option<VacationResponse>,
+}
+
+impl SerializedVersion for SieveScript {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 #[derive(

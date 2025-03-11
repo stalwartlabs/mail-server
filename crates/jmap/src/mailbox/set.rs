@@ -29,11 +29,7 @@ use store::{
     SerializeInfallible,
     query::Filter,
     roaring::RoaringBitmap,
-    write::{
-        Archive, BatchBuilder,
-        assert::{AssertValue, HashedValue},
-        log::ChangeLogBuilder,
-    },
+    write::{AlignedBytes, Archive, BatchBuilder, assert::AssertValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 use utils::config::utils::ParseValue;
@@ -63,7 +59,7 @@ pub trait MailboxSet: Sync + Send {
     fn mailbox_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, HashedValue<Mailbox>)>,
+        update: Option<(u32, Archive<Mailbox>)>,
         ctx: &SetContext,
     ) -> impl Future<Output = trc::Result<Result<ObjectIndexBuilder<Mailbox, Mailbox>, SetError>>> + Send;
 }
@@ -158,7 +154,7 @@ impl MailboxSet for Server {
             // Obtain mailbox
             let document_id = id.document_id();
             if let Some(mailbox) = self
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
@@ -287,7 +283,7 @@ impl MailboxSet for Server {
     async fn mailbox_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, HashedValue<Mailbox>)>,
+        update: Option<(u32, Archive<Mailbox>)>,
         ctx: &SetContext<'_>,
     ) -> trc::Result<Result<ObjectIndexBuilder<Mailbox, Mailbox>, SetError>> {
         // Parse properties
@@ -412,7 +408,7 @@ impl MailboxSet for Server {
                 let parent_document_id = mailbox_parent_id - 1;
 
                 if let Some(mailbox_) = self
-                    .get_property::<Archive>(
+                    .get_property::<Archive<AlignedBytes>>(
                         ctx.account_id,
                         Collection::Mailbox,
                         parent_document_id,

@@ -7,7 +7,7 @@
 use std::fmt::Display;
 
 use store::{
-    Serialize,
+    Serialize, SerializedVersion,
     write::{MaybeDynamicId, TagValue},
 };
 
@@ -66,6 +66,12 @@ pub enum Keyword {
     #[serde(rename(serialize = "$mdnsent"))]
     MdnSent,
     Other(String),
+}
+
+impl SerializedVersion for Keyword {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 impl JsonObjectParser for Keyword {

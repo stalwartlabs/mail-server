@@ -10,7 +10,7 @@ use common::listener::SessionStream;
 use directory::Permission;
 use email::message::metadata::MessageMetadata;
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::Archive;
+use store::write::{AlignedBytes, Archive};
 use trc::AddContext;
 
 use crate::{Session, protocol::response::Response};
@@ -27,7 +27,7 @@ impl<T: SessionStream> Session<T> {
         if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
             if let Some(metadata_) = self
                 .server
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     mailbox.account_id,
                     Collection::Email,
                     message.id,

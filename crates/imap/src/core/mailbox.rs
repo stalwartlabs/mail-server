@@ -21,7 +21,7 @@ use parking_lot::Mutex;
 use std::sync::{Arc, atomic::Ordering};
 use store::{
     query::log::{Change, Query},
-    write::Archive,
+    write::{AlignedBytes, Archive},
 };
 use trc::AddContext;
 use utils::topological::TopologicalSort;
@@ -161,7 +161,7 @@ impl<T: SessionStream> SessionData<T> {
 
         for (mailbox_id, mailbox_) in self
             .server
-            .get_properties::<Archive, _>(
+            .get_properties::<Archive<AlignedBytes>, _>(
                 account_id,
                 Collection::Mailbox,
                 &mailbox_ids,
@@ -644,7 +644,7 @@ impl<T: SessionStream> SessionData<T> {
         Ok(access_token.is_member(account_id)
             || self
                 .server
-                .get_property::<Archive>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::Mailbox,
                     document_id,

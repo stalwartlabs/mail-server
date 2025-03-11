@@ -16,7 +16,8 @@ use mail_parser::parsers::fields::thread::thread_name;
 use store::{
     BlobClass, Serialize, SerializeInfallible,
     write::{
-        Archive, Archiver, BatchBuilder, MaybeDynamicId, TagValue, TaskQueueClass, ValueClass,
+        AlignedBytes, Archive, Archiver, BatchBuilder, MaybeDynamicId, TagValue, TaskQueueClass,
+        ValueClass,
         log::{Changes, LogInsert},
     },
 };
@@ -59,7 +60,7 @@ impl EmailCopy for Server {
         // Obtain metadata
         let account_id = resource_token.account_id;
         let mut metadata = if let Some(metadata) = self
-            .get_property::<Archive>(
+            .get_property::<Archive<AlignedBytes>>(
                 from_account_id,
                 Collection::Email,
                 from_message_id,

@@ -33,7 +33,14 @@ pub mod serialize;
 pub(crate) const ARCHIVE_ALIGNMENT: usize = 16;
 
 #[derive(Debug, Clone)]
-pub enum Archive {
+pub struct Archive<T> {
+    pub inner: T,
+    pub version: u8,
+    pub hash: u32,
+}
+
+#[derive(Debug, Clone)]
+pub enum AlignedBytes {
     Aligned(AlignedVec<ARCHIVE_ALIGNMENT>),
     Vec(Vec<u8>),
 }
@@ -584,8 +591,8 @@ impl QueueClass {
     }
 }
 
-impl AsRef<[u8]> for Archive {
+impl<T: AsRef<[u8]>> AsRef<[u8]> for Archive<T> {
     fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
+        self.inner.as_ref()
     }
 }

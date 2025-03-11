@@ -37,8 +37,8 @@ use store::{
     ahash::AHashSet,
     query::Filter,
     write::{
-        Archive, AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId, MaybeDynamicValue,
-        SerializeWithId, TagValue, TaskQueueClass, ValueClass,
+        AlignedBytes, Archive, AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId,
+        MaybeDynamicValue, SerializeWithId, TagValue, TaskQueueClass, ValueClass,
         log::{ChangeLogBuilder, Changes, LogInsert},
         now,
     },
@@ -389,7 +389,12 @@ impl EmailIngest for Server {
         };
         if do_encrypt && !message.is_encrypted() {
             if let Some(encrypt_params_) = self
-                .get_property::<Archive>(account_id, Collection::Principal, 0, Property::Parameters)
+                .get_property::<Archive<AlignedBytes>>(
+                    account_id,
+                    Collection::Principal,
+                    0,
+                    Property::Parameters,
+                )
                 .await
                 .caused_by(trc::location!())?
             {

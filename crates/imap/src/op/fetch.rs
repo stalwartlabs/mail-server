@@ -44,7 +44,7 @@ use store::{
     Serialize, SerializeInfallible,
     query::log::{Change, Query},
     rkyv::rend::u16_le,
-    write::{Archive, Archiver, BatchBuilder, assert::HashedValue, serialize::rkyv_deserialize},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, serialize::rkyv_deserialize},
 };
 
 use super::{FromModSeq, ImapContext};
@@ -310,7 +310,7 @@ impl<T: SessionStream> SessionData<T> {
             // Obtain attributes and keywords
             let (metadata_, keywords_) = if let (Some(email), Some(keywords)) = (
                 self.server
-                    .get_property::<Archive>(
+                    .get_property::<Archive<AlignedBytes>>(
                         account_id,
                         Collection::Email,
                         id,
@@ -319,7 +319,7 @@ impl<T: SessionStream> SessionData<T> {
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
                 self.server
-                    .get_property::<HashedValue<Archive>>(
+                    .get_property::<Archive<AlignedBytes>>(
                         account_id,
                         Collection::Email,
                         id,
@@ -344,7 +344,6 @@ impl<T: SessionStream> SessionData<T> {
                 .unarchive::<MessageMetadata>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let keywords = keywords_
-                .inner
                 .unarchive::<Vec<Keyword>>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
@@ -553,8 +552,9 @@ impl<T: SessionStream> SessionData<T> {
             if set_seen_flag {
                 set_seen_ids.push((
                     Id::from_parts(thread_id, id),
-                    HashedValue {
+                    Archive {
                         hash: keywords_.hash,
+                        version: keywords_.version,
                         inner: rkyv_deserialize::<_, Vec<Keyword>>(keywords)
                             .imap_ctx(&arguments.tag, trc::location!())?,
                     },

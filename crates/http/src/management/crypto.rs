@@ -19,7 +19,7 @@ use mail_parser::MessageParser;
 use serde_json::json;
 use store::{
     Deserialize, Serialize,
-    write::{Archive, Archiver, BatchBuilder},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
 
@@ -39,7 +39,7 @@ pub trait CryptoHandler: Sync + Send {
 impl CryptoHandler for Server {
     async fn handle_crypto_get(&self, access_token: Arc<AccessToken>) -> trc::Result<HttpResponse> {
         let ec = if let Some(params_) = self
-            .get_property::<Archive>(
+            .get_property::<Archive<AlignedBytes>>(
                 access_token.primary_id(),
                 Collection::Principal,
                 0,
@@ -132,7 +132,7 @@ impl CryptoHandler for Server {
             .parse("Subject: test\r\ntest\r\n".as_bytes())
             .unwrap()
             .encrypt(
-                <Archive as Deserialize>::deserialize(params.as_slice())?
+                <Archive<AlignedBytes> as Deserialize>::deserialize(params.as_slice())?
                     .unarchive::<EncryptionParams>()?,
             )
             .await

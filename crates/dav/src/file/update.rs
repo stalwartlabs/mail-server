@@ -13,8 +13,7 @@ use jmap_proto::types::{
     acl::Acl, collection::Collection, property::Property, type_state::DataType,
 };
 use store::write::{
-    Archive, BatchBuilder,
-    assert::HashedValue,
+    AlignedBytes, Archive, BatchBuilder,
     log::{Changes, LogInsert},
     now,
 };
@@ -66,7 +65,7 @@ impl FileUpdateRequestHandler for Server {
         if let Some(document_id) = files.files.by_name(resource_name).map(|r| r.document_id) {
             // Update
             let node_archive_ = self
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::FileNode,
                     document_id,
@@ -98,7 +97,7 @@ impl FileUpdateRequestHandler for Server {
                     account_id,
                     collection: resource.collection,
                     document_id: Some(document_id),
-                    etag: node_archive_.inner.etag().into(),
+                    etag: node_archive_.etag().into(),
                     lock_token: None,
                     path: resource_name,
                 }],
@@ -193,7 +192,7 @@ impl FileUpdateRequestHandler for Server {
             // Verify that parent is a collection
             if parent_id > 0
                 && self
-                    .get_property::<Archive>(
+                    .get_property::<Archive<AlignedBytes>>(
                         account_id,
                         Collection::FileNode,
                         parent_id - 1,

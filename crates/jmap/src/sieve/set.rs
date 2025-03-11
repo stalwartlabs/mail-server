@@ -28,10 +28,7 @@ use jmap_proto::{
 use rand::distr::Alphanumeric;
 use sieve::compiler::ErrorType;
 use store::{
-    BlobClass,
-    query::Filter,
-    rand::{Rng, rng},
-    write::{Archive, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
+    query::Filter, rand::{rng, Rng}, write::{log::ChangeLogBuilder, AlignedBytes, Archive, BatchBuilder}, BlobClass
 };
 use trc::AddContext;
 
@@ -56,7 +53,7 @@ pub trait SieveScriptSet: Sync + Send {
     fn sieve_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, HashedValue<SieveScript>)>,
+        update: Option<(u32, Archive<SieveScript>)>,
         ctx: &SetContext,
         session_id: u64,
     ) -> impl Future<
@@ -177,7 +174,7 @@ impl SieveScriptSet for Server {
             // Obtain sieve script
             let document_id = id.document_id();
             if let Some(sieve) = self
-                .get_property::<HashedValue<Archive>>(
+                .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -337,7 +334,7 @@ impl SieveScriptSet for Server {
     async fn sieve_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, HashedValue<SieveScript>)>,
+        update: Option<(u32, Archive<SieveScript>)>,
         ctx: &SetContext<'_>,
         session_id: u64,
     ) -> trc::Result<

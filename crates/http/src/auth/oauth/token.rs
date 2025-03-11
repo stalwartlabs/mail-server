@@ -13,7 +13,10 @@ use common::{
 };
 use hyper::StatusCode;
 use std::future::Future;
-use store::{dispatch::lookup::KeyValue, write::Archive};
+use store::{
+    dispatch::lookup::KeyValue,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 
 use http_proto::*;
@@ -76,7 +79,10 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Archive>(KeyValue::<()>::build_key(KV_OAUTH, code.as_bytes()))
+                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
+                        KV_OAUTH,
+                        code.as_bytes(),
+                    ))
                     .await?
                 {
                     Some(auth_code_) => {
@@ -145,7 +151,10 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Archive>(KeyValue::<()>::build_key(KV_OAUTH, device_code.as_bytes()))
+                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
+                        KV_OAUTH,
+                        device_code.as_bytes(),
+                    ))
                     .await?
                 {
                     let oauth = auth_code_
