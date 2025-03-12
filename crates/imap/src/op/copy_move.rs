@@ -185,8 +185,8 @@ impl<T: SessionStream> SessionData<T> {
 
             for (id, imap_id) in ids {
                 // Obtain mailbox tags
-                let (data_, thread_id) = if let Some(result) = self
-                    .get_mailbox_tags(account_id, id)
+                let data_ = if let Some(result) = self
+                    .get_message_data(account_id, id)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
                 {
@@ -226,6 +226,7 @@ impl<T: SessionStream> SessionData<T> {
                         .imap_ctx(&arguments.tag, trc::location!())?;
                 }
                 new_data.change_id = changelog.change_id;
+                let thread_id = new_data.thread_id;
 
                 // Add destination folder
                 new_data.add_mailbox(dest_mailbox_id);
@@ -481,26 +482,22 @@ impl<T: SessionStream> SessionData<T> {
         self.write_bytes(response).await
     }
 
-    pub async fn get_mailbox_tags(
+    pub async fn get_message_data(
         &self,
         account_id: u32,
         id: u32,
-    ) -> trc::Result<Option<(Archive<AlignedBytes>, u32)>> {
-        // Obtain mailbox tags
-        if let (Some(mailboxes), Some(thread_id)) = (
-            self.server
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Email,
-                    id,
-                    Property::Value,
-                )
-                .await?,
-            self.server
-                .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
-                .await?,
-        ) {
-            Ok(Some((mailboxes, thread_id)))
+    ) -> trc::Result<Option<Archive<AlignedBytes>>> {
+        if let Some(data) = self
+            .server
+            .get_property::<Archive<AlignedBytes>>(
+                account_id,
+                Collection::Email,
+                id,
+                Property::Value,
+            )
+            .await?
+        {
+            Ok(Some(data))
         } else {
             trc::event!(
                 Store(trc::StoreEvent::NotFound),

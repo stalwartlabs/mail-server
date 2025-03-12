@@ -212,24 +212,13 @@ impl<T: SessionStream> SessionData<T> {
                 continue;
             }
 
-            // Remove deleted flag
-            let thread_id = if let Some(thread_id) = self
-                .server
-                .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
-                .await
-                .caused_by(trc::location!())?
-            {
-                thread_id
-            } else {
-                continue;
-            };
-
             // Prepare changes
             let mut new_data = data.deserialize().caused_by(trc::location!())?;
             if changelog.change_id == u64::MAX {
                 changelog.change_id = self.server.assign_change_id(account_id)?
             }
             new_data.change_id = changelog.change_id;
+            let thread_id = new_data.thread_id;
 
             // Untag message from this mailbox and remove Deleted flag
             new_data.remove_mailbox(mailbox_id);

@@ -80,18 +80,20 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Lock the cache
-        let thread_ids = self
+        let thread_cache = self
             .server
-            .get_cached_thread_ids(mailbox.id.account_id, result_set.results.iter())
+            .get_cached_thread_ids(mailbox.id.account_id)
             .await
             .caused_by(trc::location!())?;
 
         // Group messages by thread
         let mut threads: AHashMap<u32, Vec<u32>> = AHashMap::new();
         let state = mailbox.state.lock();
-        for (document_id, thread_id) in thread_ids {
-            if let Some((imap_id, _)) = state.map_result_id(document_id, is_uid) {
-                threads.entry(thread_id).or_default().push(imap_id);
+        for (document_id, thread_id) in &thread_cache.threads {
+            if result_set.results.contains(*document_id) {
+                if let Some((imap_id, _)) = state.map_result_id(*document_id, is_uid) {
+                    threads.entry(*thread_id).or_default().push(imap_id);
+                }
             }
         }
 

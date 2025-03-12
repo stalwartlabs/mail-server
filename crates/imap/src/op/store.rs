@@ -200,23 +200,19 @@ impl<T: SessionStream> SessionData<T> {
         'outer: for (id, imap_id) in &ids {
             let mut try_count = 0;
             loop {
-                // Obtain current keywords
-                let (data_, thread_id) = if let (Some(data), Some(thread_id)) = (
-                    self.server
-                        .get_property::<Archive<AlignedBytes>>(
-                            account_id,
-                            Collection::Email,
-                            *id,
-                            Property::Value,
-                        )
-                        .await
-                        .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
-                    self.server
-                        .get_property::<u32>(account_id, Collection::Email, *id, Property::ThreadId)
-                        .await
-                        .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
-                ) {
-                    (data, thread_id)
+                // Obtain message data
+                let data_ = if let Some(data) = self
+                    .server
+                    .get_property::<Archive<AlignedBytes>>(
+                        account_id,
+                        Collection::Email,
+                        *id,
+                        Property::Value,
+                    )
+                    .await
+                    .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
+                {
+                    data
                 } else {
                     continue 'outer;
                 };
@@ -228,6 +224,7 @@ impl<T: SessionStream> SessionData<T> {
                 let mut new_data = data
                     .deserialize()
                     .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
+                let thread_id = new_data.thread_id;
 
                 // Apply changes
                 let mut seen_changed = false;

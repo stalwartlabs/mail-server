@@ -12,14 +12,13 @@ use jmap_proto::types::{
 };
 use store::{
     BitmapKey, IterateParams, U32_LEN, ValueKey,
-    ahash::AHashMap,
     roaring::RoaringBitmap,
     write::{
         AlignedBytes, Archive, BatchBuilder, BitmapClass, MaybeDynamicId, TagValue, ValueClass,
-        log::ChangeLogBuilder,
+        log::{ChangeLogBuilder, Changes},
     },
 };
-use trc::{AddContext, StoreEvent};
+use trc::AddContext;
 use utils::{BlobHash, codec::leb128::Leb128Reader};
 
 use std::future::Future;
@@ -50,6 +49,9 @@ pub trait EmailDeletion: Sync + Send {
         &self,
         account_id: u32,
     ) -> impl Future<Output = trc::Result<()>> + Send;
+
+    fn emails_purge_threads(&self, account_id: u32)
+    -> impl Future<Output = trc::Result<()>> + Send;
 }
 
 impl EmailDeletion for Server {
@@ -60,11 +62,14 @@ impl EmailDeletion for Server {
     ) -> trc::Result<(ChangeLogBuilder, RoaringBitmap)> {
         // Create batch
         let mut changes = ChangeLogBuilder::with_change_id(0);
-        let mut delete_properties = AHashMap::new();
 
-        // Fetch mailboxes and threadIds
-        let mut thread_ids: AHashMap<u32, i32> = AHashMap::new();
-        for (document_id, data) in self
+        // Tombstone message and untag it from the mailboxes
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Email);
+
+        for (document_id, data_) in self
             .get_properties::<Archive<AlignedBytes>, _>(
                 account_id,
                 Collection::Email,
@@ -73,126 +78,31 @@ impl EmailDeletion for Server {
             )
             .await?
         {
-            delete_properties.insert(
-                document_id,
-                DeleteProperties {
-                    archive: Some(data),
-                    thread_id: None,
-                },
-            );
-        }
-        for (document_id, thread_id) in self
-            .get_properties::<u32, _>(
-                account_id,
-                Collection::Email,
-                &document_ids,
-                Property::ThreadId,
-            )
-            .await?
-        {
-            *thread_ids.entry(thread_id).or_default() += 1;
-            delete_properties
-                .entry(document_id)
-                .or_insert_with(DeleteProperties::default)
-                .thread_id = Some(thread_id);
-        }
+            let data = data_
+                .to_unarchived::<MessageData>()
+                .caused_by(trc::location!())?;
+            let thread_id = u32::from(data.inner.thread_id);
 
-        // Obtain all threadIds
-        self.core
-            .storage
-            .data
-            .iterate(
-                IterateParams::new(
-                    BitmapKey {
-                        account_id,
-                        collection: Collection::Email.into(),
-                        class: BitmapClass::Tag {
-                            field: Property::ThreadId.into(),
-                            value: TagValue::Id(0),
-                        },
-                        document_id: 0,
-                    },
-                    BitmapKey {
-                        account_id,
-                        collection: Collection::Email.into(),
-                        class: BitmapClass::Tag {
-                            field: Property::ThreadId.into(),
-                            value: TagValue::Id(u32::MAX),
-                        },
-                        document_id: u32::MAX,
-                    },
-                )
-                .no_values(),
-                |key, _| {
-                    let (thread_id, _) = key
-                        .get(U32_LEN + 2..)
-                        .and_then(|bytes| bytes.read_leb128::<u32>())
-                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
-                    if let Some(thread_count) = thread_ids.get_mut(&thread_id) {
-                        *thread_count -= 1;
-                    }
-
-                    Ok(true)
-                },
-            )
-            .await
-            .caused_by(trc::location!())?;
-
-        // Tombstone message and untag it from the mailboxes
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::Email);
-
-        for (document_id, delete_properties) in delete_properties {
-            batch.update_document(document_id);
-
-            if let Some(data_) = delete_properties.archive {
-                let data = data_
-                    .to_unarchived::<MessageData>()
-                    .caused_by(trc::location!())?;
-
-                for mailbox in data.inner.mailboxes.iter() {
-                    changes.log_child_update(Collection::Mailbox, u32::from(mailbox.mailbox_id));
-                }
-
-                batch
-                    .custom(ObjectIndexBuilder::<_, ()>::new().with_current(data))
-                    .caused_by(trc::location!())?;
-            } else {
-                trc::event!(
-                    Store(StoreEvent::NotFound),
-                    AccountId = account_id,
-                    DocumentId = document_id,
-                    Details = "Failed to fetch mailboxIds.",
-                    CausedBy = trc::location!(),
-                );
+            for mailbox in data.inner.mailboxes.iter() {
+                changes.log_child_update(Collection::Mailbox, u32::from(mailbox.mailbox_id));
             }
-            if let Some(thread_id) = delete_properties.thread_id {
-                batch
-                    .untag(Property::ThreadId, thread_id)
-                    .clear(Property::ThreadId);
 
-                // Log message deletion
-                changes.log_delete(Collection::Email, Id::from_parts(thread_id, document_id));
+            // Log message deletion
+            changes.log_delete(Collection::Email, Id::from_parts(thread_id, document_id));
 
-                // Log thread changes
-                if thread_ids[&thread_id] < 0 {
-                    changes.log_child_update(Collection::Thread, thread_id);
-                }
-            } else {
-                trc::event!(
-                    Store(StoreEvent::NotFound),
-                    AccountId = account_id,
-                    DocumentId = document_id,
-                    Details = "Failed to fetch threadId.",
-                    CausedBy = trc::location!(),
+            // Log thread changes
+            changes.log_child_update(Collection::Thread, thread_id);
+
+            // Add changes to batch
+            batch
+                .update_document(document_id)
+                .custom(ObjectIndexBuilder::<_, ()>::new().with_current(data))
+                .caused_by(trc::location!())?
+                .tag(
+                    Property::MailboxIds,
+                    TagValue::Id(MaybeDynamicId::Static(TOMBSTONE_ID)),
                 );
-            }
-            batch.tag(
-                Property::MailboxIds,
-                TagValue::Id(MaybeDynamicId::Static(TOMBSTONE_ID)),
-            );
+
             document_ids.remove(document_id);
 
             if batch.ops.len() >= 1000 {
@@ -207,16 +117,6 @@ impl EmailDeletion for Server {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Email);
-            }
-        }
-
-        // Delete threadIds
-        for (thread_id, thread_count) in thread_ids {
-            if thread_count == 0 {
-                batch
-                    .with_collection(Collection::Thread)
-                    .delete_document(thread_id);
-                changes.log_delete(Collection::Thread, thread_id);
             }
         }
 
@@ -409,6 +309,9 @@ impl EmailDeletion for Server {
             Total = tombstoned_ids.len(),
         );
 
+        // Delete threadIds
+        self.emails_purge_threads(account_id).await?;
+
         // Delete full-text index
         self.core
             .storage
@@ -489,10 +392,78 @@ impl EmailDeletion for Server {
 
         Ok(())
     }
-}
 
-#[derive(Default, Debug)]
-struct DeleteProperties {
-    archive: Option<Archive<AlignedBytes>>,
-    thread_id: Option<u32>,
+    async fn emails_purge_threads(&self, account_id: u32) -> trc::Result<()> {
+        // Delete threadIs without documents
+        let mut thread_ids = self
+            .get_document_ids(account_id, Collection::Thread)
+            .await
+            .caused_by(trc::location!())?
+            .unwrap_or_default();
+
+        if thread_ids.is_empty() {
+            return Ok(());
+        }
+
+        self.core
+            .storage
+            .data
+            .iterate(
+                IterateParams::new(
+                    BitmapKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        class: BitmapClass::Tag {
+                            field: Property::ThreadId.into(),
+                            value: TagValue::Id(0),
+                        },
+                        document_id: 0,
+                    },
+                    BitmapKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        class: BitmapClass::Tag {
+                            field: Property::ThreadId.into(),
+                            value: TagValue::Id(u32::MAX),
+                        },
+                        document_id: u32::MAX,
+                    },
+                )
+                .no_values(),
+                |key, _| {
+                    let (thread_id, _) = key
+                        .get(U32_LEN + 2..)
+                        .and_then(|bytes| bytes.read_leb128::<u32>())
+                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
+                    thread_ids.remove(thread_id);
+
+                    Ok(!thread_ids.is_empty())
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        if thread_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Create batch
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Thread)
+            .with_change_id(self.generate_snowflake_id().caused_by(trc::location!())?)
+            .log(Changes::delete(thread_ids.iter().map(|id| id as u64)));
+        for thread_id in thread_ids {
+            batch.delete_document(thread_id);
+        }
+        self.core
+            .storage
+            .data
+            .write(batch.build())
+            .await
+            .caused_by(trc::location!())?;
+
+        Ok(())
+    }
 }

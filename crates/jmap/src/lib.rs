@@ -145,7 +145,7 @@ impl JmapMethods for Server {
         &self,
         result_set: ResultSet,
         comparators: Vec<Comparator>,
-        paginate: Pagination,
+        paginate: Pagination<'_>,
         mut response: QueryResponse,
     ) -> trc::Result<QueryResponse> {
         // Sort results

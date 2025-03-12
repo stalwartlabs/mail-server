@@ -118,17 +118,13 @@ impl EmailGet for Server {
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            let document_ids = message_ids
-                .iter()
-                .take(self.core.jmap.get_max_objects)
-                .collect::<Vec<_>>();
-            self.get_cached_thread_ids(account_id, document_ids.iter().copied())
+            self.get_cached_thread_ids(account_id)
                 .await
                 .caused_by(trc::location!())?
-                .into_iter()
-                .filter_map(|(document_id, thread_id)| {
-                    Id::from_parts(thread_id, document_id).into()
-                })
+                .threads
+                .iter()
+                .take(self.core.jmap.get_max_objects)
+                .map(|(document_id, thread_id)| Id::from_parts(*thread_id, *document_id))
                 .collect()
         };
         let mut response = GetResponse {

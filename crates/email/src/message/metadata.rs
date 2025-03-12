@@ -30,6 +30,7 @@ pub struct MessageData {
     pub mailboxes: Vec<UidMailbox>,
     pub keywords: Vec<Keyword>,
     pub change_id: u64,
+    pub thread_id: u32,
 }
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]

@@ -597,6 +597,10 @@ impl IndexableObject for MessageData {
                     })
                     .collect(),
             },
+            IndexValue::Tag {
+                field: Property::ThreadId.into(),
+                value: vec![TagValue::Id(MaybeDynamicId::Static(self.thread_id))],
+            },
         ]
         .into_iter()
     }
@@ -623,6 +627,12 @@ impl IndexableObject for &ArchivedMessageData {
                         Err(string) => TagValue::Text(string.into_bytes()),
                     })
                     .collect(),
+            },
+            IndexValue::Tag {
+                field: Property::ThreadId.into(),
+                value: vec![TagValue::Id(MaybeDynamicId::Static(u32::from(
+                    self.thread_id,
+                )))],
             },
         ]
         .into_iter()

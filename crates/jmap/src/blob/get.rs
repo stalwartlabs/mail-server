@@ -216,46 +216,37 @@ impl BlobOperations for Server {
                         } if *account_id == req_account_id => {
                             let collection = Collection::from(*collection);
                             if collection == Collection::Email {
-                                if include_email || include_thread {
-                                    if let Some(thread_id) = self
-                                        .get_property::<u32>(
-                                            req_account_id,
-                                            Collection::Email,
-                                            *document_id,
-                                            Property::ThreadId,
-                                        )
-                                        .await?
-                                    {
-                                        if include_email {
-                                            matched_ids.append(
-                                                DataType::Email,
-                                                vec![Id::from_parts(thread_id, *document_id)],
-                                            );
-                                        }
-                                        if include_thread {
-                                            matched_ids.append(
-                                                DataType::Thread,
-                                                vec![Id::from(thread_id)],
-                                            );
-                                        }
+                                if let Some(data_) = self
+                                    .get_property::<Archive<AlignedBytes>>(
+                                        req_account_id,
+                                        Collection::Email,
+                                        *document_id,
+                                        Property::Value,
+                                    )
+                                    .await?
+                                {
+                                    let data = data_
+                                        .unarchive::<MessageData>()
+                                        .caused_by(trc::location!())?;
+                                    if include_email {
+                                        matched_ids.append(
+                                            DataType::Email,
+                                            vec![Id::from_parts(
+                                                u32::from(data.thread_id),
+                                                *document_id,
+                                            )],
+                                        );
                                     }
-                                }
-                                if include_mailbox {
-                                    if let Some(mailboxes) = self
-                                        .get_property::<Archive<AlignedBytes>>(
-                                            req_account_id,
-                                            Collection::Email,
-                                            *document_id,
-                                            Property::Value,
-                                        )
-                                        .await?
-                                    {
+                                    if include_thread {
+                                        matched_ids.append(
+                                            DataType::Thread,
+                                            vec![Id::from(u32::from(data.thread_id))],
+                                        );
+                                    }
+                                    if include_mailbox {
                                         matched_ids.append(
                                             DataType::Mailbox,
-                                            mailboxes
-                                                .unarchive::<MessageData>()
-                                                .caused_by(trc::location!())?
-                                                .mailboxes
+                                            data.mailboxes
                                                 .iter()
                                                 .map(|m| {
                                                     debug_assert!(m.uid != 0);
