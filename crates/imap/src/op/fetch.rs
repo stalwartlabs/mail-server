@@ -233,7 +233,6 @@ impl<T: SessionStream> SessionData<T> {
 
         // Build properties list
         let mut set_seen_flags = false;
-        let mut needs_thread_id = false;
         let mut needs_blobs = false;
 
         for attribute in &arguments.attributes {
@@ -263,9 +262,6 @@ impl<T: SessionStream> SessionData<T> {
                         set_seen_flags = true;
                     }
                     needs_blobs = true;
-                }
-                Attribute::ThreadId => {
-                    needs_thread_id = true;
                 }
                 _ => (),
             }
@@ -389,20 +385,7 @@ impl<T: SessionStream> SessionData<T> {
                     .keywords
                     .iter()
                     .any(|k| k == &ArchivedKeyword::Seen);
-            let thread_id = if needs_thread_id || set_seen_flag {
-                if let Some(thread_id) = self
-                    .server
-                    .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
-                    .await
-                    .imap_ctx(&arguments.tag, trc::location!())?
-                {
-                    thread_id
-                } else {
-                    continue;
-                }
-            } else {
-                0
-            };
+
             for attribute in &arguments.attributes {
                 match attribute {
                     Attribute::Envelope => {
@@ -538,7 +521,8 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::ThreadId => {
                         items.push(DataItem::ThreadId {
-                            thread_id: Id::from_parts(account_id, thread_id).to_string(),
+                            thread_id: Id::from_parts(account_id, u32::from(data.inner.thread_id))
+                                .to_string(),
                         });
                     }
                 }
@@ -568,6 +552,7 @@ impl<T: SessionStream> SessionData<T> {
                     .imap_ctx(&arguments.tag, trc::location!())?;
                 new_data.keywords.push(Keyword::Seen);
                 new_data.change_id = change_id;
+                let thread_id = new_data.thread_id;
 
                 let mut batch = BatchBuilder::new();
                 batch

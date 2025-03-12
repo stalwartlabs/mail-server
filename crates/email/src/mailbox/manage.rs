@@ -214,14 +214,20 @@ impl MailboxFnc for Server {
         document_ids: Option<RoaringBitmap>,
     ) -> trc::Result<usize> {
         if let Some(document_ids) = document_ids {
-            let mut thread_ids = AHashSet::default();
-            self.get_cached_thread_ids(account_id, document_ids.into_iter())
+            let thread_ids = self
+                .get_cached_thread_ids(account_id)
                 .await
                 .caused_by(trc::location!())?
-                .into_iter()
-                .for_each(|(_, thread_id)| {
-                    thread_ids.insert(thread_id);
-                });
+                .threads
+                .iter()
+                .filter_map(|(document_id, thread_id)| {
+                    if document_ids.contains(*document_id) {
+                        Some(*thread_id)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<AHashSet<_>>();
             Ok(thread_ids.len())
         } else {
             Ok(0)

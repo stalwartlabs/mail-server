@@ -15,10 +15,7 @@ use jmap_proto::{
 use mail_parser::parsers::fields::thread::thread_name;
 use store::{
     BlobClass,
-    write::{
-        AlignedBytes, Archive, BatchBuilder, MaybeDynamicId, TagValue, TaskQueueClass, ValueClass,
-        log::{Changes, LogInsert},
-    },
+    write::{AlignedBytes, Archive, BatchBuilder, TaskQueueClass, ValueClass, log::Changes},
 };
 use trc::AddContext;
 
@@ -129,13 +126,11 @@ impl EmailCopy for Server {
             }
         }
 
-        let thread_id = if !references.is_empty() {
-            self.find_or_merge_thread(account_id, subject, &references)
-                .await
-                .caused_by(trc::location!())?
-        } else {
-            None
-        };
+        // Obtain threadId
+        let thread_id = self
+            .find_or_merge_thread(account_id, subject, &references)
+            .await
+            .caused_by(trc::location!())?;
 
         // Assign id
         let mut email = IngestedEmail {
@@ -162,30 +157,19 @@ impl EmailCopy for Server {
         batch
             .with_account_id(account_id)
             .with_change_id(change_id)
-            .with_collection(Collection::Thread);
-        if let Some(thread_id) = thread_id {
-            batch.log(Changes::update([thread_id]));
-        } else {
-            batch.create_document().log(LogInsert());
-        };
-
-        // Build batch
-        let maybe_thread_id = thread_id
-            .map(MaybeDynamicId::Static)
-            .unwrap_or(MaybeDynamicId::Dynamic(0));
-        batch
+            .with_collection(Collection::Thread)
+            .log(Changes::update([thread_id]))
             .with_collection(Collection::Mailbox)
             .log(Changes::child_update(mailboxes.iter().copied()))
             .with_collection(Collection::Email)
             .create_document()
-            .log(LogEmailInsert::new(thread_id))
-            .set(Property::ThreadId, maybe_thread_id)
-            .tag(Property::ThreadId, TagValue::Id(maybe_thread_id))
+            .log(LogEmailInsert::new(thread_id.into()))
             .custom(
                 ObjectIndexBuilder::<(), _>::new().with_changes(MessageData {
                     mailboxes: mailbox_ids,
                     keywords,
                     change_id,
+                    thread_id,
                 }),
             )
             .caused_by(trc::location!())?
@@ -213,10 +197,6 @@ impl EmailCopy for Server {
             .write(batch.build())
             .await
             .caused_by(trc::location!())?;
-        let thread_id = match thread_id {
-            Some(thread_id) => thread_id,
-            None => ids.first_document_id().caused_by(trc::location!())?,
-        };
         let document_id = ids.last_document_id().caused_by(trc::location!())?;
 
         // Request FTS index

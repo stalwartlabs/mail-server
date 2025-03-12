@@ -16,9 +16,7 @@ use store::{
     SerializeInfallible,
     query::Filter,
     roaring::RoaringBitmap,
-    write::{
-        AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder, serialize::rkyv_deserialize,
-    },
+    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -131,59 +129,39 @@ impl MailboxDestroy for Server {
                         continue;
                     }
 
-                    let mut new_message_data =
-                        rkyv_deserialize(prev_message_data.inner).caused_by(trc::location!())?;
+                    let mut new_message_data = prev_message_data
+                        .deserialize()
+                        .caused_by(trc::location!())?;
+                    let thread_id = new_message_data.thread_id;
 
                     new_message_data
                         .mailboxes
                         .retain(|id| id.mailbox_id != document_id);
 
-                    // Obtain threadId
-                    if let Some(thread_id) = self
-                        .get_property::<u32>(
-                            account_id,
-                            Collection::Email,
-                            message_id,
-                            Property::ThreadId,
+                    // Untag message from mailbox
+                    let mut batch = BatchBuilder::new();
+                    batch
+                        .with_account_id(account_id)
+                        .with_collection(Collection::Email)
+                        .update_document(message_id)
+                        .custom(
+                            ObjectIndexBuilder::new()
+                                .with_changes(new_message_data)
+                                .with_current(prev_message_data),
                         )
-                        .await?
-                    {
-                        // Untag message from mailbox
-                        let mut batch = BatchBuilder::new();
-                        batch
-                            .with_account_id(account_id)
-                            .with_collection(Collection::Email)
-                            .update_document(message_id)
-                            .custom(
-                                ObjectIndexBuilder::new()
-                                    .with_changes(new_message_data)
-                                    .with_current(prev_message_data),
-                            )
-                            .caused_by(trc::location!())?;
-                        match self.core.storage.data.write(batch.build()).await {
-                            Ok(_) => changes.log_update(
-                                Collection::Email,
-                                Id::from_parts(thread_id, message_id),
-                            ),
-                            Err(err) if err.is_assertion_failure() => {
-                                return Ok(Err(SetError::forbidden().with_description(concat!(
-                                    "Another process modified a message in this mailbox ",
-                                    "while deleting it, please try again."
-                                ))));
-                            }
-                            Err(err) => {
-                                return Err(err.caused_by(trc::location!()));
-                            }
+                        .caused_by(trc::location!())?;
+                    match self.core.storage.data.write(batch.build()).await {
+                        Ok(_) => changes
+                            .log_update(Collection::Email, Id::from_parts(thread_id, message_id)),
+                        Err(err) if err.is_assertion_failure() => {
+                            return Ok(Err(SetError::forbidden().with_description(concat!(
+                                "Another process modified a message in this mailbox ",
+                                "while deleting it, please try again."
+                            ))));
                         }
-                    } else {
-                        trc::event!(
-                            Store(trc::StoreEvent::NotFound),
-                            AccountId = account_id,
-                            MessageId = message_id,
-                            MailboxId = document_id,
-                            Details = "Message does not have a threadId.",
-                            CausedBy = trc::location!(),
-                        );
+                        Err(err) => {
+                            return Err(err.caused_by(trc::location!()));
+                        }
                     }
                 }
 

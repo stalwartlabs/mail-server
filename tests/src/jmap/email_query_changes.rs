@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use ::email::message::{ingest::EmailIngest, metadata::MessageData};
+use common::storage::index::ObjectIndexBuilder;
 use jmap_client::{
     core::query::{Comparator, Filter},
     email,
@@ -13,7 +15,7 @@ use jmap_proto::types::{collection::Collection, id::Id, property::Property, stat
 
 use store::{
     ahash::{AHashMap, AHashSet},
-    write::{BatchBuilder, MaybeDynamicId, TagValue, log::ChangeLogBuilder},
+    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder},
 };
 
 use crate::jmap::{
@@ -131,6 +133,23 @@ pub async fn test(params: &mut JMAPTest) {
             LogAction::Move(from, to) => {
                 let id = *id_map.get(from).unwrap();
                 let new_id = Id::from_parts(thread_id, id.document_id());
+
+                let new_thread_id = server.create_thread_id(1).await.unwrap();
+
+                let old_message_ = server
+                    .get_property::<Archive<AlignedBytes>>(
+                        1,
+                        Collection::Email,
+                        id.document_id(),
+                        Property::Value,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let old_message = old_message_.to_unarchived::<MessageData>().unwrap();
+                let mut new_message = old_message.deserialize().unwrap();
+                new_message.thread_id = new_thread_id;
+
                 server
                     .core
                     .storage
@@ -142,9 +161,12 @@ pub async fn test(params: &mut JMAPTest) {
                             .create_document()
                             .with_collection(Collection::Email)
                             .update_document(id.document_id())
-                            .untag(Property::ThreadId, id.prefix_id())
-                            .set(Property::ThreadId, MaybeDynamicId::Dynamic(0))
-                            .tag(Property::ThreadId, TagValue::Id(MaybeDynamicId::Dynamic(0)))
+                            .custom(
+                                ObjectIndexBuilder::new()
+                                    .with_current(old_message)
+                                    .with_changes(new_message),
+                            )
+                            .unwrap()
                             .custom(server.begin_changes(1).unwrap().with_log_move(
                                 Collection::Email,
                                 id,

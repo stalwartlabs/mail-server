@@ -15,11 +15,10 @@ use mail_parser::HeaderName;
 use nlp::language::Language;
 use std::future::Future;
 use store::{
-    SerializeInfallible, ValueKey,
+    SerializeInfallible,
     fts::{Field, FilterGroup, FtsFilter, IntoFilterGroup},
     query::{self},
     roaring::RoaringBitmap,
-    write::ValueClass,
 };
 
 use crate::JmapMethods;
@@ -367,16 +366,12 @@ impl EmailQuery for Server {
             }
 
             // Sort results
+            let thread_cache = self.get_cached_thread_ids(account_id).await?;
             self.sort(
                 result_set,
                 comparators,
                 paginate
-                    .with_prefix_key(ValueKey {
-                        account_id,
-                        collection: Collection::Email.into(),
-                        document_id: 0,
-                        class: ValueClass::Property(Property::ThreadId.into()),
-                    })
+                    .with_prefix_map(&thread_cache.threads)
                     .with_prefix_unique(request.arguments.collapse_threads.unwrap_or(false)),
                 response,
             )
@@ -399,15 +394,15 @@ impl EmailQuery for Server {
         if keyword_doc_ids.is_empty() {
             return Ok(keyword_doc_ids);
         }
-        let keyword_thread_ids = self
-            .get_cached_thread_ids(account_id, keyword_doc_ids.iter())
-            .await?;
-
+        let thread_cache = self.get_cached_thread_ids(account_id).await?;
         let mut not_matched_ids = RoaringBitmap::new();
         let mut matched_ids = RoaringBitmap::new();
 
-        for (keyword_doc_id, thread_id) in keyword_thread_ids {
-            if matched_ids.contains(keyword_doc_id) || not_matched_ids.contains(keyword_doc_id) {
+        for (&keyword_doc_id, &thread_id) in thread_cache.threads.iter() {
+            if !keyword_doc_ids.contains(keyword_doc_id)
+                || matched_ids.contains(keyword_doc_id)
+                || not_matched_ids.contains(keyword_doc_id)
+            {
                 continue;
             }
 

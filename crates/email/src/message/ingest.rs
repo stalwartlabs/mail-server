@@ -6,6 +6,7 @@
 
 use std::{
     borrow::Cow,
+    collections::BTreeSet,
     fmt::Write,
     time::{Duration, Instant},
 };
@@ -13,6 +14,7 @@ use std::{
 use common::{
     Server,
     auth::{AccessToken, ResourceToken},
+    storage::index::ObjectIndexBuilder,
 };
 use directory::Permission;
 use jmap_proto::types::{
@@ -33,19 +35,20 @@ use spam_filter::{
 };
 use std::future::Future;
 use store::{
-    BitmapKey, BlobClass,
-    ahash::AHashSet,
+    BlobClass, IndexKey, IndexKeyPrefix, IterateParams, U32_LEN,
+    ahash::AHashMap,
     query::Filter,
+    roaring::RoaringBitmap,
     write::{
-        AlignedBytes, Archive, AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId,
-        MaybeDynamicValue, SerializeWithId, TagValue, TaskQueueClass, ValueClass,
+        AlignedBytes, Archive, AssignedIds, BatchBuilder, MaybeDynamicValue, SerializeWithId,
+        TaskQueueClass, ValueClass,
+        key::DeserializeBigEndian,
         log::{ChangeLogBuilder, Changes, LogInsert},
         now,
     },
 };
 use store::{SerializeInfallible, rand::Rng};
 use trc::{AddContext, MessageIngestEvent};
-use utils::map::vec_map::VecMap;
 
 use crate::{
     mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
@@ -104,13 +107,14 @@ pub trait EmailIngest: Sync + Send {
         account_id: u32,
         thread_name: &str,
         references: &[&str],
-    ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
+    ) -> impl Future<Output = trc::Result<u32>> + Send;
     fn assign_imap_uid(
         &self,
         account_id: u32,
         mailbox_id: u32,
     ) -> impl Future<Output = trc::Result<u32>> + Send;
     fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool;
+    fn create_thread_id(&self, account_id: u32) -> impl Future<Output = trc::Result<u32>> + Send;
 }
 
 impl EmailIngest for Server {
@@ -323,12 +327,8 @@ impl EmailIngest for Server {
                 });
             }
 
-            if !references.is_empty() {
-                self.find_or_merge_thread(account_id, subject, &references)
-                    .await?
-            } else {
-                None
-            }
+            self.find_or_merge_thread(account_id, subject, &references)
+                .await?
         };
 
         // Add additional headers to message
@@ -474,27 +474,19 @@ impl EmailIngest for Server {
         batch
             .with_change_id(change_id)
             .with_account_id(account_id)
-            .with_collection(Collection::Thread);
-        if let Some(thread_id) = thread_id {
-            batch.log(Changes::update([thread_id]));
-        } else {
-            batch.create_document().log(LogInsert());
-        }
-
+            .with_collection(Collection::Thread)
+            .log(Changes::update([thread_id]));
         // Build write batch
         let mailbox_ids_event = mailbox_ids
             .iter()
             .map(|m| trc::Value::from(m.mailbox_id))
             .collect::<Vec<_>>();
-        let maybe_thread_id = thread_id
-            .map(MaybeDynamicId::Static)
-            .unwrap_or(MaybeDynamicId::Dynamic(0));
         batch
             .with_collection(Collection::Mailbox)
             .log(Changes::child_update(params.mailbox_ids.iter().copied()))
             .with_collection(Collection::Email)
             .create_document()
-            .log(LogEmailInsert(thread_id))
+            .log(LogEmailInsert(thread_id.into()))
             .index_message(
                 account_id,
                 tenant_id,
@@ -504,12 +496,11 @@ impl EmailIngest for Server {
                     mailboxes: mailbox_ids,
                     keywords: params.keywords,
                     change_id,
+                    thread_id,
                 },
                 params.received_at.unwrap_or_else(now),
             )
             .caused_by(trc::location!())?
-            .set(Property::ThreadId, maybe_thread_id)
-            .tag(Property::ThreadId, TagValue::Id(maybe_thread_id))
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                     seq: self.generate_snowflake_id().caused_by(trc::location!())?,
@@ -538,10 +529,7 @@ impl EmailIngest for Server {
             .write(batch.build())
             .await
             .caused_by(trc::location!())?;
-        let thread_id = match thread_id {
-            Some(thread_id) => thread_id,
-            None => ids.first_document_id().caused_by(trc::location!())?,
-        };
+
         let document_id = ids.last_document_id().caused_by(trc::location!())?;
         let id = Id::from_parts(thread_id, document_id);
 
@@ -592,7 +580,11 @@ impl EmailIngest for Server {
         account_id: u32,
         thread_name: &str,
         references: &[&str],
-    ) -> trc::Result<Option<u32>> {
+    ) -> trc::Result<u32> {
+        if references.is_empty() {
+            return self.create_thread_id(account_id).await;
+        }
+
         let mut try_count = 0;
         let thread_name = if !thread_name.is_empty() {
             thread_name
@@ -600,59 +592,118 @@ impl EmailIngest for Server {
             "!"
         }
         .serialize();
+        let references = references
+            .iter()
+            .map(|r| r.as_bytes())
+            .collect::<BTreeSet<_>>();
 
         loop {
-            // Find messages with matching references
-            let mut filters = Vec::with_capacity(references.len() + 3);
-            filters.push(Filter::eq(Property::Subject, thread_name.clone()));
-            filters.push(Filter::Or);
-            for reference in references {
-                filters.push(Filter::eq(Property::References, reference.serialize()));
-            }
-            filters.push(Filter::End);
-            let results = self
-                .core
-                .storage
-                .data
-                .filter(account_id, Collection::Email, filters)
-                .await
-                .caused_by(trc::location!())?
-                .results;
+            // Find messages with a matching subject
+            let mut subj_results = RoaringBitmap::new();
+            self.store()
+                .iterate(
+                    IterateParams::new(
+                        IndexKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: 0,
+                            field: Property::Subject.into(),
+                            key: thread_name.clone(),
+                        },
+                        IndexKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: u32::MAX,
+                            field: Property::Subject.into(),
+                            key: thread_name.clone(),
+                        },
+                    )
+                    .no_values()
+                    .ascending(),
+                    |key, _| {
+                        let id_pos = key.len() - U32_LEN;
+                        let value = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
+                            trc::Error::corrupted_key(key, None, trc::location!())
+                        })?;
 
-            if results.is_empty() {
-                return Ok(None);
-            }
+                        if value == thread_name {
+                            subj_results.insert(key.deserialize_be_u32(id_pos)?);
+                        }
 
-            // Obtain threadIds for matching messages
-            let thread_ids = self
-                .get_cached_thread_ids(account_id, results.iter())
+                        Ok(true)
+                    },
+                )
                 .await
                 .caused_by(trc::location!())?;
+            if subj_results.is_empty() {
+                return self.create_thread_id(account_id).await;
+            }
 
-            if thread_ids.len() == 1 {
-                return Ok(thread_ids
-                    .into_iter()
-                    .next()
-                    .map(|(_, thread_id)| thread_id));
+            // Find messages with matching references
+            let mut results = RoaringBitmap::new();
+            self.store()
+                .iterate(
+                    IterateParams::new(
+                        IndexKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: 0,
+                            field: Property::References.into(),
+                            key: references.first().unwrap().to_vec(),
+                        },
+                        IndexKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: u32::MAX,
+                            field: Property::References.into(),
+                            key: references.last().unwrap().to_vec(),
+                        },
+                    )
+                    .no_values()
+                    .ascending(),
+                    |key, _| {
+                        let id_pos = key.len() - U32_LEN;
+                        let value = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
+                            trc::Error::corrupted_key(key, None, trc::location!())
+                        })?;
+                        let document_id = key.deserialize_be_u32(id_pos)?;
+
+                        if subj_results.contains(document_id) && references.contains(value) {
+                            results.insert(document_id);
+                        }
+
+                        Ok(true)
+                    },
+                )
+                .await
+                .caused_by(trc::location!())?;
+            if results.is_empty() {
+                return self.create_thread_id(account_id).await;
             }
 
             // Find the most common threadId
-            let mut thread_counts = VecMap::<u32, u32>::with_capacity(thread_ids.len());
+            let mut thread_counts = AHashMap::<u32, u32>::with_capacity(16);
             let mut thread_id = u32::MAX;
             let mut thread_count = 0;
-            for (_, thread_id_) in thread_ids.iter() {
-                let tc = thread_counts.get_mut_or_insert(*thread_id_);
-                *tc += 1;
-                if *tc > thread_count {
-                    thread_count = *tc;
-                    thread_id = *thread_id_;
+            let thread_cache = self
+                .get_cached_thread_ids(account_id)
+                .await
+                .caused_by(trc::location!())?;
+            for (document_id, thread_id_) in thread_cache.threads.iter() {
+                if results.contains(*document_id) {
+                    let tc = thread_counts.entry(*thread_id_).or_default();
+                    *tc += 1;
+                    if *tc > thread_count {
+                        thread_count = *tc;
+                        thread_id = *thread_id_;
+                    }
                 }
             }
 
             if thread_id == u32::MAX {
-                return Ok(None); // This should never happen
+                return self.create_thread_id(account_id).await;
             } else if thread_counts.len() == 1 {
-                return Ok(Some(thread_id));
+                return Ok(thread_id);
             }
 
             // Delete all but the most common threadId
@@ -673,47 +724,49 @@ impl EmailIngest for Server {
 
             // Move messages to the new threadId
             batch.with_collection(Collection::Email);
-            for old_thread_id in thread_ids
-                .into_iter()
-                .map(|(_, thread_id)| thread_id)
-                .collect::<AHashSet<_>>()
-            {
-                if thread_id != old_thread_id {
-                    for document_id in self
-                        .core
-                        .storage
-                        .data
-                        .get_bitmap(BitmapKey {
-                            account_id,
-                            collection: Collection::Email.into(),
-                            class: BitmapClass::Tag {
-                                field: Property::ThreadId.into(),
-                                value: TagValue::Id(old_thread_id),
-                            },
-                            document_id: 0,
-                        })
-                        .await
-                        .caused_by(trc::location!())?
-                        .unwrap_or_default()
-                    {
-                        batch
-                            .update_document(document_id)
-                            .assert_value(Property::ThreadId, old_thread_id)
-                            .untag(Property::ThreadId, old_thread_id)
-                            .tag(Property::ThreadId, thread_id)
-                            .set(Property::ThreadId, thread_id.serialize());
-                        changes.log_move(
-                            Collection::Email,
-                            Id::from_parts(old_thread_id, document_id),
-                            Id::from_parts(thread_id, document_id),
-                        );
+
+            for (&document_id, &old_thread_id) in &thread_cache.threads {
+                if thread_id == old_thread_id || !thread_counts.contains_key(&old_thread_id) {
+                    continue;
+                }
+                if let Some(data_) = self
+                    .get_property::<Archive<AlignedBytes>>(
+                        account_id,
+                        Collection::Email,
+                        document_id,
+                        Property::Value,
+                    )
+                    .await
+                    .caused_by(trc::location!())?
+                {
+                    let data = data_
+                        .to_unarchived::<MessageData>()
+                        .caused_by(trc::location!())?;
+                    if data.inner.thread_id != old_thread_id {
+                        continue;
                     }
+                    let mut new_data = data.deserialize().caused_by(trc::location!())?;
+                    new_data.thread_id = thread_id;
+                    batch
+                        .update_document(document_id)
+                        .custom(
+                            ObjectIndexBuilder::new()
+                                .with_current(data)
+                                .with_changes(new_data),
+                        )
+                        .caused_by(trc::location!())?;
+                    changes.log_move(
+                        Collection::Email,
+                        Id::from_parts(old_thread_id, document_id),
+                        Id::from_parts(thread_id, document_id),
+                    );
                 }
             }
+
             batch.custom(changes).caused_by(trc::location!())?;
 
             match self.core.storage.data.write(batch.build()).await {
-                Ok(_) => return Ok(Some(thread_id)),
+                Ok(_) => return Ok(thread_id),
                 Err(err) if err.is_assertion_failure() && try_count < MAX_RETRIES => {
                     let backoff = store::rand::rng().random_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
@@ -746,6 +799,20 @@ impl EmailIngest for Server {
         self.core.spam.bayes.as_ref().is_some_and(|bayes| {
             bayes.account_classify && access_token.has_permission(Permission::SpamFilterTrain)
         })
+    }
+
+    async fn create_thread_id(&self, account_id: u32) -> trc::Result<u32> {
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_change_id(self.generate_snowflake_id().caused_by(trc::location!())?)
+            .with_account_id(account_id)
+            .with_collection(Collection::Thread)
+            .create_document()
+            .log(LogInsert());
+        self.store()
+            .write_expect_id(batch)
+            .await
+            .caused_by(trc::location!())
     }
 }
 
@@ -790,3 +857,19 @@ impl From<IngestedEmail> for Object<Value> {
             .with_property(Property::Size, email.size)
     }
 }
+
+/*
+
+ let thread_id = match thread_id {
+            Some(thread_id) => thread_id,
+            None => ids.first_document_id().caused_by(trc::location!())?,
+        };
+
+ .with_collection(Collection::Thread);
+        if let Some(thread_id) = thread_id {
+            batch.log(Changes::update([thread_id]));
+        } else {
+            batch.create_document().log(LogInsert());
+
+
+*/
