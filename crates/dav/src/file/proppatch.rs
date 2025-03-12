@@ -109,7 +109,7 @@ impl FilePropPatchRequestHandler for Server {
         .await?;
 
         // Deserialize
-        let node = node.into_deserialized().caused_by(trc::location!())?;
+        let node = node.to_deserialized().caused_by(trc::location!())?;
         let mut new_node = node.inner.clone();
 
         // Remove properties

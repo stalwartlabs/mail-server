@@ -7,9 +7,9 @@
 use common::{Server, auth::AccessToken};
 
 use email::{
-    mailbox::UidMailbox,
     message::metadata::{
-        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageMetadata,
+        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageData,
+        MessageMetadata,
     },
     thread::cache::ThreadCache,
 };
@@ -22,7 +22,6 @@ use jmap_proto::{
         collection::Collection,
         date::UTCDate,
         id::Id,
-        keyword::Keyword,
         property::{HeaderForm, Property},
         value::{Object, Value},
     },
@@ -155,7 +154,7 @@ impl EmailGet for Server {
             }
         }
 
-        'outer: for id in ids {
+        for id in ids {
             // Obtain the email object
             if !message_ids.contains(id.document_id()) {
                 response.not_found.push(id.into());
@@ -178,6 +177,26 @@ impl EmailGet for Server {
             };
             let metadata = metadata_
                 .unarchive::<MessageMetadata>()
+                .caused_by(trc::location!())?;
+
+            // Obtain message data
+            let data_ = match self
+                .get_property::<Archive<AlignedBytes>>(
+                    account_id,
+                    Collection::Email,
+                    id.document_id(),
+                    &Property::Value,
+                )
+                .await?
+            {
+                Some(data) => data,
+                None => {
+                    response.not_found.push(id.into());
+                    continue;
+                }
+            };
+            let data = data_
+                .unarchive::<MessageData>()
                 .caused_by(trc::location!())?;
 
             // Retrieve raw message if needed
@@ -228,73 +247,23 @@ impl EmailGet for Server {
                         email.append(Property::BlobId, blob_id.clone());
                     }
                     Property::MailboxIds => {
-                        if let Some(mailboxes_) = self
-                            .get_property::<Archive<AlignedBytes>>(
-                                account_id,
-                                Collection::Email,
-                                id.document_id(),
-                                &Property::MailboxIds,
-                            )
-                            .await?
-                        {
-                            let mailboxes = mailboxes_
-                                .unarchive::<Vec<UidMailbox>>()
-                                .caused_by(trc::location!())?;
-                            let mut obj = Object::with_capacity(mailboxes.len());
-                            for id in mailboxes.iter() {
-                                debug_assert!(id.uid != 0);
-                                obj.append(
-                                    Property::_T(Id::from(u32::from(id.mailbox_id)).to_string()),
-                                    true,
-                                );
-                            }
-
-                            email.append(property.clone(), Value::Object(obj));
-                        } else {
-                            trc::event!(
-                                Store(StoreEvent::NotFound),
-                                AccountId = account_id,
-                                DocumentId = id.document_id(),
-                                Collection = Collection::Email,
-                                Details = "Mailbox property not found.",
-                                CausedBy = trc::location!(),
+                        let mut obj = Object::with_capacity(data.mailboxes.len());
+                        for id in data.mailboxes.iter() {
+                            debug_assert!(id.uid != 0);
+                            obj.append(
+                                Property::_T(Id::from(u32::from(id.mailbox_id)).to_string()),
+                                true,
                             );
-
-                            response.not_found.push(id.into());
-                            continue 'outer;
                         }
+
+                        email.append(property.clone(), Value::Object(obj));
                     }
                     Property::Keywords => {
-                        if let Some(keywords_) = self
-                            .get_property::<Archive<AlignedBytes>>(
-                                account_id,
-                                Collection::Email,
-                                id.document_id(),
-                                &Property::Keywords,
-                            )
-                            .await?
-                        {
-                            let keywords = keywords_
-                                .unarchive::<Vec<Keyword>>()
-                                .caused_by(trc::location!())?;
-                            let mut obj = Object::with_capacity(keywords.len());
-                            for keyword in keywords.iter() {
-                                obj.append(Property::_T(keyword.to_string()), true);
-                            }
-                            email.append(property.clone(), Value::Object(obj));
-                        } else {
-                            trc::event!(
-                                Store(StoreEvent::NotFound),
-                                AccountId = account_id,
-                                DocumentId = id.document_id(),
-                                Collection = Collection::Email,
-                                Details = "Keywords property not found.",
-                                CausedBy = trc::location!(),
-                            );
-
-                            response.not_found.push(id.into());
-                            continue 'outer;
+                        let mut obj = Object::with_capacity(data.keywords.len());
+                        for keyword in data.keywords.iter() {
+                            obj.append(Property::_T(keyword.to_string()), true);
                         }
+                        email.append(property.clone(), Value::Object(obj));
                     }
                     Property::Size => {
                         email.append(Property::Size, u32::from(metadata.size));

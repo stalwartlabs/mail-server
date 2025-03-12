@@ -308,7 +308,7 @@ where
         + Sync
         + Send,
 {
-    pub fn into_deserialized<V>(&self) -> trc::Result<Archive<V>>
+    pub fn to_deserialized<V>(&self) -> trc::Result<Archive<V>>
     where
         T: rkyv::Deserialize<V, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
     {
@@ -323,6 +323,17 @@ where
                 version: self.version,
                 inner,
             })
+    }
+
+    pub fn deserialize<V>(&self) -> trc::Result<V>
+    where
+        T: rkyv::Deserialize<V, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
+    {
+        rkyv::deserialize::<V, rkyv::rancor::Error>(self.inner).map_err(|err| {
+            trc::StoreEvent::DeserializeError
+                .caused_by(trc::location!())
+                .reason(err)
+        })
     }
 }
 

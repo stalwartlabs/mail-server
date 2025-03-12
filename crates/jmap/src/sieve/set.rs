@@ -9,7 +9,9 @@ use common::{
     auth::{AccessToken, ResourceToken},
     storage::index::ObjectIndexBuilder,
 };
-use email::sieve::{SieveScript, activate::SieveScriptActivate, delete::SieveScriptDelete};
+use email::sieve::{
+    ArchivedSieveScript, SieveScript, activate::SieveScriptActivate, delete::SieveScriptDelete,
+};
 use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -28,7 +30,10 @@ use jmap_proto::{
 use rand::distr::Alphanumeric;
 use sieve::compiler::ErrorType;
 use store::{
-    query::Filter, rand::{rng, Rng}, write::{log::ChangeLogBuilder, AlignedBytes, Archive, BatchBuilder}, BlobClass
+    BlobClass, Serialize,
+    query::Filter,
+    rand::{Rng, rng},
+    write::{AlignedBytes, Archive, BatchBuilder, LegacyBincode, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -50,17 +55,17 @@ pub trait SieveScriptSet: Sync + Send {
     ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
 
     #[allow(clippy::type_complexity)]
-    fn sieve_set_item(
+    fn sieve_set_item<'x>(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, Archive<SieveScript>)>,
+        update: Option<(u32, Archive<&'x ArchivedSieveScript>)>,
         ctx: &SetContext,
         session_id: u64,
     ) -> impl Future<
         Output = trc::Result<
             Result<
                 (
-                    ObjectIndexBuilder<SieveScript, SieveScript>,
+                    ObjectIndexBuilder<&'x ArchivedSieveScript, SieveScript>,
                     Option<Vec<u8>>,
                 ),
                 SetError,
@@ -173,7 +178,7 @@ impl SieveScriptSet for Server {
 
             // Obtain sieve script
             let document_id = id.document_id();
-            if let Some(sieve) = self
+            if let Some(sieve_) = self
                 .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::SieveScript,
@@ -182,8 +187,8 @@ impl SieveScriptSet for Server {
                 )
                 .await?
             {
-                let sieve = sieve
-                    .into_deserialized::<SieveScript>()
+                let sieve = sieve_
+                    .to_unarchived::<SieveScript>()
                     .caused_by(trc::location!())?;
 
                 match self
@@ -331,16 +336,16 @@ impl SieveScriptSet for Server {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    async fn sieve_set_item(
+    async fn sieve_set_item<'x>(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, Archive<SieveScript>)>,
+        update: Option<(u32, Archive<&'x ArchivedSieveScript>)>,
         ctx: &SetContext<'_>,
         session_id: u64,
     ) -> trc::Result<
         Result<
             (
-                ObjectIndexBuilder<SieveScript, SieveScript>,
+                ObjectIndexBuilder<&'x ArchivedSieveScript, SieveScript>,
                 Option<Vec<u8>>,
             ),
             SetError,
@@ -360,7 +365,7 @@ impl SieveScriptSet for Server {
         // Parse properties
         let mut changes = update
             .as_ref()
-            .map(|(_, obj)| obj.inner.clone())
+            .map(|(_, obj)| obj.deserialize().unwrap_or_default())
             .unwrap_or_default();
         let mut blob_id = None;
         for (property, value) in changes_.0 {
@@ -464,7 +469,7 @@ impl SieveScriptSet for Server {
                     match self.core.sieve.untrusted_compiler.compile(&bytes) {
                         Ok(script) => {
                             changes.size = bytes.len() as u32;
-                            bytes.extend(bincode::serialize(&script).unwrap_or_default());
+                            bytes.extend(&LegacyBincode::new(script).serialize().unwrap_or_default());
                             bytes.into()
                         }
                         Err(err) => {

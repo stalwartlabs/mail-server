@@ -12,9 +12,8 @@ use common::{
     },
 };
 use jmap_proto::types::{property::Property, value::AclGrant};
-use store::write::{MaybeDynamicId, TagValue};
 
-use super::{ArchivedMailbox, ArchivedUidMailbox, Mailbox, UidMailbox};
+use super::{ArchivedMailbox, Mailbox};
 
 impl IndexableObject for Mailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -29,7 +28,11 @@ impl IndexableObject for Mailbox {
             },
             IndexValue::Tag {
                 field: Property::Role.into(),
-                is_set: !matches!(self.role, SpecialUse::None),
+                value: if !matches!(self.role, SpecialUse::None) {
+                    vec![().into()]
+                } else {
+                    vec![]
+                },
             },
             IndexValue::U32 {
                 field: Property::ParentId.into(),
@@ -64,7 +67,11 @@ impl IndexableObject for &ArchivedMailbox {
             },
             IndexValue::Tag {
                 field: Property::Role.into(),
-                is_set: !matches!(self.role, ArchivedSpecialUse::None),
+                value: if !matches!(self.role, ArchivedSpecialUse::None) {
+                    vec![().into()]
+                } else {
+                    vec![]
+                },
             },
             IndexValue::U32 {
                 field: Property::ParentId.into(),
@@ -113,23 +120,5 @@ impl FolderHierarchy for ArchivedMailbox {
 
     fn size(&self) -> u32 {
         0
-    }
-}
-
-impl From<&UidMailbox> for TagValue<MaybeDynamicId> {
-    fn from(value: &UidMailbox) -> Self {
-        TagValue::Id(MaybeDynamicId::Static(value.mailbox_id))
-    }
-}
-
-impl From<UidMailbox> for TagValue<MaybeDynamicId> {
-    fn from(value: UidMailbox) -> Self {
-        TagValue::Id(MaybeDynamicId::Static(value.mailbox_id))
-    }
-}
-
-impl From<&ArchivedUidMailbox> for TagValue<MaybeDynamicId> {
-    fn from(value: &ArchivedUidMailbox) -> Self {
-        TagValue::Id(MaybeDynamicId::Static(value.mailbox_id.into()))
     }
 }

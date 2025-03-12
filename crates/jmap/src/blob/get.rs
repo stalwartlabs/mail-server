@@ -5,7 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken};
-use email::mailbox::UidMailbox;
+use email::message::metadata::MessageData;
 use jmap_proto::{
     method::{
         get::{GetRequest, GetResponse},
@@ -24,7 +24,10 @@ use jmap_proto::{
 use mail_builder::encoders::base64::base64_encode;
 use sha1::{Digest, Sha1};
 use sha2::{Sha256, Sha512};
-use store::{write::{AlignedBytes, Archive}, BlobClass};
+use store::{
+    BlobClass,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
@@ -243,15 +246,16 @@ impl BlobOperations for Server {
                                             req_account_id,
                                             Collection::Email,
                                             *document_id,
-                                            Property::MailboxIds,
+                                            Property::Value,
                                         )
                                         .await?
                                     {
                                         matched_ids.append(
                                             DataType::Mailbox,
                                             mailboxes
-                                                .unarchive::<Vec<UidMailbox>>()
+                                                .unarchive::<MessageData>()
                                                 .caused_by(trc::location!())?
+                                                .mailboxes
                                                 .iter()
                                                 .map(|m| {
                                                     debug_assert!(m.uid != 0);

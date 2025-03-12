@@ -7,7 +7,10 @@
 use std::collections::BTreeMap;
 
 use common::listener::SessionStream;
-use email::mailbox::{INBOX_ID, UidMailbox, manage::MailboxFnc};
+use email::{
+    mailbox::{INBOX_ID, manage::MailboxFnc},
+    message::metadata::MessageData,
+};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     IndexKey, IterateParams, SerializeInfallible, U32_LEN,
@@ -128,7 +131,7 @@ impl<T: SessionStream> Session<T> {
                 account_id,
                 Collection::Email,
                 &message_ids,
-                Property::MailboxIds,
+                Property::Value,
             )
             .await
             .caused_by(trc::location!())?
@@ -136,8 +139,9 @@ impl<T: SessionStream> Session<T> {
         {
             // Make sure the message is still in Inbox
             if let Some(item) = uid_mailbox
-                .unarchive::<Vec<UidMailbox>>()
+                .unarchive::<MessageData>()
                 .caused_by(trc::location!())?
+                .mailboxes
                 .iter()
                 .find(|item| item.mailbox_id == INBOX_ID)
             {

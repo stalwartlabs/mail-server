@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
 use common::{NextMailboxState, listener::SessionStream};
-use email::mailbox::UidMailbox;
+use email::message::metadata::MessageData;
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::{AlignedBytes, Archive};
@@ -50,22 +50,23 @@ impl<T: SessionStream> SessionData<T> {
 
         // Obtain all message ids
         let mut uid_map = BTreeMap::new();
-        for (message_id, uid_mailbox_) in self
+        for (message_id, message_data_) in self
             .server
             .get_properties::<Archive<AlignedBytes>, _>(
                 mailbox.account_id,
                 Collection::Email,
                 &message_ids,
-                Property::MailboxIds,
+                Property::Value,
             )
             .await?
             .into_iter()
         {
-            let uid_mailbox = uid_mailbox_
-                .unarchive::<Vec<UidMailbox>>()
+            let message_data = message_data_
+                .unarchive::<MessageData>()
                 .caused_by(trc::location!())?;
             // Make sure the message is still in this mailbox
-            if let Some(item) = uid_mailbox
+            if let Some(item) = message_data
+                .mailboxes
                 .iter()
                 .find(|item| item.mailbox_id == mailbox.mailbox_id)
             {

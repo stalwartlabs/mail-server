@@ -387,7 +387,7 @@ pub async fn jmap_tests() {
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
-    auth_limits::test(&mut params).await;*/
+    auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
     push_subscription::test(&mut params).await;
@@ -397,7 +397,7 @@ pub async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;
+    blob::test(&mut params).await;*/
     permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;

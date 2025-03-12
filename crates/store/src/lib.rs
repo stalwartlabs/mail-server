@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 pub mod backend;
 pub mod config;
@@ -775,6 +775,12 @@ impl From<Value<'_>> for trc::Value {
     }
 }
 
+impl From<Value<'static>> for () {
+    fn from(_: Value<'static>) -> Self {
+        unreachable!()
+    }
+}
+
 impl Stores {
     pub fn disable_enterprise_only(&mut self) {
         #[cfg(feature = "enterprise")]
@@ -791,17 +797,5 @@ impl Stores {
 impl SerializedVersion for () {
     fn serialize_version() -> u8 {
         0
-    }
-}
-
-impl<T: SerializedVersion> SerializedVersion for Vec<T> {
-    fn serialize_version() -> u8 {
-        T::serialize_version()
-    }
-}
-
-impl<T: SerializedVersion, S> SerializedVersion for HashSet<T, S> {
-    fn serialize_version() -> u8 {
-        T::serialize_version()
     }
 }

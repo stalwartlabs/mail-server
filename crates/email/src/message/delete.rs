@@ -6,10 +6,9 @@
 
 use std::time::Duration;
 
-use common::{KV_LOCK_PURGE_ACCOUNT, Server};
+use common::{KV_LOCK_PURGE_ACCOUNT, Server, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{
-    collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
-    type_state::DataType,
+    collection::Collection, id::Id, property::Property, state::StateChange, type_state::DataType,
 };
 use store::{
     BitmapKey, IterateParams, U32_LEN, ValueKey,
@@ -27,6 +26,8 @@ use std::future::Future;
 use store::rand::prelude::SliceRandom;
 
 use crate::{mailbox::*, message::metadata::MessageMetadata};
+
+use super::metadata::MessageData;
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_tombstone(
@@ -63,24 +64,19 @@ impl EmailDeletion for Server {
 
         // Fetch mailboxes and threadIds
         let mut thread_ids: AHashMap<u32, i32> = AHashMap::new();
-        for (document_id, mailboxes) in self
+        for (document_id, data) in self
             .get_properties::<Archive<AlignedBytes>, _>(
                 account_id,
                 Collection::Email,
                 &document_ids,
-                Property::MailboxIds,
+                Property::Value,
             )
             .await?
         {
             delete_properties.insert(
                 document_id,
                 DeleteProperties {
-                    mailboxes: mailboxes
-                        .unarchive::<Vec<UidMailbox>>()
-                        .caused_by(trc::location!())?
-                        .iter()
-                        .map(|m| u32::from(m.mailbox_id))
-                        .collect(),
+                    archive: Some(data),
                     thread_id: None,
                 },
             );
@@ -151,17 +147,18 @@ impl EmailDeletion for Server {
         for (document_id, delete_properties) in delete_properties {
             batch.update_document(document_id);
 
-            if !delete_properties.mailboxes.is_empty() {
-                for mailbox_id in &delete_properties.mailboxes {
-                    changes.log_child_update(Collection::Mailbox, *mailbox_id);
+            if let Some(data_) = delete_properties.archive {
+                let data = data_
+                    .to_unarchived::<MessageData>()
+                    .caused_by(trc::location!())?;
+
+                for mailbox in data.inner.mailboxes.iter() {
+                    changes.log_child_update(Collection::Mailbox, u32::from(mailbox.mailbox_id));
                 }
 
                 batch
-                    .untag_many(
-                        Property::MailboxIds,
-                        delete_properties.mailboxes.iter().copied(),
-                    )
-                    .clear(Property::MailboxIds);
+                    .custom(ObjectIndexBuilder::<_, ()>::new().with_current(data))
+                    .caused_by(trc::location!())?;
             } else {
                 trc::event!(
                     Store(StoreEvent::NotFound),
@@ -342,16 +339,16 @@ impl EmailDeletion for Server {
 
         // Find messages to destroy
         let mut destroy_ids = RoaringBitmap::new();
-        for (document_id, cid) in self
-            .get_properties::<u64, _>(
+        for (document_id, data) in self
+            .get_properties::<Archive<AlignedBytes>, _>(
                 account_id,
                 Collection::Email,
                 &deletion_candidates,
-                Property::Cid,
+                Property::Value,
             )
             .await?
         {
-            if cid < reference_cid {
+            if data.unarchive::<MessageData>()?.change_id < reference_cid {
                 destroy_ids.insert(document_id);
             }
         }
@@ -434,40 +431,11 @@ impl EmailDeletion for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::Email)
                 .delete_document(document_id)
-                .clear(Property::Cid)
+                .clear(Property::Value)
                 .untag(
                     Property::MailboxIds,
                     TagValue::Id(MaybeDynamicId::Static(TOMBSTONE_ID)),
                 );
-
-            // Remove keywords
-            if let Some(keywords_) = self
-                .core
-                .storage
-                .data
-                .get_value::<Archive<AlignedBytes>>(ValueKey {
-                    account_id,
-                    collection: Collection::Email.into(),
-                    document_id,
-                    class: ValueClass::Property(Property::Keywords.into()),
-                })
-                .await?
-            {
-                let keywords = keywords_
-                    .unarchive::<Vec<Keyword>>()
-                    .caused_by(trc::location!())?;
-                batch
-                    .untag_many(Property::Keywords, keywords.iter())
-                    .clear(Property::Keywords);
-            } else {
-                trc::event!(
-                    Purge(trc::PurgeEvent::Error),
-                    AccountId = account_id,
-                    DocumentId = document_id,
-                    Reason = "Failed to fetch keywords.",
-                    CausedBy = trc::location!(),
-                );
-            }
 
             // Remove message metadata
             if let Some(metadata_) = self
@@ -525,6 +493,6 @@ impl EmailDeletion for Server {
 
 #[derive(Default, Debug)]
 struct DeleteProperties {
-    mailboxes: Vec<u32>,
+    archive: Option<Archive<AlignedBytes>>,
     thread_id: Option<u32>,
 }

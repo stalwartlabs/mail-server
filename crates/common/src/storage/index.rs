@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use ahash::AHashSet;
 use jmap_proto::types::{property::Property, value::AclGrant};
-use std::{borrow::Cow, collections::HashSet, fmt::Debug};
+use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible, SerializedVersion,
     write::{
         Archive, Archiver, BatchBuilder, BitmapClass, BlobOp, DirectoryClass, IntoOperations,
-        Operation,
+        MaybeDynamicId, Operation, TagValue,
     },
 };
 use utils::BlobHash;
@@ -19,14 +20,35 @@ use crate::auth::AsTenantId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexValue<'x> {
-    Text { field: u8, value: Cow<'x, str> },
-    U32 { field: u8, value: Option<u32> },
-    U64 { field: u8, value: Option<u64> },
-    U32List { field: u8, value: Cow<'x, [u32]> },
-    Tag { field: u8, is_set: bool },
-    Blob { value: BlobHash },
-    Quota { used: u32 },
-    Acl { value: Cow<'x, [AclGrant]> },
+    Text {
+        field: u8,
+        value: Cow<'x, str>,
+    },
+    U32 {
+        field: u8,
+        value: Option<u32>,
+    },
+    U64 {
+        field: u8,
+        value: Option<u64>,
+    },
+    U32List {
+        field: u8,
+        value: Cow<'x, [u32]>,
+    },
+    Tag {
+        field: u8,
+        value: Vec<TagValue<MaybeDynamicId>>,
+    },
+    Blob {
+        value: BlobHash,
+    },
+    Quota {
+        used: u32,
+    },
+    Acl {
+        value: Cow<'x, [AclGrant]>,
+    },
 }
 
 pub trait IndexableObject: Sync + Send {
@@ -178,13 +200,10 @@ fn build_index(batch: &mut BatchBuilder, item: IndexValue<'_>, tenant_id: Option
                 });
             }
         }
-        IndexValue::Tag { field, is_set } => {
-            if is_set {
+        IndexValue::Tag { field, value } => {
+            for item in value {
                 batch.ops.push(Operation::Bitmap {
-                    class: BitmapClass::Tag {
-                        field,
-                        value: ().into(),
-                    },
+                    class: BitmapClass::Tag { field, value: item },
                     set,
                 });
             }
@@ -311,8 +330,8 @@ fn merge_index(
                 value: new_value, ..
             },
         ) => {
-            let mut add_values = HashSet::new();
-            let mut remove_values = HashSet::new();
+            let mut add_values = AHashSet::new();
+            let mut remove_values = AHashSet::new();
 
             for current_value in old_value.as_ref() {
                 remove_values.insert(current_value);
@@ -336,27 +355,34 @@ fn merge_index(
         (
             IndexValue::Tag {
                 field,
-                is_set: was_set,
+                value: old_value,
             },
-            IndexValue::Tag { is_set, .. },
+            IndexValue::Tag {
+                value: new_value, ..
+            },
         ) => {
-            if was_set {
-                batch.ops.push(Operation::Bitmap {
-                    class: BitmapClass::Tag {
-                        field,
-                        value: ().into(),
-                    },
-                    set: false,
-                });
+            for old_tag in &old_value {
+                if !new_value.contains(old_tag) {
+                    batch.ops.push(Operation::Bitmap {
+                        class: BitmapClass::Tag {
+                            field,
+                            value: old_tag.clone(),
+                        },
+                        set: false,
+                    });
+                }
             }
-            if is_set {
-                batch.ops.push(Operation::Bitmap {
-                    class: BitmapClass::Tag {
-                        field,
-                        value: ().into(),
-                    },
-                    set: true,
-                });
+
+            for new_tag in new_value {
+                if !old_value.contains(&new_tag) {
+                    batch.ops.push(Operation::Bitmap {
+                        class: BitmapClass::Tag {
+                            field,
+                            value: new_tag,
+                        },
+                        set: true,
+                    });
+                }
             }
         }
         (IndexValue::Blob { value: old_hash }, IndexValue::Blob { value: new_hash }) => {

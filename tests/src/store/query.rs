@@ -18,7 +18,7 @@ use store::{
     ahash::AHashMap,
     fts::{Field, FtsFilter, index::FtsDocument},
     query::sort::Pagination,
-    write::ValueClass,
+    write::{TagValue, ValueClass},
 };
 
 use store::{
@@ -176,7 +176,10 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                                             ValueClass::Property(field_id),
                                             field.to_lowercase().into_bytes(),
                                         )
-                                        .tag(field_id, Keyword::Other(field.to_lowercase()))
+                                        .tag(
+                                            field_id,
+                                            TagValue::Text(field.to_lowercase().into_bytes()),
+                                        )
                                         .index(field_id, field.to_lowercase());
                                 }
                             }

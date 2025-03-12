@@ -45,18 +45,6 @@ impl SerializedVersion for Mailbox {
     }
 }
 
-impl SerializedVersion for UidMailbox {
-    fn serialize_version() -> u8 {
-        0
-    }
-}
-
-#[derive(Debug)]
-pub struct ExpandPath<'x> {
-    pub path: Vec<&'x str>,
-    pub found_names: Vec<(String, u32, u32)>,
-}
-
 impl Mailbox {
     pub fn new(name: impl Into<String>) -> Self {
         Mailbox {

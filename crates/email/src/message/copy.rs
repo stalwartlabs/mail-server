@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::ResourceToken};
+use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::{
     error::set::SetError,
     types::{
@@ -14,10 +14,9 @@ use jmap_proto::{
 };
 use mail_parser::parsers::fields::thread::thread_name;
 use store::{
-    BlobClass, Serialize, SerializeInfallible,
+    BlobClass,
     write::{
-        AlignedBytes, Archive, Archiver, BatchBuilder, MaybeDynamicId, TagValue, TaskQueueClass,
-        ValueClass,
+        AlignedBytes, Archive, BatchBuilder, MaybeDynamicId, TagValue, TaskQueueClass, ValueClass,
         log::{Changes, LogInsert},
     },
 };
@@ -28,7 +27,7 @@ use crate::mailbox::UidMailbox;
 use super::{
     index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue},
     ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
-    metadata::{HeaderName, HeaderValue, MessageMetadata},
+    metadata::{HeaderName, HeaderValue, MessageData, MessageMetadata},
 };
 
 pub trait EmailCopy: Sync + Send {
@@ -182,21 +181,14 @@ impl EmailCopy for Server {
             .log(LogEmailInsert::new(thread_id))
             .set(Property::ThreadId, maybe_thread_id)
             .tag(Property::ThreadId, TagValue::Id(maybe_thread_id))
-            .tag_many(Property::MailboxIds, mailbox_ids.iter())
-            .set(
-                Property::MailboxIds,
-                Archiver::new(mailbox_ids)
-                    .serialize()
-                    .caused_by(trc::location!())?,
+            .custom(
+                ObjectIndexBuilder::<(), _>::new().with_changes(MessageData {
+                    mailboxes: mailbox_ids,
+                    keywords,
+                    change_id,
+                }),
             )
-            .tag_many(Property::Keywords, keywords.iter())
-            .set(
-                Property::Keywords,
-                Archiver::new(keywords)
-                    .serialize()
-                    .caused_by(trc::location!())?,
-            )
-            .set(Property::Cid, change_id.serialize())
+            .caused_by(trc::location!())?
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                     seq: self.generate_snowflake_id()?,

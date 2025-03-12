@@ -16,7 +16,7 @@ use directory::{
     Permission,
     backend::internal::manage::{self, ManageDirectory},
 };
-use email::{mailbox::UidMailbox, message::ingest::EmailIngest};
+use email::message::{ingest::EmailIngest, metadata::MessageData};
 use hyper::Method;
 use jmap_proto::types::{collection::Collection, property::Property};
 use serde_json::json;
@@ -372,23 +372,28 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .caused_by(trc::location!())?
         .unwrap_or_default()
     {
-        let uids = server
+        let data = server
             .get_property::<Archive<AlignedBytes>>(
                 account_id,
                 Collection::Email,
                 message_id,
-                Property::MailboxIds,
+                Property::Value,
             )
             .await
             .caused_by(trc::location!())?;
-        let mut uids = if let Some(uids) = uids {
-            uids.into_deserialized::<Vec<UidMailbox>>()
-                .caused_by(trc::location!())?
+        let data_ = if let Some(data) = data {
+            data
         } else {
             continue;
         };
+        let data = data_
+            .to_unarchived::<MessageData>()
+            .caused_by(trc::location!())?;
+        let mut new_data = data
+            .deserialize::<MessageData>()
+            .caused_by(trc::location!())?;
 
-        for uid_mailbox in &mut uids.inner {
+        for uid_mailbox in &mut new_data.mailboxes {
             uid_mailbox.uid = server
                 .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
                 .await
@@ -401,10 +406,10 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .with_account_id(account_id)
             .with_collection(Collection::Email)
             .update_document(message_id)
-            .assert_value(ValueClass::Property(Property::MailboxIds.into()), &uids)
+            .assert_value(ValueClass::Property(Property::Value.into()), &data)
             .set(
-                Property::MailboxIds,
-                Archiver::new(uids.inner)
+                Property::Value,
+                Archiver::new(new_data)
                     .serialize()
                     .caused_by(trc::location!())?,
             );

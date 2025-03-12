@@ -52,6 +52,7 @@ use crate::{
     message::{
         crypto::EncryptionParams,
         index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
+        metadata::MessageData,
     },
     thread::cache::ThreadCache,
 };
@@ -499,12 +500,14 @@ impl EmailIngest for Server {
                 tenant_id,
                 message,
                 blob_id.hash.clone(),
-                params.keywords,
-                mailbox_ids,
+                MessageData {
+                    mailboxes: mailbox_ids,
+                    keywords: params.keywords,
+                    change_id,
+                },
                 params.received_at.unwrap_or_else(now),
             )
             .caused_by(trc::location!())?
-            .set(Property::Cid, change_id.serialize())
             .set(Property::ThreadId, maybe_thread_id)
             .tag(Property::ThreadId, TagValue::Id(maybe_thread_id))
             .set(
