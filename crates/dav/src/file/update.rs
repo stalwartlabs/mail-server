@@ -135,9 +135,7 @@ impl FileUpdateRequestHandler for Server {
 
             // Build node
             let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
-            let node = node_archive
-                .into_deserialized()
-                .caused_by(trc::location!())?;
+            let node = node_archive.to_deserialized().caused_by(trc::location!())?;
             let mut new_node = node.inner.clone();
             let new_file = new_node.file.as_mut().unwrap();
             new_file.blob_hash = blob_hash;

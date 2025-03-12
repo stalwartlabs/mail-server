@@ -25,9 +25,12 @@ use jmap_proto::{
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use std::future::Future;
-use store::write::{
-    AlignedBytes, Archive, BatchBuilder,
-    log::{Changes, LogInsert},
+use store::{
+    Serialize,
+    write::{
+        AlignedBytes, Archive, BatchBuilder, LegacyBincode,
+        log::{Changes, LogInsert},
+    },
 };
 use trc::AddContext;
 
@@ -446,7 +449,11 @@ impl VacationResponseSet for Server {
                 obj.size = script.len() as u32;
 
                 // Serialize script
-                script.extend(bincode::serialize(&compiled_script).unwrap_or_default());
+                script.extend(
+                    LegacyBincode::new(compiled_script)
+                        .serialize()
+                        .unwrap_or_default(),
+                );
 
                 Ok(script)
             }

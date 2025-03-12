@@ -13,14 +13,16 @@ use jmap_proto::{
     types::{acl::Acl, collection::Collection, id::Id, property::Property},
 };
 use store::{
-    Serialize, SerializeInfallible,
+    SerializeInfallible,
     query::Filter,
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, log::ChangeLogBuilder},
+    write::{
+        AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder, serialize::rkyv_deserialize,
+    },
 };
 use trc::AddContext;
 
-use crate::message::delete::EmailDeletion;
+use crate::message::{delete::EmailDeletion, metadata::MessageData};
 
 use super::*;
 
@@ -100,80 +102,88 @@ impl MailboxDestroy for Server {
                 // If the message is in multiple mailboxes, untag it from the current mailbox,
                 // otherwise delete it.
                 let mut destroy_ids = RoaringBitmap::new();
-                for (message_id, mailbox_ids) in self
+                for (message_id, message_data_) in self
                     .get_properties::<Archive<AlignedBytes>, _>(
                         account_id,
                         Collection::Email,
                         &message_ids,
-                        Property::MailboxIds,
+                        Property::Value,
                     )
                     .await?
                 {
                     // Remove mailbox from list
-                    let mut mailbox_ids = mailbox_ids
-                        .into_deserialized::<Vec<UidMailbox>>()
+                    let prev_message_data = message_data_
+                        .to_unarchived::<MessageData>()
                         .caused_by(trc::location!())?;
-                    let orig_len = mailbox_ids.inner.len();
-                    mailbox_ids.inner.retain(|id| id.mailbox_id != document_id);
-                    if mailbox_ids.inner.len() == orig_len {
+
+                    if !prev_message_data
+                        .inner
+                        .mailboxes
+                        .iter()
+                        .any(|id| id.mailbox_id == document_id)
+                    {
                         continue;
                     }
 
-                    if !mailbox_ids.inner.is_empty() {
-                        // Obtain threadId
-                        if let Some(thread_id) = self
-                            .get_property::<u32>(
-                                account_id,
-                                Collection::Email,
-                                message_id,
-                                Property::ThreadId,
-                            )
-                            .await?
-                        {
-                            // Untag message from mailbox
-                            let mut batch = BatchBuilder::new();
-                            batch
-                                .with_account_id(account_id)
-                                .with_collection(Collection::Email)
-                                .update_document(message_id)
-                                .assert_value(Property::MailboxIds, &mailbox_ids)
-                                .set(
-                                    Property::MailboxIds,
-                                    Archiver::new(mailbox_ids.inner)
-                                        .serialize()
-                                        .caused_by(trc::location!())?,
-                                )
-                                .untag(Property::MailboxIds, document_id);
-                            match self.core.storage.data.write(batch.build()).await {
-                                Ok(_) => changes.log_update(
-                                    Collection::Email,
-                                    Id::from_parts(thread_id, message_id),
-                                ),
-                                Err(err) if err.is_assertion_failure() => {
-                                    return Ok(Err(SetError::forbidden().with_description(
-                                        concat!(
-                                            "Another process modified a message in this mailbox ",
-                                            "while deleting it, please try again."
-                                        ),
-                                    )));
-                                }
-                                Err(err) => {
-                                    return Err(err.caused_by(trc::location!()));
-                                }
-                            }
-                        } else {
-                            trc::event!(
-                                Store(trc::StoreEvent::NotFound),
-                                AccountId = account_id,
-                                MessageId = message_id,
-                                MailboxId = document_id,
-                                Details = "Message does not have a threadId.",
-                                CausedBy = trc::location!(),
-                            );
-                        }
-                    } else {
+                    if prev_message_data.inner.mailboxes.len() == 1 {
                         // Delete message
                         destroy_ids.insert(message_id);
+                        continue;
+                    }
+
+                    let mut new_message_data =
+                        rkyv_deserialize(prev_message_data.inner).caused_by(trc::location!())?;
+
+                    new_message_data
+                        .mailboxes
+                        .retain(|id| id.mailbox_id != document_id);
+
+                    // Obtain threadId
+                    if let Some(thread_id) = self
+                        .get_property::<u32>(
+                            account_id,
+                            Collection::Email,
+                            message_id,
+                            Property::ThreadId,
+                        )
+                        .await?
+                    {
+                        // Untag message from mailbox
+                        let mut batch = BatchBuilder::new();
+                        batch
+                            .with_account_id(account_id)
+                            .with_collection(Collection::Email)
+                            .update_document(message_id)
+                            .custom(
+                                ObjectIndexBuilder::new()
+                                    .with_changes(new_message_data)
+                                    .with_current(prev_message_data),
+                            )
+                            .caused_by(trc::location!())?;
+                        match self.core.storage.data.write(batch.build()).await {
+                            Ok(_) => changes.log_update(
+                                Collection::Email,
+                                Id::from_parts(thread_id, message_id),
+                            ),
+                            Err(err) if err.is_assertion_failure() => {
+                                return Ok(Err(SetError::forbidden().with_description(concat!(
+                                    "Another process modified a message in this mailbox ",
+                                    "while deleting it, please try again."
+                                ))));
+                            }
+                            Err(err) => {
+                                return Err(err.caused_by(trc::location!()));
+                            }
+                        }
+                    } else {
+                        trc::event!(
+                            Store(trc::StoreEvent::NotFound),
+                            AccountId = account_id,
+                            MessageId = message_id,
+                            MailboxId = document_id,
+                            Details = "Message does not have a threadId.",
+                            CausedBy = trc::location!(),
+                        );
                     }
                 }
 

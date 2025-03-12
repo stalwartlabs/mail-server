@@ -39,7 +39,7 @@ pub const OTHER: usize = 12;
     serde::Serialize,
 )]
 #[serde(untagged)]
-#[rkyv(derive(PartialEq))]
+#[rkyv(derive(PartialEq), compare(PartialEq))]
 pub enum Keyword {
     #[serde(rename(serialize = "$seen"))]
     Seen,
@@ -295,24 +295,6 @@ impl From<&Keyword> for TagValue<u32> {
     fn from(value: &Keyword) -> Self {
         match value.id() {
             Ok(id) => TagValue::Id(id),
-            Err(string) => TagValue::Text(string.into_bytes()),
-        }
-    }
-}
-
-impl From<Keyword> for TagValue<MaybeDynamicId> {
-    fn from(value: Keyword) -> Self {
-        match value.into_id() {
-            Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
-            Err(string) => TagValue::Text(string.into_bytes()),
-        }
-    }
-}
-
-impl From<&Keyword> for TagValue<MaybeDynamicId> {
-    fn from(value: &Keyword) -> Self {
-        match value.id() {
-            Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
             Err(string) => TagValue::Text(string.into_bytes()),
         }
     }

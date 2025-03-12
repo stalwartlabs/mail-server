@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap_proto::types::{keyword::Keyword, property::Property};
+use common::storage::index::{IndexValue, IndexableObject, ObjectIndexBuilder};
+use jmap_proto::types::property::Property;
 use mail_parser::{
     decoders::html::html_to_text,
     parsers::{fields::thread::thread_name, preview::preview_text},
@@ -15,18 +16,16 @@ use store::{
     Serialize, SerializeInfallible,
     backend::MAX_TOKEN_LENGTH,
     fts::{Field, index::FtsDocument},
-    write::{Archiver, BatchBuilder, BlobOp, DirectoryClass},
+    write::{Archiver, BatchBuilder, BlobOp, DirectoryClass, MaybeDynamicId, TagValue},
 };
 use trc::AddContext;
 use utils::BlobHash;
 
-use crate::mailbox::UidMailbox;
-
 use super::metadata::{
     Addr, Address, ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
-    ArchivedMessageMetadata, ArchivedMessageMetadataContents, ArchivedMessageMetadataPart,
-    ArchivedMetadataPartType, DecodedPartContent, Group, HeaderName, HeaderValue, MessageMetadata,
-    MessageMetadataPart,
+    ArchivedMessageData, ArchivedMessageMetadata, ArchivedMessageMetadataContents,
+    ArchivedMessageMetadataPart, ArchivedMetadataPartType, DecodedPartContent, Group, HeaderName,
+    HeaderValue, MessageData, MessageMetadata, MessageMetadataPart,
 };
 
 pub const MAX_MESSAGE_PARTS: usize = 1000;
@@ -449,8 +448,7 @@ pub(super) trait IndexMessage {
         tenant_id: Option<u32>,
         message: mail_parser::Message<'_>,
         blob_hash: BlobHash,
-        keywords: Vec<Keyword>,
-        mailbox_ids: Vec<UidMailbox>,
+        data: MessageData,
         received_at: u64,
     ) -> trc::Result<&mut Self>;
 }
@@ -462,26 +460,9 @@ impl IndexMessage for BatchBuilder {
         tenant_id: Option<u32>,
         message: mail_parser::Message<'_>,
         blob_hash: BlobHash,
-        keywords: Vec<Keyword>,
-        mailbox_ids: Vec<UidMailbox>,
+        data: MessageData,
         received_at: u64,
     ) -> trc::Result<&mut Self> {
-        // Index keywords
-        let keywords = Archiver::new(keywords);
-        self.set(
-            Property::Keywords,
-            keywords.serialize().caused_by(trc::location!())?,
-        )
-        .tag_many(Property::Keywords, keywords.into_inner().into_iter());
-
-        // Index mailboxIds
-        self.tag_many(Property::MailboxIds, mailbox_ids.iter()).set(
-            Property::MailboxIds,
-            Archiver::new(mailbox_ids)
-                .serialize()
-                .caused_by(trc::location!())?,
-        );
-
         // Index size
         self.index(
             Property::Size,
@@ -578,6 +559,10 @@ impl IndexMessage for BatchBuilder {
             Vec::new(),
         );
 
+        // Store message data
+        self.custom(ObjectIndexBuilder::<(), _>::new().with_changes(data))
+            .caused_by(trc::location!())?;
+
         // Store message metadata
         self.set(
             Property::BodyStructure,
@@ -587,6 +572,60 @@ impl IndexMessage for BatchBuilder {
         );
 
         Ok(self)
+    }
+}
+
+impl IndexableObject for MessageData {
+    fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
+        [
+            IndexValue::Tag {
+                field: Property::MailboxIds.into(),
+                value: self
+                    .mailboxes
+                    .iter()
+                    .map(|m| TagValue::Id(MaybeDynamicId::Static(m.mailbox_id)))
+                    .collect(),
+            },
+            IndexValue::Tag {
+                field: Property::Keywords.into(),
+                value: self
+                    .keywords
+                    .iter()
+                    .map(|k| match k.id() {
+                        Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
+                        Err(string) => TagValue::Text(string.into_bytes()),
+                    })
+                    .collect(),
+            },
+        ]
+        .into_iter()
+    }
+}
+
+impl IndexableObject for &ArchivedMessageData {
+    fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
+        [
+            IndexValue::Tag {
+                field: Property::MailboxIds.into(),
+                value: self
+                    .mailboxes
+                    .iter()
+                    .map(|m| TagValue::Id(MaybeDynamicId::Static(u32::from(m.mailbox_id))))
+                    .collect(),
+            },
+            IndexValue::Tag {
+                field: Property::Keywords.into(),
+                value: self
+                    .keywords
+                    .iter()
+                    .map(|k| match k.id() {
+                        Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
+                        Err(string) => TagValue::Text(string.into_bytes()),
+                    })
+                    .collect(),
+            },
+        ]
+        .into_iter()
     }
 }
 
@@ -780,24 +819,6 @@ impl Default for SortedAddressBuilder {
         Self::new()
     }
 }
-
-/*impl MessageMetadataPart {
-    fn language(&self) -> Option<Language> {
-        self.headers
-            .header_value(&HeaderName::ContentLanguage)
-            .and_then(|v| {
-                Language::from_iso_639(match v {
-                    HeaderValue::Text(v) => v.as_ref(),
-                    HeaderValue::TextList(v) => v.first()?,
-                    _ => {
-                        return None;
-                    }
-                })
-                .unwrap_or(Language::Unknown)
-                .into()
-            })
-    }
-}*/
 
 impl ArchivedMessageMetadataPart {
     fn language(&self) -> Option<Language> {

@@ -11,12 +11,12 @@ use crate::{
     spawn_op,
 };
 use ahash::AHashMap;
-use common::listener::SessionStream;
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::message::metadata::{
     ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
     ArchivedMessageMetadata, ArchivedMessageMetadataContents, ArchivedMetadataPartType,
-    DecodedParts, MessageMetadata,
+    DecodedParts, MessageData, MessageMetadata,
 };
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
@@ -41,10 +41,9 @@ use jmap_proto::types::{
     type_state::DataType,
 };
 use store::{
-    Serialize, SerializeInfallible,
     query::log::{Change, Query},
     rkyv::rend::u16_le,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, serialize::rkyv_deserialize},
+    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder},
 };
 
 use super::{FromModSeq, ImapContext};
@@ -293,7 +292,7 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
 
-        let mut set_seen_ids = Vec::new();
+        let mut update_batches = Vec::new();
 
         // Process each message
         let mut ids = ids
@@ -305,10 +304,14 @@ impl<T: SessionStream> SessionData<T> {
             .iter()
             .map(|id| trc::Value::from(id.2))
             .collect::<Vec<_>>();
+        let change_id = self
+            .server
+            .generate_snowflake_id()
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         for (seqnum, uid, id) in ids {
             // Obtain attributes and keywords
-            let (metadata_, keywords_) = if let (Some(email), Some(keywords)) = (
+            let (metadata_, data_) = if let (Some(email), Some(keywords)) = (
                 self.server
                     .get_property::<Archive<AlignedBytes>>(
                         account_id,
@@ -323,7 +326,7 @@ impl<T: SessionStream> SessionData<T> {
                         account_id,
                         Collection::Email,
                         id,
-                        &Property::Keywords,
+                        &Property::Value,
                     )
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
@@ -343,8 +346,8 @@ impl<T: SessionStream> SessionData<T> {
             let metadata = metadata_
                 .unarchive::<MessageMetadata>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
-            let keywords = keywords_
-                .unarchive::<Vec<Keyword>>()
+            let data = data_
+                .to_unarchived::<MessageData>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
             // Fetch and parse blob
@@ -380,8 +383,12 @@ impl<T: SessionStream> SessionData<T> {
 
             // Build response
             let mut items = Vec::with_capacity(arguments.attributes.len());
-            let set_seen_flag =
-                set_seen_flags && !keywords.iter().any(|k| k == &ArchivedKeyword::Seen);
+            let set_seen_flag = set_seen_flags
+                && !data
+                    .inner
+                    .keywords
+                    .iter()
+                    .any(|k| k == &ArchivedKeyword::Seen);
             let thread_id = if needs_thread_id || set_seen_flag {
                 if let Some(thread_id) = self
                     .server
@@ -404,7 +411,12 @@ impl<T: SessionStream> SessionData<T> {
                         });
                     }
                     Attribute::Flags => {
-                        let mut flags = keywords.iter().map(Flag::from).collect::<Vec<_>>();
+                        let mut flags = data
+                            .inner
+                            .keywords
+                            .iter()
+                            .map(Flag::from)
+                            .collect::<Vec<_>>();
                         if set_seen_flag {
                             flags.push(Flag::Seen);
                         }
@@ -515,13 +527,9 @@ impl<T: SessionStream> SessionData<T> {
                         }
                     }
                     Attribute::ModSeq => {
-                        if let Ok(Some(modseq)) = self
-                            .server
-                            .get_property::<u64>(account_id, Collection::Email, id, Property::Cid)
-                            .await
-                        {
-                            items.push(DataItem::ModSeq { modseq: modseq + 1 });
-                        }
+                        items.push(DataItem::ModSeq {
+                            modseq: u64::from(data.inner.change_id) + 1,
+                        });
                     }
                     Attribute::EmailId => {
                         items.push(DataItem::EmailId {
@@ -538,7 +546,12 @@ impl<T: SessionStream> SessionData<T> {
 
             // Add flags to the response if the message was unseen
             if set_seen_flag && !arguments.attributes.contains(&Attribute::Flags) {
-                let mut flags = keywords.iter().map(Flag::from).collect::<Vec<_>>();
+                let mut flags = data
+                    .inner
+                    .keywords
+                    .iter()
+                    .map(Flag::from)
+                    .collect::<Vec<_>>();
                 flags.push(Flag::Seen);
                 items.push(DataItem::Flags { flags });
             }
@@ -550,40 +563,32 @@ impl<T: SessionStream> SessionData<T> {
 
             // Add to set flags
             if set_seen_flag {
-                set_seen_ids.push((
-                    Id::from_parts(thread_id, id),
-                    Archive {
-                        hash: keywords_.hash,
-                        version: keywords_.version,
-                        inner: rkyv_deserialize::<_, Vec<Keyword>>(keywords)
-                            .imap_ctx(&arguments.tag, trc::location!())?,
-                    },
-                ));
-            }
-        }
+                let mut new_data = data
+                    .deserialize()
+                    .imap_ctx(&arguments.tag, trc::location!())?;
+                new_data.keywords.push(Keyword::Seen);
+                new_data.change_id = change_id;
 
-        // Set Seen ids
-        if !set_seen_ids.is_empty() {
-            let mut changelog = self
-                .server
-                .begin_changes(account_id)
-                .imap_ctx(&arguments.tag, trc::location!())?;
-            for (id, mut keywords) in set_seen_ids {
-                keywords.inner.push(Keyword::Seen);
                 let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Email)
-                    .update_document(id.document_id())
-                    .assert_value(Property::Keywords, &keywords)
-                    .set(
-                        Property::Keywords,
-                        Archiver::new(keywords.inner)
-                            .serialize()
-                            .imap_ctx(&arguments.tag, trc::location!())?,
+                    .update_document(id)
+                    .custom(
+                        ObjectIndexBuilder::new()
+                            .with_current(data)
+                            .with_changes(new_data),
                     )
-                    .tag(Property::Keywords, Keyword::Seen)
-                    .set(Property::Cid, changelog.change_id.serialize());
+                    .imap_ctx(&arguments.tag, trc::location!())?;
+
+                update_batches.push((Id::from_parts(thread_id, id), batch));
+            }
+        }
+
+        // Set Seen ids
+        if !update_batches.is_empty() {
+            let mut changelog = ChangeLogBuilder::with_change_id(change_id);
+            for (id, batch) in update_batches {
                 match self
                     .server
                     .store()

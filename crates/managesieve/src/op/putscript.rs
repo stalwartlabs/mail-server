@@ -13,8 +13,9 @@ use imap_proto::receiver::Request;
 use jmap_proto::types::{collection::Collection, property::Property};
 use sieve::compiler::ErrorType;
 use store::{
+    Serialize,
     query::Filter,
-    write::{AlignedBytes, Archive, BatchBuilder, log::LogInsert},
+    write::{AlignedBytes, Archive, BatchBuilder, LegacyBincode, log::LogInsert},
 };
 use trc::AddContext;
 
@@ -79,7 +80,11 @@ impl<T: SessionStream> Session<T> {
             .compile(&script_bytes)
         {
             Ok(compiled_script) => {
-                script_bytes.extend(bincode::serialize(&compiled_script).unwrap_or_default());
+                script_bytes.extend(
+                    LegacyBincode::new(compiled_script)
+                        .serialize()
+                        .unwrap_or_default(),
+                );
             }
             Err(err) => {
                 return Err(if let ErrorType::ScriptTooLong = &err.error_type() {
@@ -98,7 +103,7 @@ impl<T: SessionStream> Session<T> {
         // Validate name
         if let Some(document_id) = self.validate_name(account_id, &name).await? {
             // Obtain script values
-            let script = self
+            let script_ = self
                 .server
                 .get_property::<Archive<AlignedBytes>>(
                     account_id,
@@ -113,8 +118,9 @@ impl<T: SessionStream> Session<T> {
                         .into_err()
                         .details("Script not found")
                         .code(ResponseCode::NonExistent)
-                })?
-                .into_deserialized::<SieveScript>()
+                })?;
+            let script = script_
+                .to_unarchived::<SieveScript>()
                 .caused_by(trc::location!())?;
 
             // Write script blob
@@ -135,8 +141,8 @@ impl<T: SessionStream> Session<T> {
                     ObjectIndexBuilder::new()
                         .with_changes(
                             script
-                                .inner
-                                .clone()
+                                .deserialize()
+                                .caused_by(trc::location!())?
                                 .with_size(script_size as u32)
                                 .with_blob_hash(blob_hash.clone()),
                         )

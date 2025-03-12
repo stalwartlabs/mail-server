@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     mailbox::{INBOX_ID, TRASH_ID, manage::MailboxFnc},
@@ -22,16 +22,17 @@ use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
 use store::{
     Deserialize, Serialize, SerializeInfallible,
-    ahash::{AHashSet, RandomState},
+    ahash::AHashMap,
+    dispatch::lookup::KeyValue,
     query::Filter,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, LegacyBincode, now},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, LegacyBincode},
 };
 use trc::{AddContext, SieveEvent};
 use utils::config::utils::ParseValue;
 
 use std::future::Future;
 
-use super::{ActiveScript, SeenIdHash, SeenIds, SieveScript};
+use super::{ActiveScript, SeenIdHash, SieveScript};
 
 struct SieveMessage<'x> {
     pub raw_message: Cow<'x, [u8]>,
@@ -67,7 +68,7 @@ pub trait SieveScriptIngest: Sync + Send {
         &self,
         account_id: u32,
         document_id: u32,
-    ) -> impl Future<Output = trc::Result<(Sieve, String)>> + Send;
+    ) -> impl Future<Output = trc::Result<CompiledScript>> + Send;
 }
 
 impl SieveScriptIngest for Server {
@@ -132,14 +133,12 @@ impl SieveScriptIngest for Server {
         let mut do_discard = false;
         let mut do_deliver = false;
 
-        let mut new_ids = AHashSet::new();
         let mut reject_reason = None;
         let mut messages: Vec<SieveMessage> = vec![SieveMessage {
             raw_message: raw_message.into(),
             file_into: Vec::new(),
             flags: Vec::new(),
         }];
-        let now = now();
         let mut ingested_message = IngestedEmail {
             id: Id::default(),
             change_id: u64::MAX,
@@ -147,7 +146,7 @@ impl SieveScriptIngest for Server {
             size: raw_message.len(),
             imap_uids: Vec::new(),
         };
-        let mut seen_ids = active_script.seen_ids;
+        let mut checked_ids: AHashMap<SeenIdHash, bool> = AHashMap::new();
 
         while let Some(event) = instance.run(input) {
             match event {
@@ -251,13 +250,27 @@ impl SieveScriptIngest for Server {
                         }
                     }
                     Event::DuplicateId { id, expiry, last } => {
-                        let id_hash = SeenIdHash::new(&id, expiry + now);
-                        let seen_id = seen_ids.ids.contains(&id_hash);
-                        if !seen_id || last {
-                            new_ids.insert(id_hash);
-                        }
+                        let id_hash = SeenIdHash::new(account_id, active_script.hash, &id);
+                        if let Some(result) = checked_ids.get(&id_hash) {
+                            input = (*result).into();
+                        } else {
+                            let exists = self
+                                .in_memory_store()
+                                .key_get::<()>(id_hash.key())
+                                .await
+                                .caused_by(trc::location!())?
+                                .is_some();
 
-                        input = seen_id.into();
+                            if !exists || last {
+                                self.in_memory_store()
+                                    .key_set(KeyValue::new(id_hash.key(), vec![]).expires(expiry))
+                                    .await
+                                    .caused_by(trc::location!())?;
+                            }
+
+                            checked_ids.insert(id_hash, exists);
+                            input = exists.into();
+                        }
                     }
                     Event::Discard => {
                         do_discard = true;
@@ -524,25 +537,6 @@ impl SieveScriptIngest for Server {
             }
         }
 
-        // Save new ids script changes
-        if !new_ids.is_empty() || seen_ids.has_changes {
-            seen_ids.ids.extend(new_ids);
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::SieveScript)
-                .update_document(active_script.document_id)
-                .set(
-                    Property::EmailIds,
-                    Archiver::new(seen_ids.ids)
-                        .serialize()
-                        .caused_by(trc::location!())?,
-                );
-            if let Err(err) = self.store().write(batch).await.caused_by(trc::location!()) {
-                trc::error!(err.details("Failed to save Sieve seen ids changes."));
-            }
-        }
-
         if let Some(reject_reason) = reject_reason {
             Err(
                 trc::EventType::MessageIngest(trc::MessageIngestEvent::Error)
@@ -572,30 +566,13 @@ impl SieveScriptIngest for Server {
             .results
             .min()
         {
-            let (script, script_name) = self.sieve_script_compile(account_id, document_id).await?;
-
-            let seen_ids = if let Some(seen_ids_archive_) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::SieveScript,
-                    document_id,
-                    Property::EmailIds,
-                )
-                .await?
-            {
-                let seen_ids_archive = seen_ids_archive_
-                    .unarchive::<HashSet<SeenIdHash, RandomState>>()
-                    .caused_by(trc::location!())?;
-                SeenIds::from(seen_ids_archive)
-            } else {
-                SeenIds::default()
-            };
+            let script = self.sieve_script_compile(account_id, document_id).await?;
 
             Ok(Some(ActiveScript {
                 document_id,
-                script: Arc::new(script),
-                script_name,
-                seen_ids,
+                script: Arc::new(script.script),
+                script_name: script.name,
+                hash: script.hash,
             }))
         } else {
             Ok(None)
@@ -622,7 +599,7 @@ impl SieveScriptIngest for Server {
         {
             self.sieve_script_compile(account_id, document_id)
                 .await
-                .map(|(sieve, _)| Some(sieve))
+                .map(|script| Some(script.script))
         } else {
             Ok(None)
         }
@@ -633,7 +610,7 @@ impl SieveScriptIngest for Server {
         &self,
         account_id: u32,
         document_id: u32,
-    ) -> trc::Result<(Sieve, String)> {
+    ) -> trc::Result<CompiledScript> {
         // Obtain script object
         let script_object = self
             .get_property::<Archive<AlignedBytes>>(
@@ -651,6 +628,7 @@ impl SieveScriptIngest for Server {
             })?;
 
         // Obtain the sieve script length
+        let hash = script_object.hash;
         let unarchived_script = script_object
             .unarchive::<SieveScript>()
             .caused_by(trc::location!())?;
@@ -676,7 +654,11 @@ impl SieveScriptIngest for Server {
             .get(script_offset..)
             .and_then(|bytes| LegacyBincode::<Sieve>::deserialize(bytes).ok())
         {
-            Ok((sieve.inner, unarchived_script.name.to_string()))
+            Ok(CompiledScript {
+                script: sieve.inner,
+                name: unarchived_script.name.to_string(),
+                hash,
+            })
         } else {
             // Deserialization failed, probably because the script compiler version changed
             match self.core.sieve.untrusted_compiler.compile(
@@ -730,7 +712,11 @@ impl SieveScriptIngest for Server {
                         .await
                         .caused_by(trc::location!())?;
 
-                    Ok((sieve.inner, new_archive.into_inner().name))
+                    Ok(CompiledScript {
+                        script: sieve.inner,
+                        name: new_archive.into_inner().name,
+                        hash,
+                    })
                 }
                 Err(error) => Err(trc::StoreEvent::UnexpectedError
                     .caused_by(trc::location!())
@@ -739,4 +725,10 @@ impl SieveScriptIngest for Server {
             }
         }
     }
+}
+
+pub struct CompiledScript {
+    pub script: Sieve,
+    pub name: String,
+    pub hash: u32,
 }

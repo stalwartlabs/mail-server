@@ -4,43 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
-use rkyv::collections::swiss_table::ArchivedHashSet;
+use common::KV_SIEVE_ID;
 use sieve::Sieve;
-use store::{SerializedVersion, ahash::RandomState, blake3, write::now};
+use store::{SerializedVersion, blake3};
 use utils::BlobHash;
 
 pub mod activate;
 pub mod delete;
 pub mod index;
 pub mod ingest;
-pub mod serialize;
 
 #[derive(Debug, Clone)]
 pub struct ActiveScript {
     pub document_id: u32,
+    pub hash: u32,
     pub script_name: String,
     pub script: Arc<Sieve>,
-    pub seen_ids: SeenIds,
-}
-
-#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone)]
-pub struct SeenIdHash {
-    hash: [u8; 32],
-    expiry: u64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct SeenIds {
-    pub ids: HashSet<SeenIdHash, RandomState>,
-    pub has_changes: bool,
-}
-
-impl SerializedVersion for SeenIdHash {
-    fn serialize_version() -> u8 {
-        0
-    }
 }
 
 #[derive(
@@ -114,77 +95,29 @@ impl SieveScript {
     }
 }
 
-impl From<&ArchivedHashSet<ArchivedSeenIdHash>> for SeenIds {
-    fn from(archived: &ArchivedHashSet<ArchivedSeenIdHash>) -> Self {
-        let mut seen = SeenIds {
-            ids: HashSet::with_capacity_and_hasher(archived.len(), RandomState::new()),
-            has_changes: false,
-        };
-
-        let now = now();
-
-        for hash in archived.iter() {
-            if hash.expiry > now {
-                seen.ids.insert(SeenIdHash {
-                    hash: hash.hash,
-                    expiry: hash.expiry.into(),
-                });
-            } else {
-                seen.has_changes = true;
-            }
-        }
-
-        seen
-    }
-}
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct SeenIdHash(pub [u8; 32]);
 
 impl SeenIdHash {
-    pub fn new(id: &str, expiry: u64) -> Self {
+    pub fn new(account_id: u32, hash: u32, id: &str) -> Self {
         let mut hasher = blake3::Hasher::new();
+        hasher.update(&account_id.to_be_bytes());
+        hasher.update(&hash.to_be_bytes());
         hasher.update(id.as_bytes());
-        SeenIdHash {
-            hash: hasher.finalize().into(),
-            expiry,
-        }
+        SeenIdHash(hasher.finalize().into())
+    }
+
+    pub fn key(&self) -> Vec<u8> {
+        let mut result = Vec::with_capacity(self.0.len() + 1);
+        result.push(KV_SIEVE_ID);
+        result.extend_from_slice(&self.0);
+        result
     }
 }
 
-impl PartialOrd for SeenIdHash {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+impl AsRef<[u8]> for SeenIdHash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
-
-impl Ord for SeenIdHash {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.expiry.cmp(&other.expiry)
-    }
-}
-
-impl std::hash::Hash for SeenIdHash {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.hash.hash(state);
-    }
-}
-
-impl PartialEq for SeenIdHash {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash
-    }
-}
-
-impl Eq for SeenIdHash {}
-
-impl std::hash::Hash for ArchivedSeenIdHash {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.hash.hash(state);
-    }
-}
-
-impl PartialEq for ArchivedSeenIdHash {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash
-    }
-}
-
-impl Eq for ArchivedSeenIdHash {}

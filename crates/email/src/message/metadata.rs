@@ -6,6 +6,8 @@
 
 use std::{borrow::Cow, collections::VecDeque, fmt::Display};
 
+use common::storage::index::IndexableAndSerializableObject;
+use jmap_proto::types::keyword::{ArchivedKeyword, Keyword};
 use mail_parser::{
     PartType,
     decoders::{
@@ -21,6 +23,15 @@ use rkyv::{
 use store::SerializedVersion;
 use utils::BlobHash;
 
+use crate::mailbox::{ArchivedUidMailbox, UidMailbox};
+
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
+pub struct MessageData {
+    pub mailboxes: Vec<UidMailbox>,
+    pub keywords: Vec<Keyword>,
+    pub change_id: u64,
+}
+
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
 pub struct MessageMetadata {
     pub contents: Vec<MessageMetadataContents>,
@@ -30,6 +41,14 @@ pub struct MessageMetadata {
     pub preview: String,
     pub has_attachments: bool,
     pub raw_headers: Vec<u8>,
+}
+
+impl IndexableAndSerializableObject for MessageData {}
+
+impl SerializedVersion for MessageData {
+    fn serialize_version() -> u8 {
+        0
+    }
 }
 
 impl SerializedVersion for MessageMetadata {
@@ -1225,5 +1244,114 @@ impl From<&CompactDateTime> for mail_parser::DateTime {
             tz_hour: ((value >> 16) & 0x1F) as u8,
             tz_minute: ((value >> 10) & 0x3F) as u8,
         }
+    }
+}
+
+impl MessageData {
+    pub fn has_keyword(&self, keyword: &Keyword) -> bool {
+        self.keywords.iter().any(|k| k == keyword)
+    }
+
+    pub fn set_keywords(&mut self, keywords: Vec<Keyword>) {
+        self.keywords = keywords;
+    }
+
+    pub fn add_keyword(&mut self, keyword: Keyword) -> bool {
+        if !self.keywords.contains(&keyword) {
+            self.keywords.push(keyword);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn remove_keyword(&mut self, keyword: &Keyword) -> bool {
+        let prev_len = self.keywords.len();
+        self.keywords.retain(|k| k != keyword);
+        self.keywords.len() != prev_len
+    }
+
+    pub fn set_mailboxes(&mut self, mailboxes: Vec<UidMailbox>) {
+        self.mailboxes = mailboxes;
+    }
+
+    pub fn add_mailbox(&mut self, mailbox: UidMailbox) {
+        if !self.mailboxes.contains(&mailbox) {
+            self.mailboxes.push(mailbox);
+        }
+    }
+
+    pub fn remove_mailbox(&mut self, mailbox: u32) {
+        self.mailboxes.retain(|m| m.mailbox_id != mailbox);
+    }
+
+    pub fn has_keyword_changes(&self, prev_data: &ArchivedMessageData) -> bool {
+        self.keywords.len() != prev_data.keywords.len()
+            || !self
+                .keywords
+                .iter()
+                .all(|k| prev_data.keywords.iter().any(|pk| pk == k))
+    }
+
+    pub fn has_mailbox_id(&self, mailbox_id: u32) -> bool {
+        self.mailboxes.iter().any(|m| m.mailbox_id == mailbox_id)
+    }
+
+    pub fn added_keywords(
+        &self,
+        prev_data: &ArchivedMessageData,
+    ) -> impl Iterator<Item = &Keyword> {
+        self.keywords
+            .iter()
+            .filter(|k| prev_data.keywords.iter().all(|pk| pk != *k))
+    }
+
+    pub fn removed_keywords<'x>(
+        &'x self,
+        prev_data: &'x ArchivedMessageData,
+    ) -> impl Iterator<Item = &'x ArchivedKeyword> {
+        prev_data
+            .keywords
+            .iter()
+            .filter(|k| self.keywords.iter().all(|pk| pk != *k))
+    }
+
+    pub fn added_mailboxes(
+        &self,
+        prev_data: &ArchivedMessageData,
+    ) -> impl Iterator<Item = &UidMailbox> {
+        self.mailboxes.iter().filter(|m| {
+            prev_data
+                .mailboxes
+                .iter()
+                .all(|pm| pm.mailbox_id != m.mailbox_id)
+        })
+    }
+
+    pub fn removed_mailboxes<'x>(
+        &'x self,
+        prev_data: &'x ArchivedMessageData,
+    ) -> impl Iterator<Item = &'x ArchivedUidMailbox> {
+        prev_data.mailboxes.iter().filter(|m| {
+            self.mailboxes
+                .iter()
+                .all(|pm| pm.mailbox_id != m.mailbox_id)
+        })
+    }
+
+    pub fn has_mailbox_changes(&self, prev_data: &ArchivedMessageData) -> bool {
+        self.mailboxes.len() != prev_data.mailboxes.len()
+            || !self.mailboxes.iter().all(|m| {
+                prev_data
+                    .mailboxes
+                    .iter()
+                    .any(|pm| pm.mailbox_id == m.mailbox_id)
+            })
+    }
+}
+
+impl ArchivedMessageData {
+    pub fn has_mailbox_id(&self, mailbox_id: u32) -> bool {
+        self.mailboxes.iter().any(|m| m.mailbox_id == mailbox_id)
     }
 }

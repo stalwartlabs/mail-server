@@ -9,19 +9,20 @@ use std::{sync::Arc, time::Instant};
 use directory::Permission;
 use email::{
     mailbox::{JUNK_ID, UidMailbox},
-    message::{bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest},
+    message::{
+        bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest, metadata::MessageData,
+    },
 };
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse, protocol::copy_move::Arguments,
     receiver::Request,
 };
-use trc::AddContext;
 
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
     spawn_op,
 };
-use common::{MailboxId, listener::SessionStream, storage::tag::TagManager};
+use common::{MailboxId, listener::SessionStream, storage::index::ObjectIndexBuilder};
 use jmap_proto::{
     error::set::SetErrorType,
     types::{
@@ -30,7 +31,6 @@ use jmap_proto::{
     },
 };
 use store::{
-    SerializeInfallible,
     roaring::RoaringBitmap,
     write::{AlignedBytes, Archive, BatchBuilder, ValueClass, log::ChangeLogBuilder},
 };
@@ -185,7 +185,7 @@ impl<T: SessionStream> SessionData<T> {
 
             for (id, imap_id) in ids {
                 // Obtain mailbox tags
-                let (mut mailboxes, thread_id) = if let Some(result) = self
+                let (data_, thread_id) = if let Some(result) = self
                     .get_mailbox_tags(account_id, id)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
@@ -195,23 +195,46 @@ impl<T: SessionStream> SessionData<T> {
                     continue;
                 };
 
+                // Deserialize
+                let data = data_
+                    .to_unarchived::<MessageData>()
+                    .imap_ctx(&arguments.tag, trc::location!())?;
+
                 // Make sure the message still belongs to this mailbox
-                if !mailboxes
-                    .current()
-                    .contains(&UidMailbox::new_unassigned(src_mailbox.id.mailbox_id))
-                    || mailboxes.current().contains(&dest_mailbox_id)
+                if !data
+                    .inner
+                    .mailboxes
+                    .iter()
+                    .any(|mailbox| mailbox.mailbox_id == src_mailbox.id.mailbox_id)
+                    || data
+                        .inner
+                        .mailboxes
+                        .iter()
+                        .any(|mailbox| mailbox.mailbox_id == dest_mailbox_id.mailbox_id)
                 {
                     continue;
                 }
 
+                // Prepare changes
+                let mut new_data = data
+                    .deserialize()
+                    .imap_ctx(&arguments.tag, trc::location!())?;
+                if changelog.change_id == u64::MAX {
+                    changelog.change_id = self
+                        .server
+                        .assign_change_id(account_id)
+                        .imap_ctx(&arguments.tag, trc::location!())?;
+                }
+                new_data.change_id = changelog.change_id;
+
                 // Add destination folder
-                mailboxes.update(dest_mailbox_id, true);
+                new_data.add_mailbox(dest_mailbox_id);
                 if is_move {
-                    mailboxes.update(UidMailbox::new_unassigned(src_mailbox.id.mailbox_id), false);
+                    new_data.remove_mailbox(src_mailbox.id.mailbox_id);
                 }
 
                 // Assign IMAP UIDs
-                for uid_mailbox in mailboxes.inner_tags_mut() {
+                for uid_mailbox in &mut new_data.mailboxes {
                     if uid_mailbox.uid == 0 {
                         let assigned_uid = self
                             .server
@@ -229,17 +252,13 @@ impl<T: SessionStream> SessionData<T> {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Email)
-                    .update_document(id);
-                mailboxes
-                    .update_batch(&mut batch, Property::MailboxIds)
+                    .update_document(id)
+                    .custom(
+                        ObjectIndexBuilder::new()
+                            .with_current(data)
+                            .with_changes(new_data),
+                    )
                     .imap_ctx(&arguments.tag, trc::location!())?;
-                if changelog.change_id == u64::MAX {
-                    changelog.change_id = self
-                        .server
-                        .assign_change_id(account_id)
-                        .imap_ctx(&arguments.tag, trc::location!())?;
-                }
-                batch.set(Property::Cid, changelog.change_id.serialize());
 
                 // Add bayes train task
                 if can_spam_train {
@@ -466,7 +485,7 @@ impl<T: SessionStream> SessionData<T> {
         &self,
         account_id: u32,
         id: u32,
-    ) -> trc::Result<Option<(TagManager<UidMailbox>, u32)>> {
+    ) -> trc::Result<Option<(Archive<AlignedBytes>, u32)>> {
         // Obtain mailbox tags
         if let (Some(mailboxes), Some(thread_id)) = (
             self.server
@@ -474,21 +493,14 @@ impl<T: SessionStream> SessionData<T> {
                     account_id,
                     Collection::Email,
                     id,
-                    Property::MailboxIds,
+                    Property::Value,
                 )
                 .await?,
             self.server
                 .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
                 .await?,
         ) {
-            Ok(Some((
-                TagManager::new(
-                    mailboxes
-                        .into_deserialized::<Vec<UidMailbox>>()
-                        .caused_by(trc::location!())?,
-                ),
-                thread_id,
-            )))
+            Ok(Some((mailboxes, thread_id)))
         } else {
             trc::event!(
                 Store(trc::StoreEvent::NotFound),
