@@ -12,7 +12,7 @@ use hyper::StatusCode;
 use jmap_proto::types::{
     acl::Acl, collection::Collection, property::Property, type_state::DataType,
 };
-use store::write::{log::ChangeLogBuilder, AlignedBytes, Archive, BatchBuilder};
+use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -40,8 +40,11 @@ impl FileDeleteRequestHandler for Server {
         headers: RequestHeaders<'_>,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
-        let resource = self.validate_uri(access_token, headers.uri).await?;
-        let account_id = resource.account_id()?;
+        let resource = self
+            .validate_uri(access_token, headers.uri)
+            .await?
+            .into_owned_uri()?;
+        let account_id = resource.account_id;
         let delete_path = resource
             .resource
             .filter(|r| !r.is_empty())

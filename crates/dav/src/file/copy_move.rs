@@ -16,7 +16,7 @@ use jmap_proto::types::{
 };
 use store::{
     ahash::AHashMap,
-    write::{log::ChangeLogBuilder, now, AlignedBytes, Archive, BatchBuilder},
+    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder, now},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -50,8 +50,11 @@ impl FileCopyMoveRequestHandler for Server {
         is_move: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate source
-        let from_resource_ = self.validate_uri(access_token, headers.uri).await?;
-        let from_account_id = from_resource_.account_id()?;
+        let from_resource_ = self
+            .validate_uri(access_token, headers.uri)
+            .await?
+            .into_owned_uri()?;
+        let from_account_id = from_resource_.account_id;
         let from_files = self
             .fetch_file_hierarchy(from_account_id)
             .await
@@ -299,11 +302,11 @@ async fn move_container(
     access_token: &AccessToken,
     from_files: Arc<Files>,
     to_files: Arc<Files>,
-    from_resource: UriResource<FileItemId>,
+    from_resource: UriResource<u32, FileItemId>,
     destination: Destination,
     depth: Depth,
 ) -> crate::Result<HttpResponse> {
-    let from_account_id = from_resource.account_id.unwrap();
+    let from_account_id = from_resource.account_id;
     let to_account_id = destination.account_id;
     let from_document_id = from_resource.resource.document_id;
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
@@ -360,7 +363,7 @@ async fn copy_container(
     server: &Server,
     access_token: &AccessToken,
     from_files: Arc<Files>,
-    from_resource: UriResource<FileItemId>,
+    from_resource: UriResource<u32, FileItemId>,
     mut destination: Destination,
     depth: Depth,
     delete_source: bool,
@@ -373,7 +376,7 @@ async fn copy_container(
         _ => true,
     };
 
-    let from_account_id = from_resource.account_id.unwrap();
+    let from_account_id = from_resource.account_id;
     let to_account_id = destination.account_id;
     let from_document_id = from_resource.resource.document_id;
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
@@ -517,10 +520,10 @@ async fn copy_container(
 async fn overwrite_and_delete_item(
     server: &Server,
     access_token: &AccessToken,
-    from_resource: UriResource<FileItemId>,
+    from_resource: UriResource<u32, FileItemId>,
     destination: Destination,
 ) -> crate::Result<HttpResponse> {
-    let from_account_id = from_resource.account_id.unwrap();
+    let from_account_id = from_resource.account_id;
     let to_account_id = destination.account_id;
     let from_document_id = from_resource.resource.document_id;
     let to_document_id = destination.document_id.unwrap();
@@ -589,10 +592,10 @@ async fn overwrite_and_delete_item(
 async fn overwrite_item(
     server: &Server,
     access_token: &AccessToken,
-    from_resource: UriResource<FileItemId>,
+    from_resource: UriResource<u32, FileItemId>,
     destination: Destination,
 ) -> crate::Result<HttpResponse> {
-    let from_account_id = from_resource.account_id.unwrap();
+    let from_account_id = from_resource.account_id;
     let to_account_id = destination.account_id;
     let from_document_id = from_resource.resource.document_id;
     let to_document_id = destination.document_id.unwrap();
@@ -650,10 +653,10 @@ async fn overwrite_item(
 async fn move_item(
     server: &Server,
     access_token: &AccessToken,
-    from_resource: UriResource<FileItemId>,
+    from_resource: UriResource<u32, FileItemId>,
     destination: Destination,
 ) -> crate::Result<HttpResponse> {
-    let from_account_id = from_resource.account_id.unwrap();
+    let from_account_id = from_resource.account_id;
     let to_account_id = destination.account_id;
     let from_document_id = from_resource.resource.document_id;
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
@@ -713,10 +716,10 @@ async fn move_item(
 async fn copy_item(
     server: &Server,
     access_token: &AccessToken,
-    from_resource: UriResource<FileItemId>,
+    from_resource: UriResource<u32, FileItemId>,
     destination: Destination,
 ) -> crate::Result<HttpResponse> {
-    let from_account_id = from_resource.account_id.unwrap();
+    let from_account_id = from_resource.account_id;
     let to_account_id = destination.account_id;
     let from_document_id = from_resource.resource.document_id;
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
@@ -748,10 +751,10 @@ async fn copy_item(
 async fn rename_item(
     server: &Server,
     access_token: &AccessToken,
-    from_resource: UriResource<FileItemId>,
+    from_resource: UriResource<u32, FileItemId>,
     destination: Destination,
 ) -> crate::Result<HttpResponse> {
-    let from_account_id = from_resource.account_id.unwrap();
+    let from_account_id = from_resource.account_id;
     let from_document_id = from_resource.resource.document_id;
 
     let node = server

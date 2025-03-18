@@ -68,6 +68,24 @@ pub trait SerializeInfallible {
     fn serialize(&self) -> Vec<u8>;
 }
 
+// Max 64 versions (2 ^ 6)
+pub const SERIALIZE_OBJ_01_V1: u8 = 0;
+pub const SERIALIZE_OBJ_02_V1: u8 = 1;
+pub const SERIALIZE_OBJ_03_V1: u8 = 2;
+pub const SERIALIZE_OBJ_04_V1: u8 = 3;
+pub const SERIALIZE_OBJ_05_V1: u8 = 4;
+pub const SERIALIZE_OBJ_06_V1: u8 = 5;
+pub const SERIALIZE_OBJ_07_V1: u8 = 6;
+pub const SERIALIZE_OBJ_08_V1: u8 = 7;
+pub const SERIALIZE_OBJ_09_V1: u8 = 8;
+pub const SERIALIZE_OBJ_10_V1: u8 = 9;
+pub const SERIALIZE_OBJ_11_V1: u8 = 10;
+pub const SERIALIZE_OBJ_12_V1: u8 = 11;
+pub const SERIALIZE_OBJ_13_V1: u8 = 12;
+pub const SERIALIZE_OBJ_14_V1: u8 = 13;
+pub const SERIALIZE_OBJ_15_V1: u8 = 14;
+pub const SERIALIZE_OBJ_16_V1: u8 = 15;
+
 pub trait SerializedVersion {
     fn serialize_version() -> u8;
 }
@@ -796,6 +814,6 @@ impl Stores {
 
 impl SerializedVersion for () {
     fn serialize_version() -> u8 {
-        0
+        unreachable!()
     }
 }

@@ -11,12 +11,17 @@ use groupware::file::FileNode;
 use hyper::StatusCode;
 use jmap_proto::types::{collection::Collection, type_state::DataType};
 use store::write::{
-    log::{Changes, LogInsert}, now, Archive, BatchBuilder
+    Archive, BatchBuilder,
+    log::{Changes, LogInsert},
+    now,
 };
 
 use crate::{
     DavError,
-    common::{ExtractETag, uri::UriResource},
+    common::{
+        ExtractETag,
+        uri::{OwnedUri, UriResource},
+    },
 };
 
 pub mod acl;
@@ -42,25 +47,26 @@ pub(crate) struct FileItemId {
 pub(crate) trait DavFileResource {
     fn map_resource<T: FromFileItem>(
         &self,
-        resource: &UriResource<Option<&str>>,
-    ) -> crate::Result<UriResource<T>>;
+        resource: &OwnedUri<'_>,
+    ) -> crate::Result<UriResource<u32, T>>;
 
     fn map_parent<'x, T: FromFileItem>(
         &self,
         resource: &'x str,
     ) -> Option<(Option<T>, Cow<'x, str>)>;
 
+    #[allow(clippy::type_complexity)]
     fn map_parent_resource<'x, T: FromFileItem>(
         &self,
-        resource: &UriResource<Option<&'x str>>,
-    ) -> crate::Result<UriResource<(Option<T>, Cow<'x, str>)>>;
+        resource: &OwnedUri<'x>,
+    ) -> crate::Result<UriResource<u32, (Option<T>, Cow<'x, str>)>>;
 }
 
 impl DavFileResource for Files {
     fn map_resource<T: FromFileItem>(
         &self,
-        resource: &UriResource<Option<&str>>,
-    ) -> crate::Result<UriResource<T>> {
+        resource: &OwnedUri<'_>,
+    ) -> crate::Result<UriResource<u32, T>> {
         resource
             .resource
             .and_then(|r| self.files.by_name(r))
@@ -95,8 +101,8 @@ impl DavFileResource for Files {
 
     fn map_parent_resource<'x, T: FromFileItem>(
         &self,
-        resource: &UriResource<Option<&'x str>>,
-    ) -> crate::Result<UriResource<(Option<T>, Cow<'x, str>)>> {
+        resource: &OwnedUri<'x>,
+    ) -> crate::Result<UriResource<u32, (Option<T>, Cow<'x, str>)>> {
         if let Some(r) = resource.resource {
             if self.files.by_name(r).is_none() {
                 self.map_parent(r)

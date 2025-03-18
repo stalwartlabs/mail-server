@@ -112,7 +112,7 @@ impl Deserialize for Archive<AlignedBytes> {
             }),
             _ => Err(trc::StoreEvent::DataCorruption
                 .into_err()
-                .details("Invalid archive marker.")
+                .details("Invalid archive marker")
                 .ctx(trc::Key::Value, bytes)
                 .caused_by(trc::location!())),
         }
@@ -209,18 +209,56 @@ impl Archive<AlignedBytes> {
                 rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
             > + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
     {
-        if self.version == T::serialize_version() {
+        let bytes = self.as_bytes();
+        if self.version == T::serialize_version()
+            && bytes.len() >= std::mem::size_of::<T::Archived>()
+        {
             // SAFETY: Trusted and versioned input with integrity hash
-            Ok(unsafe { rkyv::access_unchecked::<T::Archived>(self.as_bytes()) })
+            Ok(unsafe { rkyv::access_unchecked::<T::Archived>(bytes) })
         } else {
             Err(trc::StoreEvent::DataCorruption
                 .into_err()
                 .details(format!(
-                    "Archive version mismatch, expected {} but got {}",
+                    "Archive version mismatch, expected {} ({} bytes) but got {} ({} bytes)",
                     T::serialize_version(),
-                    self.version
+                    std::mem::size_of::<T::Archived>(),
+                    self.version,
+                    bytes.len()
                 ))
-                .ctx(trc::Key::Value, self.as_bytes())
+                .ctx(trc::Key::Value, bytes)
+                .caused_by(trc::location!()))
+        }
+    }
+
+    pub fn unarchive_untrusted<T>(&self) -> trc::Result<&<T as rkyv::Archive>::Archived>
+    where
+        T: rkyv::Archive + SerializedVersion,
+        T::Archived: for<'a> rkyv::bytecheck::CheckBytes<
+                rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>,
+            > + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
+    {
+        let bytes = self.as_bytes();
+        if self.version == T::serialize_version()
+            && bytes.len() >= std::mem::size_of::<T::Archived>()
+        {
+            rkyv::access::<T::Archived, rkyv::rancor::Error>(bytes).map_err(|err| {
+                trc::StoreEvent::DeserializeError
+                    .ctx(trc::Key::Value, self.as_bytes())
+                    .details("Archive access failed")
+                    .caused_by(trc::location!())
+                    .reason(err)
+            })
+        } else {
+            Err(trc::StoreEvent::DataCorruption
+                .into_err()
+                .details(format!(
+                    "Archive version mismatch, expected {} ({} bytes) but got {} ({} bytes)",
+                    T::serialize_version(),
+                    std::mem::size_of::<T::Archived>(),
+                    self.version,
+                    bytes.len()
+                ))
+                .ctx(trc::Key::Value, bytes)
                 .caused_by(trc::location!()))
         }
     }

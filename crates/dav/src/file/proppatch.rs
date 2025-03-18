@@ -57,9 +57,12 @@ impl FilePropPatchRequestHandler for Server {
         request: PropertyUpdate,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
-        let resource_ = self.validate_uri(access_token, headers.uri).await?;
+        let resource_ = self
+            .validate_uri(access_token, headers.uri)
+            .await?
+            .into_owned_uri()?;
         let uri = headers.uri;
-        let account_id = resource_.account_id()?;
+        let account_id = resource_.account_id;
         let files = self
             .fetch_file_hierarchy(account_id)
             .await

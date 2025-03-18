@@ -68,12 +68,6 @@ pub enum Keyword {
     Other(String),
 }
 
-impl SerializedVersion for Keyword {
-    fn serialize_version() -> u8 {
-        0
-    }
-}
-
 impl JsonObjectParser for Keyword {
     fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where

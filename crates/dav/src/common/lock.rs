@@ -21,11 +21,11 @@ use jmap_proto::types::property::Property;
 use store::dispatch::lookup::KeyValue;
 use store::write::serialize::rkyv_deserialize;
 use store::write::{AlignedBytes, Archive, Archiver, now};
-use store::{Serialize, SerializedVersion, U32_LEN};
+use store::{SERIALIZE_OBJ_02_V1, Serialize, SerializedVersion, U32_LEN};
 use trc::AddContext;
 
 use super::ETag;
-use super::uri::{DavUriResource, UriResource};
+use super::uri::{DavUriResource, OwnedUri};
 use crate::{DavError, DavErrorCondition, DavMethod};
 
 #[derive(Debug, Clone)]
@@ -63,14 +63,15 @@ impl LockRequestHandler for Server {
         headers: RequestHeaders<'_>,
         lock_info: Option<LockInfo>,
     ) -> crate::Result<HttpResponse> {
-        let resource = self.validate_uri(access_token, headers.uri).await?;
-        let resource_hash = resource
-            .lock_key()
-            .ok_or(DavError::Code(StatusCode::CONFLICT))?;
+        let resource = self
+            .validate_uri(access_token, headers.uri)
+            .await?
+            .into_owned_uri()?;
+        let resource_hash = resource.lock_key();
         let resource_path = resource
             .resource
             .ok_or(DavError::Code(StatusCode::CONFLICT))?;
-        let account_id = resource.account_id.unwrap();
+        let account_id = resource.account_id;
         if !access_token.is_member(account_id) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
@@ -584,7 +585,7 @@ struct LockItem {
 
 impl SerializedVersion for LockData {
     fn serialize_version() -> u8 {
-        0
+        SERIALIZE_OBJ_02_V1
     }
 }
 
@@ -700,13 +701,13 @@ impl LockItem {
     }
 }
 
-impl UriResource<Option<&str>> {
-    pub fn lock_key(&self) -> Option<Vec<u8>> {
+impl OwnedUri<'_> {
+    pub fn lock_key(&self) -> Vec<u8> {
         let mut result = Vec::with_capacity(U32_LEN + 2);
         result.push(KV_LOCK_DAV);
-        result.extend_from_slice(self.account_id?.to_be_bytes().as_slice());
+        result.extend_from_slice(self.account_id.to_be_bytes().as_slice());
         result.push(u8::from(self.collection));
-        Some(result)
+        result
     }
 }
 

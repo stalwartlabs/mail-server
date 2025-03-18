@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use common::KV_SIEVE_ID;
 use sieve::Sieve;
-use store::{SerializedVersion, blake3};
+use store::{blake3, SerializedVersion, SERIALIZE_OBJ_09_V1};
 use utils::BlobHash;
 
 pub mod activate;
@@ -38,7 +38,7 @@ pub struct SieveScript {
 
 impl SerializedVersion for SieveScript {
     fn serialize_version() -> u8 {
-        0
+        SERIALIZE_OBJ_09_V1
     }
 }
 

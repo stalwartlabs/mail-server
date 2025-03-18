@@ -12,7 +12,7 @@ use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
 use serde::Deserialize;
 use store::write::Archiver;
-use store::{Serialize, SerializedVersion};
+use store::{Serialize, SerializedVersion, SERIALIZE_OBJ_01_V1};
 use trc::AddContext;
 use trc::event::conv::AssertSuccess;
 
@@ -212,7 +212,7 @@ pub struct SerializedCert {
 
 impl SerializedVersion for SerializedCert {
     fn serialize_version() -> u8 {
-        0
+        SERIALIZE_OBJ_01_V1
     }
 }
 

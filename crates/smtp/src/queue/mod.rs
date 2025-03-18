@@ -12,7 +12,7 @@ use std::{
 
 use common::expr::{self, functions::ResolveVariable, *};
 use smtp_proto::{ArchivedResponse, Response};
-use store::{SerializedVersion, write::now};
+use store::{SERIALIZE_OBJ_13_V1, SerializedVersion, write::now};
 use utils::BlobHash;
 
 pub mod dsn;
@@ -69,7 +69,7 @@ pub struct Message {
 
 impl SerializedVersion for Message {
     fn serialize_version() -> u8 {
-        0
+        SERIALIZE_OBJ_13_V1
     }
 }
 

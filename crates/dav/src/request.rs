@@ -22,13 +22,12 @@ use hyper::{StatusCode, header};
 
 use crate::{
     DavError, DavMethod, DavResource,
-    common::lock::LockRequestHandler,
+    common::{lock::LockRequestHandler, propfind::PropFindRequestHandler},
     file::{
         acl::FileAclRequestHandler, changes::FileChangesRequestHandler,
         copy_move::FileCopyMoveRequestHandler, delete::FileDeleteRequestHandler,
         get::FileGetRequestHandler, mkcol::FileMkColRequestHandler,
-        propfind::FilePropFindRequestHandler, proppatch::FilePropPatchRequestHandler,
-        update::FileUpdateRequestHandler,
+        proppatch::FilePropPatchRequestHandler, update::FileUpdateRequestHandler,
     },
 };
 
@@ -73,19 +72,14 @@ impl DavRequestDispatcher for Server {
         let todo = "lock tokens, headers, etc";
 
         match method {
-            DavMethod::PROPFIND => match resource {
-                DavResource::Card => todo!(),
-                DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
-                DavResource::File => {
-                    self.handle_file_propfind_request(
-                        &access_token,
-                        headers,
-                        PropFind::parse(&mut Tokenizer::new(&body))?,
-                    )
-                    .await
-                }
-            },
+            DavMethod::PROPFIND => {
+                self.handle_propfind_request(
+                    &access_token,
+                    headers,
+                    PropFind::parse(&mut Tokenizer::new(&body))?,
+                )
+                .await
+            }
             DavMethod::PROPPATCH => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),

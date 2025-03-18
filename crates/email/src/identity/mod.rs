@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use store::SerializedVersion;
+use store::{SerializedVersion, SERIALIZE_OBJ_03_V1};
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -26,6 +26,6 @@ pub struct EmailAddress {
 
 impl SerializedVersion for Identity {
     fn serialize_version() -> u8 {
-        0
+        SERIALIZE_OBJ_03_V1
     }
 }

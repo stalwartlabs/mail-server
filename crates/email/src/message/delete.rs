@@ -83,6 +83,7 @@ impl EmailDeletion for Server {
                 .caused_by(trc::location!())?;
             let thread_id = u32::from(data.inner.thread_id);
 
+            // Log mailbox changes
             for mailbox in data.inner.mailboxes.iter() {
                 changes.log_child_update(Collection::Mailbox, u32::from(mailbox.mailbox_id));
             }
