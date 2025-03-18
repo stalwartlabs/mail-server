@@ -4,33 +4,34 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::outbound::client::{from_error_status, from_mail_send_error, SmtpClient};
+use crate::outbound::client::{SmtpClient, from_error_status, from_mail_send_error};
 use crate::outbound::dane::dnssec::TlsaLookup;
 use crate::outbound::lookup::DnsLookup;
 use crate::outbound::mta_sts::lookup::MtaStsLookup;
 use crate::outbound::mta_sts::verify::VerifyPolicy;
 use crate::outbound::{client::StartTlsResult, dane::verify::TlsaVerify};
 use crate::queue::dsn::SendDsn;
-use crate::queue::spool::{SmtpSpool, LOCK_EXPIRY};
+use crate::queue::spool::{LOCK_EXPIRY, SmtpSpool};
 use crate::queue::throttle::IsAllowed;
 use crate::reporting::SmtpReporting;
+use common::Server;
 use common::config::{
     server::ServerProtocol,
     smtp::{queue::RequireOptional, report::AggregateFrequency},
 };
 use common::ipc::{PolicyType, QueueEvent, QueueEventStatus, TlsEvent};
-use common::Server;
 use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, ResultType},
 };
 use rand::Rng;
 use smtp_proto::MAIL_REQUIRETLS;
+use std::sync::Arc;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::{Duration, Instant},
 };
-use store::write::{now, BatchBuilder, QueueClass, ValueClass};
+use store::write::{BatchBuilder, QueueClass, ValueClass, now};
 use trc::{DaneEvent, DeliveryEvent, MtaStsEvent, ServerEvent, TlsRptEvent};
 
 use crate::{
@@ -38,7 +39,7 @@ use crate::{
     reporting::tls::TlsRptOptions,
 };
 
-use super::{lookup::ToNextHop, mta_sts, session::SessionParams, NextHop, TlsStrategy};
+use super::{NextHop, TlsStrategy, lookup::ToNextHop, mta_sts, session::SessionParams};
 use crate::queue::{Domain, Error, QueueEnvelope, QueuedMessage, Status};
 
 impl QueuedMessage {
@@ -104,9 +105,10 @@ impl QueuedMessage {
                     )));
 
                     if let Err(err) = server.store().write(batch.build()).await {
-                        trc::error!(err
-                            .details("Failed to delete queue event.")
-                            .caused_by(trc::location!()));
+                        trc::error!(
+                            err.details("Failed to delete queue event.")
+                                .caused_by(trc::location!())
+                        );
                     }
 
                     // Unlock event
@@ -493,6 +495,17 @@ impl QueuedMessage {
                     .await
                 {
                     Ok(mx) => mx,
+                    Err(mail_auth::Error::DnsRecordNotFound(_)) => {
+                        trc::event!(
+                            Delivery(DeliveryEvent::MxLookupFailed),
+                            SpanId = message.span_id,
+                            Domain = domain.domain.clone(),
+                            Details = "No MX records were found, attempting implicit MX.",
+                            Elapsed = time.elapsed(),
+                        );
+
+                        Arc::new(vec![])
+                    }
                     Err(err) => {
                         trc::event!(
                             Delivery(DeliveryEvent::MxLookupFailed),
