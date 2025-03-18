@@ -14,18 +14,22 @@ use trc::AddContext;
 
 use crate::{DavError, DavResource};
 
-pub(crate) struct UriResource<T> {
+pub(crate) struct UriResource<A, R> {
     pub collection: Collection,
-    pub account_id: Option<u32>,
-    pub resource: T,
+    pub account_id: A,
+    pub resource: R,
 }
+
+pub(crate) type UnresolvedUri<'x> = UriResource<Option<u32>, Option<&'x str>>;
+pub(crate) type OwnedUri<'x> = UriResource<u32, Option<&'x str>>;
+//pub(crate) type DocumentUri<'x> = UriResource<u32, u32>;
 
 pub(crate) trait DavUriResource: Sync + Send {
     fn validate_uri<'x>(
         &self,
         access_token: &AccessToken,
         uri: &'x str,
-    ) -> impl Future<Output = crate::Result<UriResource<Option<&'x str>>>> + Send;
+    ) -> impl Future<Output = crate::Result<UnresolvedUri<'x>>> + Send;
 }
 
 impl DavUriResource for Server {
@@ -33,7 +37,7 @@ impl DavUriResource for Server {
         &self,
         access_token: &AccessToken,
         uri: &'x str,
-    ) -> crate::Result<UriResource<Option<&'x str>>> {
+    ) -> crate::Result<UnresolvedUri<'x>> {
         let (_, uri_parts) = uri
             .split_once("/dav/")
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -86,8 +90,28 @@ impl DavUriResource for Server {
     }
 }
 
-impl<T> UriResource<T> {
-    pub fn account_id(&self) -> crate::Result<u32> {
-        self.account_id.ok_or(DavError::Code(StatusCode::FORBIDDEN))
+impl<'x> UnresolvedUri<'x> {
+    pub fn into_owned_uri(self) -> crate::Result<OwnedUri<'x>> {
+        Ok(OwnedUri {
+            collection: self.collection,
+            account_id: self
+                .account_id
+                .ok_or(DavError::Code(StatusCode::NOT_FOUND))?,
+            resource: self.resource,
+        })
+    }
+}
+
+impl OwnedUri<'_> {
+    pub fn new_owned(
+        collection: Collection,
+        account_id: u32,
+        resource: Option<&str>,
+    ) -> OwnedUri<'_> {
+        OwnedUri {
+            collection,
+            account_id,
+            resource,
+        }
     }
 }

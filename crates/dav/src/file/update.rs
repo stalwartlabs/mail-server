@@ -52,8 +52,11 @@ impl FileUpdateRequestHandler for Server {
         _is_patch: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
-        let resource = self.validate_uri(access_token, headers.uri).await?;
-        let account_id = resource.account_id()?;
+        let resource = self
+            .validate_uri(access_token, headers.uri)
+            .await?
+            .into_owned_uri()?;
+        let account_id = resource.account_id;
         let files = self
             .fetch_file_hierarchy(account_id)
             .await

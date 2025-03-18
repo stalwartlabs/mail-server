@@ -41,6 +41,7 @@ use mail_auth::{MX, Txt};
 use manager::webadmin::{Resource, WebAdminManager};
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
+use rkyv::munge::Borrow;
 use rustls::sign::CertifiedKey;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
@@ -515,6 +516,12 @@ impl Files {
         })
     }
 
+    pub fn tree_with_depth(&self, depth: usize) -> impl Iterator<Item = &FileItem> {
+        self.files.iter().filter(move |item| {
+            item.name.as_bytes().iter().filter(|&&c| c == b'/').count() <= depth
+        })
+    }
+
     pub fn is_ancestor_of(&self, ancestor: u32, descendant: u32) -> bool {
         let ancestor = &self.files.by_id(ancestor).unwrap().name;
         let descendant = &self.files.by_id(descendant).unwrap().name;
@@ -531,5 +538,25 @@ impl IdBimapItem for FileItem {
 
     fn name(&self) -> &str {
         &self.name
+    }
+}
+
+impl std::hash::Hash for FileItem {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.document_id.hash(state);
+    }
+}
+
+impl PartialEq for FileItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.document_id == other.document_id
+    }
+}
+
+impl Eq for FileItem {}
+
+impl std::borrow::Borrow<u32> for FileItem {
+    fn borrow(&self) -> &u32 {
+        &self.document_id
     }
 }

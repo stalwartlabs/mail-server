@@ -97,18 +97,3 @@ impl ThreadCache for Server {
         }
     }
 }
-
-/*
-
-
-        // Obtain threadIds for matching messages
-        let mut thread_ids = Vec::with_capacity(message_ids.size_hint().0);
-        for document_id in message_ids {
-            if let Some(thread_id) = thread_cache.threads.get(&document_id) {
-                thread_ids.push((document_id, *thread_id));
-            }
-        }
-
-        Ok(thread_ids)
-
-*/

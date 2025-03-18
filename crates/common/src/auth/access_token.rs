@@ -6,12 +6,12 @@
 
 use ahash::AHashSet;
 use directory::{
+    Permission, Principal, QueryBy, Type,
     backend::internal::{
+        PrincipalField,
         lookup::DirectoryStore,
         manage::{ChangedPrincipals, ManageDirectory},
-        PrincipalField,
     },
-    Permission, Principal, QueryBy, Type,
 };
 use jmap_proto::{
     request::RequestMethod,
@@ -29,11 +29,11 @@ use utils::map::{
 };
 
 use crate::{
+    KV_TOKEN_REVISION, Server,
     listener::limiter::{ConcurrencyLimiter, LimiterResult},
-    Server, KV_TOKEN_REVISION,
 };
 
-use super::{roles::RolePermissions, AccessToken, ResourceToken, TenantInfo};
+use super::{AccessToken, ResourceToken, TenantInfo, roles::RolePermissions};
 
 pub enum PrincipalOrId {
     Principal(Principal),
@@ -189,7 +189,7 @@ impl Server {
             Ok(Some(principal)) => {
                 return self
                     .build_access_token_from_principal(principal, revision)
-                    .await
+                    .await;
             }
             Ok(None) => Err(trc::AuthEvent::Error
                 .into_err()
@@ -294,10 +294,11 @@ impl Server {
                             }
                         }
                         Err(err) => {
-                            trc::error!(err
-                                .details("Failed to list principals")
-                                .caused_by(trc::location!())
-                                .account_id(*id));
+                            trc::error!(
+                                err.details("Failed to list principals")
+                                    .caused_by(trc::location!())
+                                    .account_id(*id)
+                            );
                         }
                     }
                 } else {
@@ -330,10 +331,11 @@ impl Server {
                             ids = members.into_iter();
                         }
                         Err(err) => {
-                            trc::error!(err
-                                .details("Failed to obtain principal")
-                                .caused_by(trc::location!())
-                                .account_id(id));
+                            trc::error!(
+                                err.details("Failed to obtain principal")
+                                    .caused_by(trc::location!())
+                                    .account_id(id)
+                            );
                         }
                     }
                 } else if let Some(prev_ids) = ids_stack.pop() {
@@ -354,9 +356,10 @@ impl Server {
             )
             .await
         {
-            trc::error!(err
-                .details("Failed to increment principal revision")
-                .account_id(id));
+            trc::error!(
+                err.details("Failed to increment principal revision")
+                    .account_id(id)
+            );
         }
     }
 
@@ -371,9 +374,10 @@ impl Server {
         {
             Ok(revision) => (revision as u64).into(),
             Err(err) => {
-                trc::error!(err
-                    .details("Failed to obtain principal revision")
-                    .account_id(id));
+                trc::error!(
+                    err.details("Failed to obtain principal revision")
+                        .account_id(id)
+                );
                 None
             }
         }
@@ -434,6 +438,13 @@ impl AccessToken {
         self.member_of
             .iter()
             .chain(self.access_to.iter().map(|(id, _)| id))
+    }
+
+    pub fn all_ids(&self) -> impl Iterator<Item = u32> {
+        [self.primary_id]
+            .into_iter()
+            .chain(self.member_of.iter().copied())
+            .chain(self.access_to.iter().map(|(id, _)| *id))
     }
 
     pub fn is_member(&self, account_id: u32) -> bool {

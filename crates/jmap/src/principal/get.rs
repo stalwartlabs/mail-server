@@ -39,14 +39,14 @@ impl PrincipalGet for Server {
             //Property::Timezone,
             //Property::Capabilities,
         ]);
-        let email_submission_ids = self
-            .get_document_ids(u32::MAX, Collection::EmailSubmission)
+        let principal_ids = self
+            .get_document_ids(u32::MAX, Collection::Principal)
             .await?
             .unwrap_or_default();
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            email_submission_ids
+            principal_ids
                 .iter()
                 .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
