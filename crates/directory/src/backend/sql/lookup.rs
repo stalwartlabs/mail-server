@@ -9,15 +9,15 @@ use store::{NamedRows, Rows, Value};
 use trc::AddContext;
 
 use crate::{
+    Principal, QueryBy, ROLE_ADMIN, ROLE_USER, Type,
     backend::{
+        RcptType,
         internal::{
+            PrincipalField, PrincipalValue,
             lookup::DirectoryStore,
             manage::{self, ManageDirectory, UpdatePrincipal},
-            PrincipalField, PrincipalValue,
         },
-        RcptType,
     },
-    Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
 };
 
 use super::{SqlDirectory, SqlMappings};
@@ -89,17 +89,43 @@ impl SqlDirectory {
                     )
                     .caused_by(trc::location!())?
                 {
-                    Some(principal)
+                    Some(mut principal) => {
+                        // Obtain secrets
+                        if !self.mappings.query_secrets.is_empty() {
+                            let secrets = self
+                                .sql_store
+                                .sql_query::<Rows>(
+                                    &self.mappings.query_secrets,
+                                    vec![username.into()],
+                                )
+                                .await
+                                .caused_by(trc::location!())?;
+
+                            if !secrets.rows.is_empty() {
+                                principal.set(
+                                    PrincipalField::Secrets,
+                                    PrincipalValue::StringList(secrets.into()),
+                                );
+                            }
+                        }
+
                         if principal
                             .verify_secret(secret)
                             .await
-                            .caused_by(trc::location!())? =>
-                    {
-                        (
-                            Some(principal.with_field(PrincipalField::Name, username.to_string())),
-                            None,
-                        )
+                            .caused_by(trc::location!())?
+                        {
+                            (
+                                Some(
+                                    principal
+                                        .with_field(PrincipalField::Name, username.to_string()),
+                                ),
+                                None,
+                            )
+                        } else {
+                            (None, None)
+                        }
                     }
+
                     _ => (None, None),
                 }
             }
@@ -143,23 +169,6 @@ impl SqlDirectory {
                     self.sql_store
                         .sql_query::<Rows>(
                             &self.mappings.query_emails,
-                            vec![external_principal.name().into()],
-                        )
-                        .await
-                        .caused_by(trc::location!())?
-                        .into(),
-                ),
-            );
-        }
-
-        // Obtain secrets
-        if !self.mappings.query_secrets.is_empty() {
-            external_principal.set(
-                PrincipalField::Secrets,
-                PrincipalValue::StringList(
-                    self.sql_store
-                        .sql_query::<Rows>(
-                            &self.mappings.query_secrets,
                             vec![external_principal.name().into()],
                         )
                         .await
