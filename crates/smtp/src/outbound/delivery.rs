@@ -967,7 +967,10 @@ impl QueuedMessage {
                         || (message.flags & MAIL_REQUIRETLS) != 0
                         || mta_sts_policy.is_some()
                         || dane_policy.is_some();
-                    let tls_connector = if allow_invalid_certs || remote_host.allow_invalid_certs()
+                    // As per RFC7671 Section 5.1, DANE-EE(3) allows name mismatch
+                    let tls_connector = if allow_invalid_certs
+                        || remote_host.allow_invalid_certs()
+                        || dane_policy.as_ref().is_some_and(|t| t.has_end_entities)
                     {
                         &server.inner.data.smtp_connectors.dummy_verify
                     } else {
