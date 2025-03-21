@@ -33,7 +33,7 @@ impl OpenIdDirectory {
         return_member_of: bool,
     ) -> trc::Result<Option<Principal>> {
         match &by {
-            QueryBy::Credentials(Credentials::OAuthBearer { token }) => {
+            QueryBy::Credentials(Credentials::OAuthBearer { token }) | QueryBy::Credentials(Credentials::XOauth2 { secret: token, ..  }) => {
                 // Send request
                 #[cfg(feature = "test_mode")]
                 let client = reqwest::Client::builder().danger_accept_invalid_certs(true);
@@ -132,7 +132,7 @@ impl OpenIdDirectory {
                         .ctx(trc::Key::Reason, response.text().await.unwrap_or_default())
                         .details("Unexpected status code")),
                 }
-            }
+            },
             _ => self.data_store.query(by, return_member_of).await,
         }
     }
