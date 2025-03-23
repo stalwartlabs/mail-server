@@ -25,16 +25,17 @@ use store::{SERIALIZE_OBJ_02_V1, Serialize, SerializedVersion, U32_LEN};
 use trc::AddContext;
 
 use super::ETag;
-use super::uri::{DavUriResource, OwnedUri};
+use super::uri::{DavUriResource, OwnedUri, Urn};
 use crate::{DavError, DavErrorCondition, DavMethod};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ResourceState<'x> {
     pub account_id: u32,
     pub collection: Collection,
     pub document_id: Option<u32>,
     pub etag: Option<String>,
     pub lock_token: Option<String>,
+    pub sync_token: Option<String>,
     pub path: &'x str,
 }
 
@@ -80,9 +81,7 @@ impl LockRequestHandler for Server {
             account_id,
             collection: resource.collection,
             path: resource_path,
-            document_id: None,
-            etag: None,
-            lock_token: None,
+            ..Default::default()
         }];
 
         let mut lock_data = if let Some(lock_data) = self
@@ -174,12 +173,14 @@ impl LockRequestHandler for Server {
                     .to_string(),
                 )
         } else {
-            let lock_token = headers
+            let (lock_expires, lock_id) = headers
                 .lock_token
+                .and_then(Urn::parse)
+                .and_then(|urn| urn.try_unwrap_lock())
                 .ok_or(DavError::Code(StatusCode::BAD_REQUEST))?;
             let mut found_path = None;
             for (lock_path, lock_item) in lock_data.locks.iter() {
-                if lock_item.uuid() == lock_token {
+                if lock_item.expires == lock_expires && lock_item.lock_id == lock_id {
                     if lock_item.is_lock_owner(access_token) {
                         found_path = Some(lock_path.to_string());
                         break;
@@ -273,7 +274,7 @@ impl LockRequestHandler for Server {
         // Unarchive lock data
         let mut locks = locks_.to_unarchived().caused_by(trc::location!())?;
 
-        // Validate locks
+        // Validate locks for write operations
         if !matches!(method, DavMethod::GET | DavMethod::HEAD) {
             for resource in &resources {
                 if let Some(idx) = locks.find_cache_pos(self, resource).await? {
@@ -300,10 +301,8 @@ impl LockRequestHandler for Server {
         let mut resource_not_found = ResourceState {
             account_id: u32::MAX,
             collection: Collection::None,
-            document_id: None,
-            etag: None,
-            lock_token: None,
             path: "",
+            ..Default::default()
         };
 
         'outer: for if_ in &headers.if_ {
@@ -323,9 +322,7 @@ impl LockRequestHandler for Server {
                             account_id: r.account_id?,
                             collection: r.collection,
                             path: r.resource?,
-                            document_id: None,
-                            etag: None,
-                            lock_token: None,
+                            ..Default::default()
                         })
                     })
                 {
@@ -346,15 +343,27 @@ impl LockRequestHandler for Server {
 
             // Fill missing data for resource
             if resource_state.collection != Collection::None
-                && (resource_state.etag.is_none() || resource_state.lock_token.is_none())
+                && (resource_state.etag.is_none()
+                    || resource_state.lock_token.is_none()
+                    || resource_state.sync_token.is_none())
             {
-                let mut needs_token = false;
+                let mut needs_lock_token = false;
+                let mut needs_sync_token = false;
                 let mut needs_etag = false;
 
                 for cond in &if_.list {
                     match cond {
-                        Condition::StateToken { .. } => {
-                            needs_token = true;
+                        Condition::StateToken { token, .. } => {
+                            match Urn::parse(token)
+                                .ok_or(DavError::Code(StatusCode::BAD_REQUEST))?
+                            {
+                                Urn::Lock { .. } => {
+                                    needs_lock_token = true;
+                                }
+                                Urn::Sync { .. } => {
+                                    needs_sync_token = true;
+                                }
+                            }
                         }
                         Condition::ETag { .. } | Condition::Exists { .. } => {
                             needs_etag = true;
@@ -404,22 +413,51 @@ impl LockRequestHandler for Server {
                 }
 
                 // Fetch lock token
-                if needs_token && resource_state.lock_token.is_none() {
+                if needs_lock_token && resource_state.lock_token.is_none() {
                     if let Some(idx) = locks.find_cache_pos(self, resource_state).await? {
                         if let Some((_, lock)) = locks.find_lock_by_pos(idx, resource_state)? {
-                            resource_state.lock_token = Some(lock.uuid());
+                            resource_state.lock_token = Some(lock.urn().to_string());
                         }
                     }
+                }
+
+                // Fetch sync token
+                if needs_sync_token && resource_state.sync_token.is_none() {
+                    let change_id = self
+                        .store()
+                        .get_last_change_id(resource_state.account_id, resource_state.collection)
+                        .await
+                        .caused_by(trc::location!())?;
+                    resource_state.sync_token = Some(
+                        Urn::Sync {
+                            id: change_id.unwrap_or_default(),
+                        }
+                        .to_string(),
+                    );
                 }
             }
 
             for cond in &if_.list {
                 match cond {
-                    Condition::StateToken { is_not, token } => {
+                    Condition::StateToken { is_not, token }
+                        if token.starts_with("urn:stalwart:davlock:") =>
+                    {
                         if !((resource_state
                             .lock_token
                             .as_ref()
                             .is_some_and(|lock_token| lock_token == token))
+                            ^ is_not)
+                        {
+                            continue 'outer;
+                        }
+                    }
+                    Condition::StateToken { is_not, token }
+                        if token.starts_with("urn:stalwart:davsync:") =>
+                    {
+                        if !((resource_state
+                            .sync_token
+                            .as_ref()
+                            .is_some_and(|sync_token| sync_token == token))
                             ^ is_not)
                         {
                             continue 'outer;
@@ -436,6 +474,9 @@ impl LockRequestHandler for Server {
                         if !((resource_state.etag.is_some()) ^ is_not) {
                             continue 'outer;
                         }
+                    }
+                    _ => {
+                        return Err(DavError::Code(StatusCode::BAD_REQUEST));
                     }
                 }
             }
@@ -569,12 +610,12 @@ impl<'x> LockCaches<'x> {
 }
 
 #[derive(Debug, Default, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct LockData {
+pub(crate) struct LockData {
     locks: HashMap<String, LockItem>,
 }
 
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct LockItem {
+pub(crate) struct LockItem {
     lock_id: u64,
     owner: u32,
     expires: u64,
@@ -590,6 +631,11 @@ impl SerializedVersion for LockData {
 }
 
 impl LockItem {
+    #[inline]
+    pub fn is_lock_owner(&self, access_token: &AccessToken) -> bool {
+        self.owner == access_token.primary_id
+    }
+
     pub fn to_active_lock(&self, href: String) -> ActiveLock {
         ActiveLock::new(
             href,
@@ -606,25 +652,14 @@ impl LockItem {
         })
         .with_owner_opt(self.owner_dav.clone())
         .with_timeout(self.expires.saturating_sub(now()))
-        .with_lock_token(self.uuid())
+        .with_lock_token(self.urn().to_string())
     }
 
-    pub fn uuid(&self) -> String {
-        let lock_id_high = (self.lock_id >> 32) as u32;
-        let lock_id_low = self.lock_id as u32;
-        let expires_high = (self.expires >> 48) as u16;
-        let expires_low = ((self.expires >> 16) & 0xFFFF) as u16;
-
-        format!(
-            "urn:uuid:{:08x}-{:04x}-{:04x}-{:04x}-{:04x}{:04x}{:04x}",
-            lock_id_high,
-            lock_id_low >> 16,
-            lock_id_low & 0xFFFF,
-            self.owner >> 16,
-            self.owner & 0xFFFF,
-            expires_high,
-            expires_low
-        )
+    pub fn urn(&self) -> Urn {
+        Urn::Lock {
+            expires: self.expires,
+            id: self.lock_id,
+        }
     }
 }
 
@@ -675,29 +710,30 @@ impl ArchivedLockItem {
         self.owner == access_token.primary_id
     }
 
-    pub fn uuid(&self) -> String {
-        let lock_id_high = (self.lock_id >> 32) as u32;
-        let lock_id_low = u64::from(self.lock_id) as u32;
-        let expires_high = (self.expires >> 48) as u16;
-        let expires_low = ((self.expires >> 16) & 0xFFFF) as u16;
-
-        format!(
-            "urn:uuid:{:08x}-{:04x}-{:04x}-{:04x}-{:04x}{:04x}{:04x}",
-            lock_id_high,
-            lock_id_low >> 16,
-            lock_id_low & 0xFFFF,
-            self.owner >> 16,
-            self.owner & 0xFFFF,
-            expires_high,
-            expires_low
+    pub fn to_active_lock(&self, href: String) -> ActiveLock {
+        ActiveLock::new(
+            href,
+            if self.exclusive {
+                LockScope::Exclusive
+            } else {
+                LockScope::Shared
+            },
         )
+        .with_depth(if self.depth_infinity {
+            Depth::Infinity
+        } else {
+            Depth::Zero
+        })
+        .with_owner_opt(self.owner_dav.as_ref().map(Into::into))
+        .with_timeout(u64::from(self.expires).saturating_sub(now()))
+        .with_lock_token(self.urn().to_string())
     }
-}
 
-impl LockItem {
-    #[inline]
-    pub fn is_lock_owner(&self, access_token: &AccessToken) -> bool {
-        self.owner == access_token.primary_id
+    pub fn urn(&self) -> Urn {
+        Urn::Lock {
+            expires: self.expires.into(),
+            id: self.lock_id.into(),
+        }
     }
 }
 

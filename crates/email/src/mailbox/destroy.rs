@@ -100,59 +100,64 @@ impl MailboxDestroy for Server {
                 // If the message is in multiple mailboxes, untag it from the current mailbox,
                 // otherwise delete it.
                 let mut destroy_ids = RoaringBitmap::new();
-                for (message_id, message_data_) in self
-                    .get_properties::<Archive<AlignedBytes>, _>(
-                        account_id,
-                        Collection::Email,
-                        &message_ids,
-                        Property::Value,
-                    )
-                    .await?
-                {
-                    // Remove mailbox from list
-                    let prev_message_data = message_data_
-                        .to_unarchived::<MessageData>()
-                        .caused_by(trc::location!())?;
+                let mut batch = BatchBuilder::new();
 
-                    if !prev_message_data
-                        .inner
-                        .mailboxes
-                        .iter()
-                        .any(|id| id.mailbox_id == document_id)
-                    {
-                        continue;
-                    }
+                self.get_archives(
+                    account_id,
+                    Collection::Email,
+                    &message_ids,
+                    Property::Value,
+                    |message_id, message_data_| {
+                        // Remove mailbox from list
+                        let prev_message_data = message_data_
+                            .to_unarchived::<MessageData>()
+                            .caused_by(trc::location!())?;
+                        if !prev_message_data
+                            .inner
+                            .mailboxes
+                            .iter()
+                            .any(|id| id.mailbox_id == document_id)
+                        {
+                            return Ok(true);
+                        }
 
-                    if prev_message_data.inner.mailboxes.len() == 1 {
-                        // Delete message
-                        destroy_ids.insert(message_id);
-                        continue;
-                    }
+                        if prev_message_data.inner.mailboxes.len() == 1 {
+                            // Delete message
+                            destroy_ids.insert(message_id);
+                            return Ok(true);
+                        }
 
-                    let mut new_message_data = prev_message_data
-                        .deserialize()
-                        .caused_by(trc::location!())?;
-                    let thread_id = new_message_data.thread_id;
+                        let mut new_message_data = prev_message_data
+                            .deserialize()
+                            .caused_by(trc::location!())?;
+                        let thread_id = new_message_data.thread_id;
 
-                    new_message_data
-                        .mailboxes
-                        .retain(|id| id.mailbox_id != document_id);
+                        new_message_data
+                            .mailboxes
+                            .retain(|id| id.mailbox_id != document_id);
 
-                    // Untag message from mailbox
-                    let mut batch = BatchBuilder::new();
-                    batch
-                        .with_account_id(account_id)
-                        .with_collection(Collection::Email)
-                        .update_document(message_id)
-                        .custom(
-                            ObjectIndexBuilder::new()
-                                .with_changes(new_message_data)
-                                .with_current(prev_message_data),
-                        )
-                        .caused_by(trc::location!())?;
+                        // Untag message from mailbox
+                        batch
+                            .with_account_id(account_id)
+                            .with_collection(Collection::Email)
+                            .update_document(message_id)
+                            .custom(
+                                ObjectIndexBuilder::new()
+                                    .with_changes(new_message_data)
+                                    .with_current(prev_message_data),
+                            )
+                            .caused_by(trc::location!())?;
+                        changes
+                            .log_update(Collection::Email, Id::from_parts(thread_id, message_id));
+                        Ok(true)
+                    },
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+                if !batch.is_empty() {
                     match self.core.storage.data.write(batch.build()).await {
-                        Ok(_) => changes
-                            .log_update(Collection::Email, Id::from_parts(thread_id, message_id)),
+                        Ok(_) => {}
                         Err(err) if err.is_assertion_failure() => {
                             return Ok(Err(SetError::forbidden().with_description(concat!(
                                 "Another process modified a message in this mailbox ",

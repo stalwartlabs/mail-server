@@ -125,30 +125,29 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
 
         // Sort by UID
-        for (message_id, uid_mailbox) in self
-            .server
-            .get_properties::<Archive<AlignedBytes>, _>(
+        self.server
+            .get_archives(
                 account_id,
                 Collection::Email,
                 &message_ids,
                 Property::Value,
+                |message_id, uid_mailbox| {
+                    // Make sure the message is still in Inbox
+                    if let Some(item) = uid_mailbox
+                        .unarchive::<MessageData>()
+                        .caused_by(trc::location!())?
+                        .mailboxes
+                        .iter()
+                        .find(|item| item.mailbox_id == INBOX_ID)
+                    {
+                        debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
+                        message_map.insert(u32::from(item.uid), message_id);
+                    }
+                    Ok(true)
+                },
             )
             .await
-            .caused_by(trc::location!())?
-            .into_iter()
-        {
-            // Make sure the message is still in Inbox
-            if let Some(item) = uid_mailbox
-                .unarchive::<MessageData>()
-                .caused_by(trc::location!())?
-                .mailboxes
-                .iter()
-                .find(|item| item.mailbox_id == INBOX_ID)
-            {
-                debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
-                message_map.insert(u32::from(item.uid), message_id);
-            }
-        }
+            .caused_by(trc::location!())?;
 
         // Create mailbox
         let mut mailbox = Mailbox {

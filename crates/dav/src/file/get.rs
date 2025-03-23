@@ -88,8 +88,8 @@ impl FileGetRequestHandler for Server {
                 collection: resource.collection,
                 document_id: resource.resource.into(),
                 etag: etag.clone().into(),
-                lock_token: None,
                 path: resource_.resource.unwrap(),
+                ..Default::default()
             }],
             Default::default(),
             DavMethod::GET,

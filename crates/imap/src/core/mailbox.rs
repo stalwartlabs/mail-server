@@ -159,39 +159,40 @@ impl<T: SessionStream> SessionData<T> {
         let mut special_uses = AHashMap::new();
         let mut mailbox_topology = TopologicalSort::with_capacity(10);
 
-        for (mailbox_id, mailbox_) in self
-            .server
-            .get_properties::<Archive<AlignedBytes>, _>(
+        self.server
+            .get_archives(
                 account_id,
                 Collection::Mailbox,
                 &mailbox_ids,
                 Property::Value,
+                |mailbox_id, mailbox_| {
+                    let mailbox = mailbox_
+                        .unarchive::<email::mailbox::Mailbox>()
+                        .caused_by(trc::location!())?;
+                    // Map special uses
+                    let role = SpecialUse::from(&mailbox.role);
+                    if !matches!(mailbox.role, ArchivedSpecialUse::None) {
+                        special_uses.insert(role, mailbox_id);
+                    }
+
+                    // Build mailbox data
+                    let mailbox = MailboxData {
+                        mailbox_id,
+                        parent_id: u32::from(mailbox.parent_id),
+                        role,
+                        name: mailbox.name.to_string(),
+                        is_subscribed: mailbox.is_subscribed(access_token.primary_id()),
+                    };
+                    mailbox_topology.insert(mailbox.parent_id, mailbox.mailbox_id + 1);
+
+                    // Add mailbox id
+                    mailboxes.insert(mailbox.mailbox_id, mailbox);
+
+                    Ok(true)
+                },
             )
             .await
-            .caused_by(trc::location!())?
-        {
-            let mailbox = mailbox_
-                .unarchive::<email::mailbox::Mailbox>()
-                .caused_by(trc::location!())?;
-            // Map special uses
-            let role = SpecialUse::from(&mailbox.role);
-            if !matches!(mailbox.role, ArchivedSpecialUse::None) {
-                special_uses.insert(role, mailbox_id);
-            }
-
-            // Build mailbox data
-            let mailbox = MailboxData {
-                mailbox_id,
-                parent_id: u32::from(mailbox.parent_id),
-                role,
-                name: mailbox.name.to_string(),
-                is_subscribed: mailbox.is_subscribed(access_token.primary_id()),
-            };
-            mailbox_topology.insert(mailbox.parent_id, mailbox.mailbox_id + 1);
-
-            // Add mailbox id
-            mailboxes.insert(mailbox.mailbox_id, mailbox);
-        }
+            .caused_by(trc::location!())?;
 
         // Build account
         let message_ids = self

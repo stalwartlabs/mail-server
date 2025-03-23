@@ -50,40 +50,40 @@ impl<T: SessionStream> SessionData<T> {
 
         // Obtain all message ids
         let mut uid_map = BTreeMap::new();
-        for (message_id, message_data_) in self
-            .server
-            .get_properties::<Archive<AlignedBytes>, _>(
+        self.server
+            .get_archives(
                 mailbox.account_id,
                 Collection::Email,
                 &message_ids,
                 Property::Value,
+                |message_id, message_data_| {
+                    let message_data = message_data_
+                        .unarchive::<MessageData>()
+                        .caused_by(trc::location!())?;
+                    // Make sure the message is still in this mailbox
+                    if let Some(item) = message_data
+                        .mailboxes
+                        .iter()
+                        .find(|item| item.mailbox_id == mailbox.mailbox_id)
+                    {
+                        debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
+                        if uid_map.insert(u32::from(item.uid), message_id).is_some() {
+                            trc::event!(
+                                Store(trc::StoreEvent::UnexpectedError),
+                                AccountId = mailbox.account_id,
+                                Collection = Collection::Mailbox,
+                                MailboxId = mailbox.mailbox_id,
+                                MessageId = message_id,
+                                SpanId = self.session_id,
+                                Details = "Duplicate IMAP UID"
+                            );
+                        }
+                    }
+
+                    Ok(true)
+                },
             )
-            .await?
-            .into_iter()
-        {
-            let message_data = message_data_
-                .unarchive::<MessageData>()
-                .caused_by(trc::location!())?;
-            // Make sure the message is still in this mailbox
-            if let Some(item) = message_data
-                .mailboxes
-                .iter()
-                .find(|item| item.mailbox_id == mailbox.mailbox_id)
-            {
-                debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
-                if uid_map.insert(u32::from(item.uid), message_id).is_some() {
-                    trc::event!(
-                        Store(trc::StoreEvent::UnexpectedError),
-                        AccountId = mailbox.account_id,
-                        Collection = Collection::Mailbox,
-                        MailboxId = mailbox.mailbox_id,
-                        MessageId = message_id,
-                        SpanId = self.session_id,
-                        Details = "Duplicate IMAP UID"
-                    );
-                }
-            }
-        }
+            .await?;
 
         // Obtain UID next and assign UIDs
         let mut uid_max = 0;

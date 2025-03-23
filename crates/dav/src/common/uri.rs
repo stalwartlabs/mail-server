@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::fmt::Display;
+
 use common::{Server, auth::AccessToken};
 
 use directory::backend::internal::manage::ManageDirectory;
@@ -18,6 +20,11 @@ pub(crate) struct UriResource<A, R> {
     pub collection: Collection,
     pub account_id: A,
     pub resource: R,
+}
+
+pub(crate) enum Urn {
+    Lock { expires: u64, id: u64 },
+    Sync { id: u64 },
 }
 
 pub(crate) type UnresolvedUri<'x> = UriResource<Option<u32>, Option<&'x str>>;
@@ -112,6 +119,48 @@ impl OwnedUri<'_> {
             collection,
             account_id,
             resource,
+        }
+    }
+}
+
+impl Urn {
+    pub fn parse(input: &str) -> Option<Self> {
+        let inbox = input.strip_prefix("urn:stalwart:")?;
+        let (kind, id) = inbox.split_once(':')?;
+        match kind {
+            "davlock" => u128::from_str_radix(id, 16).ok().map(|id| Urn::Lock {
+                expires: (id >> 64) as u64,
+                id: id as u64,
+            }),
+            "davsync" => u64::from_str_radix(id, 16).ok().map(|id| Urn::Sync { id }),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_lock(&self) -> Option<(u64, u64)> {
+        match self {
+            Urn::Lock { expires, id } => Some((*expires, *id)),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_sync(&self) -> Option<u64> {
+        match self {
+            Urn::Sync { id } => Some(*id),
+            _ => None,
+        }
+    }
+}
+
+impl Display for Urn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Urn::Lock { expires, id } => write!(
+                f,
+                "urn:stalwart:davlock:{:x}",
+                (u128::from(*expires) << 64) | u128::from(*id)
+            ),
+            Urn::Sync { id } => write!(f, "urn:stalwart:davsync:{:x}", id),
         }
     }
 }

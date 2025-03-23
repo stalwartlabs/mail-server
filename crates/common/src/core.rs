@@ -18,8 +18,8 @@ use store::{
     dispatch::DocumentSet,
     roaring::RoaringBitmap,
     write::{
-        BatchBuilder, BitmapClass, BlobOp, DirectoryClass, QueueClass, TagValue, ValueClass,
-        key::DeserializeBigEndian, log::ChangeLogBuilder, now,
+        AlignedBytes, Archive, BatchBuilder, BitmapClass, BlobOp, DirectoryClass, QueueClass,
+        TagValue, ValueClass, key::DeserializeBigEndian, log::ChangeLogBuilder, now,
     },
 };
 use trc::AddContext;
@@ -380,21 +380,20 @@ impl Server {
             })
     }
 
-    pub async fn get_properties<U, I>(
+    pub async fn get_archives<I, CB>(
         &self,
         account_id: u32,
         collection: Collection,
-        iterate: &I,
+        documents: &I,
         property: Property,
-    ) -> trc::Result<Vec<(u32, U)>>
+        mut cb: CB,
+    ) -> trc::Result<()>
     where
         I: DocumentSet + Send + Sync,
-        U: Deserialize + 'static,
+        CB: FnMut(u32, Archive<AlignedBytes>) -> trc::Result<bool> + Send + Sync,
     {
         let property: u8 = property.as_ref().into();
         let collection: u8 = collection.into();
-        let expected_results = iterate.len();
-        let mut results = Vec::with_capacity(expected_results);
 
         self.core
             .storage
@@ -404,21 +403,21 @@ impl Server {
                     ValueKey {
                         account_id,
                         collection,
-                        document_id: iterate.min(),
+                        document_id: documents.min(),
                         class: ValueClass::Property(property),
                     },
                     ValueKey {
                         account_id,
                         collection,
-                        document_id: iterate.max(),
+                        document_id: documents.max(),
                         class: ValueClass::Property(property),
                     },
                 ),
                 |key, value| {
                     let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
-                    if iterate.contains(document_id) {
-                        results.push((document_id, U::deserialize(value)?));
-                        Ok(expected_results == 0 || results.len() < expected_results)
+                    if documents.contains(document_id) {
+                        <Archive<AlignedBytes> as Deserialize>::deserialize(value)
+                            .and_then(|archive| cb(document_id, archive))
                     } else {
                         Ok(true)
                     }
@@ -431,7 +430,6 @@ impl Server {
                     .collection(collection)
                     .id(property.to_string())
             })
-            .map(|_| results)
     }
 
     pub async fn get_document_ids(

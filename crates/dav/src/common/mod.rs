@@ -13,7 +13,7 @@ use store::{
     U32_LEN,
     write::{Archive, BatchBuilder, MaybeDynamicValue, Operation, ValueClass, ValueOp},
 };
-use uri::OwnedUri;
+use uri::{OwnedUri, Urn};
 
 pub mod acl;
 pub mod lock;
@@ -96,7 +96,13 @@ impl<'x> DavQuery<'x> {
             resource,
             propfind: changes.properties,
             base_uri: headers.base_uri().unwrap_or_default(),
-            from_change_id: changes.sync_token.and_then(|s| s.parse().ok()),
+            from_change_id: changes
+                .sync_token
+                .as_deref()
+                .and_then(Urn::parse)
+                .and_then(|urn| urn.try_unwrap_sync())
+                .unwrap_or_default()
+                .into(),
             depth: if changes.level_inf { usize::MAX } else { 1 },
             limit: changes.limit,
             ret: headers.ret,

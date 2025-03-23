@@ -101,8 +101,8 @@ impl FileUpdateRequestHandler for Server {
                     collection: resource.collection,
                     document_id: Some(document_id),
                     etag: node_archive_.etag().into(),
-                    lock_token: None,
                     path: resource_name,
+                    ..Default::default()
                 }],
                 Default::default(),
                 DavMethod::PUT,
@@ -218,9 +218,8 @@ impl FileUpdateRequestHandler for Server {
                     account_id,
                     collection: resource.collection,
                     document_id: Some(u32::MAX),
-                    etag: None,
-                    lock_token: None,
                     path: orig_resource_name,
+                    ..Default::default()
                 }],
                 Default::default(),
                 DavMethod::PUT,

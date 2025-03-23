@@ -4,9 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken};
+use common::{FileItem, Server, auth::AccessToken};
 use dav_proto::schema::{
-    property::{DavProperty, WebDavProperty},
+    property::{
+        DavProperty, DavValue, ReportSet, ResourceType, Rfc1123DateTime, SupportedLock,
+        WebDavProperty,
+    },
     request::{DavPropertyValue, PropFind},
     response::{MultiStatus, PropStat, Response},
 };
@@ -25,7 +28,7 @@ use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    common::DavQuery,
+    common::{DavQuery, ETag, lock::LockData, uri::Urn},
     principal::propfind::{PrincipalPropFind, PrincipalResource},
 };
 
@@ -66,7 +69,7 @@ impl HandleFilePropFindRequest for Server {
         };
 
         // Filter by changelog
-        let mut last_change_id = None;
+        let mut sync_token = None;
         if let Some(change_id) = query.from_change_id {
             let changelog = self
                 .store()
@@ -78,7 +81,12 @@ impl HandleFilePropFindRequest for Server {
                 self.core.dav.max_changes,
             );
             if changelog.to_change_id != 0 {
-                last_change_id = Some(changelog.to_change_id);
+                sync_token = Some(
+                    Urn::Sync {
+                        id: changelog.to_change_id,
+                    }
+                    .to_string(),
+                );
             }
             let mut changes =
                 RoaringBitmap::from_iter(changelog.changes.iter().map(|change| change.id() as u32));
@@ -93,21 +101,16 @@ impl HandleFilePropFindRequest for Server {
         }
 
         let mut response = MultiStatus::new(Vec::with_capacity(16));
-        let mut paths = if let Some(resource) = query.resource.resource {
-            files
-                .subtree_with_depth(resource, query.depth)
-                .filter(|item| {
-                    document_ids
-                        .as_ref()
-                        .is_none_or(|d| d.contains(item.document_id))
-                })
-                .map(|item| {
-                    (
-                        item.document_id,
-                        (query.format_to_base_uri(&item.name), item.is_container),
-                    )
-                })
-                .collect::<AHashMap<_, _>>()
+        let paths = if let Some(resource) = query.resource.resource {
+            Paths::new(
+                files
+                    .subtree_with_depth(resource, query.depth)
+                    .filter(|item| {
+                        document_ids
+                            .as_ref()
+                            .is_none_or(|d| d.contains(item.document_id))
+                    }),
+            )
         } else {
             if !query.depth_no_root || query.from_change_id.is_none() {
                 self.prepare_principal_propfind_response(
@@ -123,20 +126,11 @@ impl HandleFilePropFindRequest for Server {
                         .with_xml_body(response.to_string()));
                 }
             }
-            files
-                .tree_with_depth(query.depth - 1)
-                .filter(|item| {
-                    document_ids
-                        .as_ref()
-                        .is_none_or(|d| d.contains(item.document_id))
-                })
-                .map(|item| {
-                    (
-                        item.document_id,
-                        (query.format_to_base_uri(&item.name), item.is_container),
-                    )
-                })
-                .collect::<AHashMap<_, _>>()
+            Paths::new(files.tree_with_depth(query.depth - 1).filter(|item| {
+                document_ids
+                    .as_ref()
+                    .is_none_or(|d| d.contains(item.document_id))
+            }))
         };
 
         if paths.is_empty() && query.from_change_id.is_none() {
@@ -153,12 +147,26 @@ impl HandleFilePropFindRequest for Server {
         let todo = "prefer minimal";
 
         // Prepare response
-        let (fields, is_all_prop) = match query.propfind {
+        let (fields, is_all_prop) = match &query.propfind {
             PropFind::PropName => {
-                for (_, (path, is_container)) in paths {
+                for (_, item) in paths.items {
+                    let props = if item.is_container {
+                        FOLDER_PROPS
+                            .iter()
+                            .cloned()
+                            .map(DavPropertyValue::empty)
+                            .collect::<Vec<_>>()
+                    } else {
+                        FILE_PROPS
+                            .iter()
+                            .cloned()
+                            .map(DavPropertyValue::empty)
+                            .collect::<Vec<_>>()
+                    };
+
                     response.add_response(Response::new_propstat(
-                        path,
-                        vec![PropStat::new_list(all_properties(is_container))],
+                        query.format_to_base_uri(&item.name),
+                        vec![PropStat::new_list(props)],
                     ));
                 }
 
@@ -166,117 +174,350 @@ impl HandleFilePropFindRequest for Server {
                     HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string())
                 );
             }
-            PropFind::AllProp(items) => (
-                items
-                    .into_iter()
-                    .filter(|v| matches!(v, DavProperty::DeadProperty(_)))
-                    .map(DavPropertyValue::empty)
-                    .collect::<Vec<_>>(),
-                true,
-            ),
-            PropFind::Prop(items) => (
-                items
-                    .into_iter()
-                    .map(DavPropertyValue::empty)
-                    .collect::<Vec<_>>(),
-                false,
-            ),
+            PropFind::AllProp(items) => (items, true),
+            PropFind::Prop(items) => (items, false),
         };
 
-        for (document_id, node_) in self
-            .get_properties::<Archive<AlignedBytes>, _>(
-                account_id,
-                Collection::FileNode,
-                &Paths(&paths),
-                Property::Value,
-            )
-            .await
-            .caused_by(trc::location!())?
+        // Fetch sync token
+        if sync_token.is_none()
+            && (is_all_prop
+                || query.from_change_id.is_some()
+                || fields
+                    .iter()
+                    .any(|field| matches!(field, DavProperty::WebDav(WebDavProperty::SyncToken))))
         {
-            let node = node_.unarchive::<FileNode>().caused_by(trc::location!())?;
-            let (node_path, _) = paths.remove(&document_id).unwrap();
-            let is_container = node.file.is_none();
-            let mut fields = if is_all_prop {
-                let mut all_fields = all_properties(is_container);
-                if !fields.is_empty() {
-                    all_fields.extend(fields.iter().cloned());
-                }
-                all_fields
-            } else {
-                fields.clone()
-            };
-
-            // Fill properties
-            for fields in &mut fields {}
-
-            // Add response
-            response.add_response(Response::new_propstat(
-                node_path,
-                vec![PropStat::new_list(fields)],
-            ));
+            let id = self
+                .store()
+                .get_last_change_id(account_id, Collection::FileNode)
+                .await
+                .caused_by(trc::location!())?
+                .unwrap_or_default();
+            sync_token = Some(Urn::Sync { id }.to_string())
         }
+
+        // Add sync token
+        if query.from_change_id.is_some() {
+            response = response.with_sync_token(sync_token.clone().unwrap());
+        }
+
+        // Fetch locks
+        #[allow(unused_assignments)]
+        let mut locks_ = None;
+        let mut locks = None;
+        if is_all_prop
+            || fields
+                .iter()
+                .any(|field| matches!(field, DavProperty::WebDav(WebDavProperty::LockDiscovery)))
+        {
+            if let Some(lock_archive) = self
+                .in_memory_store()
+                .key_get::<Archive<AlignedBytes>>(query.resource.lock_key().as_slice())
+                .await
+                .caused_by(trc::location!())?
+            {
+                locks_ = Some(lock_archive);
+                locks = Some(
+                    locks_
+                        .as_ref()
+                        .unwrap()
+                        .unarchive::<LockData>()
+                        .caused_by(trc::location!())?,
+                );
+            }
+        }
+
+        self.get_archives(
+            account_id,
+            Collection::FileNode,
+            &paths,
+            Property::Value,
+            |document_id, node_| {
+                let node = node_.unarchive::<FileNode>().caused_by(trc::location!())?;
+                let item = paths.items.get(&document_id).unwrap();
+                let is_container = node.file.is_none();
+                let properties: Box<dyn Iterator<Item = &DavProperty>> = if is_all_prop {
+                    Box::new(if is_container {
+                        FOLDER_PROPS.iter()
+                    } else {
+                        FILE_PROPS.iter()
+                    })
+                } else {
+                    Box::new(fields.iter())
+                };
+
+                // Fill properties
+                let mut fields = Vec::with_capacity(19);
+                let mut fields_not_found = Vec::new();
+                for property in properties {
+                    match property {
+                        DavProperty::WebDav(dav_property) => match dav_property {
+                            WebDavProperty::CreationDate => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    DavValue::Timestamp(node.created.into()),
+                                ));
+                            }
+                            WebDavProperty::DisplayName => {
+                                if let Some(name) = node.display_name.as_ref() {
+                                    fields.push(DavPropertyValue::new(
+                                        property.clone(),
+                                        DavValue::String(name.to_string()),
+                                    ));
+                                } else if !is_all_prop {
+                                    fields_not_found
+                                        .push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::GetContentLanguage => {
+                                if !is_all_prop {
+                                    fields_not_found
+                                        .push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::GetContentLength => {
+                                if let Some(value) = node.file.as_ref() {
+                                    fields.push(DavPropertyValue::new(
+                                        property.clone(),
+                                        DavValue::Uint64(u32::from(value.size) as u64),
+                                    ));
+                                } else if !is_all_prop {
+                                    fields_not_found
+                                        .push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::GetContentType => {
+                                if let Some(value) =
+                                    node.file.as_ref().and_then(|file| file.media_type.as_ref())
+                                {
+                                    fields.push(DavPropertyValue::new(
+                                        property.clone(),
+                                        DavValue::String(value.to_string()),
+                                    ));
+                                } else if !is_all_prop {
+                                    fields_not_found
+                                        .push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::GetETag => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    DavValue::String(node_.etag()),
+                                ));
+                            }
+                            WebDavProperty::GetLastModified => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    DavValue::Rfc1123Date(Rfc1123DateTime::new(
+                                        node.modified.into(),
+                                    )),
+                                ));
+                            }
+                            WebDavProperty::ResourceType => {
+                                if node.file.is_none() {
+                                    fields.push(DavPropertyValue::new(
+                                        property.clone(),
+                                        vec![ResourceType::Collection],
+                                    ));
+                                } else {
+                                    fields.push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::LockDiscovery => {
+                                if let Some((path, lock)) =
+                                    locks.as_ref().and_then(|locks| locks.find_lock(&item.name))
+                                {
+                                    fields.push(DavPropertyValue::new(
+                                        property.clone(),
+                                        vec![lock.to_active_lock(query.format_to_base_uri(path))],
+                                    ));
+                                } else {
+                                    fields.push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::SupportedLock => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    SupportedLock::default(),
+                                ));
+                            }
+                            WebDavProperty::SupportedReportSet => {
+                                if node.file.is_none() {
+                                    fields.push(DavPropertyValue::new(
+                                        property.clone(),
+                                        vec![ReportSet::SyncCollection],
+                                    ));
+                                } else if !is_all_prop {
+                                    fields_not_found
+                                        .push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::SyncToken => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    sync_token.clone().unwrap(),
+                                ));
+                            }
+                            WebDavProperty::CurrentUserPrincipal => todo!(),
+                            WebDavProperty::QuotaAvailableBytes => todo!(),
+                            WebDavProperty::QuotaUsedBytes => todo!(),
+                            WebDavProperty::AlternateURISet => todo!(),
+                            WebDavProperty::PrincipalURL => todo!(),
+                            WebDavProperty::GroupMemberSet => todo!(),
+                            WebDavProperty::GroupMembership => todo!(),
+                            WebDavProperty::Owner => todo!(),
+                            WebDavProperty::Group => {
+                                if !is_all_prop {
+                                    fields_not_found
+                                        .push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::SupportedPrivilegeSet => todo!(),
+                            WebDavProperty::CurrentUserPrivilegeSet => todo!(),
+                            WebDavProperty::Acl => todo!(),
+                            WebDavProperty::AclRestrictions => todo!(),
+                            WebDavProperty::InheritedAclSet => todo!(),
+                            WebDavProperty::PrincipalCollectionSet => todo!(),
+                        },
+                        DavProperty::DeadProperty(tag) => {
+                            if let Some(value) = node.dead_properties.find_tag(&tag.name) {
+                                fields.push(DavPropertyValue::new(property.clone(), value));
+                            } else {
+                                fields_not_found.push(DavPropertyValue::empty(property.clone()));
+                            }
+                        }
+                        property => {
+                            if !is_all_prop {
+                                fields_not_found.push(DavPropertyValue::empty(property.clone()));
+                            }
+                        }
+                    }
+                }
+
+                // Add dead properties
+                if is_all_prop && !node.dead_properties.0.is_empty() {
+                    node.dead_properties.to_dav_values(&mut fields);
+                }
+
+                // Add response
+                let mut prop_stat = Vec::with_capacity(2);
+                if !fields.is_empty() {
+                    prop_stat.push(PropStat::new_list(fields));
+                }
+                if !fields_not_found.is_empty() {
+                    prop_stat.push(
+                        PropStat::new_list(fields_not_found).with_status(StatusCode::NOT_FOUND),
+                    );
+                }
+                response.add_response(Response::new_propstat(
+                    query.format_to_base_uri(&item.name),
+                    prop_stat,
+                ));
+
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())?;
 
         Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
     }
 }
 
-fn all_properties(is_container: bool) -> Vec<DavPropertyValue> {
-    let mut props = vec![
-        DavPropertyValue::empty(WebDavProperty::CreationDate),
-        DavPropertyValue::empty(WebDavProperty::DisplayName),
-        DavPropertyValue::empty(WebDavProperty::GetETag),
-        DavPropertyValue::empty(WebDavProperty::GetLastModified),
-        DavPropertyValue::empty(WebDavProperty::ResourceType),
-        DavPropertyValue::empty(WebDavProperty::LockDiscovery),
-        DavPropertyValue::empty(WebDavProperty::SupportedLock),
-        DavPropertyValue::empty(WebDavProperty::CurrentUserPrincipal),
-        DavPropertyValue::empty(WebDavProperty::SyncToken),
-        DavPropertyValue::empty(WebDavProperty::Owner),
-        DavPropertyValue::empty(WebDavProperty::SupportedPrivilegeSet),
-        DavPropertyValue::empty(WebDavProperty::CurrentUserPrivilegeSet),
-        DavPropertyValue::empty(WebDavProperty::Acl),
-        DavPropertyValue::empty(WebDavProperty::AclRestrictions),
-        DavPropertyValue::empty(WebDavProperty::InheritedAclSet),
-        DavPropertyValue::empty(WebDavProperty::PrincipalCollectionSet),
-    ];
+static FOLDER_PROPS: [DavProperty; 19] = [
+    DavProperty::WebDav(WebDavProperty::CreationDate),
+    DavProperty::WebDav(WebDavProperty::DisplayName),
+    DavProperty::WebDav(WebDavProperty::GetETag),
+    DavProperty::WebDav(WebDavProperty::GetLastModified),
+    DavProperty::WebDav(WebDavProperty::ResourceType),
+    DavProperty::WebDav(WebDavProperty::LockDiscovery),
+    DavProperty::WebDav(WebDavProperty::SupportedLock),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+    DavProperty::WebDav(WebDavProperty::SyncToken),
+    DavProperty::WebDav(WebDavProperty::Owner),
+    DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::Acl),
+    DavProperty::WebDav(WebDavProperty::AclRestrictions),
+    DavProperty::WebDav(WebDavProperty::InheritedAclSet),
+    DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
+    DavProperty::WebDav(WebDavProperty::SupportedReportSet),
+    DavProperty::WebDav(WebDavProperty::QuotaAvailableBytes),
+    DavProperty::WebDav(WebDavProperty::QuotaUsedBytes),
+];
 
-    if is_container {
-        props.extend([
-            DavPropertyValue::empty(WebDavProperty::SupportedReportSet),
-            DavPropertyValue::empty(WebDavProperty::QuotaAvailableBytes),
-            DavPropertyValue::empty(WebDavProperty::QuotaUsedBytes),
-        ]);
-    } else {
-        props.extend([
-            DavPropertyValue::empty(WebDavProperty::GetContentLanguage),
-            DavPropertyValue::empty(WebDavProperty::GetContentLength),
-            DavPropertyValue::empty(WebDavProperty::GetContentType),
-        ]);
-    }
+static FILE_PROPS: [DavProperty; 19] = [
+    DavProperty::WebDav(WebDavProperty::CreationDate),
+    DavProperty::WebDav(WebDavProperty::DisplayName),
+    DavProperty::WebDav(WebDavProperty::GetETag),
+    DavProperty::WebDav(WebDavProperty::GetLastModified),
+    DavProperty::WebDav(WebDavProperty::ResourceType),
+    DavProperty::WebDav(WebDavProperty::LockDiscovery),
+    DavProperty::WebDav(WebDavProperty::SupportedLock),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+    DavProperty::WebDav(WebDavProperty::SyncToken),
+    DavProperty::WebDav(WebDavProperty::Owner),
+    DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::Acl),
+    DavProperty::WebDav(WebDavProperty::AclRestrictions),
+    DavProperty::WebDav(WebDavProperty::InheritedAclSet),
+    DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
+    DavProperty::WebDav(WebDavProperty::GetContentLanguage),
+    DavProperty::WebDav(WebDavProperty::GetContentLength),
+    DavProperty::WebDav(WebDavProperty::GetContentType),
+];
 
-    props
+struct Paths<'x> {
+    min: u32,
+    max: u32,
+    items: AHashMap<u32, &'x FileItem>,
 }
 
-struct Paths<'x>(&'x AHashMap<u32, (String, bool)>);
+impl<'x> Paths<'x> {
+    pub fn new(iter: impl Iterator<Item = &'x FileItem>) -> Self {
+        let mut paths = Paths {
+            min: u32::MAX,
+            max: 0,
+            items: AHashMap::with_capacity(16),
+        };
+
+        for item in iter {
+            if item.document_id < paths.min {
+                paths.min = item.document_id;
+            }
+
+            if item.document_id > paths.max {
+                paths.max = item.document_id;
+            }
+
+            paths.items.insert(item.document_id, item);
+        }
+        paths
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
 
 impl DocumentSet for Paths<'_> {
     fn min(&self) -> u32 {
-        unimplemented!()
+        self.min
     }
 
     fn max(&self) -> u32 {
-        unimplemented!()
+        self.max
     }
 
     fn contains(&self, id: u32) -> bool {
-        self.0.contains_key(&id)
+        self.items.contains_key(&id)
     }
 
     fn len(&self) -> usize {
-        self.0.len()
+        self.items.len()
     }
 
     fn iterate(&self) -> impl Iterator<Item = u32> {
-        self.0.keys().copied()
+        self.items.keys().copied()
     }
 }
