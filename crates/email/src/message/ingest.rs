@@ -167,7 +167,14 @@ impl EmailIngest for Server {
                         .headers
                         .status
                         .as_ref()
-                        .and_then(|name| message.header(name.as_str()).and_then(|v| v.as_text()))
+                        .and_then(|name| {
+                            message
+                                .root_part()
+                                .headers
+                                .iter()
+                                .find(|h| h.name.as_str().eq_ignore_ascii_case(name.as_str()))
+                                .and_then(|v| v.value.as_text())
+                        })
                         .is_some_and(|v| v.contains("Yes"));
 
                     // Classify the message with user's model
