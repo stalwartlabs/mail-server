@@ -25,7 +25,6 @@ use crate::{
 };
 
 pub mod acl;
-pub mod changes;
 pub mod copy_move;
 pub mod delete;
 pub mod get;

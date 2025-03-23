@@ -103,8 +103,8 @@ impl FilePropPatchRequestHandler for Server {
                 collection: resource.collection,
                 document_id: resource.resource.into(),
                 etag: node_.etag().into(),
-                lock_token: None,
                 path: resource_.resource.unwrap(),
+                ..Default::default()
             }],
             Default::default(),
             DavMethod::PROPPATCH,

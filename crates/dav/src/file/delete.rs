@@ -95,9 +95,8 @@ impl FileDeleteRequestHandler for Server {
                 account_id,
                 collection: resource.collection,
                 document_id: document_id.into(),
-                etag: None,
-                lock_token: None,
                 path: delete_path,
+                ..Default::default()
             }],
             Default::default(),
             DavMethod::DELETE,

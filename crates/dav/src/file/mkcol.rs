@@ -75,9 +75,8 @@ impl FileMkColRequestHandler for Server {
                 account_id,
                 collection: resource.collection,
                 document_id: Some(u32::MAX),
-                etag: None,
-                lock_token: None,
                 path: resource_.resource.unwrap(),
+                ..Default::default()
             }],
             Default::default(),
             DavMethod::MKCOL,

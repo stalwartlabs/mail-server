@@ -24,7 +24,7 @@ use jmap_proto::types::{
 };
 use store::{
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder},
+    write::{BatchBuilder, log::ChangeLogBuilder},
 };
 
 use super::{ImapContext, ToModSeq};
@@ -189,53 +189,62 @@ impl<T: SessionStream> SessionData<T> {
         changelog: &mut ChangeLogBuilder,
     ) -> trc::Result<()> {
         let mut destroy_ids = RoaringBitmap::new();
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Email);
 
-        for (id, data_) in self
-            .server
-            .get_properties::<Archive<AlignedBytes>, _>(
+        self.server
+            .get_archives(
                 account_id,
                 Collection::Email,
                 deleted_ids,
                 Property::Value,
+                |id, data_| {
+                    let data = data_
+                        .to_unarchived::<MessageData>()
+                        .caused_by(trc::location!())?;
+
+                    if !data.inner.has_mailbox_id(mailbox_id) {
+                        return Ok(true);
+                    } else if data.inner.mailboxes.len() == 1 {
+                        destroy_ids.insert(id);
+                        return Ok(true);
+                    }
+
+                    // Prepare changes
+                    let mut new_data = data.deserialize().caused_by(trc::location!())?;
+                    if changelog.change_id == u64::MAX {
+                        changelog.change_id = self.server.assign_change_id(account_id)?
+                    }
+
+                    new_data.change_id = changelog.change_id;
+                    let thread_id = new_data.thread_id;
+
+                    // Untag message from this mailbox and remove Deleted flag
+                    new_data.remove_mailbox(mailbox_id);
+                    new_data.remove_keyword(&Keyword::Deleted);
+
+                    changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
+                    changelog.log_child_update(Collection::Mailbox, mailbox_id);
+
+                    // Write changes
+                    batch
+                        .update_document(id)
+                        .custom(
+                            ObjectIndexBuilder::new()
+                                .with_current(data)
+                                .with_changes(new_data),
+                        )
+                        .caused_by(trc::location!())?;
+
+                    Ok(true)
+                },
             )
             .await
-            .caused_by(trc::location!())?
-        {
-            let data = data_
-                .to_unarchived::<MessageData>()
-                .caused_by(trc::location!())?;
+            .caused_by(trc::location!())?;
 
-            if !data.inner.has_mailbox_id(mailbox_id) {
-                continue;
-            } else if data.inner.mailboxes.len() == 1 {
-                destroy_ids.insert(id);
-                continue;
-            }
-
-            // Prepare changes
-            let mut new_data = data.deserialize().caused_by(trc::location!())?;
-            if changelog.change_id == u64::MAX {
-                changelog.change_id = self.server.assign_change_id(account_id)?
-            }
-            new_data.change_id = changelog.change_id;
-            let thread_id = new_data.thread_id;
-
-            // Untag message from this mailbox and remove Deleted flag
-            new_data.remove_mailbox(mailbox_id);
-            new_data.remove_keyword(&Keyword::Deleted);
-
-            // Write changes
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Email)
-                .update_document(id)
-                .custom(
-                    ObjectIndexBuilder::new()
-                        .with_current(data)
-                        .with_changes(new_data),
-                )
-                .caused_by(trc::location!())?;
+        if !batch.is_empty() {
             match self
                 .server
                 .store()
@@ -243,10 +252,7 @@ impl<T: SessionStream> SessionData<T> {
                 .await
                 .caused_by(trc::location!())
             {
-                Ok(_) => {
-                    changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
-                    changelog.log_child_update(Collection::Mailbox, mailbox_id);
-                }
+                Ok(_) => {}
                 Err(err) => {
                     if !err.is_assertion_failure() {
                         return Err(err.caused_by(trc::location!()));

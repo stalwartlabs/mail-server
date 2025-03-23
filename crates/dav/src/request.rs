@@ -22,11 +22,13 @@ use hyper::{StatusCode, header};
 
 use crate::{
     DavError, DavMethod, DavResource,
-    common::{lock::LockRequestHandler, propfind::PropFindRequestHandler},
+    common::{
+        DavQuery, lock::LockRequestHandler, propfind::PropFindRequestHandler, uri::DavUriResource,
+    },
     file::{
-        acl::FileAclRequestHandler, changes::FileChangesRequestHandler,
-        copy_move::FileCopyMoveRequestHandler, delete::FileDeleteRequestHandler,
-        get::FileGetRequestHandler, mkcol::FileMkColRequestHandler,
+        acl::FileAclRequestHandler, copy_move::FileCopyMoveRequestHandler,
+        delete::FileDeleteRequestHandler, get::FileGetRequestHandler,
+        mkcol::FileMkColRequestHandler, propfind::HandleFilePropFindRequest,
         proppatch::FilePropPatchRequestHandler, update::FileUpdateRequestHandler,
     },
 };
@@ -197,8 +199,24 @@ impl DavRequestDispatcher for Server {
             }
             DavMethod::REPORT => match Report::parse(&mut Tokenizer::new(&body))? {
                 Report::SyncCollection(sync_collection) => {
-                    self.handle_file_changes_request(&access_token, headers, sync_collection)
+                    let uri = self
+                        .validate_uri(&access_token, headers.uri)
                         .await
+                        .and_then(|d| d.into_owned_uri())?;
+                    match resource {
+                        DavResource::Card => todo!(),
+                        DavResource::Cal => todo!(),
+                        DavResource::File => {
+                            self.handle_file_propfind_request(
+                                &access_token,
+                                DavQuery::changes(uri, sync_collection, headers),
+                            )
+                            .await
+                        }
+                        DavResource::Principal => {
+                            Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
+                        }
+                    }
                 }
                 Report::Addressbook(addressbook_query) => todo!(),
                 Report::AdressbookMultiGet(multi_get) => todo!(),

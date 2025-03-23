@@ -199,17 +199,15 @@ impl FileCopyMoveRequestHandler for Server {
                     account_id: from_account_id,
                     collection: Collection::FileNode,
                     document_id: Some(from_resource.resource.document_id),
-                    etag: None,
-                    lock_token: None,
                     path: from_resource_.resource.unwrap(),
+                    ..Default::default()
                 },
                 ResourceState {
                     account_id: to_account_id,
                     collection: Collection::FileNode,
                     document_id: Some(destination.document_id.unwrap_or(u32::MAX)),
-                    etag: None,
-                    lock_token: None,
                     path: destination_resource_name,
+                    ..Default::default()
                 },
             ],
             Default::default(),

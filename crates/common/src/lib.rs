@@ -41,7 +41,6 @@ use mail_auth::{MX, Txt};
 use manager::webadmin::{Resource, WebAdminManager};
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
-use rkyv::munge::Borrow;
 use rustls::sign::CertifiedKey;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
@@ -103,7 +102,7 @@ pub const KV_LOCK_QUEUE_REPORT: u8 = 22;
 pub const KV_LOCK_EMAIL_TASK: u8 = 23;
 pub const KV_LOCK_HOUSEKEEPER: u8 = 24;
 pub const KV_LOCK_DAV: u8 = 25;
-pub const KV_SIEVE_ID: u8 = 27;
+pub const KV_SIEVE_ID: u8 = 26;
 
 #[derive(Clone)]
 pub struct Server {
