@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.11.7] - 2025-03-23
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+### Added
+- LDAP attribute to indicate password change (#1156).
+
+### Changed
+- Lazy DKIM key parsing (#1211).
+- Enable `edns0` for system resolver by default (#1282).
+- Bump FoundationDB to `7.3`.
+
+### Fixed
+- Fix incorrect `UIDNEXT` when mailbox is empty (#1201).
+- Sender variable not set when evaluating `must-match-sender` (#1294).
+- Do not panic when mailboxId is not found (#1293).
+- Prioritize local over span keys when serializing webhook payloads (#1250).
+- Allow TLS name mismatch as per RFC7671 Section 5.1.
+- Try with implicit MX when no MX records are found.
+- SQL `secrets` directory query.
+
 ## [0.11.5] - 2025-02-01
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
