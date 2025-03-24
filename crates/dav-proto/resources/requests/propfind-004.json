@@ -1,0 +1,11 @@
+{
+  "type": "AllProp",
+  "data": [
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "SupportedReportSet"
+      }
+    }
+  ]
+}

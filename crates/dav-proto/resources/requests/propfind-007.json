@@ -1,0 +1,43 @@
+{
+  "type": "Prop",
+  "data": [
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "CurrentUserPrivilegeSet"
+      }
+    },
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "ResourceType"
+      }
+    },
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "DisplayName"
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "apple:calendar-color",
+        "attrs": null
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "cs:source",
+        "attrs": null
+      }
+    },
+    {
+      "type": "CalDav",
+      "data": {
+        "type": "SupportedCalendarComponentSet"
+      }
+    }
+  ]
+}

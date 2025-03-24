@@ -1,0 +1,15 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:acl xmlns:D="DAV:">
+     <D:ace>
+       <D:principal>
+         <D:href>http://www.example.com/users/friends</D:href>
+       </D:principal>
+       <D:grant><D:read/></D:grant>
+      </D:ace>
+       <D:ace>
+       <D:principal>
+         <D:href>http://www.example.com/users/ygoland-so</D:href>
+       </D:principal>
+       <D:deny><D:read/></D:deny>
+     </D:ace>
+   </D:acl>

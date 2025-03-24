@@ -1,0 +1,86 @@
+{
+  "type": "Addressbook",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      },
+      {
+        "type": "CardDav",
+        "data": {
+          "type": "AddressData",
+          "data": [
+            {
+              "group": null,
+              "name": {
+                "type": "Version"
+              },
+              "no_value": false
+            },
+            {
+              "group": null,
+              "name": {
+                "type": "Uid"
+              },
+              "no_value": false
+            },
+            {
+              "group": null,
+              "name": {
+                "type": "Nickname"
+              },
+              "no_value": false
+            },
+            {
+              "group": null,
+              "name": {
+                "type": "Email"
+              },
+              "no_value": false
+            },
+            {
+              "group": null,
+              "name": {
+                "type": "Fn"
+              },
+              "no_value": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "filters": [
+    {
+      "type": "AnyOf"
+    },
+    {
+      "type": "AnyOf"
+    },
+    {
+      "type": "Property",
+      "comp": null,
+      "prop": {
+        "name": {
+          "type": "Nickname"
+        },
+        "group": null
+      },
+      "op": {
+        "type": "TextMatch",
+        "data": {
+          "type": "TextMatch",
+          "match_type": "Equals",
+          "value": "me",
+          "collation": "UnicodeCasemap",
+          "negate": false
+        }
+      }
+    }
+  ],
+  "limit": null
+}

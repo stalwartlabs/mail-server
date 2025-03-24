@@ -1,0 +1,29 @@
+{
+  "is_mkcalendar": false,
+  "props": [
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "ResourceType"
+        }
+      },
+      "value": {
+        "ResourceTypes": [
+          "Collection"
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "DisplayName"
+        }
+      },
+      "value": {
+        "String": "Special Resource"
+      }
+    }
+  ]
+}

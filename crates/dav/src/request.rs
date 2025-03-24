@@ -71,8 +71,6 @@ impl DavRequestDispatcher for Server {
         }
 
         // Dispatch
-        let todo = "lock tokens, headers, etc";
-
         match method {
             DavMethod::PROPFIND => {
                 self.handle_propfind_request(
@@ -189,14 +187,19 @@ impl DavRequestDispatcher for Server {
                 }
             },
             DavMethod::UNLOCK => self.handle_lock_request(&access_token, headers, None).await,
-            DavMethod::ACL => {
-                self.handle_file_acl_request(
-                    &access_token,
-                    headers,
-                    Acl::parse(&mut Tokenizer::new(&body))?,
-                )
-                .await
-            }
+            DavMethod::ACL => match resource {
+                DavResource::Card => todo!(),
+                DavResource::Cal => todo!(),
+                DavResource::File => {
+                    self.handle_file_acl_request(
+                        &access_token,
+                        headers,
+                        Acl::parse(&mut Tokenizer::new(&body))?,
+                    )
+                    .await
+                }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
+            },
             DavMethod::REPORT => match Report::parse(&mut Tokenizer::new(&body))? {
                 Report::SyncCollection(sync_collection) => {
                     let uri = self
@@ -219,7 +222,7 @@ impl DavRequestDispatcher for Server {
                     }
                 }
                 Report::Addressbook(addressbook_query) => todo!(),
-                Report::AdressbookMultiGet(multi_get) => todo!(),
+                Report::AddressbookMultiGet(multi_get) => todo!(),
                 Report::CalendarQuery(calendar_query) => todo!(),
                 Report::CalendarMultiGet(multi_get) => todo!(),
                 Report::FreeBusyQuery(free_busy_query) => todo!(),

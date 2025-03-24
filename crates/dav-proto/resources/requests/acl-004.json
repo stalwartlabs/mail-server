@@ -1,0 +1,53 @@
+{
+  "aces": [
+    {
+      "principal": {
+        "Href": "http://www.example.com/users/esedlar"
+      },
+      "invert": false,
+      "grant_deny": {
+        "Grant": [
+          "Read",
+          "Write"
+        ]
+      },
+      "protected": false,
+      "inherited": null
+    },
+    {
+      "principal": {
+        "Property": [
+          {
+            "property": {
+              "type": "WebDav",
+              "data": {
+                "type": "Owner"
+              }
+            },
+            "value": "Null"
+          }
+        ]
+      },
+      "invert": false,
+      "grant_deny": {
+        "Grant": [
+          "ReadAcl",
+          "WriteAcl"
+        ]
+      },
+      "protected": false,
+      "inherited": null
+    },
+    {
+      "principal": "All",
+      "invert": false,
+      "grant_deny": {
+        "Grant": [
+          "Read"
+        ]
+      },
+      "protected": false,
+      "inherited": null
+    }
+  ]
+}

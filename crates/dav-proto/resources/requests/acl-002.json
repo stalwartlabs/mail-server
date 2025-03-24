@@ -1,0 +1,17 @@
+{
+  "aces": [
+    {
+      "principal": {
+        "Href": "http://www.example.com/users/ejw"
+      },
+      "invert": false,
+      "grant_deny": {
+        "Grant": [
+          "Write"
+        ]
+      },
+      "protected": false,
+      "inherited": null
+    }
+  ]
+}

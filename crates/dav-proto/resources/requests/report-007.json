@@ -1,0 +1,72 @@
+{
+  "type": "CalendarQuery",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      },
+      {
+        "type": "CalDav",
+        "data": {
+          "type": "CalendarData",
+          "data": {
+            "properties": [],
+            "expand": null,
+            "limit_recurrence": null,
+            "limit_freebusy": null
+          }
+        }
+      }
+    ]
+  },
+  "filters": [
+    {
+      "type": "Property",
+      "comp": [
+        "VCalendar",
+        "VEvent"
+      ],
+      "prop": {
+        "type": "Attendee"
+      },
+      "op": {
+        "type": "TextMatch",
+        "data": {
+          "type": "TextMatch",
+          "match_type": "Contains",
+          "value": "mailto:lisa@example.com",
+          "collation": "AsciiCasemap",
+          "negate": false
+        }
+      }
+    },
+    {
+      "type": "Parameter",
+      "comp": [
+        "VCalendar",
+        "VEvent"
+      ],
+      "prop": {
+        "type": "Attendee"
+      },
+      "param": "Partstat",
+      "op": {
+        "type": "TextMatch",
+        "data": {
+          "type": "TextMatch",
+          "match_type": "Contains",
+          "value": "NEEDS-ACTION",
+          "collation": "AsciiCasemap",
+          "negate": false
+        }
+      }
+    }
+  ],
+  "timezone": {
+    "type": "None"
+  }
+}

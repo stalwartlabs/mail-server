@@ -1,0 +1,61 @@
+{
+  "type": "PrincipalPropertySearch",
+  "property_search": [
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "DisplayName"
+        }
+      },
+      "match_": "doE"
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "B:title",
+          "attrs": null
+        }
+      },
+      "match_": "Sales"
+    }
+  ],
+  "properties": [
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "DisplayName"
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "B:department",
+        "attrs": null
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "B:phone",
+        "attrs": null
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "B:office",
+        "attrs": null
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "B:salary",
+        "attrs": null
+      }
+    }
+  ],
+  "apply_to_principal_collection_set": false
+}

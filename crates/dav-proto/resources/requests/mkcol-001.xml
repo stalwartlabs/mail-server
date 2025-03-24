@@ -1,0 +1,15 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:mkcol xmlns:D="DAV:"
+                 xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:set>
+       <D:prop>
+         <D:resourcetype>
+           <D:collection/>
+           <C:addressbook/>
+         </D:resourcetype>
+         <D:displayname>Lisa's Contacts</D:displayname>
+         <C:addressbook-description xml:lang="en"
+   >My primary address book.</C:addressbook-description>
+       </D:prop>
+     </D:set>
+   </D:mkcol>

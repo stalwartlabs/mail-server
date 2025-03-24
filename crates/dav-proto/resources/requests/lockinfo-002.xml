@@ -1,0 +1,9 @@
+     <?xml version="1.0" encoding="utf-8" ?>
+     <D:lockinfo xmlns:D="DAV:">
+       <D:locktype><D:write/></D:locktype>
+       <D:lockscope><D:exclusive/></D:lockscope>
+       <D:owner>
+         <D:href>http://example.org/~ejw/contact.html</D:href>
+       </D:owner>
+     </D:lockinfo>
+     

@@ -1,0 +1,30 @@
+{
+  "aces": [
+    {
+      "principal": {
+        "Href": "http://www.example.com/users/friends"
+      },
+      "invert": false,
+      "grant_deny": {
+        "Grant": [
+          "Read"
+        ]
+      },
+      "protected": false,
+      "inherited": null
+    },
+    {
+      "principal": {
+        "Href": "http://www.example.com/users/ygoland-so"
+      },
+      "invert": false,
+      "grant_deny": {
+        "Deny": [
+          "Read"
+        ]
+      },
+      "protected": false,
+      "inherited": null
+    }
+  ]
+}

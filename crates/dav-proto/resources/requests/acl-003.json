@@ -1,0 +1,17 @@
+{
+  "aces": [
+    {
+      "principal": {
+        "Href": "http://www.example.com/users/esedlar"
+      },
+      "invert": true,
+      "grant_deny": {
+        "Deny": [
+          "Write"
+        ]
+      },
+      "protected": true,
+      "inherited": "http://www.example.com/container/"
+    }
+  ]
+}

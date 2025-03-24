@@ -113,4 +113,8 @@ impl<'x> DavQuery<'x> {
     pub fn format_to_base_uri(&self, path: &str) -> String {
         format!("{}/{}", self.base_uri, path)
     }
+
+    pub fn is_minimal(&self) -> bool {
+        self.ret == Return::Minimal
+    }
 }

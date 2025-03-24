@@ -6,7 +6,7 @@
 
 use common::{Server, auth::AccessToken};
 use dav_proto::{
-    RequestHeaders,
+    RequestHeaders, Return,
     schema::{
         property::{DavProperty, DavValue, ResourceType, WebDavProperty},
         request::{DavPropertyValue, PropertyUpdate},
@@ -150,7 +150,7 @@ impl FilePropPatchRequestHandler for Server {
         }
 
         // Set properties
-        self.apply_file_properties(&mut new_node, true, request.set, &mut items);
+        let is_success = self.apply_file_properties(&mut new_node, true, request.set, &mut items);
 
         let etag = if new_node != node.inner {
             update_file_node(
@@ -168,9 +168,15 @@ impl FilePropPatchRequestHandler for Server {
             node_.etag().into()
         };
 
-        Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
-            .with_xml_body(MultiStatus::new(vec![Response::new_propstat(uri, items)]).to_string())
-            .with_etag_opt(etag))
+        if headers.ret != Return::Minimal || !is_success {
+            Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
+                .with_xml_body(
+                    MultiStatus::new(vec![Response::new_propstat(uri, items)]).to_string(),
+                )
+                .with_etag_opt(etag))
+        } else {
+            Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
+        }
     }
 
     fn apply_file_properties(

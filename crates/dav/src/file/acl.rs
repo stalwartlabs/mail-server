@@ -6,13 +6,14 @@
 
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use dav_proto::RequestHeaders;
-use groupware::file::ArchivedFileNode;
+use groupware::file::{ArchivedFileNode, FileNode, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
+use store::write::{AlignedBytes, Archive};
 use trc::AddContext;
 
-use crate::DavError;
+use crate::{DavError, common::uri::DavUriResource, file::DavFileResource};
 
 pub(crate) trait FileAclRequestHandler: Sync + Send {
     fn handle_file_acl_request(
@@ -39,6 +40,43 @@ impl FileAclRequestHandler for Server {
         headers: RequestHeaders<'_>,
         request: dav_proto::schema::request::Acl,
     ) -> crate::Result<HttpResponse> {
+        // Validate URI
+        let resource_ = self
+            .validate_uri(access_token, headers.uri)
+            .await?
+            .into_owned_uri()?;
+        let account_id = resource_.account_id;
+        let files = self
+            .fetch_file_hierarchy(account_id)
+            .await
+            .caused_by(trc::location!())?;
+        let resource = files.map_resource(&resource_)?;
+
+        // Fetch node
+        let node_ = self
+            .get_property::<Archive<AlignedBytes>>(
+                account_id,
+                Collection::FileNode,
+                resource.resource,
+                Property::Value,
+            )
+            .await
+            .caused_by(trc::location!())?
+            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+        let node = node_.unarchive::<FileNode>().caused_by(trc::location!())?;
+
+        // Validate ACL
+        self.validate_file_acl(
+            access_token,
+            account_id,
+            node,
+            Acl::Administer,
+            Acl::Administer,
+        )
+        .await?;
+
+        for ace in request.aces {}
+
         todo!()
     }
 

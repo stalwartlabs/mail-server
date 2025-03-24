@@ -6,7 +6,7 @@
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use dav_proto::{
-    RequestHeaders,
+    RequestHeaders, Return,
     schema::{Namespace, request::MkCol, response::MkColResponse},
 };
 use groupware::file::{FileNode, hierarchy::FileHierarchy};
@@ -98,6 +98,7 @@ impl FileMkColRequestHandler for Server {
         };
 
         // Apply MKCOL properties
+        let mut return_prop_stat = None;
         if let Some(mkcol) = request {
             let mut prop_stat = Vec::new();
             if !self.apply_file_properties(&mut node, false, mkcol.props, &mut prop_stat) {
@@ -106,6 +107,9 @@ impl FileMkColRequestHandler for Server {
                         .with_namespace(Namespace::Dav)
                         .to_string(),
                 ));
+            }
+            if headers.ret != Return::Minimal {
+                return_prop_stat = Some(prop_stat);
             }
         }
 
@@ -127,7 +131,14 @@ impl FileMkColRequestHandler for Server {
         // Broadcast state change
         self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
             .await;
-
-        Ok(HttpResponse::new(StatusCode::CREATED))
+        if let Some(prop_stat) = return_prop_stat {
+            Ok(HttpResponse::new(StatusCode::CREATED).with_xml_body(
+                MkColResponse::new(prop_stat)
+                    .with_namespace(Namespace::Dav)
+                    .to_string(),
+            ))
+        } else {
+            Ok(HttpResponse::new(StatusCode::CREATED))
+        }
     }
 }

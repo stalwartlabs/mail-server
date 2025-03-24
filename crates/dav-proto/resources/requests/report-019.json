@@ -1,0 +1,17 @@
+{
+  "type": "SyncCollection",
+  "sync_token": "abc",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      }
+    ]
+  },
+  "level_inf": true,
+  "limit": 9
+}

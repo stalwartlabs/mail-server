@@ -1,0 +1,24 @@
+{
+  "type": "AdressbookMultiGet",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      },
+      {
+        "type": "CardDav",
+        "data": {
+          "type": "AddressData",
+          "data": []
+        }
+      }
+    ]
+  },
+  "hrefs": [
+    "/home/bernard/addressbook/vcf3.vcf"
+  ]
+}

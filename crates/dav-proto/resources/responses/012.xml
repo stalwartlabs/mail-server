@@ -1,0 +1,12 @@
+   <D:error xmlns:D="DAV:">
+     <D:need-privileges>
+       <D:resource>
+         <D:href>/a</D:href>
+         <D:privilege><D:unbind/></D:privilege>
+       </D:resource>
+       <D:resource>
+         <D:href>/c</D:href>
+         <D:privilege><D:bind/></D:privilege>
+       </D:resource>
+     </D:need-privileges>
+   </D:error>

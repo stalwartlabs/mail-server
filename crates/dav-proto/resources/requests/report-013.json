@@ -1,0 +1,30 @@
+{
+  "type": "CalendarMultiGet",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      },
+      {
+        "type": "CalDav",
+        "data": {
+          "type": "CalendarData",
+          "data": {
+            "properties": [],
+            "expand": null,
+            "limit_recurrence": null,
+            "limit_freebusy": null
+          }
+        }
+      }
+    ]
+  },
+  "hrefs": [
+    "/bernard/work/abcd1.ics",
+    "/bernard/work/mtg1.ics"
+  ]
+}

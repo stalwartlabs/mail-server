@@ -1,0 +1,20 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:response>
+       <D:href>/home/bernard/addressbook/v102.vcf</D:href>
+       <D:propstat>
+         <D:prop>
+           <D:getetag>"23ba4d-ff11fb"</D:getetag>
+        <C:address-data><![CDATA[BEGIN:VCARD
+VERSION:4.0
+NICKNAME:me
+UID:34222-232@example.com
+FN:Cyrus Daboo
+EMAIL:daboo@example.com
+END:VCARD
+]]></C:address-data>
+         </D:prop>
+         <D:status>HTTP/1.1 200 OK</D:status>
+       </D:propstat>
+     </D:response>
+   </D:multistatus>

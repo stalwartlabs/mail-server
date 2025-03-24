@@ -1,0 +1,15 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:acl xmlns:D="DAV:">
+     <D:ace>
+       <D:invert><D:principal>
+         <D:href>http://www.example.com/users/esedlar</D:href>
+       </D:principal></D:invert>
+       <D:deny>
+         <D:privilege><D:write/></D:privilege>
+       </D:deny>
+       <D:protected/>
+       <D:inherited>
+         <D:href>http://www.example.com/container/</D:href>
+        </D:inherited>
+     </D:ace>
+   </D:acl>

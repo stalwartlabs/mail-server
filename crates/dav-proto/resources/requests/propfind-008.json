@@ -1,0 +1,30 @@
+{
+  "type": "Prop",
+  "data": [
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "ResourceType"
+      }
+    },
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "DisplayName"
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "cs:getctag",
+        "attrs": null
+      }
+    },
+    {
+      "type": "CalDav",
+      "data": {
+        "type": "SupportedCalendarComponentSet"
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:"
+        xmlns:C="">
+<D:set>
+    <D:prop>
+    <C:addressbook-description xml:lang="fr-CA"
+          xmlns:C="urn:ietf:params:xml:ns:carddav"
+       >Adresses de Oliver Daboo</C:addressbook-description>
+   
+    <C:calendar-description xml:lang="fr-CA"
+            xmlns:C="urn:ietf:params:xml:ns:caldav"
+         >Calendrier de Mathilde Desruisseaux</C:calendar-description>
+    <C:supported-calendar-component-set
+             xmlns:C="urn:ietf:params:xml:ns:caldav">
+           <C:comp name="VEVENT"/>
+           <C:comp name="VTODO"/>
+         </C:supported-calendar-component-set>
+    <C:calendar-timezone
+       xmlns:C="urn:ietf:params:xml:ns:caldav">BEGIN:VCALENDAR
+PRODID:-//Example Corp.//CalDAV Client//EN
+VERSION:2.0
+BEGIN:VTIMEZONE
+TZID:US-Eastern
+LAST-MODIFIED:19870101T000000Z
+BEGIN:STANDARD
+DTSTART:19671029T020000
+RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10
+TZOFFSETFROM:-0400
+TZOFFSETTO:-0500
+TZNAME:Eastern Standard Time (US &amp; Canada)
+END:STANDARD
+BEGIN:DAYLIGHT
+DTSTART:19870405T020000
+RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=4
+TZOFFSETFROM:-0500
+TZOFFSETTO:-0400
+TZNAME:Eastern Daylight Time (US &amp; Canada)
+END:DAYLIGHT
+END:VTIMEZONE
+END:VCALENDAR
+   </C:calendar-timezone>
+    <D:resourcetype xmlns:C="urn:ietf:params:xml:ns:carddav">
+           <D:collection/>
+           <C:addressbook/>
+    </D:resourcetype>
+     </D:prop>
+</D:set>
+<D:remove>
+      <D:prop>
+    <C:calendar-timezone
+       xmlns:C="urn:ietf:params:xml:ns:caldav"/>
+    <D:resourcetype/>
+     </D:prop>
+</D:remove>
+</D:propertyupdate>

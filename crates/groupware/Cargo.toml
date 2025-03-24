@@ -11,7 +11,7 @@ common = { path =  "../common" }
 jmap_proto = { path =  "../jmap-proto" }
 trc = { path = "../trc" }
 directory = { path =  "../directory" }
-dav-proto = { path =  "/Users/me/code/dav-proto" }
+dav-proto = { path =  "../dav-proto" }
 calcard = { path =  "/Users/me/code/calcard" }
 hashify = "0.2"
 rkyv = { version = "0.8.10", features = ["little_endian"] }

@@ -1,0 +1,6 @@
+  <?xml version="1.0" encoding="utf-8" ?>
+   <D:acl-principal-prop-set xmlns:D="DAV:">
+     <D:prop>
+       <D:displayname/>
+     </D:prop>
+   </D:acl-principal-prop-set>

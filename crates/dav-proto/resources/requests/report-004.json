@@ -1,0 +1,42 @@
+{
+  "type": "CalendarQuery",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "CalDav",
+        "data": {
+          "type": "CalendarData",
+          "data": {
+            "properties": [],
+            "expand": null,
+            "limit_recurrence": null,
+            "limit_freebusy": {
+              "start": 1136160000,
+              "end": 1136246400
+            }
+          }
+        }
+      }
+    ]
+  },
+  "filters": [
+    {
+      "type": "Component",
+      "comp": [
+        "VCalendar",
+        "VFreebusy"
+      ],
+      "op": {
+        "type": "TimeRange",
+        "data": {
+          "start": 1136160000,
+          "end": 1136246400
+        }
+      }
+    }
+  ],
+  "timezone": {
+    "type": "None"
+  }
+}

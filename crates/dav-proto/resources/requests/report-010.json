@@ -1,0 +1,52 @@
+{
+  "type": "CalendarQuery",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      },
+      {
+        "type": "CalDav",
+        "data": {
+          "type": "CalendarData",
+          "data": {
+            "properties": [],
+            "expand": null,
+            "limit_recurrence": null,
+            "limit_freebusy": null
+          }
+        }
+      }
+    ]
+  },
+  "filters": [
+    {
+      "type": "Property",
+      "comp": [
+        "VCalendar",
+        "VEvent"
+      ],
+      "prop": {
+        "type": "Other",
+        "data": "X-ABC-GUID"
+      },
+      "op": {
+        "type": "TextMatch",
+        "data": {
+          "type": "TextMatch",
+          "match_type": "Contains",
+          "value": "ABC",
+          "collation": "AsciiCasemap",
+          "negate": false
+        }
+      }
+    }
+  ],
+  "timezone": {
+    "type": "None"
+  }
+}

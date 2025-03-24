@@ -1,0 +1,43 @@
+{
+  "type": "Addressbook",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      }
+    ]
+  },
+  "filters": [
+    {
+      "type": "AnyOf"
+    },
+    {
+      "type": "AnyOf"
+    },
+    {
+      "type": "Property",
+      "comp": null,
+      "prop": {
+        "name": {
+          "type": "Fn"
+        },
+        "group": null
+      },
+      "op": {
+        "type": "TextMatch",
+        "data": {
+          "type": "TextMatch",
+          "match_type": "Contains",
+          "value": "daboo",
+          "collation": "UnicodeCasemap",
+          "negate": false
+        }
+      }
+    }
+  ],
+  "limit": 2
+}

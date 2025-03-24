@@ -1014,6 +1014,7 @@ dependencies = [
  "hashify",
  "mail-builder",
  "mail-parser",
+ "serde",
 ]
 
 [[package]]
@@ -1696,6 +1697,8 @@ dependencies = [
  "mail-parser",
  "quick-xml 0.37.2",
  "rkyv 0.8.10",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

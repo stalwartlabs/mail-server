@@ -5,7 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
-use dav_proto::RequestHeaders;
+use dav_proto::{RequestHeaders, Return, schema::property::Rfc1123DateTime};
 use groupware::file::{FileNode, FileProperties, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
@@ -92,23 +92,6 @@ impl FileUpdateRequestHandler for Server {
             )
             .await?;
 
-            // Validate headers
-            self.validate_headers(
-                access_token,
-                &headers,
-                vec![ResourceState {
-                    account_id,
-                    collection: resource.collection,
-                    document_id: Some(document_id),
-                    etag: node_archive_.etag().into(),
-                    path: resource_name,
-                    ..Default::default()
-                }],
-                Default::default(),
-                DavMethod::PUT,
-            )
-            .await?;
-
             // Verify that the node is a file
             if let Some(file) = node.file.as_ref() {
                 if BlobHash::generate(&bytes).as_slice() == file.blob_hash.0.as_slice() {
@@ -116,6 +99,53 @@ impl FileUpdateRequestHandler for Server {
                 }
             } else {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
+            }
+
+            // Validate headers
+            match self
+                .validate_headers(
+                    access_token,
+                    &headers,
+                    vec![ResourceState {
+                        account_id,
+                        collection: resource.collection,
+                        document_id: Some(document_id),
+                        etag: node_archive_.etag().into(),
+                        path: resource_name,
+                        ..Default::default()
+                    }],
+                    Default::default(),
+                    DavMethod::PUT,
+                )
+                .await
+            {
+                Ok(_) => {}
+                Err(DavError::Code(StatusCode::PRECONDITION_FAILED))
+                    if headers.ret == Return::Representation =>
+                {
+                    let file = node.file.as_ref().unwrap();
+                    let contents = self
+                        .blob_store()
+                        .get_blob(file.blob_hash.0.as_slice(), 0..usize::MAX)
+                        .await
+                        .caused_by(trc::location!())?
+                        .ok_or(DavError::Code(StatusCode::PRECONDITION_FAILED))?;
+
+                    return Ok(HttpResponse::new(StatusCode::PRECONDITION_FAILED)
+                        .with_content_type(
+                            file.media_type
+                                .as_ref()
+                                .map(|v| v.as_str())
+                                .unwrap_or("application/octet-stream"),
+                        )
+                        .with_etag(node_archive_.etag())
+                        .with_last_modified(
+                            Rfc1123DateTime::new(i64::from(node.modified)).to_string(),
+                        )
+                        .with_header("Preference-Applied", "return=representation")
+                        .with_binary_body(contents));
+                }
+                Err(e) => return Err(e),
             }
 
             // Validate quota

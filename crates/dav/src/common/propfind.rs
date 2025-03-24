@@ -8,20 +8,22 @@ use common::{Server, auth::AccessToken};
 use dav_proto::{
     Depth, RequestHeaders,
     schema::{
-        request::PropFind,
-        response::{BaseCondition, MultiStatus, Response},
+        property::{DavProperty, ResourceType, WebDavProperty},
+        request::{DavPropertyValue, PropFind},
+        response::{BaseCondition, MultiStatus, PropStat, Response},
     },
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
 use store::roaring::RoaringBitmap;
+use trc::AddContext;
 
 use crate::{
     DavErrorCondition,
     common::uri::DavUriResource,
     file::propfind::HandleFilePropFindRequest,
-    principal::propfind::{PrincipalPropFind, PrincipalResource},
+    principal::{CurrentUserPrincipal, propfind::PrincipalPropFind},
 };
 
 use super::{DavQuery, uri::UriResource};
@@ -33,6 +35,12 @@ pub(crate) trait PropFindRequestHandler: Sync + Send {
         headers: RequestHeaders<'_>,
         request: PropFind,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
+
+    fn dav_quota(
+        &self,
+        access_token: &AccessToken,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<(u64, u64)>> + Send;
 }
 
 impl PropFindRequestHandler for Server {
@@ -94,7 +102,8 @@ impl PropFindRequestHandler for Server {
                     } else {
                         self.prepare_principal_propfind_response(
                             access_token,
-                            PrincipalResource::Id(account_id),
+                            Collection::Principal,
+                            [account_id].into_iter(),
                             &request,
                             &mut response,
                         )
@@ -111,7 +120,40 @@ impl PropFindRequestHandler for Server {
 
             // Add container info
             if !headers.depth_no_root {
-                let blah = 1;
+                let mut prop_stat = match &request {
+                    PropFind::PropName | PropFind::AllProp(_) => {
+                        vec![
+                            DavPropertyValue::empty(DavProperty::WebDav(
+                                WebDavProperty::ResourceType,
+                            )),
+                            DavPropertyValue::empty(DavProperty::WebDav(
+                                WebDavProperty::CurrentUserPrincipal,
+                            )),
+                        ]
+                    }
+                    PropFind::Prop(items) => {
+                        items.iter().cloned().map(DavPropertyValue::empty).collect()
+                    }
+                };
+
+                if !matches!(request, PropFind::PropName) {
+                    for prop in &mut prop_stat {
+                        match &prop.property {
+                            DavProperty::WebDav(WebDavProperty::ResourceType) => {
+                                prop.value = vec![ResourceType::Collection].into();
+                            }
+                            DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal) => {
+                                prop.value = vec![access_token.current_user_principal()].into();
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+
+                response.add_response(Response::new_propstat(
+                    resource.base_path(),
+                    vec![PropStat::new_list(prop_stat)],
+                ));
             }
 
             if return_children {
@@ -126,7 +168,8 @@ impl PropFindRequestHandler for Server {
 
                 self.prepare_principal_propfind_response(
                     access_token,
-                    PrincipalResource::Ids(ids),
+                    resource.collection,
+                    ids.into_iter(),
                     &request,
                     &mut response,
                 )
@@ -135,5 +178,30 @@ impl PropFindRequestHandler for Server {
 
             Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
         }
+    }
+
+    async fn dav_quota(
+        &self,
+        access_token: &AccessToken,
+        account_id: u32,
+    ) -> trc::Result<(u64, u64)> {
+        let resource_token = self
+            .get_resource_token(access_token, account_id)
+            .await
+            .caused_by(trc::location!())?;
+        let quota = if resource_token.quota > 0 {
+            resource_token.quota
+        } else if let Some(tenant) = resource_token.tenant.filter(|t| t.quota > 0) {
+            tenant.quota
+        } else {
+            u64::MAX
+        };
+        let quota_used = self
+            .get_used_quota(account_id)
+            .await
+            .caused_by(trc::location!())? as u64;
+        let quota_available = quota.saturating_sub(quota_used);
+
+        Ok((quota_used, quota_available))
     }
 }

@@ -1,0 +1,6 @@
+     <?xml version="1.0" encoding="utf-8" ?>
+     <D:error xmlns:D="DAV:">
+       <D:lock-token-submitted>
+         <D:href>/locked/</D:href>
+       </D:lock-token-submitted>
+     </D:error>

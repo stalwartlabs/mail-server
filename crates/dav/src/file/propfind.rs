@@ -7,11 +7,13 @@
 use common::{FileItem, Server, auth::AccessToken};
 use dav_proto::schema::{
     property::{
-        DavProperty, DavValue, ReportSet, ResourceType, Rfc1123DateTime, SupportedLock,
+        DavProperty, DavValue, Privilege, ReportSet, ResourceType, Rfc1123DateTime, SupportedLock,
         WebDavProperty,
     },
     request::{DavPropertyValue, PropFind},
-    response::{MultiStatus, PropStat, Response},
+    response::{
+        AclRestrictions, Href, MultiStatus, PropStat, Response, ResponseType, SupportedPrivilege,
+    },
 };
 use groupware::file::{FileNode, hierarchy::FileHierarchy};
 use http_proto::HttpResponse;
@@ -28,8 +30,15 @@ use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    common::{DavQuery, ETag, lock::LockData, uri::Urn},
-    principal::propfind::{PrincipalPropFind, PrincipalResource},
+    DavResource,
+    common::{
+        DavQuery, ETag,
+        acl::{DavAclHandler, Privileges},
+        lock::LockData,
+        propfind::PropFindRequestHandler,
+        uri::Urn,
+    },
+    principal::{CurrentUserPrincipal, propfind::PrincipalPropFind},
 };
 
 pub(crate) trait HandleFilePropFindRequest: Sync + Send {
@@ -54,7 +63,6 @@ impl HandleFilePropFindRequest for Server {
 
         // Obtain document ids
         let mut document_ids = if !access_token.is_member(account_id) {
-            let todo = "query children acls";
             self.shared_containers(
                 access_token,
                 account_id,
@@ -115,7 +123,8 @@ impl HandleFilePropFindRequest for Server {
             if !query.depth_no_root || query.from_change_id.is_none() {
                 self.prepare_principal_propfind_response(
                     access_token,
-                    PrincipalResource::Id(account_id),
+                    Collection::FileNode,
+                    [account_id].into_iter(),
                     &query.propfind,
                     &mut response,
                 )
@@ -143,8 +152,6 @@ impl HandleFilePropFindRequest for Server {
                 HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string())
             );
         }
-
-        let todo = "prefer minimal";
 
         // Prepare response
         let (fields, is_all_prop) = match &query.propfind {
@@ -226,6 +233,36 @@ impl HandleFilePropFindRequest for Server {
             }
         }
 
+        // Fetch quota
+        let (quota_used, quota_available) = if fields.iter().any(|field| {
+            matches!(
+                field,
+                DavProperty::WebDav(
+                    WebDavProperty::QuotaAvailableBytes | WebDavProperty::QuotaUsedBytes
+                )
+            )
+        }) {
+            self.dav_quota(access_token, account_id)
+                .await
+                .caused_by(trc::location!())?
+        } else {
+            (0, 0)
+        };
+
+        // Fetch owner
+        let mut owner = None;
+        if fields
+            .iter()
+            .any(|field| matches!(field, DavProperty::WebDav(WebDavProperty::Owner)))
+        {
+            owner = self
+                .owner_href(access_token, account_id)
+                .await
+                .caused_by(trc::location!())?
+                .into();
+        }
+
+        let mut aces = Vec::new();
         self.get_archives(
             account_id,
             Collection::FileNode,
@@ -234,13 +271,12 @@ impl HandleFilePropFindRequest for Server {
             |document_id, node_| {
                 let node = node_.unarchive::<FileNode>().caused_by(trc::location!())?;
                 let item = paths.items.get(&document_id).unwrap();
-                let is_container = node.file.is_none();
                 let properties: Box<dyn Iterator<Item = &DavProperty>> = if is_all_prop {
-                    Box::new(if is_container {
-                        FOLDER_PROPS.iter()
-                    } else {
-                        FILE_PROPS.iter()
-                    })
+                    Box::new(
+                        ALL_PROPS
+                            .iter()
+                            .chain(fields.iter().filter(|field| !field.is_all_prop())),
+                    )
                 } else {
                     Box::new(fields.iter())
                 };
@@ -357,26 +393,124 @@ impl HandleFilePropFindRequest for Server {
                                     sync_token.clone().unwrap(),
                                 ));
                             }
-                            WebDavProperty::CurrentUserPrincipal => todo!(),
-                            WebDavProperty::QuotaAvailableBytes => todo!(),
-                            WebDavProperty::QuotaUsedBytes => todo!(),
-                            WebDavProperty::AlternateURISet => todo!(),
-                            WebDavProperty::PrincipalURL => todo!(),
-                            WebDavProperty::GroupMemberSet => todo!(),
-                            WebDavProperty::GroupMembership => todo!(),
-                            WebDavProperty::Owner => todo!(),
-                            WebDavProperty::Group => {
-                                if !is_all_prop {
+                            WebDavProperty::CurrentUserPrincipal => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    vec![access_token.current_user_principal()],
+                                ));
+                            }
+                            WebDavProperty::QuotaAvailableBytes => {
+                                if node.file.is_none() {
+                                    fields.push(DavPropertyValue::new(
+                                        property.clone(),
+                                        quota_available,
+                                    ));
+                                } else if !is_all_prop {
                                     fields_not_found
                                         .push(DavPropertyValue::empty(property.clone()));
                                 }
                             }
-                            WebDavProperty::SupportedPrivilegeSet => todo!(),
-                            WebDavProperty::CurrentUserPrivilegeSet => todo!(),
-                            WebDavProperty::Acl => todo!(),
-                            WebDavProperty::AclRestrictions => todo!(),
-                            WebDavProperty::InheritedAclSet => todo!(),
-                            WebDavProperty::PrincipalCollectionSet => todo!(),
+                            WebDavProperty::QuotaUsedBytes => {
+                                if node.file.is_none() {
+                                    fields
+                                        .push(DavPropertyValue::new(property.clone(), quota_used));
+                                } else if !is_all_prop {
+                                    fields_not_found
+                                        .push(DavPropertyValue::empty(property.clone()));
+                                }
+                            }
+                            WebDavProperty::Owner => {
+                                if let Some(owner) = owner.take() {
+                                    fields
+                                        .push(DavPropertyValue::new(property.clone(), vec![owner]));
+                                }
+                            }
+                            WebDavProperty::Group => {
+                                fields.push(DavPropertyValue::empty(property.clone()));
+                            }
+                            WebDavProperty::SupportedPrivilegeSet => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    vec![
+                                        SupportedPrivilege::new(Privilege::All, "Any operation")
+                                            .with_abstract()
+                                            .with_supported_privilege(
+                                                SupportedPrivilege::new(
+                                                    Privilege::Read,
+                                                    "Read objects",
+                                                )
+                                                .with_supported_privilege(SupportedPrivilege::new(
+                                                    Privilege::ReadCurrentUserPrivilegeSet,
+                                                    "Read current user privileges",
+                                                )),
+                                            )
+                                            .with_supported_privilege(
+                                                SupportedPrivilege::new(
+                                                    Privilege::Write,
+                                                    "Write objects",
+                                                )
+                                                .with_supported_privilege(SupportedPrivilege::new(
+                                                    Privilege::WriteProperties,
+                                                    "Write properties",
+                                                ))
+                                                .with_supported_privilege(SupportedPrivilege::new(
+                                                    Privilege::WriteContent,
+                                                    "Write object contents",
+                                                ))
+                                                .with_supported_privilege(SupportedPrivilege::new(
+                                                    Privilege::Bind,
+                                                    "Add resources to a collection",
+                                                ))
+                                                .with_supported_privilege(SupportedPrivilege::new(
+                                                    Privilege::Unbind,
+                                                    "Add resources to a collection",
+                                                ))
+                                                .with_supported_privilege(SupportedPrivilege::new(
+                                                    Privilege::Unlock,
+                                                    "Unlock resources",
+                                                )),
+                                            )
+                                            .with_supported_privilege(SupportedPrivilege::new(
+                                                Privilege::ReadAcl,
+                                                "Read ACL",
+                                            ))
+                                            .with_supported_privilege(SupportedPrivilege::new(
+                                                Privilege::WriteAcl,
+                                                "Write ACL",
+                                            )),
+                                    ],
+                                ));
+                            }
+                            WebDavProperty::CurrentUserPrivilegeSet => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    access_token.current_privilege_set(account_id, &node.acls),
+                                ));
+                            }
+                            WebDavProperty::Acl => {
+                                aces.push(access_token.ace(account_id, &node.acls));
+                            }
+                            WebDavProperty::AclRestrictions => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    AclRestrictions::default().with_no_invert(),
+                                ));
+                            }
+                            WebDavProperty::InheritedAclSet => {
+                                fields.push(DavPropertyValue::empty(property.clone()));
+                            }
+                            WebDavProperty::PrincipalCollectionSet => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    vec![Href(DavResource::Principal.base_path().to_string())],
+                                ));
+                            }
+                            WebDavProperty::AlternateURISet
+                            | WebDavProperty::PrincipalURL
+                            | WebDavProperty::GroupMemberSet
+                            | WebDavProperty::GroupMembership => {
+                                fields_not_found.push(DavPropertyValue::empty(property.clone()));
+                            }
                         },
                         DavProperty::DeadProperty(tag) => {
                             if let Some(value) = node.dead_properties.find_tag(&tag.name) {
@@ -400,13 +534,16 @@ impl HandleFilePropFindRequest for Server {
 
                 // Add response
                 let mut prop_stat = Vec::with_capacity(2);
-                if !fields.is_empty() {
+                if !fields.is_empty() || !aces.is_empty() {
                     prop_stat.push(PropStat::new_list(fields));
                 }
-                if !fields_not_found.is_empty() {
+                if !fields_not_found.is_empty() && !query.is_minimal() {
                     prop_stat.push(
                         PropStat::new_list(fields_not_found).with_status(StatusCode::NOT_FOUND),
                     );
+                }
+                if prop_stat.is_empty() {
+                    prop_stat.push(PropStat::new_list(vec![]));
                 }
                 response.add_response(Response::new_propstat(
                     query.format_to_base_uri(&item.name),
@@ -418,6 +555,25 @@ impl HandleFilePropFindRequest for Server {
         )
         .await
         .caused_by(trc::location!())?;
+
+        // Resolve ACEs
+        if !aces.is_empty() {
+            for (ace, response) in aces.into_iter().zip(response.response.0.iter_mut()) {
+                let ace = self.resolve_ace(ace).await.caused_by(trc::location!())?;
+                if let ResponseType::PropStat(list) = &mut response.typ {
+                    list.0
+                        .first_mut()
+                        .unwrap()
+                        .prop
+                        .0
+                        .0
+                        .push(DavPropertyValue::new(
+                            DavProperty::WebDav(WebDavProperty::Acl),
+                            ace,
+                        ));
+                }
+            }
+        }
 
         Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
     }
@@ -465,6 +621,26 @@ static FILE_PROPS: [DavProperty; 19] = [
     DavProperty::WebDav(WebDavProperty::GetContentLanguage),
     DavProperty::WebDav(WebDavProperty::GetContentLength),
     DavProperty::WebDav(WebDavProperty::GetContentType),
+];
+
+static ALL_PROPS: [DavProperty; 17] = [
+    DavProperty::WebDav(WebDavProperty::CreationDate),
+    DavProperty::WebDav(WebDavProperty::DisplayName),
+    DavProperty::WebDav(WebDavProperty::GetETag),
+    DavProperty::WebDav(WebDavProperty::GetLastModified),
+    DavProperty::WebDav(WebDavProperty::ResourceType),
+    DavProperty::WebDav(WebDavProperty::LockDiscovery),
+    DavProperty::WebDav(WebDavProperty::SupportedLock),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+    DavProperty::WebDav(WebDavProperty::SyncToken),
+    DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::AclRestrictions),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
+    DavProperty::WebDav(WebDavProperty::GetContentLanguage),
+    DavProperty::WebDav(WebDavProperty::GetContentLength),
+    DavProperty::WebDav(WebDavProperty::GetContentType),
+    DavProperty::WebDav(WebDavProperty::SupportedReportSet),
 ];
 
 struct Paths<'x> {
