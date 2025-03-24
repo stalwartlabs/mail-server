@@ -19,10 +19,10 @@ RUN \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' >/etc/apt/apt.conf.d/keep-cache && \
     apt-get update && \
-    apt-get install -yq --no-install-recommends curl jq xz-utils make libclang-16-dev
+    apt-get install -yq --no-install-recommends curl jq xz-utils make libclang-19-dev
 # Install zig
 RUN \
-    ZIG_VERSION=$(curl --retry 5 -sL "https://api.github.com/repos/ziglang/zig/releases/latest" | jq -r '.tag_name') && \
+    ZIG_VERSION=0.13.0 && \
     [ ! -z "$ZIG_VERSION" ] && \
     curl --retry 5 -Ls "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-$(uname -m)-${ZIG_VERSION}.tar.xz" | tar -J -x -C /usr/local && \
     ln -s "/usr/local/zig-linux-$(uname -m)-${ZIG_VERSION}/zig" /usr/local/bin/zig
