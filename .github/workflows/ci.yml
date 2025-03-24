@@ -110,31 +110,35 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             platform: linux/amd64
             suffix: ''
+            build_env: ''
           - target: x86_64-unknown-linux-musl
             platform: linux/amd64
             suffix: '-alpine'
+            build_env: ''
           - target: aarch64-unknown-linux-gnu
             platform: linux/arm64
             suffix: ''
-            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
+            build_env: 'JEMALLOC_SYS_WITH_LG_PAGE=16 '
           - target: aarch64-unknown-linux-musl
             platform: linux/arm64
             suffix: '-alpine'
-            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
+            build_env: 'JEMALLOC_SYS_WITH_LG_PAGE=16 '
           - target: armv7-unknown-linux-gnueabihf
             platform: linux/arm/v7
             suffix: ''
-            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
+            build_env: 'JEMALLOC_SYS_WITH_LG_PAGE=16 '
           - target: armv7-unknown-linux-musleabihf
             platform: linux/arm/v7
             suffix: '-alpine'
-            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
+            build_env: 'JEMALLOC_SYS_WITH_LG_PAGE=16 '
           - target: arm-unknown-linux-gnueabihf
             platform: linux/arm/v6
             suffix: ''
+            build_env: ''
           - target: arm-unknown-linux-musleabihf
             platform: linux/arm/v6
             suffix: '-alpine'
+            build_env: ''
     name: Build / ${{matrix.target}}
     runs-on: ubuntu-latest
     steps:
@@ -331,10 +335,12 @@ jobs:
           disable_annotations: true
 
       - name: Build FoundationDB Edition
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           rustup target add ${{matrix.target}}
           # Get latest FoundationDB installer
-          curl -Lo foundationdb.pkg "https://glare.now.sh/apple/foundationdb/${{startsWith(matrix.target, 'x86') && 'x86_64' || 'arm64'}}.pkg"
+          curl --retry 5 -Lso foundationdb.pkg "$(gh api -X GET /repos/apple/foundationdb/releases --jq '.[] | select(.prerelease == false) | .assets[] | select(.name | test("${{startsWith(matrix.target, 'x86') && 'x86_64' || 'arm64'}}" + ".pkg")) | .browser_download_url' | head -n1)"
           sudo installer -allowUntrusted -dumplog -pkg foundationdb.pkg -target /
           cargo build --release --target ${{matrix.target}} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise"
           mkdir -p artifacts
