@@ -28,6 +28,11 @@ RUN \
     ln -s "/usr/local/zig-linux-$(uname -m)-${ZIG_VERSION}/zig" /usr/local/bin/zig
 # Install cargo-binstall
 RUN curl --retry 5 -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+# Install FoundationDB
+# TODO According to https://github.com/apple/foundationdb/issues/11448#issuecomment-2417766293
+# Once FoundationDB v7.3.53 gets released, we should be able to build the aarch64-unknown-linux-gnu target.
+# The last command is for future build use, so if you are building on a native arm64 device, please use docker qemu.
+RUN curl --retry 5 -Lso /usr/lib/libfdb_c.so "$(curl --retry 5 -Ls 'https://api.github.com/repos/apple/foundationdb/releases' | jq --arg arch "$(uname -m)" -r '.[] | select(.prerelease == false) | .assets[] | select(.name | test("libfdb_c." + $arch + ".so")) | .browser_download_url' | head -n1)"
 # Install cargo-chef & sccache & cargo-zigbuild
 RUN cargo binstall --no-confirm cargo-chef sccache cargo-zigbuild
 
@@ -51,31 +56,24 @@ ARG BUILD_ENV
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Install toolchain and specify some env variables
 RUN \
-    rustup set profile minimal && \
-    rustup target add ${TARGET} && \
-    mkdir -p artifact && \
-    touch /env-cargo && \
-    if [ ! -z "${BUILD_ENV}" ]; then \
-        echo "export ${BUILD_ENV}" >> /env-cargo; \
-        echo "Setting up ${BUILD_ENV}"; \
-    fi && \
-    if [[ "${TARGET}" == *gnu ]]; then \
-        echo "export FDB_ARCH=${TARGET%%-*}" >> /env-cargo; \
-    fi
-# Install FoundationDB
-RUN \
-    source /env-cargo && \
-    if [ ! -z "${FDB_ARCH}" ]; then \
-        curl --retry 5 -Lso /usr/lib/libfdb_c.so "$(curl --retry 5 -Ls 'https://api.github.com/repos/apple/foundationdb/releases' | jq --arg FDB_ARCH "$FDB_ARCH" -r '.[] | select(.prerelease == false) | .assets[] | select(.name | test("libfdb_c." + $FDB_ARCH + ".so")) | .browser_download_url' | head -n1)"; \
-    fi
+  rustup set profile minimal && \
+  rustup target add ${TARGET} && \
+  mkdir -p artifact && \
+  touch /env-cargo && \
+  if [ ! -z "${BUILD_ENV}" ]; then \
+      echo "export ${BUILD_ENV}" >> /env-cargo; \
+      echo "Setting up ${BUILD_ENV}"; \
+  fi
 # Cargo-chef Cache layer
 RUN \
     --mount=type=secret,id=ACTIONS_CACHE_URL,env=ACTIONS_CACHE_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN,env=ACTIONS_RUNTIME_TOKEN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
+    # TODO According to https://github.com/apple/foundationdb/issues/11448#issuecomment-2417766293
+    # Once FoundationDB v7.3.53 gets released, we should be able to build the aarch64-unknown-linux-gnu target.
     source /env-cargo && \
-    if [ ! -z "${FDB_ARCH}" ]; then \
+    if [ "${TARGET}" = "x86_64-unknown-linux-gnu" ]; then \
         RUSTFLAGS="-L /usr/lib" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise"; \
     fi
 RUN \
@@ -90,14 +88,16 @@ RUN \
 COPY . .
 ENV RUSTC_WRAPPER="sccache" \
     SCCACHE_GHA_ENABLED=true
-# Build FoundationDB version
+# Build foundationdb version
 RUN \
     --mount=type=secret,id=ACTIONS_CACHE_URL,env=ACTIONS_CACHE_URL \
     --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN,env=ACTIONS_RUNTIME_TOKEN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
+    # TODO According to https://github.com/apple/foundationdb/issues/11448#issuecomment-2417766293
+    # Once FoundationDB v7.3.53 gets released, we should be able to build the aarch64-unknown-linux-gnu target.
     source /env-cargo && \
-    if [ ! -z "${FDB_ARCH}" ]; then \
+    if [ "${TARGET}" = "x86_64-unknown-linux-gnu" ]; then \
         RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise"; \
         mv /app/target/${TARGET}/release/stalwart-mail /app/artifact/stalwart-mail-foundationdb; \
     fi
