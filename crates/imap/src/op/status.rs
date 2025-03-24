@@ -25,9 +25,7 @@ use store::{
     write::{AlignedBytes, Archive},
 };
 use store::{
-    IndexKeyPrefix, IterateParams, ValueKey,
-    roaring::RoaringBitmap,
-    write::{ValueClass, key::DeserializeBigEndian},
+    IndexKeyPrefix, IterateParams, roaring::RoaringBitmap, write::key::DeserializeBigEndian,
 };
 use trc::AddContext;
 

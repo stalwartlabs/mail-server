@@ -7,7 +7,7 @@
 use std::fmt::Display;
 
 use store::{
-    Serialize, SerializedVersion,
+    Serialize,
     write::{MaybeDynamicId, TagValue},
 };
 

@@ -11,7 +11,10 @@ use common::{NextMailboxState, listener::SessionStream};
 use email::message::metadata::MessageData;
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{AlignedBytes, Archive};
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive, ValueClass},
+};
 use trc::AddContext;
 
 use crate::core::ImapId;
