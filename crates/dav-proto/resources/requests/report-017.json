@@ -1,0 +1,61 @@
+{
+  "type": "AdressbookMultiGet",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      },
+      {
+        "type": "CardDav",
+        "data": {
+          "type": "AddressData",
+          "data": [
+            {
+              "group": null,
+              "name": {
+                "type": "Version"
+              },
+              "no_value": false
+            },
+            {
+              "group": null,
+              "name": {
+                "type": "Uid"
+              },
+              "no_value": false
+            },
+            {
+              "group": null,
+              "name": {
+                "type": "Nickname"
+              },
+              "no_value": false
+            },
+            {
+              "group": null,
+              "name": {
+                "type": "Email"
+              },
+              "no_value": false
+            },
+            {
+              "group": null,
+              "name": {
+                "type": "Fn"
+              },
+              "no_value": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "hrefs": [
+    "/home/bernard/addressbook/vcf102.vcf",
+    "/home/bernard/addressbook/vcf1.vcf"
+  ]
+}

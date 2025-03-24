@@ -1,0 +1,11 @@
+{
+  "type": "Prop",
+  "data": [
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "CurrentUserPrincipal"
+      }
+    }
+  ]
+}

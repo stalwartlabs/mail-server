@@ -1,0 +1,18 @@
+     <?xml version="1.0" encoding="utf-8" ?>
+     <D:multistatus xmlns:D="DAV:">
+       <D:response>
+         <D:href>http://www.example.com/file</D:href>
+         <D:propstat>
+           <D:prop>
+               <D:displayname>Box type A</D:displayname>
+           </D:prop>
+           <D:status>HTTP/1.1 200 OK</D:status>
+         </D:propstat>
+         <D:propstat>
+           <D:prop><D:displayname>Box type B</D:displayname></D:prop>
+           <D:status>HTTP/1.1 403 Forbidden</D:status>
+           <D:responsedescription>The user does not have access to the DingALing property.</D:responsedescription>
+         </D:propstat>
+       </D:response>
+       <D:responsedescription>There has been an access violation error.</D:responsedescription>
+     </D:multistatus>

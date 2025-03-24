@@ -1,0 +1,33 @@
+{
+  "type": "CalendarQuery",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      }
+    ]
+  },
+  "filters": [
+    {
+      "type": "Component",
+      "comp": [
+        "VCalendar",
+        "VEvent"
+      ],
+      "op": {
+        "type": "TimeRange",
+        "data": {
+          "start": 1094083200,
+          "end": 1094169600
+        }
+      }
+    }
+  ],
+  "timezone": {
+    "type": "None"
+  }
+}

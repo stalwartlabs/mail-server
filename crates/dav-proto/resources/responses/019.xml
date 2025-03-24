@@ -1,0 +1,81 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:multistatus xmlns:D="DAV:">
+     <D:response>
+       <D:href>http://www.example.com/top/container/</D:href>
+       <D:propstat>
+         <D:prop>
+           <D:owner>
+             <D:href>http://www.example.com/users/gclemm</D:href>
+           </D:owner>
+           <D:supported-privilege-set>
+             <D:supported-privilege>
+               <D:privilege><D:all/></D:privilege>
+               <D:abstract/>
+               <D:description>Any operation</D:description>
+               <D:supported-privilege>
+                 <D:privilege><D:read/></D:privilege>
+                 <D:description>Read any object</D:description>
+               </D:supported-privilege>
+               <D:supported-privilege>
+                 <D:privilege><D:write/></D:privilege>
+                 <D:abstract/>
+                 <D:description>Write any object
+                 </D:description>
+               </D:supported-privilege>
+               <D:supported-privilege>
+                 <D:privilege><D:read-acl/></D:privilege>
+                 <D:description>Read the ACL</D:description>
+               </D:supported-privilege>
+               <D:supported-privilege>
+                 <D:privilege><D:write-acl/></D:privilege>
+                 <D:description>Write the ACL</D:description>
+               </D:supported-privilege>
+             </D:supported-privilege>
+           </D:supported-privilege-set>
+           <D:current-user-privilege-set>
+             <D:privilege><D:read/></D:privilege>
+             <D:privilege><D:read-acl/></D:privilege>
+           </D:current-user-privilege-set>
+           <D:acl>
+             <D:ace>
+               <D:principal>
+                 <D:href>http://www.example.com/users/esedlar</D:href>
+               </D:principal>
+               <D:grant>
+                 <D:privilege><D:read/></D:privilege>
+                 <D:privilege><D:write/></D:privilege>
+                 <D:privilege><D:read-acl/></D:privilege>
+               </D:grant>
+             </D:ace>
+             <D:ace>
+               <D:principal>
+                 <D:href>http://www.example.com/groups/mrktng</D:href>
+               </D:principal>
+               <D:deny>
+                 <D:privilege><D:read/></D:privilege>
+               </D:deny>
+             </D:ace>
+             <D:ace>
+               <D:principal>
+                 <D:property><D:owner/></D:property>
+               </D:principal>
+               <D:grant>
+                 <D:privilege><D:read-acl/></D:privilege>
+                 <D:privilege><D:write-acl/></D:privilege>
+               </D:grant>
+             </D:ace>
+             <D:ace>
+               <D:principal><D:all/></D:principal>
+               <D:grant>
+                 <D:privilege><D:read/></D:privilege>
+               </D:grant>
+               <D:inherited>
+                 <D:href>http://www.example.com/top</D:href>
+               </D:inherited>
+             </D:ace>
+           </D:acl>
+         </D:prop>
+         <D:status>HTTP/1.1 200 OK</D:status>
+       </D:propstat>
+     </D:response>
+   </D:multistatus>

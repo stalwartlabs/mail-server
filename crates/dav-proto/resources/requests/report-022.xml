@@ -1,0 +1,22 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:principal-property-search xmlns:D="DAV:">
+     <D:property-search>
+       <D:prop>
+         <D:displayname/>
+       </D:prop>
+       <D:match>doE</D:match>
+     </D:property-search>
+     <D:property-search>
+       <D:prop xmlns:B="http://www.example.com/ns/">
+         <B:title/>
+       </D:prop>
+       <D:match>Sales</D:match>
+     </D:property-search>
+     <D:prop xmlns:B="http://www.example.com/ns/">
+       <D:displayname/>
+       <B:department/>
+       <B:phone/>
+       <B:office/>
+       <B:salary/>
+     </D:prop>
+   </D:principal-property-search>

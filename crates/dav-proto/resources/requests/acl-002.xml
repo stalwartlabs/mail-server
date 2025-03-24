@@ -1,0 +1,9 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:acl xmlns:D="DAV:" xmlns:F="http://www.example.com/privs/">
+     <D:ace>
+       <D:principal>
+          <D:href>http://www.example.com/users/ejw</D:href>
+       </D:principal>
+       <D:grant><D:write/></D:grant>
+     </D:ace>
+   </D:acl>

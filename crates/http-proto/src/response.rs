@@ -171,7 +171,7 @@ impl HttpResponse {
                     .map_err(|never| match never {})
                     .boxed(),
             ),
-            HttpResponseBody::Empty => self.builder.body(
+            HttpResponseBody::Empty => self.builder.header(header::CONTENT_LENGTH, 0).body(
                 Full::new(Bytes::new())
                     .map_err(|never| match never {})
                     .boxed(),

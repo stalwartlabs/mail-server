@@ -1,0 +1,33 @@
+{
+  "type": "Prop",
+  "data": [
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "R:bigbox",
+        "attrs": null
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "R:author",
+        "attrs": null
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "R:DingALing",
+        "attrs": null
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "R:Random",
+        "attrs": null
+      }
+    }
+  ]
+}

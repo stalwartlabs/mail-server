@@ -1,0 +1,9 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <C:addressbook-multiget xmlns:D="DAV:"
+                        xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:prop>
+       <D:getetag/>
+       <C:address-data content-type='text/vcard' version='4.0'/>
+     </D:prop>
+     <D:href>/home/bernard/addressbook/vcf3.vcf</D:href>
+   </C:addressbook-multiget>

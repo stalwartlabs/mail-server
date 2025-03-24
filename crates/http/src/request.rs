@@ -209,7 +209,9 @@ impl ParseHttp for Server {
                     path.next().and_then(DavResource::parse),
                     DavMethod::parse(req.method()),
                 ) {
-                    (Some(resource), Some(DavMethod::OPTIONS)) => resource.into_options_response(),
+                    (Some(resource), Some(DavMethod::OPTIONS)) => {
+                        resource.into_options_response(path.count())
+                    }
                     (Some(resource), Some(method)) => {
                         // Authenticate request
                         let (_in_flight, access_token) =

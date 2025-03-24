@@ -1,0 +1,15 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:principal-search-property-set xmlns:D="DAV:">
+     <D:principal-search-property>
+       <D:prop>
+         <D:displayname/>
+       </D:prop>
+       <D:description>Full name</D:description>
+     </D:principal-search-property>
+     <D:principal-search-property>
+       <D:prop>
+         <D:displayname/>
+       </D:prop>
+       <D:description>Job title</D:description>
+     </D:principal-search-property>
+   </D:principal-search-property-set>

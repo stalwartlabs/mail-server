@@ -1,0 +1,7 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:principal-match xmlns:D="DAV:">
+     <D:principal-property>
+       <D:owner/>
+     </D:principal-property>
+   </D:principal-match>
+   

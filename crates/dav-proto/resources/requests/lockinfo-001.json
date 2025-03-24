@@ -1,0 +1,20 @@
+{
+  "lock_scope": "Shared",
+  "lock_type": "Write",
+  "owner": [
+    {
+      "type": "ElementStart",
+      "data": {
+        "name": "D:href",
+        "attrs": null
+      }
+    },
+    {
+      "type": "Text",
+      "data": "http://example.org/~ejw/contact.html"
+    },
+    {
+      "type": "ElementEnd"
+    }
+  ]
+}

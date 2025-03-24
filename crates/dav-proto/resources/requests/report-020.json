@@ -1,0 +1,11 @@
+{
+  "type": "AclPrincipalPropSet",
+  "properties": [
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "DisplayName"
+      }
+    }
+  ]
+}

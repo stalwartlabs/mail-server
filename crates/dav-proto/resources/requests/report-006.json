@@ -1,0 +1,51 @@
+{
+  "type": "CalendarQuery",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      },
+      {
+        "type": "CalDav",
+        "data": {
+          "type": "CalendarData",
+          "data": {
+            "properties": [],
+            "expand": null,
+            "limit_recurrence": null,
+            "limit_freebusy": null
+          }
+        }
+      }
+    ]
+  },
+  "filters": [
+    {
+      "type": "Property",
+      "comp": [
+        "VCalendar",
+        "VEvent"
+      ],
+      "prop": {
+        "type": "Uid"
+      },
+      "op": {
+        "type": "TextMatch",
+        "data": {
+          "type": "TextMatch",
+          "match_type": "Contains",
+          "value": "DC6C50A017428C5216A2F1CD@example.com",
+          "collation": "Octet",
+          "negate": false
+        }
+      }
+    }
+  ],
+  "timezone": {
+    "type": "None"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "is_mkcalendar": false,
+  "props": [
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "ResourceType"
+        }
+      },
+      "value": {
+        "ResourceTypes": [
+          "Collection",
+          "Calendar"
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "DisplayName"
+        }
+      },
+      "value": {
+        "String": "Lisa's Events"
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:response>
+       <D:href>/home/bernard/addressbook/</D:href>
+       <D:status>HTTP/1.1 507 Insufficient Storage</D:status>
+       <D:error><D:number-of-matches-within-limits/></D:error>
+       <D:responsedescription>Only two matching records were returned</D:responsedescription>
+     </D:response>
+     <D:response>
+       <D:href>/home/bernard/addressbook/v102.vcf</D:href>
+       <D:propstat>
+         <D:prop>
+           <D:getetag>"23ba4d-ff11fb"</D:getetag>
+         </D:prop>
+         <D:status>HTTP/1.1 200 OK</D:status>
+       </D:propstat>
+     </D:response>
+     <D:response>
+       <D:href>/home/bernard/addressbook/v104.vcf</D:href>
+       <D:propstat>
+         <D:prop>
+           <D:getetag>"23ba4d-ff11fc"</D:getetag>
+         </D:prop>
+         <D:status>HTTP/1.1 200 OK</D:status>
+       </D:propstat>
+     </D:response>
+   </D:multistatus>

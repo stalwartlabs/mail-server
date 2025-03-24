@@ -5,7 +5,7 @@ edition = "2024"
 resolver = "2"
 
 [dependencies]
-dav-proto = { path =  "/Users/me/code/dav-proto" }
+dav-proto = { path =  "../dav-proto" }
 common = { path = "../common" }
 store = { path = "../store" }
 utils = { path = "../utils" }

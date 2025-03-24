@@ -123,6 +123,12 @@ impl OwnedUri<'_> {
     }
 }
 
+impl<A, R> UriResource<A, R> {
+    pub fn base_path(&self) -> &'static str {
+        DavResource::from(self.collection).base_path()
+    }
+}
+
 impl Urn {
     pub fn parse(input: &str) -> Option<Self> {
         let inbox = input.strip_prefix("urn:stalwart:")?;

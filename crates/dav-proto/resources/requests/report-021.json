@@ -1,0 +1,14 @@
+{
+  "type": "PrincipalMatch",
+  "principal_properties": {
+    "Properties": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "Owner"
+        }
+      }
+    ]
+  },
+  "properties": []
+}

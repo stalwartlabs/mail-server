@@ -1,0 +1,17 @@
+{
+  "type": "Prop",
+  "data": [
+    {
+      "type": "CalDav",
+      "data": {
+        "type": "CalendarHomeSet"
+      }
+    },
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "GroupMembership"
+      }
+    }
+  ]
+}

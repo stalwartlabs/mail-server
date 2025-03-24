@@ -1,0 +1,10 @@
+
+   <?xml version="1.0" encoding="utf-8" ?>
+   <D:sync-collection xmlns:D="DAV:">
+     <D:sync-token>abc</D:sync-token>
+     <D:sync-level>infinite</D:sync-level>
+     <D:limit><D:nresults>9</D:nresults></D:limit>
+     <D:prop>
+       <D:getetag/>
+     </D:prop>
+   </D:sync-collection>

@@ -1,0 +1,17 @@
+[package]
+name = "dav-proto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hashify = "0.2.6"
+quick-xml = "0.37.2"
+calcard = { path = "/Users/me/code/calcard" }
+mail-parser = "0.10.2"
+hyper = "1.6.0"
+rkyv = { version = "0.8.10", features = ["little_endian"] }
+
+[dev-dependencies]
+calcard = { path = "/Users/me/code/calcard", features = ["serde"] }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"

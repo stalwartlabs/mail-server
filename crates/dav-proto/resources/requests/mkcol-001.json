@@ -1,0 +1,41 @@
+{
+  "is_mkcalendar": false,
+  "props": [
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "ResourceType"
+        }
+      },
+      "value": {
+        "ResourceTypes": [
+          "Collection",
+          "AddressBook"
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "DisplayName"
+        }
+      },
+      "value": {
+        "String": "Lisa's Contacts"
+      }
+    },
+    {
+      "property": {
+        "type": "CardDav",
+        "data": {
+          "type": "AddressbookDescription"
+        }
+      },
+      "value": {
+        "String": "My primary address book."
+      }
+    }
+  ]
+}

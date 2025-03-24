@@ -12,6 +12,7 @@ members = [
     "crates/smtp",
     "crates/managesieve",
     "crates/pop3",
+    "crates/dav-proto",
     "crates/dav",
     "crates/groupware",
     "crates/spam-filter",

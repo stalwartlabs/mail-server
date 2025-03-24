@@ -1,0 +1,128 @@
+{
+  "type": "CalendarQuery",
+  "properties": {
+    "type": "Prop",
+    "data": [
+      {
+        "type": "WebDav",
+        "data": {
+          "type": "GetETag"
+        }
+      },
+      {
+        "type": "CalDav",
+        "data": {
+          "type": "CalendarData",
+          "data": {
+            "properties": [
+              {
+                "component": "VCalendar",
+                "name": {
+                  "type": "Version"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Summary"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Uid"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Dtstart"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Dtend"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Duration"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Rrule"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Rdate"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Exrule"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "Exdate"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VEvent",
+                "name": {
+                  "type": "RecurrenceId"
+                },
+                "no_value": false
+              },
+              {
+                "component": "VTimezone",
+                "name": null,
+                "no_value": false
+              }
+            ],
+            "expand": null,
+            "limit_recurrence": null,
+            "limit_freebusy": null
+          }
+        }
+      }
+    ]
+  },
+  "filters": [
+    {
+      "type": "Component",
+      "comp": [
+        "VCalendar",
+        "VEvent"
+      ],
+      "op": {
+        "type": "TimeRange",
+        "data": {
+          "start": 1136332800,
+          "end": 1136419200
+        }
+      }
+    }
+  ],
+  "timezone": {
+    "type": "None"
+  }
+}

@@ -1,0 +1,27 @@
+     <?xml version="1.0" encoding="utf-8" ?>
+     <D:multistatus xmlns:D="DAV:">
+       <D:response>
+         <D:href>http://www.example.com/container/</D:href>
+         <D:propstat>
+           <D:prop>
+             <D:lockdiscovery>
+              <D:activelock>
+               <D:lockscope><D:shared/></D:lockscope>
+               <D:locktype><D:write/></D:locktype>
+               <D:depth>0</D:depth>
+               <D:owner>Jane Smith</D:owner>
+               <D:timeout>Infinite</D:timeout>
+               <D:locktoken>
+                 <D:href
+             >urn:uuid:f81de2ad-7f3d-a1b2-4f3c-00a0c91a9d76</D:href>
+               </D:locktoken>
+               <D:lockroot>
+                 <D:href>http://www.example.com/container/</D:href>
+               </D:lockroot>
+              </D:activelock>
+             </D:lockdiscovery>
+           </D:prop>
+           <D:status>HTTP/1.1 200 OK</D:status>
+         </D:propstat>
+       </D:response>
+     </D:multistatus>
