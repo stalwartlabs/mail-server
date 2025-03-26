@@ -13,8 +13,8 @@ use smtp::core::Session;
 use utils::config::Config;
 
 use crate::smtp::{
-    session::{TestSession, VerifyResponse},
     TestSMTP,
+    session::{TestSession, VerifyResponse},
 };
 
 const CONFIG: &str = r#"

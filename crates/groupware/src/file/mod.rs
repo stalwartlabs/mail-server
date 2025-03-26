@@ -9,7 +9,7 @@ pub mod index;
 
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::value::AclGrant;
-use store::{SerializedVersion, SERIALIZE_OBJ_11_V1};
+use store::{SERIALIZE_OBJ_11_V1, SerializedVersion};
 use utils::BlobHash;
 
 #[derive(

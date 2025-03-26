@@ -55,9 +55,5 @@ pub(crate) fn fn_if_then(v: Vec<Variable>) -> Variable {
     let iff = v.next().unwrap();
     let then = v.next().unwrap();
 
-    if condition.to_bool() {
-        iff
-    } else {
-        then
-    }
+    if condition.to_bool() { iff } else { then }
 }

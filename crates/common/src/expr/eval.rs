@@ -12,9 +12,9 @@ use trc::EvalEvent;
 use crate::Server;
 
 use super::{
-    functions::{ResolveVariable, FUNCTIONS},
-    if_block::IfBlock,
     BinaryOperator, Constant, Expression, ExpressionItem, Setting, UnaryOperator, Variable,
+    functions::{FUNCTIONS, ResolveVariable},
+    if_block::IfBlock,
 };
 
 impl Server {

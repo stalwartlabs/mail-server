@@ -8,11 +8,11 @@ use std::{borrow::Cow, fmt::Display};
 
 use elasticsearch::SearchParts;
 use roaring::RoaringBitmap;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::fts::{Field, FtsFilter};
 
-use super::{assert_success, ElasticSearchStore, INDEX_NAMES};
+use super::{ElasticSearchStore, INDEX_NAMES, assert_success};
 
 impl ElasticSearchStore {
     pub async fn fts_query<T: Into<u8> + Display + Clone + std::fmt::Debug>(

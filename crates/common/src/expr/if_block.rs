@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::expr::{Constant, Expression};
 
 use super::{
+    ConstantValue, ExpressionItem,
     parser::ExpressionParser,
     tokenizer::{TokenMap, Tokenizer},
-    ConstantValue, ExpressionItem,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

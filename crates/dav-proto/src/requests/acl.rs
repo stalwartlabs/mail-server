@@ -179,7 +179,7 @@ impl DavParser for Principal {
                 ns: Namespace::Dav,
                 element: Element::Property,
             } => {
-                let property = stream.collect_properties()?;
+                let property = stream.collect_properties(Vec::new())?;
                 Principal::Property(List(
                     property
                         .into_iter()
@@ -271,7 +271,7 @@ impl DavParser for AclPrincipalPropSet {
                         },
                     ..
                 } => {
-                    acps.properties.extend(stream.collect_properties()?);
+                    acps.properties = stream.collect_properties(acps.properties)?;
                 }
                 Token::ElementEnd => {
                     break;
@@ -306,8 +306,9 @@ impl DavParser for PrincipalMatch {
                         },
                     ..
                 } => {
-                    pm.principal_properties =
-                        PrincipalMatchProperties::Properties(stream.collect_properties()?);
+                    pm.principal_properties = PrincipalMatchProperties::Properties(
+                        stream.collect_properties(Vec::new())?,
+                    );
                 }
                 Token::ElementStart {
                     name:
@@ -328,7 +329,7 @@ impl DavParser for PrincipalMatch {
                         },
                     ..
                 } => {
-                    pm.properties = stream.collect_properties()?;
+                    pm.properties = stream.collect_properties(pm.properties)?;
                 }
                 Token::ElementEnd => {
                     break;
@@ -376,7 +377,7 @@ impl DavParser for PrincipalPropertySearch {
                         },
                     ..
                 } => {
-                    pps.properties = stream.collect_properties()?;
+                    pps.properties = stream.collect_properties(pps.properties)?;
                 }
                 Token::ElementStart {
                     name:
@@ -420,7 +421,7 @@ impl PropertySearch {
                         },
                     ..
                 } => {
-                    property = stream.collect_properties()?.into_iter().next();
+                    property = stream.collect_properties(Vec::new())?.into_iter().next();
                 }
                 Token::ElementStart {
                     name:

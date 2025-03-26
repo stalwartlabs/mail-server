@@ -10,8 +10,8 @@ use roaring::RoaringBitmap;
 use trc::AddContext;
 
 use crate::{
-    fts::{index::FtsDocument, FtsFilter},
     FtsStore,
+    fts::{FtsFilter, index::FtsDocument},
 };
 
 use super::DocumentSet;

@@ -5,7 +5,7 @@
  */
 
 use hyper::Uri;
-use sieve::{runtime::Variable, Context};
+use sieve::{Context, runtime::Variable};
 
 use super::ApplyString;
 

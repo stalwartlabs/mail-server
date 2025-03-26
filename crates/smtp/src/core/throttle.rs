@@ -5,10 +5,10 @@
  */
 
 use common::{
+    KV_RATE_LIMIT_SMTP, ThrottleKey,
     config::smtp::*,
     expr::{functions::ResolveVariable, *},
     listener::SessionStream,
-    ThrottleKey, KV_RATE_LIMIT_SMTP,
 };
 use queue::QueueQuota;
 use trc::SmtpEvent;
@@ -196,9 +196,10 @@ impl<T: SessionStream> Session<T> {
                         return false;
                     }
                     Err(err) => {
-                        trc::error!(err
-                            .span_id(self.data.session_id)
-                            .caused_by(trc::location!()));
+                        trc::error!(
+                            err.span_id(self.data.session_id)
+                                .caused_by(trc::location!())
+                        );
                     }
                     _ => (),
                 }
@@ -231,9 +232,10 @@ impl<T: SessionStream> Session<T> {
             Ok(None) => true,
             Ok(Some(_)) => false,
             Err(err) => {
-                trc::error!(err
-                    .span_id(self.data.session_id)
-                    .caused_by(trc::location!()));
+                trc::error!(
+                    err.span_id(self.data.session_id)
+                        .caused_by(trc::location!())
+                );
                 true
             }
         }

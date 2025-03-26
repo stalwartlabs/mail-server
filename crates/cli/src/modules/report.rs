@@ -5,7 +5,7 @@
  */
 
 use super::cli::{Client, ReportCommands, ReportFormat};
-use crate::modules::{queue::deserialize_datetime, List};
+use crate::modules::{List, queue::deserialize_datetime};
 use console::Term;
 use human_size::{Byte, SpecificSize};
 use mail_auth::{
@@ -14,7 +14,7 @@ use mail_auth::{
     report::{self, tlsrpt::TlsReport},
 };
 use mail_parser::DateTime;
-use prettytable::{format, Attr, Cell, Row, Table};
+use prettytable::{Attr, Cell, Row, Table, format};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
@@ -197,11 +197,10 @@ impl ReportCommands {
                             ),
                         ]));
                     } else {
-                        table.add_row(Row::new(vec![Cell::new_align(
-                            "-- Not found --",
-                            format::Alignment::CENTER,
-                        )
-                        .with_hspan(2)]));
+                        table.add_row(Row::new(vec![
+                            Cell::new_align("-- Not found --", format::Alignment::CENTER)
+                                .with_hspan(2),
+                        ]));
                     }
 
                     eprintln!();

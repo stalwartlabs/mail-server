@@ -7,9 +7,9 @@
 use std::time::{Duration, Instant};
 
 use crate::smtp::{
+    DnsCache, TestSMTP,
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
-    DnsCache, TestSMTP,
 };
 use common::{config::server::ServerProtocol, ipc::QueueEvent};
 use smtp::queue::spool::SmtpSpool;

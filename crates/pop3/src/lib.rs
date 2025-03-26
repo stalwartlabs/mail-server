@@ -7,9 +7,9 @@
 use std::{net::IpAddr, sync::Arc};
 
 use common::{
-    auth::AccessToken,
-    listener::{limiter::InFlight, ServerInstance, SessionStream},
     Inner, Server,
+    auth::AccessToken,
+    listener::{ServerInstance, SessionStream, limiter::InFlight},
 };
 use mailbox::Mailbox;
 use protocol::request::Parser;

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use common::{
     core::BuildServer,
-    listener::{stream::NullIo, SessionData, SessionManager, SessionResult, SessionStream},
+    listener::{SessionData, SessionManager, SessionResult, SessionStream, stream::NullIo},
 };
 use imap_proto::{
     protocol::{ProtocolVersion, SerializeResponse},
@@ -17,7 +17,7 @@ use imap_proto::{
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::server::TlsStream;
 
-use crate::{GREETING_WITHOUT_TLS, GREETING_WITH_TLS};
+use crate::{GREETING_WITH_TLS, GREETING_WITHOUT_TLS};
 
 use super::{ImapSessionManager, Session, State};
 

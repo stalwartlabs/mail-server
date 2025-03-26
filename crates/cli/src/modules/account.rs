@@ -12,8 +12,8 @@ use reqwest::Method;
 use serde_json::Value;
 
 use super::{
-    cli::{AccountCommands, Client},
     Principal, PrincipalField, PrincipalUpdate, PrincipalValue, Type,
+    cli::{AccountCommands, Client},
 };
 
 impl AccountCommands {
@@ -325,7 +325,7 @@ impl Client {
         if !results.items.is_empty() {
             let mut table = Table::new();
             table.add_row(Row::new(vec![
-                Cell::new(&format!("{record_name} Name")).with_style(Attr::Bold)
+                Cell::new(&format!("{record_name} Name")).with_style(Attr::Bold),
             ]));
 
             for item in &results.items {

@@ -72,6 +72,11 @@ impl<'x> Tokenizer<'x> {
                         return Ok(Token::UnknownElement(RawElement(tag)));
                     }
                 }
+                ResolveResult::Unknown(p) => {
+                    return Err(Error::Xml(quick_xml::Error::Namespace(
+                        quick_xml::name::NamespaceError::UnknownPrefix(p),
+                    )))
+                }
                 _ => {
                     return Ok(Token::UnknownElement(RawElement(tag)));
                 }

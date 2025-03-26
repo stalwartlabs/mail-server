@@ -5,9 +5,9 @@
  */
 
 use crate::{
-    protocol::{capability::Capability, enable},
-    receiver::{bad, Request},
     Command,
+    protocol::{capability::Capability, enable},
+    receiver::{Request, bad},
 };
 
 impl Request<Command> {

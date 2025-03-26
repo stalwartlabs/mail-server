@@ -88,7 +88,7 @@ impl FileMkColRequestHandler for Server {
         let now = now();
         let mut node = FileNode {
             parent_id,
-            name: resource.resource.1.into_owned(),
+            name: resource.resource.1.to_string(),
             display_name: None,
             file: None,
             created: now as i64,

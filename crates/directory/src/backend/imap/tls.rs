@@ -9,7 +9,7 @@ use std::time::Duration;
 use rustls_pki_types::ServerName;
 use smtp_proto::IntoString;
 use tokio::net::{TcpStream, ToSocketAddrs};
-use tokio_rustls::{client::TlsStream, TlsConnector};
+use tokio_rustls::{TlsConnector, client::TlsStream};
 
 use super::{ImapClient, ImapError};
 

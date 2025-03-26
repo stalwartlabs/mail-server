@@ -31,7 +31,7 @@ use crate::{
     file::{DavFileResource, FileItemId, insert_file_node, update_file_node},
 };
 
-use super::{FromFileItem, delete_file_node};
+use super::{FromFileItem, delete::delete_files, delete_file_node};
 
 pub(crate) trait FileCopyMoveRequestHandler: Sync + Send {
     fn handle_file_copy_move_request(
@@ -119,32 +119,36 @@ impl FileCopyMoveRequestHandler for Server {
         };
 
         // Map file item
-        let mut destination_resource_name = "";
-        let mut destination = if let Some(resource) = destination.resource {
-            destination_resource_name = resource;
-
-            // Check if the resource exists
-            if let Some(destination) = to_files
+        let destination_resource_name = destination
+            .resource
+            .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?;
+        let mut delete_destination = None;
+        // Check if the resource exists
+        let mut destination = if let Some((destination, new_name)) =
+            to_files.map_parent::<Destination>(destination_resource_name)
+        {
+            if let Some(mut existing_destination) = to_files
                 .files
-                .by_name(resource)
+                .by_name(destination_resource_name)
                 .map(Destination::from_file_item)
             {
-                destination
-            } else if let Some((destination, new_name)) =
-                to_files.map_parent::<Destination>(resource)
-            {
-                let mut destination = destination.unwrap_or_default();
-                destination.new_name = Some(new_name.into_owned());
-                destination
-            } else {
-                return Err(DavError::Code(StatusCode::BAD_GATEWAY));
+                if !headers.overwrite_fail {
+                    existing_destination.account_id = to_account_id;
+                    delete_destination = Some(existing_destination);
+                } else {
+                    return Ok(HttpResponse::new(StatusCode::PRECONDITION_FAILED));
+                }
             }
+
+            let mut destination = destination.unwrap_or_default();
+            destination.new_name = Some(new_name.to_string());
+            destination
         } else {
-            Destination::default()
+            return Err(DavError::Code(StatusCode::CONFLICT));
         };
         destination.account_id = to_account_id;
 
-        if from_account_id == destination.account_id {
+        if from_account_id == destination.account_id && delete_destination.is_none() {
             if Some(from_resource.resource.document_id) == destination.document_id {
                 // Move or copy to the same location
                 return Ok(HttpResponse::new(StatusCode::BAD_GATEWAY));
@@ -174,6 +178,19 @@ impl FileCopyMoveRequestHandler for Server {
                 child_acl.insert(Acl::AddItems);
             } else {
                 child_acl.insert(Acl::Modify);
+            }
+
+            if let Some(delete_destination) = &delete_destination {
+                self.validate_child_or_parent_acl(
+                    access_token,
+                    to_account_id,
+                    Collection::FileNode,
+                    delete_destination.document_id.unwrap(),
+                    delete_destination.parent_id,
+                    Acl::Delete,
+                    Acl::RemoveItems,
+                )
+                .await?;
             }
 
             self.validate_child_or_parent_acl(
@@ -211,7 +228,11 @@ impl FileCopyMoveRequestHandler for Server {
                 },
             ],
             Default::default(),
-            DavMethod::MOVE,
+            if is_move {
+                DavMethod::MOVE
+            } else {
+                DavMethod::COPY
+            },
         )
         .await?;
 
@@ -232,12 +253,28 @@ impl FileCopyMoveRequestHandler for Server {
             .await?;
         }
 
-        match (
-            from_resource.resource.is_container,
-            destination.is_container,
-            is_move,
-        ) {
-            (true, true, true) => {
+        // Delete collection
+        let is_overwrite = delete_destination
+            .as_ref()
+            .is_some_and(|d| d.is_container || from_resource.resource.is_container);
+        if is_overwrite {
+            delete_destination = None;
+            // Find ids to delete
+            let mut ids = to_files
+                .subtree(destination_resource_name)
+                .collect::<Vec<_>>();
+            if !ids.is_empty() {
+                ids.sort_unstable_by(|a, b| b.hierarchy_sequence.cmp(&a.hierarchy_sequence));
+                let mut sorted_ids = Vec::with_capacity(ids.len());
+                sorted_ids.extend(ids.into_iter().map(|a| a.document_id));
+                delete_files(self, access_token, destination.account_id, sorted_ids)
+                    .await
+                    .caused_by(trc::location!())?;
+            }
+        }
+
+        match (from_resource.resource.is_container, is_move) {
+            (true, true) => {
                 move_container(
                     self,
                     access_token,
@@ -249,7 +286,7 @@ impl FileCopyMoveRequestHandler for Server {
                 )
                 .await
             }
-            (true, true, false) => {
+            (true, false) => {
                 copy_container(
                     self,
                     access_token,
@@ -261,19 +298,34 @@ impl FileCopyMoveRequestHandler for Server {
                 )
                 .await
             }
-            (false, false, true) => {
-                overwrite_and_delete_item(self, access_token, from_resource, destination).await
+            (false, true) => {
+                if let Some(delete_destination) = delete_destination {
+                    overwrite_and_delete_item(self, access_token, from_resource, delete_destination)
+                        .await
+                } else {
+                    move_item(self, access_token, from_resource, destination).await
+                }
             }
-            (false, false, false) => {
-                overwrite_item(self, access_token, from_resource, destination).await
+
+            (false, false) => {
+                if let Some(delete_destination) = delete_destination {
+                    overwrite_item(self, access_token, from_resource, delete_destination).await
+                } else {
+                    copy_item(self, access_token, from_resource, destination).await
+                }
             }
-            (false, true, true) => move_item(self, access_token, from_resource, destination).await,
-            (false, true, false) => copy_item(self, access_token, from_resource, destination).await,
-            _ => Err(DavError::Code(StatusCode::BAD_GATEWAY)),
         }
+        .map(|r| {
+            if is_overwrite && r.status() == StatusCode::CREATED {
+                r.with_status_code(StatusCode::NO_CONTENT)
+            } else {
+                r
+            }
+        })
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Destination {
     pub account_id: u32,
     pub new_name: Option<String>,
@@ -583,7 +635,7 @@ async fn overwrite_and_delete_item(
     .await
     .caused_by(trc::location!())?;
 
-    Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
+    Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
 }
 
 // Overwrites the contents of one file with another
@@ -644,7 +696,7 @@ async fn overwrite_item(
     .await
     .caused_by(trc::location!())?;
 
-    Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
+    Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
 }
 
 // Moves an item under an existing container

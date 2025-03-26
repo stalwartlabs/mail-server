@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{
+use std::{
     fs::{self, File},
     io,
     path::Path,

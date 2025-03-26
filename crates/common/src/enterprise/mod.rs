@@ -18,17 +18,17 @@ use std::{sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use directory::{
-    backend::internal::{lookup::DirectoryStore, PrincipalField},
     QueryBy, Type,
+    backend::internal::{PrincipalField, lookup::DirectoryStore},
 };
 use license::LicenseKey;
 use llm::AiApiConfig;
 use mail_parser::DateTime;
 use store::Store;
 use trc::{AddContext, EventType, MetricType};
-use utils::{config::cron::SimpleCron, HttpLimitResponse};
+use utils::{HttpLimitResponse, config::cron::SimpleCron};
 
-use crate::{expr::Expression, manager::webadmin::Resource, Core, Server};
+use crate::{Core, Server, expr::Expression, manager::webadmin::Resource};
 
 #[derive(Clone)]
 pub struct Enterprise {

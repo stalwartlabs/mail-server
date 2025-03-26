@@ -15,8 +15,8 @@ use utils::config::Config;
 use smtp::core::{Session, State};
 
 use crate::smtp::{
-    session::{TestSession, VerifyResponse},
     TempDir, TestSMTP,
+    session::{TestSession, VerifyResponse},
 };
 
 const CONFIG: &str = r#"

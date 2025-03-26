@@ -7,10 +7,10 @@
 use std::{future::Future, io, time::SystemTime};
 
 use common::{
+    Server, USER_AGENT,
     config::smtp::report::{AddressMatch, AggregateFrequency},
     expr::if_block::IfBlock,
     ipc::ReportingEvent,
-    Server, USER_AGENT,
 };
 use mail_auth::{
     common::headers::HeaderWriter,
@@ -18,13 +18,13 @@ use mail_auth::{
 };
 use mail_parser::DateTime;
 
-use store::write::{key::KeySerializer, ReportEvent};
+use store::write::{ReportEvent, key::KeySerializer};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
     core::Session,
     inbound::DkimSign,
-    queue::{spool::SmtpSpool, DomainPart, Message, MessageSource},
+    queue::{DomainPart, Message, MessageSource, spool::SmtpSpool},
 };
 
 pub mod analysis;
@@ -58,10 +58,10 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             for addr in &self.data.rcpt_to {
                 match addr_match {
                     AddressMatch::StartsWith(prefix) if addr.address_lcase.starts_with(prefix) => {
-                        return true
+                        return true;
                     }
                     AddressMatch::EndsWith(suffix) if addr.address_lcase.ends_with(suffix) => {
-                        return true
+                        return true;
                     }
                     AddressMatch::Equals(value) if addr.address_lcase.eq(value) => return true,
                     _ => (),
@@ -230,10 +230,12 @@ impl SmtpReporting for Server {
                             signature.write_header(&mut headers);
                         }
                         Err(err) => {
-                            trc::error!(trc::Error::from(err)
-                                .span_id(message.span_id)
-                                .details("Failed to sign message")
-                                .caused_by(trc::location!()));
+                            trc::error!(
+                                trc::Error::from(err)
+                                    .span_id(message.span_id)
+                                    .details("Failed to sign message")
+                                    .caused_by(trc::location!())
+                            );
                         }
                     }
                 }

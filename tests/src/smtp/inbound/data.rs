@@ -9,12 +9,12 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::{
-    smtp::{
-        inbound::TestMessage,
-        session::{load_test_message, TestSession, VerifyResponse},
-        TempDir, TestSMTP,
-    },
     AssertConfig,
+    smtp::{
+        TempDir, TestSMTP,
+        inbound::TestMessage,
+        session::{TestSession, VerifyResponse, load_test_message},
+    },
 };
 use smtp::core::Session;
 

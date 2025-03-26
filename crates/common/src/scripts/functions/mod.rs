@@ -13,7 +13,7 @@ pub mod text;
 pub mod unicode;
 pub mod url;
 
-use sieve::{runtime::Variable, FunctionMap};
+use sieve::{FunctionMap, runtime::Variable};
 
 use self::{array::*, email::*, header::*, image::*, misc::*, text::*, unicode::*, url::*};
 

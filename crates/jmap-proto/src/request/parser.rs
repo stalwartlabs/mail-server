@@ -21,15 +21,15 @@ use crate::{
         upload::BlobUploadRequest,
         validate::ValidateSieveScriptRequest,
     },
-    parser::{json::Parser, Ignore, JsonObjectParser, Token},
+    parser::{Ignore, JsonObjectParser, Token, json::Parser},
     types::any_id::AnyId,
 };
 
 use super::{
+    Call, Request, RequestMethod,
     capability::Capability,
     echo::Echo,
     method::{MethodFunction, MethodName, MethodObject},
-    Call, Request, RequestMethod,
 };
 
 impl Request {

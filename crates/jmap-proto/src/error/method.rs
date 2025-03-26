@@ -6,8 +6,8 @@
 
 use std::fmt::Display;
 
-use serde::ser::SerializeMap;
 use serde::Serialize;
+use serde::ser::SerializeMap;
 
 #[derive(Debug)]
 pub enum MethodError {

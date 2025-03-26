@@ -6,9 +6,9 @@
 
 use imap_proto::ResponseType;
 
-use crate::imap::{expand_uid_list, AssertResult};
+use crate::imap::{AssertResult, expand_uid_list};
 
-use super::{append::build_messages, ImapConnection, Type};
+use super::{ImapConnection, Type, append::build_messages};
 
 pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
     println!("Running THREAD tests...");

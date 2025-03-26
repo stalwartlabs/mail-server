@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use hyper::{header::CONTENT_TYPE, HeaderMap};
+use hyper::{HeaderMap, header::CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use utils::config::Config;
 

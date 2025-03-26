@@ -11,9 +11,9 @@ use mail_auth::MX;
 use store::write::now;
 
 use crate::smtp::{
+    DnsCache, TestSMTP,
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
-    DnsCache, TestSMTP,
 };
 
 const LOCAL: &str = r#"

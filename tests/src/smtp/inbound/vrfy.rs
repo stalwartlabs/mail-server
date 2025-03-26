@@ -12,11 +12,11 @@ use utils::config::Config;
 use smtp::core::Session;
 
 use crate::{
-    smtp::{
-        session::{TestSession, VerifyResponse},
-        TempDir, TestSMTP,
-    },
     AssertConfig,
+    smtp::{
+        TempDir, TestSMTP,
+        session::{TestSession, VerifyResponse},
+    },
 };
 
 const CONFIG: &str = r#"

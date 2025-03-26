@@ -104,7 +104,7 @@ impl DavParser for CalendarQuery {
                         ns: Namespace::Dav,
                         element: Element::Prop,
                     } if depth == 1 => {
-                        cq.properties = PropFind::Prop(stream.collect_properties()?);
+                        cq.properties = PropFind::Prop(stream.collect_properties(Vec::new())?);
                     }
                     NamedElement {
                         ns: Namespace::CalDav,
@@ -269,7 +269,7 @@ impl DavParser for AddressbookQuery {
                         ns: Namespace::Dav,
                         element: Element::Prop,
                     } if depth == 1 => {
-                        aq.properties = PropFind::Prop(stream.collect_properties()?);
+                        aq.properties = PropFind::Prop(stream.collect_properties(Vec::new())?);
                     }
                     NamedElement {
                         ns: Namespace::CardDav,
@@ -409,7 +409,7 @@ impl DavParser for MultiGet {
                         ns: Namespace::Dav,
                         element: Element::Prop,
                     } => {
-                        mg.properties = PropFind::Prop(stream.collect_properties()?);
+                        mg.properties = PropFind::Prop(stream.collect_properties(Vec::new())?);
                     }
                     NamedElement {
                         ns: Namespace::Dav,
@@ -448,7 +448,7 @@ impl DavParser for SyncCollection {
                         ns: Namespace::Dav,
                         element: Element::Prop,
                     } => {
-                        sc.properties = PropFind::Prop(stream.collect_properties()?);
+                        sc.properties = PropFind::Prop(stream.collect_properties(Vec::new())?);
                     }
                     NamedElement {
                         ns: Namespace::Dav,

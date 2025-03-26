@@ -7,11 +7,11 @@
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 use common::{
-    config::server::ServerProtocol,
-    listener::{limiter::ConcurrencyLimiter, ServerInstance, SessionStream, TcpAcceptor},
     Server,
+    config::server::ServerProtocol,
+    listener::{ServerInstance, SessionStream, TcpAcceptor, limiter::ConcurrencyLimiter},
 };
-use rustls::{server::ResolvesServerCert, ServerConfig};
+use rustls::{ServerConfig, server::ResolvesServerCert};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::watch,

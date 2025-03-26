@@ -6,7 +6,7 @@
 
 use common::listener::SessionStream;
 use mail_auth::{
-    common::verify::VerifySignature, AuthenticatedMessage, AuthenticationResults, DkimOutput,
+    AuthenticatedMessage, AuthenticationResults, DkimOutput, common::verify::VerifySignature,
 };
 use trc::OutgoingReportEvent;
 use utils::config::Rate;

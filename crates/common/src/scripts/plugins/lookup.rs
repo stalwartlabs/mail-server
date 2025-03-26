@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use sieve::{runtime::Variable, FunctionMap};
-use store::{dispatch::lookup::KeyValue, Deserialize, Value};
+use sieve::{FunctionMap, runtime::Variable};
+use store::{Deserialize, Value, dispatch::lookup::KeyValue};
 
 use crate::scripts::into_sieve_value;
 

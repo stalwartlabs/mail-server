@@ -6,17 +6,17 @@
 
 use common::{
     auth::{
+        AuthRequest,
         sasl::{
             sasl_decode_challenge_oauth, sasl_decode_challenge_plain, sasl_decode_challenge_xoauth,
         },
-        AuthRequest,
     },
     listener::SessionStream,
 };
 use directory::Permission;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
+use smtp_proto::{AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2, IntoString};
 use trc::{AuthEvent, SmtpEvent};
 
 use crate::core::Session;

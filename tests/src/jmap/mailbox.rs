@@ -5,13 +5,13 @@
  */
 
 use jmap_client::{
+    Error, Set,
     client::Client,
     core::{
         query::Filter,
         set::{SetError, SetErrorType, SetObject, SetRequest},
     },
     mailbox::{self, Mailbox, Role},
-    Error, Set,
 };
 use jmap_proto::types::{id::Id, state::State};
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use store::ahash::AHashMap;
 
 use crate::jmap::assert_is_empty;
 
-use super::{wait_for_index, JMAPTest};
+use super::{JMAPTest, wait_for_index};
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running Mailbox tests...");
@@ -299,12 +299,14 @@ pub async fn test(params: &mut JMAPTest) {
         .update(&id_map["1.1.1.1.1"])
         .name("Renamed and moved")
         .parent_id((&id_map["l.2"]).into());
-    assert!(request
-        .send_set_mailbox()
-        .await
-        .unwrap()
-        .updated(&id_map["1.1.1.1.1"])
-        .is_ok());
+    assert!(
+        request
+            .send_set_mailbox()
+            .await
+            .unwrap()
+            .updated(&id_map["1.1.1.1.1"])
+            .is_ok()
+    );
 
     // Verify changes
     let state = client.mailbox_changes(state, 0).await.unwrap();
@@ -494,24 +496,30 @@ pub async fn test(params: &mut JMAPTest) {
         .destroy([&id_map["trash"]])
         .arguments()
         .on_destroy_remove_emails(true);
-    assert!(request
-        .send_set_mailbox()
-        .await
-        .unwrap()
-        .destroyed(&id_map["trash"])
-        .is_ok());
+    assert!(
+        request
+            .send_set_mailbox()
+            .await
+            .unwrap()
+            .destroyed(&id_map["trash"])
+            .is_ok()
+    );
 
     // Verify that Trash folder and its contents are gone
-    assert!(client
-        .mailbox_get(&id_map["trash"], None::<Vec<_>>)
-        .await
-        .unwrap()
-        .is_none());
-    assert!(client
-        .email_get(&mail_id, None::<Vec<_>>)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        client
+            .mailbox_get(&id_map["trash"], None::<Vec<_>>)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        client
+            .email_get(&mail_id, None::<Vec<_>>)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     // Check search results after changing folder properties
     let mut request = client.build();
@@ -522,12 +530,14 @@ pub async fn test(params: &mut JMAPTest) {
         .sort_order(100)
         .parent_id((&id_map["l.2"]).into())
         .role(Role::None);
-    assert!(request
-        .send_set_mailbox()
-        .await
-        .unwrap()
-        .updated(&id_map["drafts"])
-        .is_ok());
+    assert!(
+        request
+            .send_set_mailbox()
+            .await
+            .unwrap()
+            .updated(&id_map["drafts"])
+            .is_ok()
+    );
     assert_eq!(
         client
             .mailbox_query(
@@ -547,24 +557,28 @@ pub async fn test(params: &mut JMAPTest) {
             .collect::<Vec<_>>(),
         ["drafts"]
     );
-    assert!(client
-        .mailbox_query(
-            mailbox::query::Filter::name("Drafts").into(),
-            [mailbox::query::Comparator::name()].into()
-        )
-        .await
-        .unwrap()
-        .ids()
-        .is_empty());
-    assert!(client
-        .mailbox_query(
-            mailbox::query::Filter::role(Role::Drafts).into(),
-            [mailbox::query::Comparator::name()].into()
-        )
-        .await
-        .unwrap()
-        .ids()
-        .is_empty());
+    assert!(
+        client
+            .mailbox_query(
+                mailbox::query::Filter::name("Drafts").into(),
+                [mailbox::query::Comparator::name()].into()
+            )
+            .await
+            .unwrap()
+            .ids()
+            .is_empty()
+    );
+    assert!(
+        client
+            .mailbox_query(
+                mailbox::query::Filter::role(Role::Drafts).into(),
+                [mailbox::query::Comparator::name()].into()
+            )
+            .await
+            .unwrap()
+            .ids()
+            .is_empty()
+    );
     assert_eq!(
         client
             .mailbox_query(

@@ -24,10 +24,10 @@ use std::{
     time::Duration,
 };
 
-use hyper::{header::AUTHORIZATION, HeaderMap};
-use ring::signature::{UnparsedPublicKey, ED25519};
+use hyper::{HeaderMap, header::AUTHORIZATION};
+use ring::signature::{ED25519, UnparsedPublicKey};
 
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use store::write::now;
 use trc::ServerEvent;
 

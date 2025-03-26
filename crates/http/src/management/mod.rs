@@ -28,7 +28,7 @@ use dkim::DkimManagement;
 use dns::DnsManagement;
 #[cfg(feature = "enterprise")]
 use enterprise::telemetry::TelemetryApi;
-use hyper::Method;
+use hyper::{Method, StatusCode, header};
 use jmap::api::{ToJmapHttpResponse, ToRequestError};
 use log::LogManagement;
 use mail_parser::DateTime;
@@ -272,7 +272,11 @@ impl ToManageHttpResponse for &trc::Error {
                 }
             }
             .into_http_response(),
-
+            trc::EventType::Auth(trc::AuthEvent::Failed) => {
+                HttpResponse::new(StatusCode::UNAUTHORIZED)
+                    .with_header(header::WWW_AUTHENTICATE, "Bearer realm=\"Stalwart Server\"")
+                    .with_header(header::WWW_AUTHENTICATE, "Basic realm=\"Stalwart Server\"")
+            }
             _ => self.to_request_error().into_http_response(),
         }
     }

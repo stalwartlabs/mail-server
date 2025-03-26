@@ -63,7 +63,7 @@ impl FileUpdateRequestHandler for Server {
             .caused_by(trc::location!())?;
         let resource_name = resource
             .resource
-            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+            .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
         if let Some(document_id) = files.files.by_name(resource_name).map(|r| r.document_id) {
             // Update
@@ -91,15 +91,6 @@ impl FileUpdateRequestHandler for Server {
                 Acl::ModifyItems,
             )
             .await?;
-
-            // Verify that the node is a file
-            if let Some(file) = node.file.as_ref() {
-                if BlobHash::generate(&bytes).as_slice() == file.blob_hash.0.as_slice() {
-                    return Ok(HttpResponse::new(StatusCode::OK));
-                }
-            } else {
-                return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
-            }
 
             // Validate headers
             match self
@@ -146,6 +137,15 @@ impl FileUpdateRequestHandler for Server {
                         .with_binary_body(contents));
                 }
                 Err(e) => return Err(e),
+            }
+
+            // Verify that the node is a file
+            if let Some(file) = node.file.as_ref() {
+                if BlobHash::generate(&bytes).as_slice() == file.blob_hash.0.as_slice() {
+                    return Ok(HttpResponse::new(StatusCode::OK));
+                }
+            } else {
+                return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 
             // Validate quota
@@ -207,7 +207,7 @@ impl FileUpdateRequestHandler for Server {
             let orig_resource_name = resource_name;
             let (parent_id, resource_name) = files
                 .map_parent(resource_name)
-                .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+                .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
             // Validate ACL
             let parent_id = self
@@ -277,7 +277,7 @@ impl FileUpdateRequestHandler for Server {
             let now = now();
             let node = FileNode {
                 parent_id,
-                name: resource_name.into_owned(),
+                name: resource_name.to_string(),
                 display_name: None,
                 file: Some(FileProperties {
                     blob_hash,

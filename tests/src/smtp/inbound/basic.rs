@@ -8,8 +8,8 @@ use common::Core;
 use smtp::core::Session;
 
 use crate::smtp::{
-    session::{TestSession, VerifyResponse},
     TestSMTP,
+    session::{TestSession, VerifyResponse},
 };
 
 #[tokio::test]

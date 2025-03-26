@@ -7,7 +7,7 @@
 use std::future::Future;
 
 use common::{
-    config::smtp::QueueRateLimiter, expr::functions::ResolveVariable, Server, KV_RATE_LIMIT_SMTP,
+    KV_RATE_LIMIT_SMTP, Server, config::smtp::QueueRateLimiter, expr::functions::ResolveVariable,
 };
 use store::write::now;
 

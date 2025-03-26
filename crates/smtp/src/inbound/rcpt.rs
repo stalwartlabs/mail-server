@@ -5,11 +5,11 @@
  */
 
 use common::{
-    config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification, KV_GREYLIST,
+    KV_GREYLIST, config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification,
 };
 use directory::backend::RcptType;
 use smtp_proto::{
-    RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
+    RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS, RcptTo,
 };
 use store::dispatch::lookup::KeyValue;
 use trc::{SecurityEvent, SmtpEvent};
@@ -231,10 +231,11 @@ impl<T: SessionStream> Session<T> {
                                 .await;
                         }
                         Err(err) => {
-                            trc::error!(err
-                                .span_id(self.data.session_id)
-                                .caused_by(trc::location!())
-                                .details("Failed to verify address."));
+                            trc::error!(
+                                err.span_id(self.data.session_id)
+                                    .caused_by(trc::location!())
+                                    .details("Failed to verify address.")
+                            );
 
                             self.data.rcpt_to.pop();
                             return self
@@ -267,10 +268,11 @@ impl<T: SessionStream> Session<T> {
                     }
                 }
                 Err(err) => {
-                    trc::error!(err
-                        .span_id(self.data.session_id)
-                        .caused_by(trc::location!())
-                        .details("Failed to verify address."));
+                    trc::error!(
+                        err.span_id(self.data.session_id)
+                            .caused_by(trc::location!())
+                            .details("Failed to verify address.")
+                    );
 
                     self.data.rcpt_to.pop();
                     return self
@@ -352,18 +354,20 @@ impl<T: SessionStream> Session<T> {
                                     .await;
                             }
                             Err(err) => {
-                                trc::error!(err
-                                    .span_id(self.data.session_id)
-                                    .caused_by(trc::location!())
-                                    .details("Failed to set greylist."));
+                                trc::error!(
+                                    err.span_id(self.data.session_id)
+                                        .caused_by(trc::location!())
+                                        .details("Failed to set greylist.")
+                                );
                             }
                         }
                     }
                     Err(err) => {
-                        trc::error!(err
-                            .span_id(self.data.session_id)
-                            .caused_by(trc::location!())
-                            .details("Failed to check greylist."));
+                        trc::error!(
+                            err.span_id(self.data.session_id)
+                                .caused_by(trc::location!())
+                                .details("Failed to check greylist.")
+                        );
                     }
                 }
             }
@@ -435,10 +439,11 @@ impl<T: SessionStream> Session<T> {
                 }
             }
             Err(err) => {
-                trc::error!(err
-                    .span_id(self.data.session_id)
-                    .caused_by(trc::location!())
-                    .details("Failed to check if IP should be banned."));
+                trc::error!(
+                    err.span_id(self.data.session_id)
+                        .caused_by(trc::location!())
+                        .details("Failed to check if IP should be banned.")
+                );
             }
         }
 

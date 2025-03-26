@@ -8,9 +8,9 @@ use std::{borrow::Cow, collections::HashMap};
 
 use crate::{
     error::request::{RequestError, RequestErrorType, RequestLimitError},
-    parser::{json::Parser, JsonObjectParser, Token},
+    parser::{JsonObjectParser, Token, json::Parser},
     request::Call,
-    response::{serialize::serialize_hex, Response, ResponseMethod},
+    response::{Response, ResponseMethod, serialize::serialize_hex},
     types::{any_id::AnyId, id::Id, state::State, type_state::DataType},
 };
 use utils::map::vec_map::VecMap;

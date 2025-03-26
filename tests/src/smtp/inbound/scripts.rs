@@ -8,19 +8,18 @@ use core::panic;
 use std::{fmt::Write, fs, path::PathBuf};
 
 use crate::{
-    enable_logging,
+    AssertConfig, enable_logging,
     smtp::{
-        inbound::{sign::SIGNATURES, TestMessage, TestQueueEvent},
-        session::{TestSession, VerifyResponse},
         TempDir, TestSMTP,
+        inbound::{TestMessage, TestQueueEvent, sign::SIGNATURES},
+        session::{TestSession, VerifyResponse},
     },
-    AssertConfig,
 };
 use common::Core;
 
 use smtp::{
     core::Session,
-    scripts::{event_loop::RunScript, ScriptResult},
+    scripts::{ScriptResult, event_loop::RunScript},
 };
 use store::Stores;
 use utils::config::Config;

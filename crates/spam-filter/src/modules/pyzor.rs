@@ -12,7 +12,7 @@ use std::{
 };
 
 use common::config::spamfilter::PyzorConfig;
-use mail_parser::{decoders::html::add_html_token, Message, PartType};
+use mail_parser::{Message, PartType, decoders::html::add_html_token};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 use sha1::{Digest, Sha1};
 use tokio::net::UdpSocket;
@@ -424,7 +424,7 @@ mod test {
 
     use super::pyzor_create_message;
     use super::pyzor_send_message;
-    use super::{html_to_text, pyzor_digest, PyzorDigest};
+    use super::{PyzorDigest, html_to_text, pyzor_digest};
 
     use super::PyzorResponse;
 
@@ -767,7 +767,9 @@ email</a>. Clicking on <a href="/wiki/Html_email#Security_vulnerabilities" title
 links in spam email</a> may send users to <a href="/wiki/Phishing" title="Phishing">phishing</a> 
 web sites or sites that are hosting <a href="/wiki/Malware" title="Malware">malware</a>.</body></html>"#;
 
-    const HTML_RAW_STRIPED : &str = concat!("Email spam Email spam , also known as junk email or unsolicited bulk email ( UBE )," ,
-                    " is a subset of electronic spam involving nearly identical messages sent to numerous recipients by email" ,
-                    " . Clicking on links in spam email may send users to phishing web sites or sites that are hosting malware .");
+    const HTML_RAW_STRIPED: &str = concat!(
+        "Email spam Email spam , also known as junk email or unsolicited bulk email ( UBE ),",
+        " is a subset of electronic spam involving nearly identical messages sent to numerous recipients by email",
+        " . Clicking on links in spam email may send users to phishing web sites or sites that are hosting malware ."
+    );
 }

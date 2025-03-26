@@ -14,9 +14,9 @@ pub mod query;
 pub mod text;
 
 use mail_parser::Message;
-use sieve::{runtime::Variable, FunctionMap, Input};
+use sieve::{FunctionMap, Input, runtime::Variable};
 
-use crate::{auth::AccessToken, Core, Server};
+use crate::{Core, Server, auth::AccessToken};
 
 use super::ScriptModification;
 

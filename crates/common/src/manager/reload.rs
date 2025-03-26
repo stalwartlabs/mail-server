@@ -10,12 +10,12 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::{
+    Core, Server,
     config::{
-        server::{tls::parse_certificates, Listeners},
+        server::{Listeners, tls::parse_certificates},
         telemetry::Telemetry,
     },
-    listener::blocked::{BlockedIps, BLOCKED_IP_KEY},
-    Core, Server,
+    listener::blocked::{BLOCKED_IP_KEY, BlockedIps},
 };
 
 use super::config::{ConfigManager, Patterns};

@@ -1,0 +1,11 @@
+<D:propertyupdate xmlns:D="DAV:"><D:set><D:prop><prop0 xmlns="http://example.com/neon/litmus/">value0</prop0></D:prop></D:set>
+<D:set><D:prop><prop1 xmlns="http://example.com/neon/litmus/">value1</prop1></D:prop></D:set>
+<D:set><D:prop><prop2 xmlns="http://example.com/neon/litmus/">value2</prop2></D:prop></D:set>
+<D:set><D:prop><prop3 xmlns="http://example.com/neon/litmus/">value3</prop3></D:prop></D:set>
+<D:set><D:prop><prop4 xmlns="http://example.com/neon/litmus/">value4</prop4></D:prop></D:set>
+<D:set><D:prop><prop5 xmlns="http://example.com/neon/litmus/">value5</prop5></D:prop></D:set>
+<D:set><D:prop><prop6 xmlns="http://example.com/neon/litmus/">value6</prop6></D:prop></D:set>
+<D:set><D:prop><prop7 xmlns="http://example.com/neon/litmus/">value7</prop7></D:prop></D:set>
+<D:set><D:prop><prop8 xmlns="http://example.com/neon/litmus/">value8</prop8></D:prop></D:set>
+<D:set><D:prop><prop9 xmlns="http://example.com/neon/litmus/">value9</prop9></D:prop></D:set>
+</D:propertyupdate>

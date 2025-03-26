@@ -5,7 +5,7 @@
  */
 
 use mail_parser::decoders::html::html_to_text;
-use sieve::{runtime::Variable, Context};
+use sieve::{Context, runtime::Variable};
 
 use super::ApplyString;
 

@@ -26,7 +26,7 @@ use rasn_cms::{
 };
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs1::DecodeRsaPublicKey};
 use sequoia_openpgp as openpgp;
-use store::{write::Archive, Deserialize, SerializedVersion, SERIALIZE_OBJ_05_V1};
+use store::{Deserialize, SERIALIZE_OBJ_05_V1, SerializedVersion, write::Archive};
 
 const P: openpgp::policy::StandardPolicy<'static> = openpgp::policy::StandardPolicy::new();
 

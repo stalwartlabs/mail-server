@@ -10,9 +10,9 @@ use crate::core::Session;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::{
-    protocol::{capability::Capability, enable, ImapResponse, ProtocolVersion},
-    receiver::Request,
     Command, StatusResponse,
+    protocol::{ImapResponse, ProtocolVersion, capability::Capability, enable},
+    receiver::Request,
 };
 
 impl<T: SessionStream> Session<T> {

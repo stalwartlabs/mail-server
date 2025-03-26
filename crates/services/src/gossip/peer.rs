@@ -6,7 +6,7 @@
 
 use std::{fmt::Display, net::IpAddr, time::Instant};
 
-use super::{Gossiper, Peer, PeerStatus, State, HEARTBEAT_WINDOW};
+use super::{Gossiper, HEARTBEAT_WINDOW, Peer, PeerStatus, State};
 
 impl Peer {
     pub fn new_seed(addr: IpAddr) -> Self {

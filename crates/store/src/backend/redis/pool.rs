@@ -10,7 +10,7 @@ use redis::{
     cluster_async::ClusterConnection,
 };
 
-use super::{into_error, RedisClusterConnectionManager, RedisConnectionManager};
+use super::{RedisClusterConnectionManager, RedisConnectionManager, into_error};
 
 impl managed::Manager for RedisConnectionManager {
     type Type = MultiplexedConnection;

@@ -5,10 +5,10 @@
  */
 
 use crate::{
-    protocol::{copy_move, ProtocolVersion},
-    receiver::{bad, Request},
-    utf7::utf7_maybe_decode,
     Command,
+    protocol::{ProtocolVersion, copy_move},
+    receiver::{Request, bad},
+    utf7::utf7_maybe_decode,
 };
 
 use super::parse_sequence_set;
@@ -45,7 +45,7 @@ impl Request<Command> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        protocol::{copy_move, ProtocolVersion, Sequence},
+        protocol::{ProtocolVersion, Sequence, copy_move},
         receiver::Receiver,
     };
 

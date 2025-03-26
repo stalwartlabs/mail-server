@@ -9,8 +9,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use common::{config::spamfilter::Location, Server};
-use mail_parser::{parsers::MessageStream, Header};
+use common::{Server, config::spamfilter::Location};
+use mail_parser::{Header, parsers::MessageStream};
 
 use crate::{
     Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput, SpamFilterResult, TextPart,

@@ -5,8 +5,8 @@
  */
 
 use deadpool::{
-    managed::{Manager, Pool},
     Runtime,
+    managed::{Manager, Pool},
 };
 use std::{sync::Arc, time::Duration};
 use store::{Store, Stores};
@@ -15,11 +15,11 @@ use utils::config::Config;
 use ahash::AHashMap;
 
 use crate::{
+    Directories, Directory, DirectoryInner,
     backend::{
         imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, oidc::OpenIdDirectory,
         smtp::SmtpDirectory, sql::SqlDirectory,
     },
-    Directories, Directory, DirectoryInner,
 };
 
 use super::cache::CachedDirectory;

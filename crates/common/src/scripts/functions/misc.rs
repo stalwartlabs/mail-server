@@ -9,7 +9,7 @@ use std::net::IpAddr;
 use mail_auth::common::resolver::ToReverseName;
 use sha1::Sha1;
 use sha2::{Sha256, Sha512};
-use sieve::{runtime::Variable, Context};
+use sieve::{Context, runtime::Variable};
 
 use super::ApplyString;
 

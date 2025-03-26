@@ -18,7 +18,10 @@ use jmap_proto::{
 };
 use mail_parser::decoders::html::html_to_text;
 use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer};
-use store::{backend::MAX_TOKEN_LENGTH, write::{AlignedBytes, Archive}};
+use store::{
+    backend::MAX_TOKEN_LENGTH,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use utils::BlobHash;
 

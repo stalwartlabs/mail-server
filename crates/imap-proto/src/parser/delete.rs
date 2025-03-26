@@ -5,10 +5,10 @@
  */
 
 use crate::{
-    protocol::{delete, ProtocolVersion},
-    receiver::{bad, Request},
-    utf7::utf7_maybe_decode,
     Command,
+    protocol::{ProtocolVersion, delete},
+    receiver::{Request, bad},
+    utf7::utf7_maybe_decode,
 };
 
 impl Request<Command> {
@@ -35,7 +35,7 @@ impl Request<Command> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        protocol::{delete, ProtocolVersion},
+        protocol::{ProtocolVersion, delete},
         receiver::Receiver,
     };
 

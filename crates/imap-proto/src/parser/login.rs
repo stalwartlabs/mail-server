@@ -5,9 +5,9 @@
  */
 
 use crate::{
-    protocol::login,
-    receiver::{bad, Request},
     Command,
+    protocol::login,
+    receiver::{Request, bad},
 };
 
 impl Request<Command> {

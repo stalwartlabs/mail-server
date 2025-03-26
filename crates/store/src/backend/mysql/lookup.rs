@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use mysql_async::{prelude::Queryable, Params, Row};
+use mysql_async::{Params, Row, prelude::Queryable};
 
 use crate::{IntoRows, QueryResult, QueryType, Value};
 
-use super::{into_error, MysqlStore};
+use super::{MysqlStore, into_error};
 
 impl MysqlStore {
     pub(crate) async fn query<T: QueryResult>(

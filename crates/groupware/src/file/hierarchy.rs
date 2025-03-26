@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use common::{FileItem, Files, Server};
 use jmap_proto::types::collection::Collection;
-use percent_encoding::NON_ALPHANUMERIC;
 use trc::AddContext;
 use utils::bimap::IdBimap;
 
@@ -35,12 +34,30 @@ impl FileHierarchy for Server {
             .get(&account_id)
             .filter(|x| x.modseq == change_id)
         {
+            let c = println!(
+                "Hierarchy: {:?}",
+                files
+                    .files
+                    .iter()
+                    .map(|f| f.name.clone())
+                    .collect::<Vec<_>>()
+            );
             Ok(files)
         } else {
             let mut files = build_file_hierarchy(self, account_id).await?;
             files.modseq = change_id;
             let files = Arc::new(files);
             self.inner.cache.files.insert(account_id, files.clone());
+
+            let c = println!(
+                "Hierarchy: {:?}",
+                files
+                    .files
+                    .iter()
+                    .map(|f| f.name.clone())
+                    .collect::<Vec<_>>()
+            );
+
             Ok(files)
         }
     }
@@ -50,10 +67,10 @@ async fn build_file_hierarchy(server: &Server, account_id: u32) -> trc::Result<F
     let list = server
         .fetch_folders::<FileNode>(account_id, Collection::FileNode)
         .await
-        .caused_by(trc::location!())?
-        .format(|f| {
-            f.name = percent_encoding::utf8_percent_encode(&f.name, NON_ALPHANUMERIC).to_string();
-        });
+        .caused_by(trc::location!())?;
+    /*.format(|f| {
+        f.name = percent_encoding::utf8_percent_encode(&f.name, NON_ALPHANUMERIC).to_string();
+    });*/
     let mut files = Files {
         files: IdBimap::with_capacity(list.len()),
         size: std::mem::size_of::<Files>() as u64,

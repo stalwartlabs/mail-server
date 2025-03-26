@@ -7,12 +7,12 @@
 use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use common::{
+    Server,
     config::{
         server::{Listener, Listeners, ServerProtocol, TcpListener},
         smtp::*,
     },
     expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
-    Server,
 };
 use throttle::parse_queue_rate_limiter;
 use tokio::net::TcpSocket;

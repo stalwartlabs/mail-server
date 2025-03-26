@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue, MimeHeaders};
-use sieve::{compiler::ReceivedPart, runtime::Variable, Context};
+use mail_parser::{HeaderName, HeaderValue, MimeHeaders, parsers::fields::thread::thread_name};
+use sieve::{Context, compiler::ReceivedPart, runtime::Variable};
 
 use super::ApplyString;
 

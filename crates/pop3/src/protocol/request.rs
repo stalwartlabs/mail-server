@@ -323,7 +323,7 @@ impl Mechanism {
 
 #[cfg(test)]
 mod tests {
-    use crate::protocol::{request::Error, Command, Mechanism};
+    use crate::protocol::{Command, Mechanism, request::Error};
 
     use super::Parser;
 

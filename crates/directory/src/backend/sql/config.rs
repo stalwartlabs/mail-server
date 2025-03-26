@@ -5,7 +5,7 @@
  */
 
 use store::{Store, Stores};
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use super::{SqlDirectory, SqlMappings};
 

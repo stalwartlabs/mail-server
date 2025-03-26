@@ -5,8 +5,8 @@
  */
 
 use crate::{
-    parser::{json::Parser, Ignore, JsonObjectParser, Token},
-    request::{method::MethodObject, RequestProperty},
+    parser::{Ignore, JsonObjectParser, Token, json::Parser},
+    request::{RequestProperty, method::MethodObject},
     types::{id::Id, property::Property, state::State},
 };
 
@@ -69,7 +69,7 @@ impl JsonObjectParser for ChangesRequest {
                 _ => {
                     return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
-                        .details(format!("{}/changes", parser.ctx)))
+                        .details(format!("{}/changes", parser.ctx)));
                 }
             },
             account_id: Id::default(),

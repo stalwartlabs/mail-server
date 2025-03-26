@@ -6,11 +6,11 @@
 
 use r2d2::Pool;
 use tokio::sync::oneshot;
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::*;
 
-use super::{into_error, pool::SqliteConnectionManager, SqliteStore};
+use super::{SqliteStore, into_error, pool::SqliteConnectionManager};
 
 impl SqliteStore {
     pub fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {

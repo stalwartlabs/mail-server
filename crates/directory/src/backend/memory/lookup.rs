@@ -7,8 +7,8 @@
 use mail_send::Credentials;
 
 use crate::{
-    backend::{internal::PrincipalField, RcptType},
     Principal, QueryBy,
+    backend::{RcptType, internal::PrincipalField},
 };
 
 use super::{EmailType, MemoryDirectory};

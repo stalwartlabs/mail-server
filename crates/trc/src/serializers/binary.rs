@@ -35,9 +35,11 @@ pub fn deserialize_events(bytes: &[u8]) -> crate::Result<Vec<Event<EventDetails>
             .details("EOF while reading version")
     })? != VERSION
     {
-        crate::bail!(StoreEvent::DataCorruption
-            .caused_by(crate::location!())
-            .details("Invalid version"));
+        crate::bail!(
+            StoreEvent::DataCorruption
+                .caused_by(crate::location!())
+                .details("Invalid version")
+        );
     }
     let len = leb128_read(&mut iter).ok_or_else(|| {
         StoreEvent::DataCorruption
@@ -63,9 +65,11 @@ pub fn deserialize_single_event(bytes: &[u8]) -> crate::Result<Event<EventDetail
             .details("EOF while reading version")
     })? != VERSION
     {
-        crate::bail!(StoreEvent::DataCorruption
-            .caused_by(crate::location!())
-            .details("Invalid version"));
+        crate::bail!(
+            StoreEvent::DataCorruption
+                .caused_by(crate::location!())
+                .details("Invalid version")
+        );
     }
     let _ = leb128_read(&mut iter).ok_or_else(|| {
         StoreEvent::DataCorruption

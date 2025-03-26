@@ -6,12 +6,12 @@
 
 use std::{borrow::Cow, future::Future, sync::Arc, time::Instant};
 
-use common::{scripts::plugins::PluginContext, Server};
+use common::{Server, scripts::plugins::PluginContext};
 use mail_auth::common::headers::HeaderWriter;
 use mail_parser::{Encoding, Message, MessagePart, PartType};
 use sieve::{
-    compiler::grammar::actions::action_redirect::{ByMode, ByTime, Notify, NotifyItem, Ret},
     Event, Input, MatchAs, Recipient, Sieve,
+    compiler::grammar::actions::action_redirect::{ByMode, ByTime, Notify, NotifyItem, Ret},
 };
 use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
@@ -21,7 +21,7 @@ use trc::SieveEvent;
 
 use crate::{
     inbound::DkimSign,
-    queue::{quota::HasQueueQuota, spool::SmtpSpool, DomainPart, MessageSource},
+    queue::{DomainPart, MessageSource, quota::HasQueueQuota, spool::SmtpSpool},
 };
 
 use super::{ScriptModification, ScriptParameters, ScriptResult};
@@ -289,10 +289,12 @@ impl RunScript for Server {
                                                 signature.write_header(&mut headers);
                                             }
                                             Err(err) => {
-                                                trc::error!(trc::Error::from(err)
-                                                    .span_id(session_id)
-                                                    .caused_by(trc::location!())
-                                                    .details("DKIM sign failed"));
+                                                trc::error!(
+                                                    trc::Error::from(err)
+                                                        .span_id(session_id)
+                                                        .caused_by(trc::location!())
+                                                        .details("DKIM sign failed")
+                                                );
                                             }
                                         }
                                     }

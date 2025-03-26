@@ -6,15 +6,15 @@
 
 use std::{
     net::IpAddr,
-    sync::{atomic::AtomicU32, Arc},
+    sync::{Arc, atomic::AtomicU32},
 };
 
 use common::{
-    auth::AccessToken,
-    listener::{limiter::InFlight, ServerInstance, SessionStream},
     Account, ImapId, Inner, MailboxId, MailboxState, Server,
+    auth::AccessToken,
+    listener::{ServerInstance, SessionStream, limiter::InFlight},
 };
-use imap_proto::{protocol::ProtocolVersion, receiver::Receiver, Command};
+use imap_proto::{Command, protocol::ProtocolVersion, receiver::Receiver};
 use tokio::{
     io::{ReadHalf, WriteHalf},
     sync::watch,

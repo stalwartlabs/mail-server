@@ -6,10 +6,10 @@
 
 use std::fmt;
 
-use biscuit::{jws::RegisteredHeader, ClaimsSet, RegisteredClaims, SingleOrMultiple, JWT};
+use biscuit::{ClaimsSet, JWT, RegisteredClaims, SingleOrMultiple, jws::RegisteredHeader};
 use serde::{
-    de::{self, Visitor},
     Deserialize, Deserializer, Serialize,
+    de::{self, Visitor},
 };
 use store::write::now;
 

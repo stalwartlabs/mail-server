@@ -6,7 +6,7 @@
 
 use std::sync::LazyLock;
 
-use imap_proto::{protocol::capability::Capability, ResponseCode, StatusResponse};
+use imap_proto::{ResponseCode, StatusResponse, protocol::capability::Capability};
 
 pub mod core;
 pub mod op;

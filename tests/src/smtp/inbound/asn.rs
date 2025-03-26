@@ -8,7 +8,7 @@
 mod tests {
     use std::time::{Duration, Instant};
 
-    use common::{config::network::AsnGeoLookupConfig, Core, Server};
+    use common::{Core, Server, config::network::AsnGeoLookupConfig};
 
     #[tokio::test]
     #[ignore]

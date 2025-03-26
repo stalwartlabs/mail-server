@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use mail_auth::hickory_resolver::proto::op::ResponseCode;
 
-use smtp::queue::{spool::SmtpSpool, Domain, Message, Schedule, Status};
+use smtp::queue::{Domain, Message, Schedule, Status, spool::SmtpSpool};
 use store::write::now;
 
 use crate::smtp::TestSMTP;
@@ -94,9 +94,11 @@ fn delivery_events() {
                 .unwrap(),
             message.domain("c").expires
         );
-        assert!(message
-            .next_event_after(message.domain("c").expires)
-            .is_none());
+        assert!(
+            message
+                .next_event_after(message.domain("c").expires)
+                .is_none()
+        );
 
         if t == 0 {
             message.domains.reverse();

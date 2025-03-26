@@ -7,16 +7,16 @@
 use std::{
     cell::UnsafeCell,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 use crate::{
-    ipc::collector::{Update, COLLECTOR_THREAD, COLLECTOR_UPDATES},
     Error, Event, EventType,
+    ipc::collector::{COLLECTOR_THREAD, COLLECTOR_UPDATES, Update},
 };
 
 use super::collector::{Collector, CollectorThread};

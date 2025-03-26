@@ -5,11 +5,11 @@
  */
 
 use store::Store;
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::{
-    backend::internal::{manage::ManageDirectory, PrincipalField},
-    Principal, Type, ROLE_ADMIN, ROLE_USER,
+    Principal, ROLE_ADMIN, ROLE_USER, Type,
+    backend::internal::{PrincipalField, manage::ManageDirectory},
 };
 
 use super::{EmailType, MemoryDirectory};

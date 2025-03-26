@@ -8,9 +8,9 @@ use std::time::Instant;
 
 use ahash::AHashMap;
 use common::{
+    DAEMON_NAME,
     config::smtp::session::{MTAHook, Stage},
     listener::SessionStream,
-    DAEMON_NAME,
 };
 use mail_auth::AuthenticatedMessage;
 use trc::MtaHookEvent;
@@ -18,16 +18,16 @@ use trc::MtaHookEvent;
 use crate::{
     core::Session,
     inbound::{
+        FilterResponse,
         hooks::{
             Address, Client, Context, Envelope, Message, Protocol, Request, Sasl, Server, Tls,
         },
         milter::Modification,
-        FilterResponse,
     },
     queue::QueueId,
 };
 
-use super::{client::send_mta_hook_request, Action, Queue, Response};
+use super::{Action, Queue, Response, client::send_mta_hook_request};
 
 impl<T: SessionStream> Session<T> {
     pub async fn run_mta_hooks(

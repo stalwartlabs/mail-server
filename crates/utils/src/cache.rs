@@ -12,10 +12,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use mail_auth::{ResolverCache, Txt, MX};
+use mail_auth::{MX, ResolverCache, Txt};
 use quick_cache::{
-    sync::{DefaultLifecycle, PlaceholderGuard},
     Equivalent, Weighter,
+    sync::{DefaultLifecycle, PlaceholderGuard},
 };
 
 use crate::config::Config;

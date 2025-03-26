@@ -6,18 +6,18 @@
 
 use common::{
     auth::{
-        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
         AuthRequest,
+        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
     },
-    listener::{limiter::LimiterResult, SessionStream},
+    listener::{SessionStream, limiter::LimiterResult},
 };
 use directory::Permission;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 
 use crate::{
-    protocol::{request, Command, Mechanism},
     Session, State,
+    protocol::{Command, Mechanism, request},
 };
 
 impl<T: SessionStream> Session<T> {

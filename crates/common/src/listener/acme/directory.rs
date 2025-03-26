@@ -12,7 +12,7 @@ use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
 use serde::Deserialize;
 use store::write::Archiver;
-use store::{Serialize, SerializedVersion, SERIALIZE_OBJ_01_V1};
+use store::{SERIALIZE_OBJ_01_V1, Serialize, SerializedVersion};
 use trc::AddContext;
 use trc::event::conv::AssertSuccess;
 

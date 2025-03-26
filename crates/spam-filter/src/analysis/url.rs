@@ -8,11 +8,11 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::{borrow::Cow, future::Future, time::Duration};
 
-use common::config::spamfilter::{Element, IpResolver, Location};
-use common::scripts::functions::unicode::CharUtils;
-use common::scripts::IsMixedCharset;
 use common::Server;
-use hyper::{header::LOCATION, Uri};
+use common::config::spamfilter::{Element, IpResolver, Location};
+use common::scripts::IsMixedCharset;
+use common::scripts::functions::unicode::CharUtils;
+use hyper::{Uri, header::LOCATION};
 use nlp::tokenizers::types::TokenType;
 use reqwest::redirect::Policy;
 
@@ -20,11 +20,11 @@ use crate::modules::dnsbl::check_dnsbl;
 use crate::modules::expression::StringResolver;
 use crate::modules::html::SRC;
 use crate::{
-    modules::html::{HtmlToken, A, HREF},
     Hostname, SpamFilterContext, TextPart,
+    modules::html::{A, HREF, HtmlToken},
 };
 
-use super::{is_trusted_domain, is_url_redirector, ElementLocation};
+use super::{ElementLocation, is_trusted_domain, is_url_redirector};
 
 pub trait SpamFilterAnalyzeUrl: Sync + Send {
     fn spam_filter_analyze_url(

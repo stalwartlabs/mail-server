@@ -9,22 +9,22 @@ use std::{
     time::Duration,
 };
 
-use mail_send::{smtp::AssertReply, Credentials};
+use mail_send::{Credentials, smtp::AssertReply};
 use rustls::ClientConnection;
 use rustls_pki_types::ServerName;
 use smtp_proto::{
+    AUTH_CRAM_MD5, AUTH_DIGEST_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2,
+    EXT_START_TLS, EhloResponse, Response,
     response::{
         generate::BitToString,
-        parser::{ResponseReceiver, MAX_RESPONSE_LENGTH},
+        parser::{MAX_RESPONSE_LENGTH, ResponseReceiver},
     },
-    EhloResponse, Response, AUTH_CRAM_MD5, AUTH_DIGEST_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER,
-    AUTH_PLAIN, AUTH_XOAUTH2, EXT_START_TLS,
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpSocket, TcpStream},
 };
-use tokio_rustls::{client::TlsStream, TlsConnector};
+use tokio_rustls::{TlsConnector, client::TlsStream};
 use trc::DeliveryEvent;
 
 use crate::queue::{Error, Message, Status};
@@ -225,10 +225,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
                 )))
             }
             Err(err) => {
-                trc::error!(err
-                    .span_id(message.span_id)
-                    .details("Failed to fetch blobId")
-                    .caused_by(trc::location!()));
+                trc::error!(
+                    err.span_id(message.span_id)
+                        .details("Failed to fetch blobId")
+                        .caused_by(trc::location!())
+                );
 
                 Err(Status::TemporaryFailure(Error::Io(
                     "Queue system error.".to_string(),

@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    parser::{json::Parser, Ignore},
+    parser::{Ignore, json::Parser},
     request::{RequestProperty, RequestPropertyParser},
 };
 

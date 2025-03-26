@@ -6,7 +6,7 @@
 
 use trc::ClusterEvent;
 
-use super::{Peer, State, HEARTBEAT_WINDOW, HEARTBEAT_WINDOW_MASK};
+use super::{HEARTBEAT_WINDOW, HEARTBEAT_WINDOW_MASK, Peer, State};
 use std::time::Instant;
 
 // Phi Accrual Failure Detector defaults

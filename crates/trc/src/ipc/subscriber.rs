@@ -11,10 +11,10 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use crate::{Event, EventDetails, EventType, Level, TOTAL_EVENT_COUNT};
 
 use super::{
+    USIZE_BITS,
     bitset::Bitset,
     channel::ChannelError,
-    collector::{Collector, Update, COLLECTOR_UPDATES},
-    USIZE_BITS,
+    collector::{COLLECTOR_UPDATES, Collector, Update},
 };
 
 const MAX_BATCH_SIZE: usize = 32768;

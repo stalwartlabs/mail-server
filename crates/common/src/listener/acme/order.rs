@@ -13,12 +13,12 @@ use store::dispatch::lookup::KeyValue;
 use trc::{AcmeEvent, EventType};
 use x509_parser::parse_x509_certificate;
 
-use crate::listener::acme::directory::Identifier;
 use crate::listener::acme::ChallengeSettings;
-use crate::{Server, KV_ACME};
+use crate::listener::acme::directory::Identifier;
+use crate::{KV_ACME, Server};
 
-use super::directory::{Account, AuthStatus, Directory, OrderStatus};
 use super::AcmeProvider;
+use super::directory::{Account, AuthStatus, Directory, OrderStatus};
 
 impl Server {
     pub(crate) async fn process_cert(
@@ -76,7 +76,7 @@ impl Server {
                     return Err(err
                         .details("Failed to renew certificate")
                         .ctx_unique(trc::Key::Id, provider.id.to_string())
-                        .ctx_unique(trc::Key::Hostname, provider.domains.as_slice()))
+                        .ctx_unique(trc::Key::Hostname, provider.domains.as_slice()));
                 }
             }
         }
@@ -346,7 +346,7 @@ impl Server {
                 return Err(EventType::Acme(AcmeEvent::AuthError)
                     .into_err()
                     .ctx(trc::Key::Id, provider.id.to_string())
-                    .ctx(trc::Key::Details, auth.status.as_str()))
+                    .ctx(trc::Key::Details, auth.status.as_str()));
             }
         };
 
@@ -377,7 +377,7 @@ impl Server {
                     return Err(EventType::Acme(AcmeEvent::AuthError)
                         .into_err()
                         .ctx(trc::Key::Id, provider.id.to_string())
-                        .ctx(trc::Key::Details, auth.status.as_str()))
+                        .ctx(trc::Key::Details, auth.status.as_str()));
                 }
             }
         }
@@ -407,7 +407,7 @@ fn parse_cert(pem: &[u8]) -> trc::Result<(CertifiedKey, [DateTime<Utc>; 2])> {
         Err(err) => {
             return Err(EventType::Acme(AcmeEvent::Error)
                 .reason(err)
-                .caused_by(trc::location!()))
+                .caused_by(trc::location!()));
         }
     };
     let cert_chain: Vec<CertificateDer> = pems
@@ -426,7 +426,7 @@ fn parse_cert(pem: &[u8]) -> trc::Result<(CertifiedKey, [DateTime<Utc>; 2])> {
         Err(err) => {
             return Err(EventType::Acme(AcmeEvent::Error)
                 .reason(err)
-                .caused_by(trc::location!()))
+                .caused_by(trc::location!()));
         }
     };
     let cert = CertifiedKey::new(cert_chain, pk);

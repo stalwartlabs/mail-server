@@ -10,7 +10,7 @@ use mail_parser::DateTime;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{Error, Event, EventDetails, Key, Level, Value};
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 
 pub struct FmtWriter<T: AsyncWrite + Unpin> {
     writer: T,

@@ -10,7 +10,7 @@ use common::config::server::ServerProtocol;
 use mail_auth::MX;
 use store::write::now;
 
-use crate::smtp::{session::TestSession, DnsCache, TestSMTP};
+use crate::smtp::{DnsCache, TestSMTP, session::TestSession};
 
 const LOCAL: &str = r#"
 [queue.outbound]

@@ -8,8 +8,8 @@ use std::borrow::Cow;
 
 use common::config::smtp::auth::{ArcSealer, DkimSigner};
 use mail_auth::{
-    arc::ArcSet, dkim::Signature, dmarc::Policy, ArcOutput, AuthenticatedMessage,
-    AuthenticationResults, DkimResult, DmarcResult, IprevResult, SpfResult,
+    ArcOutput, AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, IprevResult,
+    SpfResult, arc::ArcSet, dkim::Signature, dmarc::Policy,
 };
 
 pub mod auth;

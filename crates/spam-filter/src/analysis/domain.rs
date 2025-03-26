@@ -7,23 +7,23 @@
 use std::{collections::HashSet, future::Future};
 
 use common::{
-    config::spamfilter::{Element, Location},
     Server,
+    config::spamfilter::{Element, Location},
 };
 use mail_auth::DkimResult;
-use mail_parser::{parsers::MessageStream, HeaderName, HeaderValue, Host};
+use mail_parser::{HeaderName, HeaderValue, Host, parsers::MessageStream};
 use nlp::tokenizers::types::TokenType;
 
 use crate::{
+    Email, Hostname, Recipient, SpamFilterContext, TextPart,
     modules::{
         dnsbl::check_dnsbl,
         expression::StringResolver,
-        html::{HtmlToken, A, HREF},
+        html::{A, HREF, HtmlToken},
     },
-    Email, Hostname, Recipient, SpamFilterContext, TextPart,
 };
 
-use super::{is_trusted_domain, ElementLocation};
+use super::{ElementLocation, is_trusted_domain};
 
 pub trait SpamFilterAnalyzeDomain: Sync + Send {
     fn spam_filter_analyze_domain(
@@ -72,11 +72,7 @@ impl SpamFilterAnalyzeDomain for Server {
                         .and_then(|s| s.rsplit_once('@'))
                         .and_then(|(_, d)| {
                             let host = Hostname::new(d);
-                            if host.sld.is_some() {
-                                Some(host)
-                            } else {
-                                None
-                            }
+                            if host.sld.is_some() { Some(host) } else { None }
                         })
                     {
                         domains.insert(ElementLocation::new(mid_domain.fqdn, Location::HeaderMid));

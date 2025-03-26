@@ -182,10 +182,12 @@ fn report_strip_json() {
             testing: false,
             fo: None,
         },
-        records: vec![Record::default()
-            .with_count(1)
-            .with_envelope_from("domain.net")
-            .with_envelope_to("other.org")],
+        records: vec![
+            Record::default()
+                .with_count(1)
+                .with_envelope_from("domain.net")
+                .with_envelope_to("other.org"),
+        ],
     };
     let mut s = serde_json::to_string(&d).unwrap();
     s.truncate(s.len() - 2);

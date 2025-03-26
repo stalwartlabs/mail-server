@@ -8,11 +8,11 @@
  *
  */
 
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::{
-    dispatch::lookup::{KeyValue, LookupKey},
     Deserialize, InMemoryStore, Stores, Value,
+    dispatch::lookup::{KeyValue, LookupKey},
 };
 
 #[derive(Debug)]
@@ -119,7 +119,7 @@ impl ShardedInMemory {
                 match store {
                     InMemoryStore::Redis(store) => store.key_delete_prefix(prefix).await?,
                     InMemoryStore::Static(_) => {
-                        return Err(trc::StoreEvent::NotSupported.into_err())
+                        return Err(trc::StoreEvent::NotSupported.into_err());
                     }
                     _ => return Err(trc::StoreEvent::NotSupported.into_err()),
                 }

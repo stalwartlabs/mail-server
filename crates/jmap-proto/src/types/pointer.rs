@@ -6,7 +6,7 @@
 
 use std::fmt::Display;
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::parser::{JsonObjectParser, json::Parser};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum JSONPointer {

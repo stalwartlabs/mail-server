@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{fetch::FetchItem, Flag, ImapResponse, Sequence};
+use super::{Flag, ImapResponse, Sequence, fetch::FetchItem};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {

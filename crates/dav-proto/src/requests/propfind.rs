@@ -32,7 +32,7 @@ impl DavParser for PropFind {
                             ..
                         }
                     ) {
-                        stream.collect_properties().map(PropFind::AllProp)
+                        stream.collect_properties(Vec::new()).map(PropFind::AllProp)
                     } else {
                         Ok(PropFind::AllProp(vec![]))
                     }
@@ -40,7 +40,7 @@ impl DavParser for PropFind {
                 NamedElement {
                     ns: Namespace::Dav,
                     element: Element::Prop,
-                } => stream.collect_properties().map(PropFind::Prop),
+                } => stream.collect_properties(Vec::new()).map(PropFind::Prop),
                 element => Err(element.into_unexpected()),
             }
         } else {

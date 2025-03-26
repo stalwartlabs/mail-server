@@ -7,7 +7,7 @@
 use super::request::Request;
 use super::{Gossiper, Peer, UDP_MAX_PAYLOAD};
 use common::auth::oauth::crypto::SymmetricEncrypt;
-use common::{Inner, IPC_CHANNEL_BUFFER};
+use common::{IPC_CHANNEL_BUFFER, Inner};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use std::{net::SocketAddr, sync::Arc};

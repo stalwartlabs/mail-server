@@ -119,10 +119,11 @@ pub async fn test(params: &mut JMAPTest) {
             "html",
             Some("Die Hasen und die <mark>Frösche</mark>"),
             Some(concat!(
-            "und die <mark>Frösche</mark> Die Hasen klagten einst über ihre mißliche Lage; ",
-            "&quot;wir leben&quot;, sprach ein Redner, &quot;in steter Furcht vor Menschen und ",
-            "Tieren, eine Beute der Hunde, der Adler, ja fast aller Raubtiere! ",
-            "Unsere stete Angst ist är")),
+                "und die <mark>Frösche</mark> Die Hasen klagten einst über ihre mißliche Lage; ",
+                "&quot;wir leben&quot;, sprach ein Redner, &quot;in steter Furcht vor Menschen und ",
+                "Tieren, eine Beute der Hunde, der Adler, ja fast aller Raubtiere! ",
+                "Unsere stete Angst ist är"
+            )),
         ),
         (
             Filter::text("es:galería vasto biblioteca").into(),

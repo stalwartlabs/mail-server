@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use common::KV_SIEVE_ID;
 use sieve::Sieve;
-use store::{blake3, SerializedVersion, SERIALIZE_OBJ_09_V1};
+use store::{SERIALIZE_OBJ_09_V1, SerializedVersion, blake3};
 use utils::BlobHash;
 
 pub mod activate;

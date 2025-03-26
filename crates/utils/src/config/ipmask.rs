@@ -6,7 +6,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use rustls::{crypto::ring::cipher_suite::*, SupportedCipherSuite};
+use rustls::{SupportedCipherSuite, crypto::ring::cipher_suite::*};
 
 use super::utils::ParseValue;
 
@@ -84,13 +84,13 @@ impl ParseValue for IpAddrMask {
                         return Ok(IpAddrMask::V4 {
                             addr,
                             mask: u32::MAX << (32 - mask),
-                        })
+                        });
                     }
                     IpAddr::V6(addr) if (8..=128).contains(&mask) => {
                         return Ok(IpAddrMask::V6 {
                             addr,
                             mask: u128::MAX << (128 - mask),
-                        })
+                        });
                     }
                     _ => (),
                 }
@@ -101,13 +101,13 @@ impl ParseValue for IpAddrMask {
                     return Ok(IpAddrMask::V4 {
                         addr,
                         mask: u32::MAX,
-                    })
+                    });
                 }
                 Ok(IpAddr::V6(addr)) => {
                     return Ok(IpAddrMask::V6 {
                         addr,
                         mask: u128::MAX,
-                    })
+                    });
                 }
                 _ => (),
             }

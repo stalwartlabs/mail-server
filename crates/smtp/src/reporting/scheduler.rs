@@ -5,7 +5,7 @@
  */
 
 use ahash::AHashMap;
-use common::{core::BuildServer, ipc::ReportingEvent, Inner, Server, KV_LOCK_QUEUE_REPORT};
+use common::{Inner, KV_LOCK_QUEUE_REPORT, Server, core::BuildServer, ipc::ReportingEvent};
 
 use std::{
     future::Future,
@@ -13,14 +13,14 @@ use std::{
     time::{Duration, SystemTime},
 };
 use store::{
-    write::{now, BatchBuilder, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Store, ValueKey,
+    write::{BatchBuilder, QueueClass, ReportEvent, ValueClass, now},
 };
 use tokio::sync::mpsc;
 
 use crate::queue::spool::LOCK_EXPIRY;
 
-use super::{dmarc::DmarcReporting, tls::TlsReporting, AggregateTimestamp, ReportLock};
+use super::{AggregateTimestamp, ReportLock, dmarc::DmarcReporting, tls::TlsReporting};
 
 pub const REPORT_REFRESH: Duration = Duration::from_secs(86400);
 
@@ -171,16 +171,18 @@ async fn next_report_event(store: &Store) -> Vec<QueueClass> {
             batch.clear(ValueClass::Queue(event));
         }
         if let Err(err) = store.write(batch.build()).await {
-            trc::error!(err
-                .caused_by(trc::location!())
-                .details("Failed to remove old report events"));
+            trc::error!(
+                err.caused_by(trc::location!())
+                    .details("Failed to remove old report events")
+            );
         }
     }
 
     if let Err(err) = result {
-        trc::error!(err
-            .caused_by(trc::location!())
-            .details("Failed to read from store"));
+        trc::error!(
+            err.caused_by(trc::location!())
+                .details("Failed to read from store")
+        );
     }
 
     events
@@ -210,9 +212,10 @@ impl LockReport for Server {
                 result
             }
             Err(err) => {
-                trc::error!(err
-                    .details("Failed to lock report.")
-                    .caused_by(trc::location!()));
+                trc::error!(
+                    err.details("Failed to lock report.")
+                        .caused_by(trc::location!())
+                );
                 false
             }
         }
@@ -224,9 +227,10 @@ impl LockReport for Server {
             .remove_lock(KV_LOCK_QUEUE_REPORT, key)
             .await
         {
-            trc::error!(err
-                .details("Failed to unlock event.")
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to unlock event.")
+                    .caused_by(trc::location!())
+            );
         }
     }
 }

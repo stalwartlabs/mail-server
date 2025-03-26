@@ -6,22 +6,22 @@
 
 use ahash::AHashSet;
 use directory::{
+    Principal, QueryBy, Type,
     backend::{
+        RcptType,
         internal::{
+            PrincipalField, PrincipalUpdate, PrincipalValue,
             lookup::DirectoryStore,
             manage::{self, ChangedPrincipals, ManageDirectory, UpdatePrincipal},
-            PrincipalField, PrincipalUpdate, PrincipalValue,
         },
-        RcptType,
     },
-    Principal, QueryBy, Type,
 };
 use jmap_proto::types::collection::Collection;
 use mail_send::Credentials;
 use store::{
+    BitmapKey, Store, ValueKey,
     roaring::RoaringBitmap,
     write::{BatchBuilder, BitmapClass, ValueClass},
-    BitmapKey, Store, ValueKey,
 };
 
 use crate::directory::{DirectoryTest, IntoTestPrincipal, TestPrincipal};
@@ -110,15 +110,17 @@ async fn internal_directory() {
         assert!(!store.is_local_domain("otherdomain.org").await.unwrap());
 
         // Add an email address
-        assert!(store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::Emails,
-                    PrincipalValue::String("john@example.org".to_string()),
-                )
-            ]))
-            .await
-            .is_ok());
+        assert!(
+            store
+                .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
+                    PrincipalUpdate::add_item(
+                        PrincipalField::Emails,
+                        PrincipalValue::String("john@example.org".to_string()),
+                    )
+                ]))
+                .await
+                .is_ok()
+        );
         assert_eq!(
             store.rcpt("john@example.org").await.unwrap(),
             RcptType::Mailbox
@@ -246,22 +248,24 @@ async fn internal_directory() {
             .await
             .unwrap()
             .id;
-        assert!(store
-            .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
-                PrincipalUpdate::set(
-                    PrincipalField::Members,
-                    PrincipalValue::StringList(vec!["john".to_string(), "jane".to_string()]),
-                ),
-                PrincipalUpdate::set(
-                    PrincipalField::ExternalMembers,
-                    PrincipalValue::StringList(vec![
-                        "mike@other.org".to_string(),
-                        "lucy@foobar.net".to_string()
-                    ]),
-                )
-            ]))
-            .await
-            .is_ok());
+        assert!(
+            store
+                .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
+                    PrincipalUpdate::set(
+                        PrincipalField::Members,
+                        PrincipalValue::StringList(vec!["john".to_string(), "jane".to_string()]),
+                    ),
+                    PrincipalUpdate::set(
+                        PrincipalField::ExternalMembers,
+                        PrincipalValue::StringList(vec![
+                            "mike@other.org".to_string(),
+                            "lucy@foobar.net".to_string()
+                        ]),
+                    )
+                ]))
+                .await
+                .is_ok()
+        );
 
         assert_list_members(
             &store,
@@ -339,19 +343,21 @@ async fn internal_directory() {
             .unwrap();
 
         // Add John to the Sales and Support groups
-        assert!(store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::MemberOf,
-                    PrincipalValue::String("sales".to_string()),
-                ),
-                PrincipalUpdate::add_item(
-                    PrincipalField::MemberOf,
-                    PrincipalValue::String("support".to_string()),
-                )
-            ]))
-            .await
-            .is_ok());
+        assert!(
+            store
+                .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
+                    PrincipalUpdate::add_item(
+                        PrincipalField::MemberOf,
+                        PrincipalValue::String("sales".to_string()),
+                    ),
+                    PrincipalUpdate::add_item(
+                        PrincipalField::MemberOf,
+                        PrincipalValue::String("support".to_string()),
+                    )
+                ]))
+                .await
+                .is_ok()
+        );
         let mut principal = store
             .query(QueryBy::Name("john"), true)
             .await
@@ -386,15 +392,17 @@ async fn internal_directory() {
         );
 
         // Remove a member from a group
-        assert!(store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::remove_item(
-                    PrincipalField::MemberOf,
-                    PrincipalValue::String("support".to_string()),
-                )
-            ]))
-            .await
-            .is_ok());
+        assert!(
+            store
+                .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
+                    PrincipalUpdate::remove_item(
+                        PrincipalField::MemberOf,
+                        PrincipalValue::String("support".to_string()),
+                    )
+                ]))
+                .await
+                .is_ok()
+        );
         let mut principal = store
             .query(QueryBy::Name("john"), true)
             .await
@@ -416,32 +424,34 @@ async fn internal_directory() {
         );
 
         // Update multiple fields
-        assert!(store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::set(
-                    PrincipalField::Name,
-                    PrincipalValue::String("john.doe".to_string())
-                ),
-                PrincipalUpdate::set(
-                    PrincipalField::Description,
-                    PrincipalValue::String("Johnny Doe".to_string())
-                ),
-                PrincipalUpdate::set(
-                    PrincipalField::Secrets,
-                    PrincipalValue::StringList(vec!["12345".to_string()])
-                ),
-                PrincipalUpdate::set(PrincipalField::Quota, PrincipalValue::Integer(1024)),
-                PrincipalUpdate::remove_item(
-                    PrincipalField::Emails,
-                    PrincipalValue::String("john@example.org".to_string()),
-                ),
-                PrincipalUpdate::add_item(
-                    PrincipalField::Emails,
-                    PrincipalValue::String("john.doe@example.org".to_string()),
-                )
-            ]))
-            .await
-            .is_ok());
+        assert!(
+            store
+                .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
+                    PrincipalUpdate::set(
+                        PrincipalField::Name,
+                        PrincipalValue::String("john.doe".to_string())
+                    ),
+                    PrincipalUpdate::set(
+                        PrincipalField::Description,
+                        PrincipalValue::String("Johnny Doe".to_string())
+                    ),
+                    PrincipalUpdate::set(
+                        PrincipalField::Secrets,
+                        PrincipalValue::StringList(vec!["12345".to_string()])
+                    ),
+                    PrincipalUpdate::set(PrincipalField::Quota, PrincipalValue::Integer(1024)),
+                    PrincipalUpdate::remove_item(
+                        PrincipalField::Emails,
+                        PrincipalValue::String("john@example.org".to_string()),
+                    ),
+                    PrincipalUpdate::add_item(
+                        PrincipalField::Emails,
+                        PrincipalValue::String("john.doe@example.org".to_string()),
+                    )
+                ]))
+                .await
+                .is_ok()
+        );
 
         let mut principal = store
             .query(QueryBy::Name("john.doe"), true)
@@ -475,30 +485,34 @@ async fn internal_directory() {
         );
 
         // Remove a member from a mailing list and then add it back
-        assert!(store
-            .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
-                PrincipalUpdate::remove_item(
-                    PrincipalField::Members,
-                    PrincipalValue::String("john.doe".to_string()),
-                )
-            ]))
-            .await
-            .is_ok());
+        assert!(
+            store
+                .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
+                    PrincipalUpdate::remove_item(
+                        PrincipalField::Members,
+                        PrincipalValue::String("john.doe".to_string()),
+                    )
+                ]))
+                .await
+                .is_ok()
+        );
         assert_list_members(
             &store,
             "list@example.org",
             ["jane@example.org", "mike@other.org", "lucy@foobar.net"],
         )
         .await;
-        assert!(store
-            .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::Members,
-                    PrincipalValue::String("john.doe".to_string()),
-                )
-            ]))
-            .await
-            .is_ok());
+        assert!(
+            store
+                .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
+                    PrincipalUpdate::add_item(
+                        PrincipalField::Members,
+                        PrincipalValue::String("john.doe".to_string()),
+                    )
+                ]))
+                .await
+                .is_ok()
+        );
         assert_list_members(
             &store,
             "list@example.org",
@@ -738,7 +752,7 @@ async fn internal_directory() {
 #[allow(async_fn_in_trait)]
 pub trait TestInternalDirectory {
     async fn create_test_user(&self, login: &str, secret: &str, name: &str, emails: &[&str])
-        -> u32;
+    -> u32;
     async fn create_test_group(&self, login: &str, name: &str, emails: &[&str]) -> u32;
     async fn create_test_list(&self, login: &str, name: &str, emails: &[&str]) -> u32;
     async fn set_test_quota(&self, login: &str, quota: u32);

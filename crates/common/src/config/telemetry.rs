@@ -7,22 +7,22 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
-use base64::{engine::general_purpose::STANDARD, Engine};
-use hyper::{header::CONTENT_TYPE, HeaderMap};
+use base64::{Engine, engine::general_purpose::STANDARD};
+use hyper::{HeaderMap, header::CONTENT_TYPE};
 use opentelemetry::{InstrumentationLibrary, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
+    Resource,
     export::{logs::LogExporter, trace::SpanExporter},
     metrics::{
         exporter::PushMetricsExporter,
         reader::{DefaultAggregationSelector, DefaultTemporalitySelector},
     },
-    Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use store::Stores;
-use trc::{ipc::subscriber::Interests, EventType, Level, TelemetryEvent};
-use utils::config::{utils::ParseValue, Config};
+use trc::{EventType, Level, TelemetryEvent, ipc::subscriber::Interests};
+use utils::config::{Config, utils::ParseValue};
 
 use super::parse_http_headers;
 

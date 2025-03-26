@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use jmap_proto::method::{
     changes::{self, ChangesRequest},
     query::{self, QueryRequest},
@@ -50,7 +50,7 @@ impl QueryChanges for Server {
                         _ => {
                             return Err(trc::JmapEvent::UnknownMethod
                                 .into_err()
-                                .details("Unknown method"))
+                                .details("Unknown method"));
                         }
                     },
                 },

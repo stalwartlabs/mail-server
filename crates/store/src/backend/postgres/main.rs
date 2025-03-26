@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use crate::{backend::postgres::tls::MakeRustlsConnect, *};
 
-use super::{into_error, PostgresStore};
+use super::{PostgresStore, into_error};
 
 use deadpool_postgres::{Config, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;

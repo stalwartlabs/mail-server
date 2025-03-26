@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use deadpool::managed;
-use ldap3::{exop::WhoAmI, Ldap, LdapConnAsync, LdapError};
+use ldap3::{Ldap, LdapConnAsync, LdapError, exop::WhoAmI};
 
 use super::LdapConnectionManager;
 

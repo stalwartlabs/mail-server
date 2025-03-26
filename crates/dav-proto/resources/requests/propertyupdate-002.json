@@ -1,0 +1,176 @@
+{
+  "set": [
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop0",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value0"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop1",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value1"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop2",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value2"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop3",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value3"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop4",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value4"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop5",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value5"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop6",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value6"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop7",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value7"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop8",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value8"
+          }
+        ]
+      }
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "prop9",
+          "attrs": "xmlns=\"http://example.com/neon/litmus/\""
+        }
+      },
+      "value": {
+        "DeadProperty": [
+          {
+            "type": "Text",
+            "data": "value9"
+          }
+        ]
+      }
+    }
+  ],
+  "remove": [],
+  "set_first": true
+}

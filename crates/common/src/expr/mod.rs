@@ -69,7 +69,7 @@ pub const VARIABLES_MAP: &[(&str, u32)] = &[
 ];
 
 use regex::Regex;
-use utils::config::{utils::ParseValue, Rate};
+use utils::config::{Rate, utils::ParseValue};
 
 use self::tokenizer::TokenMap;
 

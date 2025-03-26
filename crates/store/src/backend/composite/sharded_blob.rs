@@ -10,7 +10,7 @@
 
 use std::ops::Range;
 
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::{BlobBackend, Store, Stores};
 

@@ -5,15 +5,15 @@
  */
 
 use common::{
-    listener::{SessionResult, SessionStream},
     KV_RATE_LIMIT_IMAP,
+    listener::{SessionResult, SessionStream},
 };
 use mail_send::Credentials;
 use trc::{AddContext, SecurityEvent};
 
 use crate::{
-    protocol::{request::Error, Command, Mechanism},
     Session, State,
+    protocol::{Command, Mechanism, request::Error},
 };
 
 impl<T: SessionStream> Session<T> {
@@ -67,9 +67,10 @@ impl<T: SessionStream> Session<T> {
                             }
                             Ok(false) => {}
                             Err(err) => {
-                                trc::error!(err
-                                    .span_id(self.session_id)
-                                    .details("Failed to check for fail2ban"));
+                                trc::error!(
+                                    err.span_id(self.session_id)
+                                        .details("Failed to check for fail2ban")
+                                );
                             }
                         }
                     }

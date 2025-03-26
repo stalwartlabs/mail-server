@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use common::{config::smtp::report::AggregateFrequency, Core};
+use common::{Core, config::smtp::report::AggregateFrequency};
 
 use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
@@ -19,9 +19,9 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    inbound::{sign::SIGNATURES, TestMessage, TestReportingEvent},
-    session::{TestSession, VerifyResponse},
     DnsCache, TempDir, TestSMTP,
+    inbound::{TestMessage, TestReportingEvent, sign::SIGNATURES},
+    session::{TestSession, VerifyResponse},
 };
 use smtp::core::Session;
 

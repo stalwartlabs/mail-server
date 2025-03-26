@@ -5,10 +5,10 @@
  */
 
 use jmap_client::{
+    Error,
     core::set::{SetError, SetErrorType},
     email, mailbox,
     sieve::query::{Comparator, Filter},
-    Error,
 };
 use jmap_proto::types::id::Id;
 use std::{
@@ -22,7 +22,7 @@ use crate::{
     jmap::{
         assert_is_empty,
         delivery::SmtpConnection,
-        email_submission::{assert_message_delivery, spawn_mock_smtp_server, MockMessage},
+        email_submission::{MockMessage, assert_message_delivery, spawn_mock_smtp_server},
         mailbox::destroy_all_mailboxes,
     },
     smtp::DnsCache,

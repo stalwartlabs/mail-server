@@ -5,8 +5,8 @@
  */
 
 use aes_gcm_siv::{
-    aead::{generic_array::GenericArray, Aead},
     AeadInPlace, Aes256GcmSiv, KeyInit, Nonce,
+    aead::{Aead, generic_array::GenericArray},
 };
 use store::blake3;
 

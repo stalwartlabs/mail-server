@@ -17,9 +17,9 @@ use trc::{Event, EventType, Key};
 use utils::{config::ipmask::IpAddrMask, snowflake::SnowflakeIdGenerator};
 
 use crate::{
+    Server,
     config::server::ServerProtocol,
     expr::{functions::ResolveVariable, *},
-    Server,
 };
 
 use self::limiter::{ConcurrencyLimiter, InFlight};

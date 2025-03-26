@@ -7,12 +7,12 @@
 use std::env;
 use std::io::{self, Write};
 
-use base64::engine::general_purpose;
 use base64::Engine;
+use base64::engine::general_purpose;
 use store::write::{AnyClass, AnyKey, BatchBuilder, ValueClass};
 use store::{
-    Deserialize, IterateParams, Store, SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG,
-    SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES,
+    Deserialize, IterateParams, SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT,
+    SUBSPACE_INDEXES, Store,
 };
 
 const HELP: &str = concat!(

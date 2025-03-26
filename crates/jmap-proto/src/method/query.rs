@@ -10,8 +10,8 @@ use store::fts::{FilterItem, FilterType, FtsFilter};
 
 use crate::{
     object::{email, mailbox},
-    parser::{json::Parser, Ignore, JsonObjectParser, Token},
-    request::{method::MethodObject, RequestProperty, RequestPropertyParser},
+    parser::{Ignore, JsonObjectParser, Token, json::Parser},
+    request::{RequestProperty, RequestPropertyParser, method::MethodObject},
     types::{date::UTCDate, id::Id, keyword::Keyword, state::State},
 };
 
@@ -165,7 +165,7 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                 _ => {
                     return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
-                        .details(format!("{}/query", parser.ctx)))
+                        .details(format!("{}/query", parser.ctx)));
                 }
             },
             filter: vec![],

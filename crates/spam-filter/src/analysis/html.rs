@@ -11,7 +11,7 @@ use hyper::Uri;
 use mail_parser::MimeHeaders;
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
-use crate::{modules::html::*, Hostname, SpamFilterContext, TextPart};
+use crate::{Hostname, SpamFilterContext, TextPart, modules::html::*};
 
 pub trait SpamFilterAnalyzeHtml: Sync + Send {
     fn spam_filter_analyze_html(

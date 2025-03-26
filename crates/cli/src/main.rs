@@ -15,11 +15,12 @@ use clap::Parser;
 use console::style;
 use jmap_client::client::Credentials;
 use modules::{
+    UnwrapResult,
     cli::{Cli, Client, Commands},
-    is_localhost, UnwrapResult,
+    is_localhost,
 };
-use reqwest::{header::AUTHORIZATION, Method, StatusCode};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use reqwest::{Method, StatusCode, header::AUTHORIZATION};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::modules::OAuthResponse;
 
@@ -255,7 +256,9 @@ impl Client {
                 return None;
             }
             StatusCode::UNAUTHORIZED => {
-                eprintln!("Authentication failed. Make sure the credentials are correct and that the account has administrator rights.");
+                eprintln!(
+                    "Authentication failed. Make sure the credentials are correct and that the account has administrator rights."
+                );
                 std::process::exit(1);
             }
             _ => {

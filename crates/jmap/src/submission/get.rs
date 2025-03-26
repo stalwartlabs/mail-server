@@ -21,7 +21,10 @@ use jmap_proto::{
 use smtp::queue::{ArchivedStatus, Message, spool::SmtpSpool};
 use smtp_proto::ArchivedResponse;
 use std::future::Future;
-use store::{rkyv::option::ArchivedOption, write::{AlignedBytes, Archive}};
+use store::{
+    rkyv::option::ArchivedOption,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 

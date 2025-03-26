@@ -89,12 +89,7 @@ impl HandleFilePropFindRequest for Server {
                 self.core.dav.max_changes,
             );
             if changelog.to_change_id != 0 {
-                sync_token = Some(
-                    Urn::Sync {
-                        id: changelog.to_change_id,
-                    }
-                    .to_string(),
-                );
+                sync_token = Some(Urn::Sync(changelog.to_change_id).to_string());
             }
             let mut changes =
                 RoaringBitmap::from_iter(changelog.changes.iter().map(|change| change.id() as u32));
@@ -199,7 +194,7 @@ impl HandleFilePropFindRequest for Server {
                 .await
                 .caused_by(trc::location!())?
                 .unwrap_or_default();
-            sync_token = Some(Urn::Sync { id }.to_string())
+            sync_token = Some(Urn::Sync(id).to_string())
         }
 
         // Add sync token
@@ -359,12 +354,16 @@ impl HandleFilePropFindRequest for Server {
                                 }
                             }
                             WebDavProperty::LockDiscovery => {
-                                if let Some((path, lock)) =
-                                    locks.as_ref().and_then(|locks| locks.find_lock(&item.name))
-                                {
+                                if let Some(locks) = locks.as_ref() {
                                     fields.push(DavPropertyValue::new(
                                         property.clone(),
-                                        vec![lock.to_active_lock(query.format_to_base_uri(path))],
+                                        locks
+                                            .find_locks(&item.name, false)
+                                            .iter()
+                                            .map(|(path, lock)| {
+                                                lock.to_active_lock(query.format_to_base_uri(path))
+                                            })
+                                            .collect::<Vec<_>>(),
                                     ));
                                 } else {
                                     fields.push(DavPropertyValue::empty(property.clone()));

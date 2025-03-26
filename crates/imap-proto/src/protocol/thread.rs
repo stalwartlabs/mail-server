@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{search::Filter, ImapResponse};
+use super::{ImapResponse, search::Filter};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {

@@ -9,7 +9,7 @@ use common::Core;
 use smtp::core::Session;
 use utils::config::Config;
 
-use crate::smtp::{session::TestSession, TestSMTP};
+use crate::smtp::{TestSMTP, session::TestSession};
 
 const CONFIG: &str = r#"
 [session.mail]

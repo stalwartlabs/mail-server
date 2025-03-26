@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use rusqlite::OptionalExtension;
 
-use super::{into_error, SqliteStore};
+use super::{SqliteStore, into_error};
 
 impl SqliteStore {
     pub(crate) async fn get_blob(

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::validate::{ValidateSieveScriptRequest, ValidateSieveScriptResponse},

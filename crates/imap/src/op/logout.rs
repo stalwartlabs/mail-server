@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use crate::core::Session;
 use common::listener::SessionStream;
-use imap_proto::{receiver::Request, Command, StatusResponse};
+use imap_proto::{Command, StatusResponse, receiver::Request};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_logout(&mut self, request: Request<Command>) -> trc::Result<()> {

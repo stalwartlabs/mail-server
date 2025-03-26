@@ -36,6 +36,12 @@ impl HttpResponse {
         self
     }
 
+    pub fn with_status_code(mut self, status: StatusCode) -> Self {
+        self.status = status;
+        self.builder = self.builder.status(status);
+        self
+    }
+
     pub fn with_content_length(mut self, content_length: usize) -> Self {
         self.builder = self.builder.header(header::CONTENT_LENGTH, content_length);
         self
@@ -198,6 +204,10 @@ impl HttpResponse {
 
     pub fn status(&self) -> StatusCode {
         self.status
+    }
+
+    pub fn headers(&self) -> Option<&hyper::HeaderMap<HeaderValue>> {
+        self.builder.headers_ref()
     }
 }
 

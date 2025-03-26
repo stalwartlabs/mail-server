@@ -382,5 +382,6 @@
         "type": "ResourceType"
       }
     }
-  ]
+  ],
+  "set_first": true
 }

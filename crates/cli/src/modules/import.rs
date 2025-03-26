@@ -9,14 +9,14 @@ use std::{
     io::{self, Cursor},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
 
 use console::style;
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use jmap_client::{
     core::set::SetObject,
@@ -30,7 +30,7 @@ use rand::Rng;
 use serde::de::DeserializeOwned;
 use tokio::{fs::File, io::AsyncReadExt};
 
-use crate::modules::{name_to_id, UnwrapResult, RETRY_ATTEMPTS};
+use crate::modules::{RETRY_ATTEMPTS, UnwrapResult, name_to_id};
 
 use super::{
     cli::{Client, ImportCommands, MailboxFormat},
@@ -363,8 +363,7 @@ impl ImportCommands {
                                                 total_imported.fetch_add(1, Ordering::Relaxed);
                                             }
                                             Err(_) if retry_count < RETRY_ATTEMPTS => {
-                                                let backoff =
-                                                    rand::rng().random_range(50..=300);
+                                                let backoff = rand::rng().random_range(50..=300);
                                                 tokio::time::sleep(Duration::from_millis(backoff))
                                                     .await;
                                                 retry_count += 1;

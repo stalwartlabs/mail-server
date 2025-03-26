@@ -10,11 +10,11 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::{
-    smtp::{
-        session::{TestSession, VerifyResponse},
-        TempDir, TestSMTP,
-    },
     AssertConfig,
+    smtp::{
+        TempDir, TestSMTP,
+        session::{TestSession, VerifyResponse},
+    },
 };
 use smtp::core::{Session, State};
 

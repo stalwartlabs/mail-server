@@ -5,13 +5,13 @@
  */
 
 use crate::{
-    protocol::{
-        append::{self, Message},
-        Flag, ProtocolVersion,
-    },
-    receiver::{bad, Request, Token},
-    utf7::utf7_maybe_decode,
     Command,
+    protocol::{
+        Flag, ProtocolVersion,
+        append::{self, Message},
+    },
+    receiver::{Request, Token, bad},
+    utf7::utf7_maybe_decode,
 };
 
 use super::parse_datetime;
@@ -63,7 +63,7 @@ impl Request<Command> {
                                         return Err(bad(
                                             self.tag.to_string(),
                                             "Invalid opening parenthesis found.",
-                                        ))
+                                        ));
                                     }
                                 };
                             }
@@ -72,7 +72,7 @@ impl Request<Command> {
                                     return Err(bad(
                                         self.tag.to_string(),
                                         "Invalid closing parenthesis found.",
-                                    ))
+                                    ));
                                 }
                                 State::Flags => {
                                     state = State::None;
@@ -147,8 +147,8 @@ mod tests {
 
     use crate::{
         protocol::{
-            append::{self, Message},
             Flag, ProtocolVersion,
+            append::{self, Message},
         },
         receiver::{Error, Receiver},
     };

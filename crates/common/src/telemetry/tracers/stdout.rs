@@ -5,7 +5,7 @@
  */
 
 use std::{
-    io::{stderr, Error},
+    io::{Error, stderr},
     pin::Pin,
     task::{Context, Poll},
 };

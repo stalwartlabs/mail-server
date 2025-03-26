@@ -11,9 +11,9 @@ use mail_auth::MX;
 use store::write::now;
 
 use crate::smtp::{
+    DnsCache, TestSMTP,
     inbound::{TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
-    DnsCache, TestSMTP,
 };
 use smtp::queue::spool::SmtpSpool;
 
