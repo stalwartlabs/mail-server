@@ -173,10 +173,12 @@ pub async fn test(params: &mut JMAPTest) {
             .size(),
         5000000
     );
-    assert!(client
-        .upload(None, vec![b'A'; 5000001], None)
-        .await
-        .is_err());
+    assert!(
+        client
+            .upload(None, vec![b'A'; 5000001], None)
+            .await
+            .is_err()
+    );
 
     // Users should be allowed to create identities only
     // using email addresses associated to their principal

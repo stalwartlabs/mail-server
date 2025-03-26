@@ -7,12 +7,12 @@
 use ahash::AHashSet;
 use futures::StreamExt;
 use jmap_client::{
+    TypeState,
     client_ws::WebSocketMessage,
     core::{
         response::{Response, TaggedMethodResponse},
         set::SetObject,
     },
-    TypeState,
 };
 use jmap_proto::types::id::Id;
 use std::time::Duration;

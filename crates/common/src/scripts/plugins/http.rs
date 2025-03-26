@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use reqwest::redirect::Policy;
-use sieve::{runtime::Variable, FunctionMap};
+use sieve::{FunctionMap, runtime::Variable};
 
 use super::PluginContext;
 

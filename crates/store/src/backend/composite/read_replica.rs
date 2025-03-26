@@ -15,11 +15,11 @@ use std::{
 };
 
 use roaring::RoaringBitmap;
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::{
-    write::{AssignedIds, Batch, BitmapClass, ValueClass},
     BitmapKey, Deserialize, IterateParams, Key, Store, Stores, ValueKey,
+    write::{AssignedIds, Batch, BitmapClass, ValueClass},
 };
 
 pub struct SQLReadReplica {

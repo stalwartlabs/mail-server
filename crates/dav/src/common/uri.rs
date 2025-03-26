@@ -23,8 +23,8 @@ pub(crate) struct UriResource<A, R> {
 }
 
 pub(crate) enum Urn {
-    Lock { expires: u64, id: u64 },
-    Sync { id: u64 },
+    Lock(u64),
+    Sync(u64),
 }
 
 pub(crate) type UnresolvedUri<'x> = UriResource<Option<u32>, Option<&'x str>>;
@@ -134,25 +134,22 @@ impl Urn {
         let inbox = input.strip_prefix("urn:stalwart:")?;
         let (kind, id) = inbox.split_once(':')?;
         match kind {
-            "davlock" => u128::from_str_radix(id, 16).ok().map(|id| Urn::Lock {
-                expires: (id >> 64) as u64,
-                id: id as u64,
-            }),
-            "davsync" => u64::from_str_radix(id, 16).ok().map(|id| Urn::Sync { id }),
+            "davlock" => u64::from_str_radix(id, 16).ok().map(Urn::Lock),
+            "davsync" => u64::from_str_radix(id, 16).ok().map(Urn::Sync),
             _ => None,
         }
     }
 
-    pub fn try_unwrap_lock(&self) -> Option<(u64, u64)> {
+    pub fn try_unwrap_lock(&self) -> Option<u64> {
         match self {
-            Urn::Lock { expires, id } => Some((*expires, *id)),
+            Urn::Lock(id) => Some(*id),
             _ => None,
         }
     }
 
     pub fn try_unwrap_sync(&self) -> Option<u64> {
         match self {
-            Urn::Sync { id } => Some(*id),
+            Urn::Sync(id) => Some(*id),
             _ => None,
         }
     }
@@ -161,12 +158,8 @@ impl Urn {
 impl Display for Urn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Urn::Lock { expires, id } => write!(
-                f,
-                "urn:stalwart:davlock:{:x}",
-                (u128::from(*expires) << 64) | u128::from(*id)
-            ),
-            Urn::Sync { id } => write!(f, "urn:stalwart:davsync:{:x}", id),
+            Urn::Lock(id) => write!(f, "urn:stalwart:davlock:{id:x}",),
+            Urn::Sync(id) => write!(f, "urn:stalwart:davsync:{id:x}"),
         }
     }
 }

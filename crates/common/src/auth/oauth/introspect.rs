@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use trc::{AddContext, AuthEvent, EventType};
 
-use crate::{auth::AccessToken, Server};
+use crate::{Server, auth::AccessToken};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Deserialize, Serialize)]
 pub struct OAuthIntrospect {

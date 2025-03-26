@@ -13,18 +13,18 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use base64::{
-    engine::general_purpose::{self, STANDARD},
     Engine,
+    engine::general_purpose::{self, STANDARD},
 };
-use dns_update::{providers::rfc2136::DnsAddress, DnsUpdater, TsigAlgorithm};
+use dns_update::{DnsUpdater, TsigAlgorithm, providers::rfc2136::DnsAddress};
 use rcgen::generate_simple_self_signed;
 use rustls::{
+    SupportedProtocolVersion,
     crypto::ring::sign::any_supported_type,
     sign::CertifiedKey,
     version::{TLS12, TLS13},
-    SupportedProtocolVersion,
 };
-use rustls_pemfile::{certs, read_one, Item};
+use rustls_pemfile::{Item, certs, read_one};
 use rustls_pki_types::PrivateKeyDer;
 use utils::config::Config;
 use x509_parser::{
@@ -35,7 +35,7 @@ use x509_parser::{
 
 use crate::listener::{
     acme::{
-        directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeProvider, ChallengeSettings, EabSettings,
+        AcmeProvider, ChallengeSettings, EabSettings, directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY,
     },
     tls::AcmeProviders,
 };
@@ -63,11 +63,7 @@ impl AcmeProviders {
                 .values(("acme", acme_id, "contact"))
                 .filter_map(|(_, v)| {
                     let v = v.trim().to_string();
-                    if !v.is_empty() {
-                        Some(v)
-                    } else {
-                        None
-                    }
+                    if !v.is_empty() { Some(v) } else { None }
                 })
                 .collect::<Vec<_>>();
             let renew_before: Duration = config

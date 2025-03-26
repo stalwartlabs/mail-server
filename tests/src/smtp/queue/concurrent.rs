@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use common::{config::server::ServerProtocol, core::BuildServer, ipc::QueueEvent};
 use mail_auth::MX;
 
-use crate::smtp::{session::TestSession, DnsCache, TestSMTP};
+use crate::smtp::{DnsCache, TestSMTP, session::TestSession};
 use smtp::queue::manager::Queue;
 
 const LOCAL: &str = r#"

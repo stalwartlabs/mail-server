@@ -6,7 +6,7 @@
 
 use crate::{
     parser::json::Parser,
-    request::{reference::MaybeReference, RequestProperty, RequestPropertyParser},
+    request::{RequestProperty, RequestPropertyParser, reference::MaybeReference},
     types::id::Id,
 };
 

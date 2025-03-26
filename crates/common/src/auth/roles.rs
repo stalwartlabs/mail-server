@@ -8,8 +8,8 @@ use std::sync::{Arc, LazyLock};
 
 use ahash::AHashSet;
 use directory::{
-    backend::internal::{lookup::DirectoryStore, PrincipalField},
     Permission, Permissions, QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
+    backend::internal::{PrincipalField, lookup::DirectoryStore},
 };
 use trc::AddContext;
 use utils::cache::CacheItemWeight;

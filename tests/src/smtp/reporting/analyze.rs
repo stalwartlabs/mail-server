@@ -6,11 +6,11 @@
 
 use std::time::Duration;
 
-use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestSMTP};
+use crate::smtp::{TestSMTP, inbound::TestQueueEvent, session::TestSession};
 
 use store::{
-    write::{ReportClass, ValueClass},
     IterateParams, ValueKey,
+    write::{ReportClass, ValueClass},
 };
 
 const CONFIG: &str = r#"

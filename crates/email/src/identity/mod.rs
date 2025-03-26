@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use store::{SerializedVersion, SERIALIZE_OBJ_03_V1};
+use store::{SERIALIZE_OBJ_03_V1, SerializedVersion};
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use calcard::icalendar::ICalendar;
+use calcard::icalendar::ICalendar;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
 use utils::map::vec_map::VecMap;
 

@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use foundationdb::{api::NetworkAutoStop, Database, FdbError, Transaction};
+use foundationdb::{Database, FdbError, Transaction, api::NetworkAutoStop};
 
 pub mod blob;
 pub mod main;

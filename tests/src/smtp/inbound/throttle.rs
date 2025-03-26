@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use crate::smtp::{session::TestSession, TempDir, TestSMTP};
+use crate::smtp::{TempDir, TestSMTP, session::TestSession};
 use common::Core;
 use smtp::core::{Session, SessionAddress};
 use store::Stores;

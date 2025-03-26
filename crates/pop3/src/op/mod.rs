@@ -7,8 +7,8 @@
 use common::listener::SessionStream;
 
 use crate::{
-    protocol::{response::Response, Mechanism},
     Session,
+    protocol::{Mechanism, response::Response},
 };
 
 pub mod authenticate;

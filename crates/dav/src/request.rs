@@ -23,7 +23,10 @@ use hyper::{StatusCode, header};
 use crate::{
     DavError, DavMethod, DavResource,
     common::{
-        DavQuery, lock::LockRequestHandler, propfind::PropFindRequestHandler, uri::DavUriResource,
+        DavQuery,
+        lock::{LockRequest, LockRequestHandler},
+        propfind::PropFindRequestHandler,
+        uri::DavUriResource,
     },
     file::{
         acl::FileAclRequestHandler, copy_move::FileCopyMoveRequestHandler,
@@ -124,19 +127,41 @@ impl DavRequestDispatcher for Server {
                 DavResource::Cal => todo!(),
                 DavResource::Principal => todo!(),
                 DavResource::File => {
-                    self.handle_file_get_request(&access_token, headers, true)
+                    #[cfg(debug_assertions)]
+                    {
+                        // Deal with Litmus bug
+                        self.handle_file_get_request(
+                            &access_token,
+                            headers,
+                            !request.headers().contains_key("x-litmus"),
+                        )
                         .await
+                    }
+
+                    #[cfg(not(debug_assertions))]
+                    {
+                        self.handle_file_get_request(&access_token, headers, true)
+                            .await
+                    }
                 }
             },
-            DavMethod::DELETE => match resource {
-                DavResource::Card => todo!(),
-                DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
-                DavResource::File => {
-                    self.handle_file_delete_request(&access_token, headers)
-                        .await
+            DavMethod::DELETE => {
+                // Include any fragments in the URI
+                if let Some(p) = request.uri().path_and_query() {
+                    // TODO: Access to the fragment part is pending, see https://github.com/hyperium/http/issues/127
+                    headers.uri = p.as_str();
                 }
-            },
+
+                match resource {
+                    DavResource::Card => todo!(),
+                    DavResource::Cal => todo!(),
+                    DavResource::Principal => todo!(),
+                    DavResource::File => {
+                        self.handle_file_delete_request(&access_token, headers)
+                            .await
+                    }
+                }
+            }
             DavMethod::PUT | DavMethod::POST => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
@@ -181,12 +206,19 @@ impl DavRequestDispatcher for Server {
                     self.handle_lock_request(
                         &access_token,
                         headers,
-                        LockInfo::parse(&mut Tokenizer::new(&body))?.into(),
+                        if !body.is_empty() {
+                            LockRequest::Lock(LockInfo::parse(&mut Tokenizer::new(&body))?)
+                        } else {
+                            LockRequest::Refresh
+                        },
                     )
                     .await
                 }
             },
-            DavMethod::UNLOCK => self.handle_lock_request(&access_token, headers, None).await,
+            DavMethod::UNLOCK => {
+                self.handle_lock_request(&access_token, headers, LockRequest::Unlock)
+                    .await
+            }
             DavMethod::ACL => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
@@ -278,7 +310,9 @@ impl DavRequestHandler for Server {
             Vec::new()
         };
 
-        match self
+        let std_body = std::str::from_utf8(&body).unwrap_or("[binary]").to_string();
+
+        let result = match self
             .dispatch_dav_request(&request, access_token, resource, method, body)
             .await
         {
@@ -304,7 +338,17 @@ impl DavRequestHandler for Server {
                     _ => HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR),
                 }
             }
-            Err(DavError::Parse(err)) => HttpResponse::new(StatusCode::BAD_REQUEST),
+            Err(DavError::Parse(err)) => {
+                if request
+                    .headers()
+                    .get(header::CONTENT_TYPE)
+                    .is_some_and(|h| h.to_str().unwrap_or_default().contains("/xml"))
+                {
+                    HttpResponse::new(StatusCode::BAD_REQUEST)
+                } else {
+                    HttpResponse::new(StatusCode::UNSUPPORTED_MEDIA_TYPE)
+                }
+            }
             Err(DavError::Condition(condition)) => HttpResponse::new(condition.code)
                 .with_xml_body(
                     ErrorResponse::new(condition.condition)
@@ -313,7 +357,24 @@ impl DavRequestHandler for Server {
                 )
                 .with_no_cache(),
             Err(DavError::Code(code)) => HttpResponse::new(code),
-        }
+        };
+
+        let c = println!(
+            "------------------------------------------\n{:?} {} -> {:?}\nHeaders: {:?}\nBody: {}\nResponse headers: {:?}\nResponse: {}",
+            method,
+            request.uri().path(),
+            result.status(),
+            request.headers(),
+            std_body,
+            result.headers().unwrap(),
+            match &result.body() {
+                http_proto::HttpResponseBody::Text(t) => t,
+                http_proto::HttpResponseBody::Empty => "[empty]",
+                _ => "[binary]",
+            }
+        );
+
+        result
     }
 }
 

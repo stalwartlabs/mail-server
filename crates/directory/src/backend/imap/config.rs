@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use mail_send::smtp::tls::build_tls_connector;
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::core::config::build_pool;
 

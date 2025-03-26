@@ -12,10 +12,10 @@ use std::{
 
 use ahash::AHashMap;
 use rustls::{
+    SupportedProtocolVersion,
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
     version::{TLS12, TLS13},
-    SupportedProtocolVersion,
 };
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio_rustls::{Accept, LazyConfigAcceptor};
@@ -23,11 +23,11 @@ use tokio_rustls::{Accept, LazyConfigAcceptor};
 use crate::{Inner, Server};
 
 use super::{
-    acme::{
-        resolver::{build_acme_static_resolver, IsTlsAlpnChallenge},
-        AcmeProvider,
-    },
     ServerInstance, SessionStream, TcpAcceptor, TcpAcceptorResult,
+    acme::{
+        AcmeProvider,
+        resolver::{IsTlsAlpnChallenge, build_acme_static_resolver},
+    },
 };
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];

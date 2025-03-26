@@ -315,7 +315,7 @@ static UW6: LazyLock<HashMap<char, i32>> = LazyLock::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use crate::tokenizers::{japanese::JapaneseTokenizer, word::WordTokenizer, Token};
+    use crate::tokenizers::{Token, japanese::JapaneseTokenizer, word::WordTokenizer};
 
     #[test]
     fn japanese_tokenizer() {

@@ -12,8 +12,8 @@ use serde_json::Value;
 use crate::modules::{Principal, Type};
 
 use super::{
-    cli::{Client, ListCommands},
     PrincipalField, PrincipalUpdate, PrincipalValue,
+    cli::{Client, ListCommands},
 };
 
 impl ListCommands {

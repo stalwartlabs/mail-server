@@ -18,7 +18,7 @@ use jmap_proto::{
     },
 };
 use std::future::Future;
-use store::write::{log::ChangeLogBuilder, AlignedBytes, Archive, BatchBuilder};
+use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
 use store::{Serialize, write::Archiver};
 use trc::AddContext;
 use utils::sanitize_email;

@@ -6,10 +6,10 @@
 
 use std::{fmt::Display, io::Write, ops::Range, time::Duration};
 
-use s3::{creds::Credentials, Bucket, Region};
+use s3::{Bucket, Region, creds::Credentials};
 use utils::{
     codec::base32_custom::Base32Writer,
-    config::{utils::AsKey, Config},
+    config::{Config, utils::AsKey},
 };
 
 pub struct S3Store {
@@ -109,7 +109,7 @@ impl S3Store {
                 code => {
                     return Err(trc::StoreEvent::S3Error
                         .reason(String::from_utf8_lossy(response.as_slice()))
-                        .ctx(trc::Key::Code, code))
+                        .ctx(trc::Key::Code, code));
                 }
             }
         }
@@ -139,7 +139,7 @@ impl S3Store {
                 code => {
                     return Err(trc::StoreEvent::S3Error
                         .reason(String::from_utf8_lossy(response.as_slice()))
-                        .ctx(trc::Key::Code, code))
+                        .ctx(trc::Key::Code, code));
                 }
             }
         }
@@ -170,7 +170,7 @@ impl S3Store {
                 code => {
                     return Err(trc::StoreEvent::S3Error
                         .reason(String::from_utf8_lossy(response.as_slice()))
-                        .ctx(trc::Key::Code, code))
+                        .ctx(trc::Key::Code, code));
                 }
             }
         }

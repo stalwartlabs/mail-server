@@ -9,10 +9,10 @@ use std::{fmt::Display, sync::Arc, time::Duration};
 #[cfg(feature = "test_mode")]
 pub static STS_TEST_POLICY: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::new(Vec::new());
 
-use common::{config::smtp::resolver::Policy, Server};
+use common::{Server, config::smtp::resolver::Policy};
 use mail_auth::{mta_sts::MtaSts, report::tlsrpt::ResultType};
 
-use super::{parse::ParsePolicy, Error};
+use super::{Error, parse::ParsePolicy};
 
 #[cfg(not(feature = "test_mode"))]
 use utils::HttpLimitResponse;

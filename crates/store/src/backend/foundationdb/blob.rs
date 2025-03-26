@@ -6,11 +6,11 @@
 
 use std::ops::Range;
 
-use foundationdb::{options::StreamingMode, KeySelector, RangeOption};
+use foundationdb::{KeySelector, RangeOption, options::StreamingMode};
 use futures::TryStreamExt;
 use utils::BLOB_HASH_LEN;
 
-use crate::{backend::foundationdb::into_error, write::key::KeySerializer, SUBSPACE_BLOBS};
+use crate::{SUBSPACE_BLOBS, backend::foundationdb::into_error, write::key::KeySerializer};
 
 use super::{FdbStore, MAX_VALUE_SIZE};
 

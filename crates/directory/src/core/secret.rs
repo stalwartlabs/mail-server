@@ -18,9 +18,9 @@ use sha2::Sha512;
 use tokio::sync::oneshot;
 use totp_rs::TOTP;
 
+use crate::Principal;
 use crate::backend::internal::PrincipalField;
 use crate::backend::internal::SpecialSecrets;
-use crate::Principal;
 
 impl Principal {
     pub async fn verify_secret(&self, mut code: &str) -> trc::Result<bool> {

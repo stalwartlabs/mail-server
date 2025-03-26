@@ -11,23 +11,23 @@
 use std::{sync::Arc, time::Duration};
 
 use ahash::AHashMap;
-use directory::{backend::internal::manage::ManageDirectory, Type};
+use directory::{Type, backend::internal::manage::ManageDirectory};
 use store::{Store, Stores};
 use trc::{EventType, MetricType, TOTAL_EVENT_COUNT};
 use utils::config::{
+    Config, ConfigKey,
     cron::SimpleCron,
     utils::{AsKey, ParseValue},
-    Config, ConfigKey,
 };
 
 use crate::{
-    expr::{tokenizer::TokenMap, Expression},
+    expr::{Expression, tokenizer::TokenMap},
     manager::config::ConfigManager,
 };
 
 use super::{
-    license::LicenseKey, llm::AiApiConfig, AlertContent, AlertContentToken, AlertMethod,
-    Enterprise, MetricAlert, MetricStore, SpamFilterLlmConfig, TraceStore, Undelete,
+    AlertContent, AlertContentToken, AlertMethod, Enterprise, MetricAlert, MetricStore,
+    SpamFilterLlmConfig, TraceStore, Undelete, license::LicenseKey, llm::AiApiConfig,
 };
 
 impl Enterprise {
@@ -103,9 +103,10 @@ impl Enterprise {
                 )
                 .await
             {
-                trc::error!(err
-                    .caused_by(trc::location!())
-                    .details("Failed to update license key"));
+                trc::error!(
+                    err.caused_by(trc::location!())
+                        .details("Failed to update license key")
+                );
             }
         }
 

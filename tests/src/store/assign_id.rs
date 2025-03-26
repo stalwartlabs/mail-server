@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use store::{write::BatchBuilder, Store};
+use store::{Store, write::BatchBuilder};
 
 pub async fn test(db: Store) {
     println!("Running Store ID assignment tests...");

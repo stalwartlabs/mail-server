@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use jmap_client::{
     email::{self, Email},
     identity::{self, Identity},
@@ -23,8 +23,9 @@ use tokio::io::AsyncWriteExt;
 use crate::modules::RETRY_ATTEMPTS;
 
 use super::{
+    UnwrapResult,
     cli::{Client, ExportCommands},
-    name_to_id, UnwrapResult,
+    name_to_id,
 };
 
 impl ExportCommands {

@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use rusqlite::{types::FromSql, Row, Rows, ToSql};
+use rusqlite::{Row, Rows, ToSql, types::FromSql};
 
 use crate::{IntoRows, QueryResult, QueryType, Value};
 
-use super::{into_error, SqliteStore};
+use super::{SqliteStore, into_error};
 
 impl SqliteStore {
     pub(crate) async fn query<T: QueryResult>(

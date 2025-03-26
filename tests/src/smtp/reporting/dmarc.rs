@@ -20,9 +20,9 @@ use smtp::reporting::dmarc::DmarcReporting;
 use store::write::QueueClass;
 
 use crate::smtp::{
-    inbound::{sign::SIGNATURES, TestMessage},
-    session::VerifyResponse,
     DnsCache, TestSMTP,
+    inbound::{TestMessage, sign::SIGNATURES},
+    session::VerifyResponse,
 };
 
 const CONFIG: &str = r#"

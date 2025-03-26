@@ -103,51 +103,67 @@ impl FileDeleteRequestHandler for Server {
         )
         .await?;
 
-        // Process deletions
-        let mut changes = ChangeLogBuilder::new();
-        for document_id in sorted_ids {
-            if let Some(node) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::FileNode,
-                    document_id,
-                    Property::Value,
-                )
-                .await?
-            {
-                // Delete record
-                let mut batch = BatchBuilder::new();
-                batch
-                    .with_account_id(account_id)
-                    .with_collection(Collection::FileNode)
-                    .delete_document(document_id)
-                    .custom(
-                        ObjectIndexBuilder::<_, ()>::new()
-                            .with_tenant_id(access_token)
-                            .with_current(
-                                node.to_unarchived::<FileNode>()
-                                    .caused_by(trc::location!())?,
-                            ),
-                    )
-                    .caused_by(trc::location!())?;
-                self.store()
-                    .write(batch)
-                    .await
-                    .caused_by(trc::location!())?;
-                changes.log_delete(Collection::FileNode, document_id);
-            }
-        }
+        let c = println!("DELETE files: {:?}", sorted_ids);
 
-        // Write changes
-        if !changes.is_empty() {
-            let change_id = self
-                .commit_changes(account_id, changes)
-                .await
-                .caused_by(trc::location!())?;
-            self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-                .await;
-        }
+        delete_files(self, access_token, account_id, sorted_ids).await?;
 
         Ok(HttpResponse::new(StatusCode::NO_CONTENT))
     }
+}
+
+pub(crate) async fn delete_files(
+    server: &Server,
+    access_token: &AccessToken,
+    account_id: u32,
+    ids: Vec<u32>,
+) -> trc::Result<()> {
+    // Process deletions
+    let mut changes = ChangeLogBuilder::new();
+
+    for document_id in ids {
+        if let Some(node) = server
+            .get_property::<Archive<AlignedBytes>>(
+                account_id,
+                Collection::FileNode,
+                document_id,
+                Property::Value,
+            )
+            .await?
+        {
+            // Delete record
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::FileNode)
+                .delete_document(document_id)
+                .custom(
+                    ObjectIndexBuilder::<_, ()>::new()
+                        .with_tenant_id(access_token)
+                        .with_current(
+                            node.to_unarchived::<FileNode>()
+                                .caused_by(trc::location!())?,
+                        ),
+                )
+                .caused_by(trc::location!())?;
+            server
+                .store()
+                .write(batch)
+                .await
+                .caused_by(trc::location!())?;
+            changes.log_delete(Collection::FileNode, document_id);
+        }
+    }
+
+    // Write changes
+    if !changes.is_empty() {
+        let change_id = server
+            .commit_changes(account_id, changes)
+            .await
+            .caused_by(trc::location!())?;
+        server
+            .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
+            .await;
+    }
+
+    Ok(())
 }

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use ldap3::LdapConnSettings;
 use store::Store;
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::core::config::build_pool;
 

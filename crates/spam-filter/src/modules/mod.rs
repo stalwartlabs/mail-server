@@ -6,8 +6,8 @@
 
 use common::Server;
 use store::{
-    dispatch::lookup::{KeyValue, LookupKey},
     Deserialize, Value,
+    dispatch::lookup::{KeyValue, LookupKey},
 };
 
 pub mod bayes;

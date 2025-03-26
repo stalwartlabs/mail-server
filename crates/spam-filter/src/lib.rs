@@ -12,9 +12,9 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr};
 
-use analysis::url::UrlParts;
 use analysis::ElementLocation;
-use mail_auth::{dmarc::Policy, ArcOutput, DkimOutput, DmarcResult, IprevOutput, SpfOutput};
+use analysis::url::UrlParts;
+use mail_auth::{ArcOutput, DkimOutput, DmarcResult, IprevOutput, SpfOutput, dmarc::Policy};
 use mail_parser::Message;
 use modules::html::HtmlToken;
 use nlp::tokenizers::types::TokenType;

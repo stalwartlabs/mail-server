@@ -7,12 +7,12 @@
 use crate::{QueryResult, QueryType};
 
 use bytes::BytesMut;
-use futures::{pin_mut, TryStreamExt};
+use futures::{TryStreamExt, pin_mut};
 use tokio_postgres::types::{FromSql, ToSql, Type};
 
 use crate::IntoRows;
 
-use super::{into_error, PostgresStore};
+use super::{PostgresStore, into_error};
 
 impl PostgresStore {
     pub(crate) async fn query<T: QueryResult>(

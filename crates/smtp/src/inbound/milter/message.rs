@@ -7,18 +7,18 @@
 use std::{borrow::Cow, time::Instant};
 
 use common::{
+    DAEMON_NAME,
     config::smtp::session::{Milter, Stage},
     listener::SessionStream,
-    DAEMON_NAME,
 };
 use mail_auth::AuthenticatedMessage;
-use smtp_proto::{request::parser::Rfc5321Parser, IntoString};
+use smtp_proto::{IntoString, request::parser::Rfc5321Parser};
 use tokio::io::{AsyncRead, AsyncWrite};
 use trc::MilterEvent;
 
 use crate::{
     core::{Session, SessionAddress, SessionData},
-    inbound::{milter::MilterClient, FilterResponse},
+    inbound::{FilterResponse, milter::MilterClient},
     queue::DomainPart,
 };
 

@@ -9,16 +9,16 @@ use std::{fmt::Debug, net::IpAddr};
 use ahash::AHashSet;
 use utils::{
     config::{
+        Config, ConfigKey, Rate,
         ipmask::{IpAddrMask, IpAddrOrMask},
         utils::ParseValue,
-        Config, ConfigKey, Rate,
     },
     glob::GlobPattern,
 };
 
 use crate::{
-    ip_to_bytes, manager::config::MatchType, Server, KV_RATE_LIMIT_AUTH, KV_RATE_LIMIT_LOITER,
-    KV_RATE_LIMIT_RCPT, KV_RATE_LIMIT_SCAN,
+    KV_RATE_LIMIT_AUTH, KV_RATE_LIMIT_LOITER, KV_RATE_LIMIT_RCPT, KV_RATE_LIMIT_SCAN, Server,
+    ip_to_bytes, manager::config::MatchType,
 };
 
 #[derive(Debug, Clone)]

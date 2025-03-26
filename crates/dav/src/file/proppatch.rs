@@ -54,7 +54,7 @@ impl FilePropPatchRequestHandler for Server {
         &self,
         access_token: &AccessToken,
         headers: RequestHeaders<'_>,
-        request: PropertyUpdate,
+        mut request: PropertyUpdate,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
         let resource_ = self
@@ -117,40 +117,21 @@ impl FilePropPatchRequestHandler for Server {
 
         // Remove properties
         let mut items = Vec::with_capacity(request.remove.len() + request.set.len());
-        for property in request.remove {
-            match property {
-                DavProperty::WebDav(WebDavProperty::DisplayName) => {
-                    new_node.display_name = None;
-                    items.push(
-                        PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                            .with_status(StatusCode::OK),
-                    );
-                }
-                DavProperty::WebDav(WebDavProperty::GetContentType) if new_node.file.is_some() => {
-                    new_node.file.as_mut().unwrap().media_type = None;
-                    items.push(
-                        PropStat::new(DavProperty::WebDav(WebDavProperty::GetContentType))
-                            .with_status(StatusCode::OK),
-                    );
-                }
-                DavProperty::DeadProperty(dead) => {
-                    new_node.dead_properties.remove_element(&dead);
-                    items.push(
-                        PropStat::new(DavProperty::DeadProperty(dead)).with_status(StatusCode::OK),
-                    );
-                }
-                property => {
-                    items.push(
-                        PropStat::new(property)
-                            .with_status(StatusCode::CONFLICT)
-                            .with_response_description("Property cannot be modified"),
-                    );
-                }
-            }
+        if !request.set_first && !request.remove.is_empty() {
+            remove_file_properties(
+                &mut new_node,
+                std::mem::take(&mut request.remove),
+                &mut items,
+            );
         }
 
         // Set properties
         let is_success = self.apply_file_properties(&mut new_node, true, request.set, &mut items);
+
+        // Remove properties
+        if is_success && !request.remove.is_empty() {
+            remove_file_properties(&mut new_node, request.remove, &mut items);
+        }
 
         let etag = if new_node != node.inner {
             update_file_node(
@@ -281,5 +262,43 @@ impl FilePropPatchRequestHandler for Server {
         }
 
         !has_errors
+    }
+}
+
+fn remove_file_properties(
+    node: &mut FileNode,
+    properties: Vec<DavProperty>,
+    items: &mut Vec<PropStat>,
+) {
+    for property in properties {
+        match property {
+            DavProperty::WebDav(WebDavProperty::DisplayName) => {
+                node.display_name = None;
+                items.push(
+                    PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
+                        .with_status(StatusCode::OK),
+                );
+            }
+            DavProperty::WebDav(WebDavProperty::GetContentType) if node.file.is_some() => {
+                node.file.as_mut().unwrap().media_type = None;
+                items.push(
+                    PropStat::new(DavProperty::WebDav(WebDavProperty::GetContentType))
+                        .with_status(StatusCode::OK),
+                );
+            }
+            DavProperty::DeadProperty(dead) => {
+                node.dead_properties.remove_element(&dead);
+                items.push(
+                    PropStat::new(DavProperty::DeadProperty(dead)).with_status(StatusCode::OK),
+                );
+            }
+            property => {
+                items.push(
+                    PropStat::new(property)
+                        .with_status(StatusCode::CONFLICT)
+                        .with_response_description("Property cannot be modified"),
+                );
+            }
+        }
     }
 }

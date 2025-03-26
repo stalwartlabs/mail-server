@@ -6,9 +6,9 @@
 
 use mail_send::Credentials;
 use smtp_proto::{
-    request::{parser::Rfc5321Parser, AUTH},
+    AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2, IntoString,
+    request::{AUTH, parser::Rfc5321Parser},
     response::generate::BitToString,
-    IntoString, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 

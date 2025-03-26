@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 
 use atomics::{array::AtomicU32Array, gauge::AtomicGauge, histogram::AtomicHistogram};
 use ipc::{
-    collector::{Collector, GlobalInterests, EVENT_TYPES},
+    collector::{Collector, EVENT_TYPES, GlobalInterests},
     subscriber::Interests,
 };
 

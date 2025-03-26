@@ -12,7 +12,7 @@ pub mod stopwords;
 use std::borrow::Cow;
 
 use crate::tokenizers::{
-    chinese::ChineseTokenizer, japanese::JapaneseTokenizer, word::WordTokenizer, Token,
+    Token, chinese::ChineseTokenizer, japanese::JapaneseTokenizer, word::WordTokenizer,
 };
 
 use self::detect::LanguageDetector;

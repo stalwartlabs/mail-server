@@ -6,14 +6,14 @@
 
 use mail_send::Credentials;
 use store::{
-    write::{DirectoryClass, ValueClass},
     Deserialize, IterateParams, Store, ValueKey,
+    write::{DirectoryClass, ValueClass},
 };
 use trc::AddContext;
 
-use crate::{backend::RcptType, Principal, QueryBy, Type};
+use crate::{Principal, QueryBy, Type, backend::RcptType};
 
-use super::{manage::ManageDirectory, PrincipalField, PrincipalInfo};
+use super::{PrincipalField, PrincipalInfo, manage::ManageDirectory};
 
 #[allow(async_fn_in_trait)]
 pub trait DirectoryStore: Sync + Send {

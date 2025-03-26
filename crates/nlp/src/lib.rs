@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- pub mod bayes;
+pub mod bayes;
 pub mod language;
 pub mod tokenizers;
 
@@ -14,8 +14,8 @@ mod test {
 
     use crate::{
         bayes::{
-            tokenize::{tests::ToBayesToken, BayesTokenizer},
             BayesClassifier, BayesModel,
+            tokenize::{BayesTokenizer, tests::ToBayesToken},
         },
         tokenizers::{
             osb::{OsbToken, OsbTokenizer},

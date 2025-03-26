@@ -7,7 +7,7 @@
 use mail_send::Credentials;
 use smtp_proto::{AUTH_CRAM_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 
-use crate::{backend::RcptType, IntoError, Principal, QueryBy};
+use crate::{IntoError, Principal, QueryBy, backend::RcptType};
 
 use super::{ImapDirectory, ImapError};
 

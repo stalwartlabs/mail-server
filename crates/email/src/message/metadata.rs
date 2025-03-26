@@ -20,7 +20,7 @@ use rkyv::{
     string::ArchivedString,
     vec::ArchivedVec,
 };
-use store::{SerializedVersion, SERIALIZE_OBJ_06_V1, SERIALIZE_OBJ_07_V1};
+use store::{SERIALIZE_OBJ_06_V1, SERIALIZE_OBJ_07_V1, SerializedVersion};
 use utils::BlobHash;
 
 use crate::mailbox::{ArchivedUidMailbox, UidMailbox};

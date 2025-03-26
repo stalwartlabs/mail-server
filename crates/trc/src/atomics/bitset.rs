@@ -6,7 +6,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::ipc::{bitset::Bitset, USIZE_BITS, USIZE_BITS_MASK};
+use crate::ipc::{USIZE_BITS, USIZE_BITS_MASK, bitset::Bitset};
 
 pub struct AtomicBitset<const N: usize>([AtomicUsize; N]);
 

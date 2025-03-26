@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use deadpool::managed;
-use mail_send::{smtp::AssertReply, Error};
+use mail_send::{Error, smtp::AssertReply};
 
 use super::{SmtpClient, SmtpConnectionManager};
 

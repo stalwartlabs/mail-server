@@ -6,7 +6,7 @@
 
 use std::{
     net::IpAddr,
-    sync::{atomic::AtomicU64, Arc},
+    sync::{Arc, atomic::AtomicU64},
     time::{Duration, Instant},
 };
 
@@ -16,7 +16,7 @@ use mail_auth::common::resolver::ToReverseName;
 use store::write::now;
 use tokio::sync::Semaphore;
 
-use crate::{config::network::AsnGeoLookupConfig, manager::fetch_resource, Server};
+use crate::{Server, config::network::AsnGeoLookupConfig, manager::fetch_resource};
 
 pub struct AsnGeoLookupData {
     pub lock: Semaphore,

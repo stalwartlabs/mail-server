@@ -15,7 +15,10 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use store::{write::{AlignedBytes, Archive}, BlobClass};
+use store::{
+    BlobClass,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 
 use crate::changes::state::StateManager;

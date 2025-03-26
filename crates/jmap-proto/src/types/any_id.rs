@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    parser::{json::Parser, JsonObjectParser},
+    parser::{JsonObjectParser, json::Parser},
     request::reference::MaybeReference,
 };
 

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{capability::QuotaResourceName, quoted_string, ImapResponse};
+use super::{ImapResponse, capability::QuotaResourceName, quoted_string};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
@@ -79,7 +79,7 @@ impl ImapResponse for Response {
 
 #[cfg(test)]
 mod tests {
-    use crate::protocol::{capability::QuotaResourceName, ImapResponse};
+    use crate::protocol::{ImapResponse, capability::QuotaResourceName};
 
     use super::{QuotaItem, QuotaResource};
 

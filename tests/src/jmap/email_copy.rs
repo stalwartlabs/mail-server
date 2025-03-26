@@ -92,13 +92,15 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(email.received_at().unwrap(), 311923920);
 
     // Check that the email was deleted
-    assert!(params
-        .client
-        .set_default_account_id(Id::new(1).to_string())
-        .email_get(&ac1_email_id, None::<Vec<_>>)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        params
+            .client
+            .set_default_account_id(Id::new(1).to_string())
+            .email_get(&ac1_email_id, None::<Vec<_>>)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     // Empty store
     destroy_all_mailboxes(params).await;

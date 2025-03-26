@@ -40,9 +40,26 @@ impl DavParser for MkCol {
             other => return Err(other.into_unexpected()),
         };
 
-        stream.expect_named_element(NamedElement::dav(Element::Set))?;
-        stream.expect_named_element(NamedElement::dav(Element::Prop))?;
-        mkcol.props = stream.collect_property_values()?;
+        loop {
+            match stream.token()? {
+                Token::ElementStart {
+                    name:
+                        NamedElement {
+                            ns: Namespace::Dav,
+                            element: Element::Set,
+                        },
+                    ..
+                } => {
+                    stream.expect_named_element(NamedElement::dav(Element::Prop))?;
+                    stream.collect_property_values(&mut mkcol.props)?;
+                    stream.expect_element_end()?;
+                }
+                Token::ElementEnd | Token::Eof => {
+                    break;
+                }
+                token => return Err(token.into_unexpected()),
+            }
+        }
 
         Ok(mkcol)
     }

@@ -5,7 +5,7 @@
  */
 
 use std::{
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{BTreeMap, btree_map::Entry},
     iter::Peekable,
     str::Chars,
 };
@@ -299,9 +299,9 @@ impl<'x, 'y> TomlParser<'x, 'y> {
                                 '}' => break,
                                 ch => {
                                     return Err(format!(
-                                    "Unexpected character {:?} found in inline table for property {:?} at line {}.",
-                                    ch, key, self.line
-                                ));
+                                        "Unexpected character {:?} found in inline table for property {:?} at line {}.",
+                                        ch, key, self.line
+                                    ));
                                 }
                             }
                         }
@@ -397,7 +397,7 @@ impl<'x, 'y> TomlParser<'x, 'y> {
                         "Expected {:?} but found {:?} in value at line {}.",
                         stop_chars, ch, self.line
                     ))
-                }
+                };
             }
         }
 

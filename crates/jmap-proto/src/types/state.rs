@@ -9,9 +9,9 @@ use utils::codec::{
     leb128::{Leb128Iterator, Leb128Writer},
 };
 
-use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
+use crate::parser::{JsonObjectParser, base32::JsonBase32Reader, json::Parser};
 
-use super::{type_state::DataType, ChangeId};
+use super::{ChangeId, type_state::DataType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JMAPIntermediateState {

@@ -16,7 +16,10 @@ use jmap_proto::{
     },
 };
 use store::{
-    rkyv::{option::ArchivedOption, vec::ArchivedVec}, roaring::RoaringBitmap, write::{AlignedBytes, Archive, Archiver, BatchBuilder}, Serialize
+    Serialize,
+    rkyv::{option::ArchivedOption, vec::ArchivedVec},
+    roaring::RoaringBitmap,
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
 use utils::sanitize_email;

@@ -6,10 +6,10 @@
 
 use common::{
     auth::{
-        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
         AuthRequest,
+        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
     },
-    listener::{limiter::LimiterResult, SessionStream},
+    listener::{SessionStream, limiter::LimiterResult},
 };
 use directory::Permission;
 use imap_proto::{
@@ -64,7 +64,7 @@ impl<T: SessionStream> Session<T> {
             _ => {
                 return Err(trc::AuthEvent::Error
                     .into_err()
-                    .details("Authentication mechanism not supported."))
+                    .details("Authentication mechanism not supported."));
             }
         };
 

@@ -11,13 +11,13 @@ use std::{
 };
 
 use ahash::AHashSet;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use hyper::{
-    header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
     HeaderMap,
+    header::{AUTHORIZATION, CONTENT_TYPE, HeaderName, HeaderValue},
 };
 use smtp_proto::*;
-use utils::config::{utils::ParseValue, Config};
+use utils::config::{Config, utils::ParseValue};
 
 use crate::{
     config::CONNECTION_VARS,

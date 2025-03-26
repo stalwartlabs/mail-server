@@ -6,7 +6,7 @@
 
 use std::process::Command;
 
-use sieve::{runtime::Variable, FunctionMap};
+use sieve::{FunctionMap, runtime::Variable};
 
 use super::PluginContext;
 

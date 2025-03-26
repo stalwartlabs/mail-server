@@ -7,7 +7,7 @@
 use std::fmt::Display;
 
 use crate::{
-    parser::{json::Parser, JsonObjectParser, Token},
+    parser::{JsonObjectParser, Token, json::Parser},
     types::{id::Id, pointer::JSONPointer},
 };
 

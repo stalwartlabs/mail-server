@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use utils::{
     cache::CacheWithTtl,
-    config::{utils::AsKey, Config},
+    config::{Config, utils::AsKey},
 };
 
 use crate::backend::RcptType;

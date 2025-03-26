@@ -5,13 +5,13 @@
  */
 
 use super::{
-    cli::{Client, QueueCommands},
     List,
+    cli::{Client, QueueCommands},
 };
 use console::Term;
 use human_size::{Byte, SpecificSize};
 use mail_parser::DateTime;
-use prettytable::{format::Alignment, Attr, Cell, Row, Table};
+use prettytable::{Attr, Cell, Row, Table, format::Alignment};
 use reqwest::Method;
 use serde::{Deserialize, Deserializer};
 
@@ -204,13 +204,12 @@ impl QueueCommands {
                             ]));
                         }
                         for domain in &message.domains {
-                            table.add_row(Row::new(vec![Cell::new_align(
-                                &domain.name,
-                                Alignment::RIGHT,
-                            )
-                            .with_style(Attr::Bold)
-                            .with_style(Attr::Italic(true))
-                            .with_hspan(2)]));
+                            table.add_row(Row::new(vec![
+                                Cell::new_align(&domain.name, Alignment::RIGHT)
+                                    .with_style(Attr::Bold)
+                                    .with_style(Attr::Italic(true))
+                                    .with_hspan(2),
+                            ]));
                             table.add_row(Row::new(vec![
                                 Cell::new("Status").with_style(Attr::Bold),
                                 Cell::new(domain.status.status()),
@@ -259,11 +258,9 @@ impl QueueCommands {
                             ]));
                         }
                     } else {
-                        table.add_row(Row::new(vec![Cell::new_align(
-                            "-- Not found --",
-                            Alignment::CENTER,
-                        )
-                        .with_hspan(2)]));
+                        table.add_row(Row::new(vec![
+                            Cell::new_align("-- Not found --", Alignment::CENTER).with_hspan(2),
+                        ]));
                     }
 
                     eprintln!();

@@ -11,10 +11,10 @@ pub mod oidc;
 pub mod smtp;
 pub mod sql;
 
-use common::{config::smtp::session::AddressMapping, Core, Server};
+use common::{Core, Server, config::smtp::session::AddressMapping};
 use directory::{
-    backend::internal::{manage::ManageDirectory, PrincipalField},
     Directories, Principal, Type,
+    backend::internal::{PrincipalField, manage::ManageDirectory},
 };
 use mail_send::Credentials;
 use rustls::ServerConfig;
@@ -24,7 +24,7 @@ use std::{borrow::Cow, io::BufReader, sync::Arc};
 use store::{Store, Stores};
 use tokio_rustls::TlsAcceptor;
 
-use crate::{store::TempDir, AssertConfig};
+use crate::{AssertConfig, store::TempDir};
 
 const CONFIG: &str = r#"
 [directory."rocksdb"]

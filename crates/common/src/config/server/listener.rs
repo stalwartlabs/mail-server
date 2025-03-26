@@ -7,28 +7,28 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use rustls::{
-    crypto::ring::{default_provider, ALL_CIPHER_SUITES},
-    ServerConfig, SupportedCipherSuite, ALL_VERSIONS,
+    ALL_VERSIONS, ServerConfig, SupportedCipherSuite,
+    crypto::ring::{ALL_CIPHER_SUITES, default_provider},
 };
 
 use tokio::net::TcpSocket;
 use tokio_rustls::TlsAcceptor;
 use utils::{
     config::{
-        utils::{AsKey, ParseValue},
         Config,
+        utils::{AsKey, ParseValue},
     },
     snowflake::SnowflakeIdGenerator,
 };
 
 use crate::{
-    listener::{tls::CertificateResolver, TcpAcceptor},
     Inner,
+    listener::{TcpAcceptor, tls::CertificateResolver},
 };
 
 use super::{
-    tls::{TLS12_VERSION, TLS13_VERSION},
     Listener, Listeners, ServerProtocol, TcpListener,
+    tls::{TLS12_VERSION, TLS13_VERSION},
 };
 
 impl Listeners {

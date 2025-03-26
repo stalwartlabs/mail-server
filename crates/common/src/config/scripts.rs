@@ -7,7 +7,7 @@
 use std::{sync::Arc, time::Duration};
 
 use ahash::AHashMap;
-use sieve::{compiler::grammar::Capability, Compiler, Runtime, Sieve};
+use sieve::{Compiler, Runtime, Sieve, compiler::grammar::Capability};
 use store::Stores;
 use utils::config::Config;
 

@@ -255,9 +255,10 @@ impl<T: SessionStream> Session<T> {
                                         }
                                         Ok(false) => {}
                                         Err(err) => {
-                                            trc::error!(err
-                                                .span_id(self.data.session_id)
-                                                .details("Failed to check for fail2ban"));
+                                            trc::error!(
+                                                err.span_id(self.data.session_id)
+                                                    .details("Failed to check for fail2ban")
+                                            );
                                         }
                                     }
                                 }

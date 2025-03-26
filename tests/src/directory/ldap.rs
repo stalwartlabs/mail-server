@@ -7,13 +7,13 @@
 use std::fmt::Debug;
 
 use directory::{
-    backend::{internal::manage::ManageDirectory, RcptType},
-    QueryBy, Type, ROLE_USER,
+    QueryBy, ROLE_USER, Type,
+    backend::{RcptType, internal::manage::ManageDirectory},
 };
 use mail_send::Credentials;
 
 use crate::directory::{
-    map_account_id, map_account_ids, DirectoryTest, IntoTestPrincipal, TestPrincipal,
+    DirectoryTest, IntoTestPrincipal, TestPrincipal, map_account_id, map_account_ids,
 };
 
 #[tokio::test]
@@ -96,17 +96,19 @@ async fn ldap_directory() {
         }
         .into_sorted()
     );
-    assert!(handle
-        .query(
-            QueryBy::Credentials(&Credentials::Plain {
-                username: "bill".to_string(),
-                secret: "invalid".to_string()
-            }),
-            true
-        )
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        handle
+            .query(
+                QueryBy::Credentials(&Credentials::Plain {
+                    username: "bill".to_string(),
+                    secret: "invalid".to_string()
+                }),
+                true
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     // Get user by name
     assert_eq!(

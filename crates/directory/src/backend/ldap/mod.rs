@@ -5,7 +5,7 @@
  */
 
 use deadpool::managed::Pool;
-use ldap3::{ldap_escape, LdapConnSettings};
+use ldap3::{LdapConnSettings, ldap_escape};
 use store::Store;
 
 pub mod config;

@@ -5,13 +5,13 @@
  */
 
 use crate::{
-    protocol::{
-        list::{self, SelectionOption},
-        ProtocolVersion,
-    },
-    receiver::{bad, Request},
-    utf7::utf7_maybe_decode,
     Command,
+    protocol::{
+        ProtocolVersion,
+        list::{self, SelectionOption},
+    },
+    receiver::{Request, bad},
+    utf7::utf7_maybe_decode,
 };
 
 impl Request<Command> {

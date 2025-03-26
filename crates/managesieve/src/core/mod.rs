@@ -10,9 +10,9 @@ pub mod session;
 use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use common::{
-    auth::AccessToken,
-    listener::{limiter::InFlight, ServerInstance},
     Inner, Server,
+    auth::AccessToken,
+    listener::{ServerInstance, limiter::InFlight},
 };
 use imap_proto::receiver::{CommandParser, Receiver};
 use tokio::io::{AsyncRead, AsyncWrite};

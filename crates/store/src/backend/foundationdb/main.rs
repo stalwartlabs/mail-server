@@ -6,8 +6,8 @@
 
 use std::time::Duration;
 
-use foundationdb::{api, options::DatabaseOption, Database};
-use utils::config::{utils::AsKey, Config};
+use foundationdb::{Database, api, options::DatabaseOption};
+use utils::config::{Config, utils::AsKey};
 
 use super::FdbStore;
 

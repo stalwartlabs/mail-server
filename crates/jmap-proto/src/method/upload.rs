@@ -10,8 +10,8 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     error::set::SetError,
-    parser::{json::Parser, Ignore, JsonObjectParser, Token},
-    request::{reference::MaybeReference, RequestProperty},
+    parser::{Ignore, JsonObjectParser, Token, json::Parser},
+    request::{RequestProperty, reference::MaybeReference},
     response::Response,
     types::{blob::BlobId, id::Id},
 };

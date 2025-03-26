@@ -168,7 +168,7 @@ impl PrincipalPropFind for Server {
                                 .unwrap_or_default();
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                Urn::Sync { id }.to_string(),
+                                Urn::Sync(id).to_string(),
                             ));
                         }
                         WebDavProperty::AlternateURISet if is_principal => {

@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use common::{
-    manager::boot::{BootManager, IpcReceivers},
     Inner,
+    manager::boot::{BootManager, IpcReceivers},
 };
 use queue::manager::SpawnQueue;
 use reporting::scheduler::SpawnReport;

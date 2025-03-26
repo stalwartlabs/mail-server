@@ -5,15 +5,15 @@
  */
 
 use crate::{
-    parser::{json::Parser, Ignore, JsonObjectParser, Token},
+    parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::{
-        reference::{MaybeReference, ResultReference},
         RequestProperty,
+        reference::{MaybeReference, ResultReference},
     },
     types::id::Id,
 };
 
-use super::query::{parse_filter, Filter};
+use super::query::{Filter, parse_filter};
 
 #[derive(Debug, Clone)]
 pub struct GetSearchSnippetRequest {

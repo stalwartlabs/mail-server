@@ -10,15 +10,15 @@ use store::xxhash_rust;
 use trc::AddContext;
 
 use crate::{
+    IntoError, Principal, QueryBy, ROLE_ADMIN, ROLE_USER, Type,
     backend::{
+        RcptType,
         internal::{
+            PrincipalField,
             lookup::DirectoryStore,
             manage::{self, ManageDirectory, UpdatePrincipal},
-            PrincipalField,
         },
-        RcptType,
     },
-    IntoError, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
 };
 
 use super::{LdapDirectory, LdapMappings};

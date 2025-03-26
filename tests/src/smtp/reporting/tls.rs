@@ -15,12 +15,12 @@ use mail_auth::{
 };
 use store::write::QueueClass;
 
-use smtp::reporting::tls::{TlsReporting, TLS_HTTP_REPORT};
+use smtp::reporting::tls::{TLS_HTTP_REPORT, TlsReporting};
 
 use crate::smtp::{
-    inbound::{sign::SIGNATURES, TestMessage},
-    session::VerifyResponse,
     TestSMTP,
+    inbound::{TestMessage, sign::SIGNATURES},
+    session::VerifyResponse,
 };
 
 const CONFIG: &str = r#"
@@ -149,14 +149,18 @@ async fn report_tls() {
                 assert_eq!(policy.summary.total_success, 0);
                 assert_eq!(policy.policy.policy_domain, "foobar.org");
                 assert_eq!(policy.failure_details.len(), 2);
-                assert!(policy
-                    .failure_details
-                    .iter()
-                    .any(|d| d.result_type == ResultType::StsPolicyFetchError));
-                assert!(policy
-                    .failure_details
-                    .iter()
-                    .any(|d| d.result_type == ResultType::StsPolicyInvalid));
+                assert!(
+                    policy
+                        .failure_details
+                        .iter()
+                        .any(|d| d.result_type == ResultType::StsPolicyFetchError)
+                );
+                assert!(
+                    policy
+                        .failure_details
+                        .iter()
+                        .any(|d| d.result_type == ResultType::StsPolicyInvalid)
+                );
             }
             PolicyType::NoPolicyFound => {
                 seen[2] = true;

@@ -7,11 +7,11 @@
 use std::time::{Duration, Instant};
 
 use common::{
+    Core,
     config::smtp::{
         report::AggregateFrequency,
         resolver::{Mode, MxPattern, Policy},
     },
-    Core,
 };
 use mail_auth::MX;
 
@@ -98,9 +98,11 @@ async fn lookup_ip() {
         std::net::IpAddr::V4(v4) => v4,
         _ => unreachable!(),
     }));
-    assert!(resolve_result
-        .remote_ips
-        .contains(&"172.168.0.100".parse().unwrap()));
+    assert!(
+        resolve_result
+            .remote_ips
+            .contains(&"172.168.0.100".parse().unwrap())
+    );
 
     // Ipv6 strategy
     let mut config = Config::new(CONFIG_V6).unwrap();
@@ -133,9 +135,11 @@ async fn lookup_ip() {
         std::net::IpAddr::V6(v6) => v6,
         _ => unreachable!(),
     }));
-    assert!(resolve_result
-        .remote_ips
-        .contains(&"e:f::a".parse().unwrap()));
+    assert!(
+        resolve_result
+            .remote_ips
+            .contains(&"e:f::a".parse().unwrap())
+    );
 }
 
 #[test]

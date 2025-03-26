@@ -15,7 +15,7 @@ use crate::{
         assert_is_empty,
         delivery::SmtpConnection,
         email_submission::{
-            assert_message_delivery, expect_nothing, spawn_mock_smtp_server, MockMessage,
+            MockMessage, assert_message_delivery, expect_nothing, spawn_mock_smtp_server,
         },
         mailbox::destroy_all_mailboxes,
     },

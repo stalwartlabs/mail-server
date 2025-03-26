@@ -8,11 +8,11 @@ use roaring::RoaringBitmap;
 use rusqlite::OptionalExtension;
 
 use crate::{
-    write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
+    BitmapKey, Deserialize, IterateParams, Key, U32_LEN, ValueKey,
+    write::{BitmapClass, ValueClass, key::DeserializeBigEndian},
 };
 
-use super::{into_error, SqliteStore};
+use super::{SqliteStore, into_error};
 
 impl SqliteStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>

@@ -25,9 +25,10 @@ use crate::schema::{
 use super::{tokenizer::Tokenizer, DavParser, RawElement, Token, XmlValueParser};
 
 impl Tokenizer<'_> {
-    pub(crate) fn collect_properties(&mut self) -> crate::parser::Result<Vec<DavProperty>> {
-        let mut elements = Vec::new();
-
+    pub(crate) fn collect_properties(
+        &mut self,
+        mut elements: Vec<DavProperty>,
+    ) -> crate::parser::Result<Vec<DavProperty>> {
         loop {
             match self.token()? {
                 Token::ElementStart {
@@ -287,9 +288,8 @@ impl Tokenizer<'_> {
 impl Tokenizer<'_> {
     pub(crate) fn collect_property_values(
         &mut self,
-    ) -> crate::parser::Result<Vec<DavPropertyValue>> {
-        let mut elements = Vec::new();
-
+        elements: &mut Vec<DavPropertyValue>,
+    ) -> crate::parser::Result<()> {
         loop {
             match self.token()? {
                 Token::ElementStart { name, .. } => {
@@ -377,7 +377,7 @@ impl Tokenizer<'_> {
             }
         }
 
-        Ok(elements)
+        Ok(())
     }
 }
 

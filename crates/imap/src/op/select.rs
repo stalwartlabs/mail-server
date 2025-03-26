@@ -8,14 +8,13 @@ use std::{sync::Arc, time::Instant};
 
 use directory::Permission;
 use imap_proto::{
+    Command, ResponseCode, StatusResponse,
     protocol::{
-        fetch,
+        ImapResponse, Sequence, fetch,
         list::ListItem,
         select::{HighestModSeq, Response},
-        ImapResponse, Sequence,
     },
     receiver::Request,
-    Command, ResponseCode, StatusResponse,
 };
 
 use crate::core::{SavedSearch, SelectedMailbox, Session, State};

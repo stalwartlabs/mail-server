@@ -13,7 +13,7 @@ pub mod resolver;
 pub mod session;
 pub mod throttle;
 
-use crate::expr::{tokenizer::TokenMap, Expression};
+use crate::expr::{Expression, tokenizer::TokenMap};
 
 use self::{
     auth::MailAuthConfig, queue::QueueConfig, report::ReportConfig, resolver::Resolvers,

@@ -73,20 +73,12 @@ impl<const N: usize> AtomicHistogram<N> {
 
     pub fn min(&self) -> Option<u64> {
         let min = self.min.load(Ordering::Relaxed);
-        if min != u64::MAX {
-            Some(min)
-        } else {
-            None
-        }
+        if min != u64::MAX { Some(min) } else { None }
     }
 
     pub fn max(&self) -> Option<u64> {
         let max = self.max.load(Ordering::Relaxed);
-        if max != 0 {
-            Some(max)
-        } else {
-            None
-        }
+        if max != 0 { Some(max) } else { None }
     }
 
     pub fn buckets_iter(&self) -> impl IntoIterator<Item = u64> + '_ {

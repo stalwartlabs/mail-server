@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::config::{utils::AsKey, Config, Rate};
+use utils::config::{Config, Rate, utils::AsKey};
 
-use crate::expr::{tokenizer::TokenMap, Expression};
+use crate::expr::{Expression, tokenizer::TokenMap};
 
 use super::*;
 

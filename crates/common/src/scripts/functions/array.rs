@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use sieve::{runtime::Variable, Context};
+use sieve::{Context, runtime::Variable};
 
 pub fn fn_count<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     match &v[0] {

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- pub mod parser;
+pub mod parser;
 pub mod pointer;
 
 use downcast_rs::{Downcast, impl_downcast};

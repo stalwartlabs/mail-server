@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
+use utils::config::{Config, cron::SimpleCron, utils::ParseValue};
 
 use crate::{
-    backend::fs::FsStore, BlobStore, CompressionAlgo, InMemoryStore, PurgeSchedule, PurgeStore,
-    Store, Stores,
+    BlobStore, CompressionAlgo, InMemoryStore, PurgeSchedule, PurgeStore, Store, Stores,
+    backend::fs::FsStore,
 };
 
 #[cfg(feature = "s3")]

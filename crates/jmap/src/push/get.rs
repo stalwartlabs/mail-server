@@ -19,7 +19,8 @@ use jmap_proto::{
     },
 };
 use store::{
-    write::{now, AlignedBytes, Archive, ValueClass}, BitmapKey, ValueKey
+    BitmapKey, ValueKey,
+    write::{AlignedBytes, Archive, ValueClass, now},
 };
 use trc::{AddContext, ServerEvent};
 use utils::map::bitmap::Bitmap;

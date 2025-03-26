@@ -7,9 +7,9 @@
 use mail_parser::decoders::charsets::map::charset_decoder;
 
 use crate::{
-    protocol::thread::{self, Algorithm},
-    receiver::{bad, Request},
     Command,
+    protocol::thread::{self, Algorithm},
+    receiver::{Request, bad},
 };
 
 use super::search::parse_filters;

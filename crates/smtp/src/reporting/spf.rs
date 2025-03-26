@@ -5,7 +5,7 @@
  */
 
 use common::listener::SessionStream;
-use mail_auth::{report::AuthFailureType, AuthenticationResults, SpfOutput};
+use mail_auth::{AuthenticationResults, SpfOutput, report::AuthFailureType};
 use trc::OutgoingReportEvent;
 use utils::config::Rate;
 

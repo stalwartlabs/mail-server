@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use common::listener::limiter::{ConcurrencyLimiter, InFlight};
-use directory::{backend::RcptType, QueryBy};
+use directory::{QueryBy, backend::RcptType};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use tokio::{

@@ -7,7 +7,7 @@
 use std::net::IpAddr;
 
 use mail_auth::IpLookupStrategy;
-use sieve::{runtime::Variable, FunctionMap};
+use sieve::{FunctionMap, runtime::Variable};
 
 use super::PluginContext;
 

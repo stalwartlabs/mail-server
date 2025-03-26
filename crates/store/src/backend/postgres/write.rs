@@ -8,19 +8,21 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use deadpool_postgres::Object;
-use futures::{pin_mut, TryStreamExt};
+use futures::{TryStreamExt, pin_mut};
 use rand::Rng;
 use roaring::RoaringBitmap;
-use tokio_postgres::{error::SqlState, IsolationLevel};
+use tokio_postgres::{IsolationLevel, error::SqlState};
 
 use crate::{
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    U32_LEN,
     write::{
-        key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
-        ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
-    }, BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U32_LEN
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
+        RandomAvailableId, ValueOp, key::DeserializeBigEndian,
+    },
 };
 
-use super::{into_error, PostgresStore};
+use super::{PostgresStore, into_error};
 
 #[derive(Debug)]
 enum CommitError {

@@ -11,11 +11,11 @@ use std::{
 };
 
 use common::{
+    Server,
     config::spamfilter::{DnsBlServer, Element, IpResolver, Location},
     expr::functions::ResolveVariable,
-    Server,
 };
-use mail_auth::{common::resolver::IntoFqdn, Error};
+use mail_auth::{Error, common::resolver::IntoFqdn};
 use trc::SpamEvent;
 
 use crate::SpamFilterContext;

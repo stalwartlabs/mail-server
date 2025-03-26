@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use mysql_async::prelude::Queryable;
 
-use super::{into_error, MysqlStore};
+use super::{MysqlStore, into_error};
 
 impl MysqlStore {
     pub(crate) async fn get_blob(

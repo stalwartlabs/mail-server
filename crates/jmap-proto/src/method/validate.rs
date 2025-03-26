@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::{
     error::set::SetError,
-    parser::{json::Parser, JsonObjectParser, Token},
+    parser::{JsonObjectParser, Token, json::Parser},
     request::RequestProperty,
     types::{blob::BlobId, id::Id},
 };

@@ -6,9 +6,9 @@
 
 use std::time::Duration;
 
-use utils::config::{utils::ParseValue, Config};
+use utils::config::{Config, utils::ParseValue};
 
-use crate::expr::{if_block::IfBlock, tokenizer::TokenMap, Constant, ConstantValue, Variable};
+use crate::expr::{Constant, ConstantValue, Variable, if_block::IfBlock, tokenizer::TokenMap};
 
 use super::*;
 

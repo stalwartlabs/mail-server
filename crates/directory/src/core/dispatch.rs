@@ -7,8 +7,8 @@
 use trc::AddContext;
 
 use crate::{
-    backend::{internal::lookup::DirectoryStore, RcptType},
     Directory, DirectoryInner, Principal, QueryBy,
+    backend::{RcptType, internal::lookup::DirectoryStore},
 };
 
 impl Directory {

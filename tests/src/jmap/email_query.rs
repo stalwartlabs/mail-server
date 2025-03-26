@@ -21,7 +21,7 @@ use mail_parser::{DateTime, HeaderName};
 
 use store::{
     ahash::AHashMap,
-    write::{now, BatchBuilder, ValueClass},
+    write::{BatchBuilder, ValueClass, now},
 };
 
 use super::JMAPTest;

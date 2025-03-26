@@ -5,14 +5,14 @@
  */
 
 use common::{config::spamfilter::SpamFilterAction, listener::SessionStream};
-use mail_auth::{dmarc::Policy, ArcOutput, DkimOutput, DmarcResult};
+use mail_auth::{ArcOutput, DkimOutput, DmarcResult, dmarc::Policy};
 use mail_parser::Message;
 use spam_filter::{
+    SpamFilterInput,
     analysis::{
         init::SpamFilterInit, score::SpamFilterAnalyzeScore,
         trusted_reply::SpamFilterAnalyzeTrustedReply,
     },
-    SpamFilterInput,
 };
 
 use crate::core::Session;

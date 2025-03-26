@@ -6,7 +6,7 @@
 
 use std::borrow::Cow;
 
-use prettytable::{format, Attr, Cell, Row, Table};
+use prettytable::{Attr, Cell, Row, Table, format};
 use reqwest::Method;
 use serde_json::Value;
 
@@ -102,7 +102,7 @@ impl DomainCommands {
                 if !domains.items.is_empty() {
                     let mut table = Table::new();
                     table.add_row(Row::new(vec![
-                        Cell::new("Domain Name").with_style(Attr::Bold)
+                        Cell::new("Domain Name").with_style(Attr::Bold),
                     ]));
 
                     for domain in &domains.items {

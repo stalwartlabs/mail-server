@@ -9,11 +9,11 @@ use std::path::PathBuf;
 use rocksdb::{ColumnFamilyDescriptor, MergeOperands, OptimisticTransactionDB, Options};
 
 use tokio::sync::oneshot;
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 use crate::*;
 
-use super::{RocksDbStore, CF_BLOBS};
+use super::{CF_BLOBS, RocksDbStore};
 
 impl RocksDbStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {

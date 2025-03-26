@@ -10,7 +10,7 @@ use common::{
 };
 use trc::ClusterEvent;
 
-use super::{request::Request, Gossiper, PeerStatus};
+use super::{Gossiper, PeerStatus, request::Request};
 
 impl Gossiper {
     pub async fn ping_peers(&mut self) {
@@ -194,9 +194,10 @@ impl Gossiper {
                         }
                     }
                     Err(err) => {
-                        trc::error!(err
-                            .details("Failed to reload settings")
-                            .caused_by(trc::location!()));
+                        trc::error!(
+                            err.details("Failed to reload settings")
+                                .caused_by(trc::location!())
+                        );
                     }
                 }
             });

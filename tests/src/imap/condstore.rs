@@ -7,8 +7,8 @@
 use imap_proto::ResponseType;
 
 use crate::imap::{
-    append::{assert_append_message, build_messages},
     AssertResult,
+    append::{assert_append_message, build_messages},
 };
 
 use super::{ImapConnection, Type};

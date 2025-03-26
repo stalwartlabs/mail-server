@@ -8,12 +8,12 @@ use std::{sync::Arc, time::SystemTime};
 
 use common::listener::SessionStream;
 use mail_auth::common::resolver::ToReverseName;
-use sieve::{runtime::Variable, Envelope, Sieve};
+use sieve::{Envelope, Sieve, runtime::Variable};
 use smtp_proto::*;
 
 use crate::{core::Session, inbound::AuthResult};
 
-use super::{event_loop::RunScript, ScriptParameters, ScriptResult};
+use super::{ScriptParameters, ScriptResult, event_loop::RunScript};
 
 impl<T: SessionStream> Session<T> {
     pub fn build_script_parameters(&self, stage: &'static str) -> ScriptParameters<'_> {

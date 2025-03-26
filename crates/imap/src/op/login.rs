@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use imap_proto::{receiver::Request, Command};
+use imap_proto::{Command, receiver::Request};
 
 use crate::core::Session;
 use common::listener::SessionStream;

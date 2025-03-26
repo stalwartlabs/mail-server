@@ -6,9 +6,7 @@
 
 #[macro_export]
 macro_rules! location {
-    () => {{
-        concat!(file!(), ":", line!())
-    }};
+    () => {{ concat!(file!(), ":", line!()) }};
 }
 
 #[macro_export]

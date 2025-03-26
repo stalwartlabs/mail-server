@@ -7,9 +7,9 @@
 use std::time::Duration;
 
 use crate::smtp::{
+    TestSMTP,
     inbound::{TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
-    TestSMTP,
 };
 use ahash::AHashSet;
 use common::ipc::{QueueEvent, QueueEventStatus};

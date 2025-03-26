@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use common::Core;
-use mail_auth::{common::parse::TxtRecordParser, spf::Spf, IprevResult, SpfResult};
+use mail_auth::{IprevResult, SpfResult, common::parse::TxtRecordParser, spf::Spf};
 use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
 
 use smtp::core::Session;
@@ -15,8 +15,8 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    session::{TestSession, VerifyResponse},
     DnsCache, TempDir, TestSMTP,
+    session::{TestSession, VerifyResponse},
 };
 
 const CONFIG: &str = r#"

@@ -13,11 +13,11 @@ use common::{
 use tokio_rustls::server::TlsStream;
 
 use crate::{
+    Pop3SessionManager, SERVER_GREETING, Session, State,
     protocol::{
         request::Parser,
         response::{Response, SerializeResponse},
     },
-    Pop3SessionManager, Session, State, SERVER_GREETING,
 };
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

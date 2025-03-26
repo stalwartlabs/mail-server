@@ -5,13 +5,13 @@
  */
 
 use common::Server;
-use mail_parser::{parsers::fields::thread::thread_name, HeaderName, PartType};
+use mail_parser::{HeaderName, PartType, parsers::fields::thread::thread_name};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
 use crate::{
-    modules::html::{html_to_tokens, HtmlToken, HEAD},
     Email, Hostname, IpParts, Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput,
     SpamFilterResult, TextPart,
+    modules::html::{HEAD, HtmlToken, html_to_tokens},
 };
 
 use super::url::UrlParts;

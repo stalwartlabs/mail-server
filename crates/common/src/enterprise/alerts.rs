@@ -9,18 +9,18 @@
  */
 
 use mail_builder::{
-    headers::{
-        address::{Address, EmailAddress},
-        HeaderType,
-    },
     MessageBuilder,
+    headers::{
+        HeaderType,
+        address::{Address, EmailAddress},
+    },
 };
-use trc::{Collector, MetricType, TelemetryEvent, TOTAL_EVENT_COUNT};
+use trc::{Collector, MetricType, TOTAL_EVENT_COUNT, TelemetryEvent};
 
 use super::{AlertContent, AlertContentToken, AlertMethod};
 use crate::{
-    expr::{functions::ResolveVariable, Variable},
     Server,
+    expr::{Variable, functions::ResolveVariable},
 };
 use std::fmt::Write;
 

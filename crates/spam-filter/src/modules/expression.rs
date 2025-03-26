@@ -6,12 +6,12 @@
 
 use common::{
     config::spamfilter::*,
-    expr::{functions::ResolveVariable, Variable},
+    expr::{Variable, functions::ResolveVariable},
 };
 use mail_parser::{Header, HeaderValue};
 use nlp::tokenizers::types::TokenType;
 
-use crate::{analysis::url::UrlParts, Recipient, SpamFilterContext, TextPart};
+use crate::{Recipient, SpamFilterContext, TextPart, analysis::url::UrlParts};
 
 pub(crate) struct SpamFilterResolver<'x, T: ResolveVariable> {
     pub ctx: &'x SpamFilterContext<'x>,

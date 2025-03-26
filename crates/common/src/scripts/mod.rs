@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use sieve::{runtime::Variable, Envelope};
+use sieve::{Envelope, runtime::Variable};
 use store::Value;
 use unicode_security::mixed_script::AugmentedScriptSet;
 

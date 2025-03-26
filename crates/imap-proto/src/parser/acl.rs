@@ -5,13 +5,13 @@
  */
 
 use crate::{
-    protocol::{
-        acl::{self, ModRights, ModRightsOp, Rights},
-        ProtocolVersion,
-    },
-    receiver::{bad, Request},
-    utf7::utf7_maybe_decode,
     Command,
+    protocol::{
+        ProtocolVersion,
+        acl::{self, ModRights, ModRightsOp, Rights},
+    },
+    receiver::{Request, bad},
+    utf7::utf7_maybe_decode,
 };
 
 use super::PushUnique;
@@ -129,8 +129,8 @@ mod tests {
 
     use crate::{
         protocol::{
-            acl::{self, ModRights, ModRightsOp, Rights},
             ProtocolVersion,
+            acl::{self, ModRights, ModRightsOp, Rights},
         },
         receiver::Receiver,
     };

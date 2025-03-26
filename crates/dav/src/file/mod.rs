@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
 use common::{FileItem, Files, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use groupware::file::FileNode;
 use hyper::StatusCode;
@@ -49,16 +47,13 @@ pub(crate) trait DavFileResource {
         resource: &OwnedUri<'_>,
     ) -> crate::Result<UriResource<u32, T>>;
 
-    fn map_parent<'x, T: FromFileItem>(
-        &self,
-        resource: &'x str,
-    ) -> Option<(Option<T>, Cow<'x, str>)>;
+    fn map_parent<'x, T: FromFileItem>(&self, resource: &'x str) -> Option<(Option<T>, &'x str)>;
 
     #[allow(clippy::type_complexity)]
     fn map_parent_resource<'x, T: FromFileItem>(
         &self,
         resource: &OwnedUri<'x>,
-    ) -> crate::Result<UriResource<u32, (Option<T>, Cow<'x, str>)>>;
+    ) -> crate::Result<UriResource<u32, (Option<T>, &'x str)>>;
 }
 
 impl DavFileResource for Files {
@@ -77,10 +72,7 @@ impl DavFileResource for Files {
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))
     }
 
-    fn map_parent<'x, T: FromFileItem>(
-        &self,
-        resource: &'x str,
-    ) -> Option<(Option<T>, Cow<'x, str>)> {
+    fn map_parent<'x, T: FromFileItem>(&self, resource: &'x str) -> Option<(Option<T>, &'x str)> {
         let (parent, child) = if let Some((parent, child)) = resource.rsplit_once('/') {
             (
                 Some(self.files.by_name(parent).map(T::from_file_item)?),
@@ -90,18 +82,13 @@ impl DavFileResource for Files {
             (None, resource)
         };
 
-        Some((
-            parent,
-            percent_encoding::percent_decode_str(child)
-                .decode_utf8()
-                .unwrap_or_else(|_| child.into()),
-        ))
+        Some((parent, child))
     }
 
     fn map_parent_resource<'x, T: FromFileItem>(
         &self,
         resource: &OwnedUri<'x>,
-    ) -> crate::Result<UriResource<u32, (Option<T>, Cow<'x, str>)>> {
+    ) -> crate::Result<UriResource<u32, (Option<T>, &'x str)>> {
         if let Some(r) = resource.resource {
             if self.files.by_name(r).is_none() {
                 self.map_parent(r)
@@ -110,7 +97,7 @@ impl DavFileResource for Files {
                         account_id: resource.account_id,
                         resource: r,
                     })
-                    .ok_or(DavError::Code(StatusCode::NOT_FOUND))
+                    .ok_or(DavError::Code(StatusCode::CONFLICT))
             } else {
                 Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
             }
@@ -226,7 +213,7 @@ pub(crate) async fn delete_file_node(
         .with_change_id(change_id)
         .with_account_id(account_id)
         .with_collection(Collection::FileNode)
-        .create_document()
+        .delete_document(document_id)
         .log(Changes::delete([document_id]))
         .custom(
             ObjectIndexBuilder::<_, ()>::new()

@@ -5,18 +5,18 @@
  */
 
 use common::{
-    config::smtp::resolver::{Tlsa, TlsaEntry},
     Server,
+    config::smtp::resolver::{Tlsa, TlsaEntry},
 };
 use mail_auth::{
     common::resolver::IntoFqdn,
     hickory_resolver::{
+        Name,
         error::ResolveErrorKind,
         proto::{
             error::ProtoErrorKind,
             rr::rdata::tlsa::{CertUsage, Matching, Selector},
         },
-        Name,
     },
 };
 use std::{future::Future, sync::Arc};

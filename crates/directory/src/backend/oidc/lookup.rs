@@ -6,20 +6,20 @@
 
 use ahash::HashMap;
 use mail_send::Credentials;
-use reqwest::{header::AUTHORIZATION, StatusCode};
+use reqwest::{StatusCode, header::AUTHORIZATION};
 use trc::{AddContext, AuthEvent};
 
 use crate::{
+    Principal, QueryBy, ROLE_USER, Type,
     backend::{
+        RcptType,
         internal::{
+            PrincipalField,
             lookup::DirectoryStore,
             manage::{self, ManageDirectory, UpdatePrincipal},
-            PrincipalField,
         },
         oidc::{Authentication, EndpointType},
-        RcptType,
     },
-    Principal, QueryBy, Type, ROLE_USER,
 };
 
 use super::{OpenIdConfig, OpenIdDirectory};

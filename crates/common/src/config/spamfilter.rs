@@ -15,11 +15,11 @@ use nlp::bayes::BayesClassifier;
 use tokio::net::lookup_host;
 use utils::{
     cache::CacheItemWeight,
-    config::{utils::ParseValue, Config},
+    config::{Config, utils::ParseValue},
     glob::GlobMap,
 };
 
-use super::{functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap, Variable};
+use super::{Variable, functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap};
 
 #[derive(Debug, Clone, Default)]
 pub struct SpamFilterConfig {

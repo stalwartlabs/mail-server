@@ -5,12 +5,12 @@
  */
 
 use crate::{
-    protocol::{
-        store::{self, Operation},
-        Flag,
-    },
-    receiver::{bad, Request, Token},
     Command,
+    protocol::{
+        Flag,
+        store::{self, Operation},
+    },
+    receiver::{Request, Token, bad},
 };
 
 use super::{parse_number, parse_sequence_set};
@@ -133,8 +133,8 @@ mod tests {
 
     use crate::{
         protocol::{
-            store::{self, Operation},
             Flag, Sequence,
+            store::{self, Operation},
         },
         receiver::Receiver,
     };

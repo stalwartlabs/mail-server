@@ -13,9 +13,9 @@ use mail_auth::MX;
 use store::write::now;
 
 use crate::smtp::{
-    inbound::TestQueueEvent, queue::manager::new_message, session::TestSession, DnsCache, TestSMTP,
+    DnsCache, TestSMTP, inbound::TestQueueEvent, queue::manager::new_message, session::TestSession,
 };
-use smtp::queue::{throttle::IsAllowed, Domain, Message, QueueEnvelope, Schedule, Status};
+use smtp::queue::{Domain, Message, QueueEnvelope, Schedule, Status, throttle::IsAllowed};
 
 const CONFIG: &str = r#"
 [session.rcpt]

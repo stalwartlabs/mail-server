@@ -7,7 +7,7 @@
 use std::future::Future;
 
 use common::Server;
-use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, SpfResult};
+use mail_auth::{DkimResult, DmarcResult, SpfResult, dmarc::Policy};
 
 use crate::SpamFilterContext;
 

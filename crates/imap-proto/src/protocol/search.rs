@@ -6,7 +6,7 @@
 
 use store::fts::{FilterItem, FilterType};
 
-use super::{quoted_string, serialize_sequence, Flag, Sequence};
+use super::{Flag, Sequence, quoted_string, serialize_sequence};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {

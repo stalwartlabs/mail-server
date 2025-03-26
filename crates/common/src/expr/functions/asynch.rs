@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{cmp::Ordering, net::IpAddr, vec::IntoIter};
+use std::{cmp::Ordering, net::IpAddr, vec::IntoIter};
 
 use directory::backend::RcptType;
 use mail_auth::IpLookupStrategy;
-use store::{dispatch::lookup::KeyValue, Deserialize, Rows, Value};
+use store::{Deserialize, Rows, Value, dispatch::lookup::KeyValue};
 use trc::AddContext;
 
 use crate::Server;

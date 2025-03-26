@@ -15,17 +15,17 @@ use rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256;
 use tokio::{net::TcpStream, sync::watch};
 use tokio_rustls::server::TlsStream;
 use trc::{EventType, HttpEvent, ImapEvent, ManageSieveEvent, Pop3Event, SmtpEvent};
-use utils::{config::Config, UnwrapFailure};
+use utils::{UnwrapFailure, config::Config};
 
 use crate::{
+    Inner, Server,
     config::server::{Listener, Listeners, ServerProtocol, TcpListener},
     core::BuildServer,
-    Inner, Server,
 };
 
 use super::{
-    limiter::{ConcurrencyLimiter, LimiterResult},
     ServerInstance, SessionData, SessionManager, SessionStream, TcpAcceptor,
+    limiter::{ConcurrencyLimiter, LimiterResult},
 };
 
 impl Listener {

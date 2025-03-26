@@ -7,9 +7,9 @@
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    parser::{json::Parser, JsonObjectParser, Token},
+    parser::{JsonObjectParser, Token, json::Parser},
     request::RequestProperty,
-    types::{blob::BlobId, id::Id, type_state::DataType, MaybeUnparsable},
+    types::{MaybeUnparsable, blob::BlobId, id::Id, type_state::DataType},
 };
 
 #[derive(Debug, Clone)]

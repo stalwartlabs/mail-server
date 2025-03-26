@@ -5,10 +5,10 @@
  */
 
 use prometheus::{
-    proto::{Bucket, Counter, Gauge, Histogram, Metric, MetricFamily, MetricType},
     TextEncoder,
+    proto::{Bucket, Counter, Gauge, Histogram, Metric, MetricFamily, MetricType},
 };
-use trc::{atomics::histogram::AtomicHistogram, Collector};
+use trc::{Collector, atomics::histogram::AtomicHistogram};
 
 use crate::Server;
 

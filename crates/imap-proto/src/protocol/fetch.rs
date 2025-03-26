@@ -9,8 +9,8 @@ use std::borrow::Cow;
 use mail_parser::DateTime;
 
 use super::{
-    literal_string, quoted_or_literal_string, quoted_or_literal_string_or_nil,
-    quoted_rfc2822_or_nil, quoted_timestamp, Flag, ImapResponse, Sequence,
+    Flag, ImapResponse, Sequence, literal_string, quoted_or_literal_string,
+    quoted_or_literal_string_or_nil, quoted_rfc2822_or_nil, quoted_timestamp,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

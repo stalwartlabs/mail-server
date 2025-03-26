@@ -10,7 +10,7 @@ use jmap_client::{
         error::{MethodError, MethodErrorType},
         set::{SetError, SetErrorType},
     },
-    email::{self, import::EmailImportResponse, query::Filter, Property},
+    email::{self, Property, import::EmailImportResponse, query::Filter},
     mailbox::{self, Role},
     principal::ACL,
 };
@@ -214,15 +214,17 @@ pub async fn test(params: &mut JMAPTest) {
     );
 
     // John should not have access to emails in Jane's Trash folder
-    assert!(john_client
-        .set_default_account_id(jane_id.to_string())
-        .email_get(
-            email_ids.get("jane").unwrap().last().unwrap(),
-            [Property::Subject].into(),
-        )
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        john_client
+            .set_default_account_id(jane_id.to_string())
+            .email_get(
+                email_ids.get("jane").unwrap().last().unwrap(),
+                [Property::Subject].into(),
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     // John should only be able to copy blobs he has access to
     let blob_id = jane_client
@@ -642,10 +644,12 @@ pub async fn test(params: &mut JMAPTest) {
             .await,
     );
     john_client.refresh_session().await.unwrap();
-    assert!(john_client
-        .session()
-        .account(&jane_id.to_string())
-        .is_none());
+    assert!(
+        john_client
+            .session()
+            .account(&jane_id.to_string())
+            .is_none()
+    );
     assert_eq!(
         bill_client
             .set_default_account_id(jane_id.to_string())
@@ -685,11 +689,13 @@ pub async fn test(params: &mut JMAPTest) {
             .name(),
         "sales@example.com"
     );
-    assert!(!john_client
-        .session()
-        .account(&sales_id.to_string())
-        .unwrap()
-        .is_personal());
+    assert!(
+        !john_client
+            .session()
+            .account(&sales_id.to_string())
+            .unwrap()
+            .is_personal()
+    );
     assert_eq!(
         jane_client
             .session()
@@ -698,10 +704,12 @@ pub async fn test(params: &mut JMAPTest) {
             .name(),
         "sales@example.com"
     );
-    assert!(bill_client
-        .session()
-        .account(&sales_id.to_string())
-        .is_none());
+    assert!(
+        bill_client
+            .session()
+            .account(&sales_id.to_string())
+            .is_none()
+    );
 
     // Insert a message in Sales's inbox
     let blob_id = john_client

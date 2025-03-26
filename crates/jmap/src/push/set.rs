@@ -22,7 +22,9 @@ use jmap_proto::{
 use rand::distr::Alphanumeric;
 use std::future::Future;
 use store::{
-    rand::{rng, Rng}, write::{now, AlignedBytes, Archive, Archiver, BatchBuilder}, Serialize
+    Serialize,
+    rand::{Rng, rng},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, now},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;

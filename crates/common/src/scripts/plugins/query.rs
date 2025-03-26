@@ -7,7 +7,7 @@
 use std::cmp::Ordering;
 
 use crate::scripts::{into_sieve_value, to_store_value};
-use sieve::{runtime::Variable, FunctionMap};
+use sieve::{FunctionMap, runtime::Variable};
 use store::{Rows, Value};
 
 use super::PluginContext;
@@ -31,9 +31,11 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     // Obtain query string
     let query = ctx.arguments[1].to_string();
     if query.is_empty() {
-        trc::bail!(trc::SieveEvent::RuntimeError
-            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
-            .details("Empty query string"));
+        trc::bail!(
+            trc::SieveEvent::RuntimeError
+                .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
+                .details("Empty query string")
+        );
     }
 
     // Obtain arguments

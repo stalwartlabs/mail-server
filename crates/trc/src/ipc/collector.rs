@@ -5,17 +5,17 @@
  */
 
 use std::{
-    sync::{atomic::Ordering, Arc, LazyLock},
-    thread::{park, Builder, JoinHandle},
+    sync::{Arc, LazyLock, atomic::Ordering},
+    thread::{Builder, JoinHandle, park},
     time::SystemTime,
 };
 
 use ahash::AHashMap;
 use atomics::bitset::AtomicBitset;
 use ipc::{
-    channel::{Receiver, CHANNEL_FLAGS, CHANNEL_UPDATE_MARKER},
-    subscriber::{Interests, Subscriber},
     USIZE_BITS,
+    channel::{CHANNEL_FLAGS, CHANNEL_UPDATE_MARKER, Receiver},
+    subscriber::{Interests, Subscriber},
 };
 use parking_lot::Mutex;
 

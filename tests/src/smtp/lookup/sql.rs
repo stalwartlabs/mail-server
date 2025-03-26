@@ -7,13 +7,13 @@
 use std::time::{Duration, Instant};
 
 use common::{
-    expr::{tokenizer::TokenMap, *},
     Core,
+    expr::{tokenizer::TokenMap, *},
 };
 
 use directory::{
-    backend::internal::{manage::ManageDirectory, PrincipalField, PrincipalValue},
     Principal, QueryBy, Type,
+    backend::internal::{PrincipalField, PrincipalValue, manage::ManageDirectory},
 };
 use mail_auth::MX;
 use store::Stores;
@@ -22,8 +22,8 @@ use utils::config::Config;
 use crate::{
     directory::DirectoryStore,
     smtp::{
-        session::{TestSession, VerifyResponse},
         DnsCache, TempDir, TestSMTP,
+        session::{TestSession, VerifyResponse},
     },
 };
 use smtp::{core::Session, queue::RecipientDomain};

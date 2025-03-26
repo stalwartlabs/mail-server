@@ -1,5 +1,5 @@
 {
-  "type": "AdressbookMultiGet",
+  "type": "AddressbookMultiGet",
   "properties": {
     "type": "Prop",
     "data": [

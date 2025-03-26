@@ -130,11 +130,7 @@ fn inv_chi_square(value: f64, freedom_deg: u32) -> f64 {
          * confidence that inv-chi-square is close to zero
          */
 
-        if value < 0.0 {
-            0.0
-        } else {
-            1.0
-        }
+        if value < 0.0 { 0.0 } else { 1.0 }
     }
 }
 

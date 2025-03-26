@@ -10,7 +10,7 @@ use imap_proto::ResponseType;
 
 use crate::jmap::wait_for_index;
 
-use super::{resources_dir, AssertResult, IMAPTest, ImapConnection, Type};
+use super::{AssertResult, IMAPTest, ImapConnection, Type, resources_dir};
 
 pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, handle: &IMAPTest) {
     println!("Running APPEND tests...");
@@ -32,7 +32,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, h
 
     let mut expected_uid = 1;
     for file_name in entries.into_iter().take(20) {
-        if file_name.extension().is_none_or( |e| e != "txt") {
+        if file_name.extension().is_none_or(|e| e != "txt") {
             continue;
         }
         let raw_message = fs::read(&file_name).unwrap();

@@ -7,14 +7,14 @@
 use std::{fmt::Display, time::Duration};
 
 use deadpool::{
-    managed::{Manager, Pool},
     Runtime,
+    managed::{Manager, Pool},
 };
 use redis::{
-    cluster::{ClusterClient, ClusterClientBuilder},
     Client,
+    cluster::{ClusterClient, ClusterClientBuilder},
 };
-use utils::config::{utils::AsKey, Config};
+use utils::config::{Config, utils::AsKey};
 
 pub mod lookup;
 pub mod pool;

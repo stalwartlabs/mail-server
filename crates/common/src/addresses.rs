@@ -6,15 +6,15 @@
 
 use std::borrow::Cow;
 
-use directory::{backend::RcptType, Directory};
-use utils::config::{utils::AsKey, Config};
+use directory::{Directory, backend::RcptType};
+use utils::config::{Config, utils::AsKey};
 
 use crate::{
+    Server,
     config::smtp::session::AddressMapping,
     expr::{
-        functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap, Variable, V_RECIPIENT,
+        V_RECIPIENT, Variable, functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap,
     },
-    Server,
 };
 
 impl Server {

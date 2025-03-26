@@ -5,7 +5,7 @@
  */
 
 use ahash::AHashMap;
-use whatlang::{detect, Lang};
+use whatlang::{Lang, detect};
 
 use super::Language;
 

@@ -8,10 +8,10 @@ use std::borrow::Cow;
 
 use crate::{
     language::{
+        Language,
         detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
         stemmer::STEMMER_MAP,
-        stopwords::{StopwordFnc, STOP_WORDS},
-        Language,
+        stopwords::{STOP_WORDS, StopwordFnc},
     },
     tokenizers::{chinese::JIEBA, japanese},
 };
@@ -7875,7 +7875,7 @@ pub mod tests {
         tokenizers::types::{TokenType, TypesTokenizer},
     };
 
-    use super::{symbols, BayesInputToken};
+    use super::{BayesInputToken, symbols};
 
     pub trait ToBayesToken {
         fn to_bayes_token(&self) -> Option<BayesInputToken>;

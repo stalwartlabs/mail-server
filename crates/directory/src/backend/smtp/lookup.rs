@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use mail_send::{smtp::AssertReply, Credentials};
+use mail_send::{Credentials, smtp::AssertReply};
 use smtp_proto::Severity;
 
-use crate::{backend::RcptType, IntoError, Principal, QueryBy};
+use crate::{IntoError, Principal, QueryBy, backend::RcptType};
 
 use super::{SmtpClient, SmtpDirectory};
 

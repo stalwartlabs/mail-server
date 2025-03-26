@@ -5,7 +5,7 @@
  */
 
 use jmap_proto::types::type_state::DataType;
-use store::{SerializedVersion, SERIALIZE_OBJ_08_V1};
+use store::{SERIALIZE_OBJ_08_V1, SerializedVersion};
 use utils::map::bitmap::Bitmap;
 
 #[derive(

@@ -95,7 +95,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::tokenizers::{chinese::ChineseTokenizer, word::WordTokenizer, Token};
+    use crate::tokenizers::{Token, chinese::ChineseTokenizer, word::WordTokenizer};
 
     #[test]
     fn chinese_tokenizer() {

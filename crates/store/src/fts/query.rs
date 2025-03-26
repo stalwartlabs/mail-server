@@ -15,12 +15,12 @@ use roaring::RoaringBitmap;
 use trc::AddContext;
 
 use crate::{
+    BitmapKey, IterateParams, Store, U32_LEN, ValueKey,
     backend::MAX_TOKEN_LENGTH,
     fts::FtsFilter,
     write::{
-        hash::TokenType, key::DeserializeBigEndian, BitmapHash, DynamicDocumentId, ValueClass,
+        BitmapHash, DynamicDocumentId, ValueClass, hash::TokenType, key::DeserializeBigEndian,
     },
-    BitmapKey, IterateParams, Store, ValueKey, U32_LEN,
 };
 
 use super::postings::SerializedPostings;
@@ -294,12 +294,9 @@ impl Store {
                                             .insert(*document_id, postings.positions());
                                     }
                                     bm.insert(*document_id);
-                                } else if position_candidates
-                                    .get(document_id)
-                                    .is_some_and(|positions| {
-                                        postings.matches_positions(positions, pos as u32)
-                                    })
-                                {
+                                } else if position_candidates.get(document_id).is_some_and(
+                                    |positions| postings.matches_positions(positions, pos as u32),
+                                ) {
                                     bm.insert(*document_id);
                                 }
                             } else {
@@ -358,12 +355,9 @@ impl Store {
                                     position_candidates.insert(document_id, postings.positions());
                                 }
                                 bm.insert(document_id);
-                            } else if position_candidates
-                                .get(&document_id)
-                                .is_some_and(|positions| {
-                                    postings.matches_positions(positions, pos as u32)
-                                })
-                            {
+                            } else if position_candidates.get(&document_id).is_some_and(
+                                |positions| postings.matches_positions(positions, pos as u32),
+                            ) {
                                 bm.insert(document_id);
                             }
                         } else {

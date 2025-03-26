@@ -38,7 +38,7 @@ use smtp::{
     queue::spool::SmtpSpool,
 };
 use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
-use store::write::{log::ChangeLogBuilder, now, AlignedBytes, Archive, BatchBuilder};
+use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder, now};
 use trc::AddContext;
 use utils::{BlobHash, map::vec_map::VecMap, sanitize_email};
 

@@ -6,7 +6,7 @@
 
 use std::ops::Range;
 
-use super::{into_error, PostgresStore};
+use super::{PostgresStore, into_error};
 
 impl PostgresStore {
     pub(crate) async fn get_blob(

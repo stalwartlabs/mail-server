@@ -7,13 +7,13 @@
 use std::future::Future;
 
 use common::{
-    config::spamfilter::{IpResolver, Location},
     Server,
+    config::spamfilter::{IpResolver, Location},
 };
 
 use crate::{
-    modules::expression::{EmailHeader, SpamFilterResolver, StringResolver},
     SpamFilterContext, TextPart,
+    modules::expression::{EmailHeader, SpamFilterResolver, StringResolver},
 };
 
 pub trait SpamFilterAnalyzeRules: Sync + Send {

@@ -7,7 +7,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse::Parse, parse_macro_input, Data, DeriveInput, Expr, ExprPath, Fields, Ident, Token,
+    Data, DeriveInput, Expr, ExprPath, Fields, Ident, Token, parse::Parse, parse_macro_input,
 };
 
 static mut GLOBAL_ID_COUNTER: usize = 0;

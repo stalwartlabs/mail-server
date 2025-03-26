@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use super::{JsonPointerItem, JsonQueryable};
+use super::{JsonPointerItem, JsonQueryable};
 use std::hash::BuildHasher;
 use std::{collections::HashMap, slice::Iter};
 

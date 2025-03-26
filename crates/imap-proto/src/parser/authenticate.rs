@@ -5,9 +5,9 @@
  */
 
 use crate::{
-    protocol::authenticate::{self, Mechanism},
-    receiver::{bad, Request},
     Command,
+    protocol::authenticate::{self, Mechanism},
+    receiver::{Request, bad},
 };
 
 impl Request<Command> {

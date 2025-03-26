@@ -12,9 +12,9 @@ use std::{
 };
 
 use mail_auth::{
+    IpLookupStrategy,
     common::crypto::{Algorithm, HashAlgorithm},
     dkim::Canonicalization,
-    IpLookupStrategy,
 };
 use smtp_proto::MtPriority;
 
@@ -216,11 +216,7 @@ impl Config {
 
         if let Some(value) = self.keys.get(&key).and_then(|v| {
             let v = v.trim();
-            if !v.is_empty() {
-                Some(v)
-            } else {
-                None
-            }
+            if !v.is_empty() { Some(v) } else { None }
         }) {
             Some(value)
         } else {

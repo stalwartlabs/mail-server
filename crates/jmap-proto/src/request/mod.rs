@@ -31,7 +31,7 @@ use crate::{
         upload::BlobUploadRequest,
         validate::ValidateSieveScriptRequest,
     },
-    parser::{json::Parser, JsonObjectParser},
+    parser::{JsonObjectParser, json::Parser},
     types::any_id::AnyId,
 };
 

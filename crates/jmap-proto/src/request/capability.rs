@@ -7,7 +7,7 @@
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    parser::{json::Parser, JsonObjectParser},
+    parser::{JsonObjectParser, json::Parser},
     response::serialize::serialize_hex,
     types::{id::Id, type_state::DataType},
 };

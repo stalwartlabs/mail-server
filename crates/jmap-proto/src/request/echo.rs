@@ -7,7 +7,7 @@
 use serde_json::value::RawValue;
 use std::fmt::Write;
 
-use crate::parser::{json::Parser, JsonObjectParser, Token};
+use crate::parser::{JsonObjectParser, Token, json::Parser};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Echo {

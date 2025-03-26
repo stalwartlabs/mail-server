@@ -177,10 +177,10 @@ mod tests {
 
                 let json_path = path.with_extension("json");
                 let json_output = match filename.split_once('-').unwrap().0 {
-                    "propfind" => {
-                        serde_json::to_string_pretty(&PropFind::parse(&mut tokenizer).unwrap())
-                            .unwrap()
-                    }
+                    "propfind" => match PropFind::parse(&mut tokenizer) {
+                        Ok(propfind) => serde_json::to_string_pretty(&propfind).unwrap(),
+                        Err(_) => String::new(),
+                    },
                     "propertyupdate" => serde_json::to_string_pretty(
                         &PropertyUpdate::parse(&mut tokenizer).unwrap(),
                     )

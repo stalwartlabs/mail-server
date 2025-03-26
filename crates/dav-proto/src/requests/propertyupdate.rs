@@ -15,6 +15,7 @@ impl DavParser for PropertyUpdate {
         let mut update = PropertyUpdate {
             set: Vec::with_capacity(4),
             remove: Vec::with_capacity(4),
+            set_first: true,
         };
 
         loop {
@@ -28,8 +29,9 @@ impl DavParser for PropertyUpdate {
                     ..
                 } => {
                     stream.expect_named_element(NamedElement::dav(Element::Prop))?;
-                    update.set = stream.collect_property_values()?;
+                    stream.collect_property_values(&mut update.set)?;
                     stream.expect_element_end()?;
+                    update.set_first = update.remove.is_empty();
                 }
                 Token::ElementStart {
                     name:
@@ -40,7 +42,7 @@ impl DavParser for PropertyUpdate {
                     ..
                 } => {
                     stream.expect_named_element(NamedElement::dav(Element::Prop))?;
-                    update.remove = stream.collect_properties()?;
+                    update.remove = stream.collect_properties(update.remove)?;
                     stream.expect_element_end()?;
                 }
                 Token::ElementEnd | Token::Eof => {

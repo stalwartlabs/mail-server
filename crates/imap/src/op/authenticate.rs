@@ -6,16 +6,16 @@
 
 use common::{
     auth::{
-        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
         AuthRequest,
+        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
     },
-    listener::{limiter::LimiterResult, SessionStream},
+    listener::{SessionStream, limiter::LimiterResult},
 };
 use directory::Permission;
 use imap_proto::{
+    Command, ResponseCode, StatusResponse,
     protocol::{authenticate::Mechanism, capability::Capability},
     receiver::{self, Request},
-    Command, ResponseCode, StatusResponse,
 };
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
@@ -110,7 +110,7 @@ impl<T: SessionStream> Session<T> {
             LimiterResult::Forbidden => {
                 return Err(trc::LimitEvent::ConcurrentRequest
                     .into_err()
-                    .id(tag.clone()))
+                    .id(tag.clone()));
             }
             LimiterResult::Disabled => None,
         };

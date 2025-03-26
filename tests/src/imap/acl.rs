@@ -8,7 +8,7 @@ use imap_proto::ResponseType;
 
 use crate::jmap::delivery::SmtpConnection;
 
-use super::{append::assert_append_message, AssertResult, ImapConnection, Type};
+use super::{AssertResult, ImapConnection, Type, append::assert_append_message};
 
 pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConnection) {
     // Delivery to support account

@@ -29,6 +29,7 @@ pub enum PropFind {
 pub struct PropertyUpdate {
     pub set: Vec<DavPropertyValue>,
     pub remove: Vec<DavProperty>,
+    pub set_first: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

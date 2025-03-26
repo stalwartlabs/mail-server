@@ -20,13 +20,13 @@ use crate::{
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::{
+    Command, ResponseCode, StatusResponse,
     protocol::{
+        ImapResponse,
         capability::QuotaResourceName,
         quota::{Arguments, QuotaItem, QuotaResource, Response},
-        ImapResponse,
     },
     receiver::Request,
-    Command, ResponseCode, StatusResponse,
 };
 
 impl<T: SessionStream> Session<T> {

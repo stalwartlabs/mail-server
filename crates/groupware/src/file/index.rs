@@ -23,7 +23,11 @@ impl IndexableObject for FileNode {
         values.extend([
             IndexValue::Text {
                 field: Property::Name.into(),
-                value: self.name.to_lowercase().into(),
+                value: percent_encoding::percent_decode_str(&self.name)
+                    .decode_utf8()
+                    .unwrap_or_else(|_| self.name.as_str().into())
+                    .to_lowercase()
+                    .into(),
             },
             IndexValue::U32 {
                 field: Property::ParentId.into(),
