@@ -5,21 +5,53 @@
  */
 
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
-use dav_proto::schema::{
-    property::Privilege,
-    response::{Ace, GrantDeny, Href, Principal},
+use dav_proto::{
+    RequestHeaders,
+    schema::{
+        property::{DavProperty, Privilege, WebDavProperty},
+        request::{AclPrincipalPropSet, PropFind},
+        response::{Ace, BaseCondition, GrantDeny, Href, MultiStatus, Principal},
+    },
 };
-use directory::{QueryBy, backend::internal::PrincipalField};
+use directory::{QueryBy, Type, backend::internal::PrincipalField};
+use groupware::{calendar::Calendar, contact::AddressBook, file::FileNode};
+use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection, value::ArchivedAclGrant};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::Collection,
+    property::Property,
+    value::{AclGrant, ArchivedAclGrant},
+};
 use rkyv::vec::ArchivedVec;
-use store::ahash::AHashSet;
+use store::{
+    ahash::AHashSet,
+    roaring::RoaringBitmap,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
-use crate::{DavError, DavResource};
+use crate::{
+    DavError, DavErrorCondition, DavResource, common::uri::DavUriResource,
+    principal::propfind::PrincipalPropFind,
+};
 
 pub(crate) trait DavAclHandler: Sync + Send {
+    fn handle_acl_prop_set(
+        &self,
+        access_token: &AccessToken,
+        headers: RequestHeaders<'_>,
+        request: AclPrincipalPropSet,
+    ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
+
+    fn validate_and_map_aces(
+        &self,
+        access_token: &AccessToken,
+        acl: dav_proto::schema::request::Acl,
+        collection: Collection,
+    ) -> impl Future<Output = crate::Result<Vec<AclGrant>>> + Send;
+
     fn validate_and_map_parent_acl(
         &self,
         access_token: &AccessToken,
@@ -48,6 +80,227 @@ pub(crate) trait DavAclHandler: Sync + Send {
 }
 
 impl DavAclHandler for Server {
+    async fn handle_acl_prop_set(
+        &self,
+        access_token: &AccessToken,
+        headers: RequestHeaders<'_>,
+        mut request: AclPrincipalPropSet,
+    ) -> crate::Result<HttpResponse> {
+        let uri = self
+            .validate_uri(access_token, headers.uri)
+            .await
+            .and_then(|uri| uri.into_owned_uri())?;
+        let uri = self
+            .map_uri_resource(uri)
+            .await
+            .caused_by(trc::location!())?
+            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+
+        if !matches!(
+            uri.collection,
+            Collection::Calendar | Collection::AddressBook | Collection::FileNode
+        ) {
+            return Err(DavError::Code(StatusCode::FORBIDDEN));
+        }
+
+        // Validate ACLs
+        self.validate_child_or_parent_acl(
+            access_token,
+            uri.account_id,
+            uri.collection,
+            uri.resource,
+            None,
+            Acl::Read,
+            Acl::Read,
+        )
+        .await?;
+
+        let archive = self
+            .get_property::<Archive<AlignedBytes>>(
+                uri.account_id,
+                uri.collection,
+                uri.resource,
+                Property::Value,
+            )
+            .await
+            .caused_by(trc::location!())?
+            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+
+        let acls = match uri.collection {
+            Collection::FileNode => {
+                &archive
+                    .unarchive::<FileNode>()
+                    .caused_by(trc::location!())?
+                    .acls
+            }
+            Collection::AddressBook => {
+                &archive
+                    .unarchive::<AddressBook>()
+                    .caused_by(trc::location!())?
+                    .acls
+            }
+            Collection::Calendar => {
+                &archive
+                    .unarchive::<Calendar>()
+                    .caused_by(trc::location!())?
+                    .acls
+            }
+            _ => unreachable!(),
+        };
+        let account_ids = RoaringBitmap::from_iter(acls.iter().map(|a| u32::from(a.account_id)));
+
+        let mut response = MultiStatus::new(Vec::with_capacity(16));
+
+        if !account_ids.is_empty() {
+            if request.properties.is_empty() {
+                request
+                    .properties
+                    .push(DavProperty::WebDav(WebDavProperty::DisplayName));
+            }
+            let request = PropFind::Prop(request.properties);
+            self.prepare_principal_propfind_response(
+                access_token,
+                Collection::Principal,
+                account_ids.into_iter(),
+                &request,
+                &mut response,
+            )
+            .await?;
+        }
+
+        Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
+    }
+
+    async fn validate_and_map_aces(
+        &self,
+        access_token: &AccessToken,
+        acl: dav_proto::schema::request::Acl,
+        collection: Collection,
+    ) -> crate::Result<Vec<AclGrant>> {
+        let mut grants = Vec::with_capacity(acl.aces.len());
+        for ace in acl.aces {
+            if ace.invert {
+                return Err(DavError::Condition(DavErrorCondition::new(
+                    StatusCode::FORBIDDEN,
+                    BaseCondition::NoInvert,
+                )));
+            }
+            let privileges = match ace.grant_deny {
+                GrantDeny::Grant(list) => list.0,
+                GrantDeny::Deny(_) => {
+                    return Err(DavError::Condition(DavErrorCondition::new(
+                        StatusCode::FORBIDDEN,
+                        BaseCondition::GrantOnly,
+                    )));
+                }
+            };
+            let principal_uri = match ace.principal {
+                Principal::Href(href) => href.0,
+                _ => {
+                    return Err(DavError::Condition(DavErrorCondition::new(
+                        StatusCode::FORBIDDEN,
+                        BaseCondition::AllowedPrincipal,
+                    )));
+                }
+            };
+
+            let mut acls = Bitmap::<Acl>::default();
+            for privilege in privileges {
+                match privilege {
+                    Privilege::Read => {
+                        acls.insert(Acl::Read);
+                        acls.insert(Acl::ReadItems);
+                    }
+                    Privilege::Write => {
+                        acls.insert(Acl::Modify);
+                        acls.insert(Acl::Delete);
+                        acls.insert(Acl::ModifyItems);
+                        acls.insert(Acl::RemoveItems);
+                    }
+                    Privilege::WriteContent => {
+                        acls.insert(Acl::Modify);
+                        acls.insert(Acl::ModifyItems);
+                        acls.insert(Acl::RemoveItems);
+                    }
+                    Privilege::WriteProperties => {
+                        acls.insert(Acl::Modify);
+                    }
+                    Privilege::ReadCurrentUserPrivilegeSet
+                    | Privilege::Unlock
+                    | Privilege::Bind
+                    | Privilege::Unbind => {}
+                    Privilege::All => {
+                        return Err(DavError::Condition(DavErrorCondition::new(
+                            StatusCode::FORBIDDEN,
+                            BaseCondition::NoAbstract,
+                        )));
+                    }
+                    Privilege::ReadAcl => {}
+                    Privilege::WriteAcl => {
+                        acls.insert(Acl::Administer);
+                    }
+                    Privilege::ReadFreeBusy => {
+                        if collection == Collection::Calendar {
+                            acls.insert(Acl::ReadFreeBusy);
+                        } else {
+                            return Err(DavError::Condition(DavErrorCondition::new(
+                                StatusCode::FORBIDDEN,
+                                BaseCondition::NotSupportedPrivilege,
+                            )));
+                        }
+                    }
+                }
+            }
+
+            if acls.is_empty() {
+                continue;
+            }
+
+            let principal_id = self
+                .validate_uri(access_token, &principal_uri)
+                .await
+                .map_err(|_| {
+                    DavError::Condition(DavErrorCondition::new(
+                        StatusCode::FORBIDDEN,
+                        BaseCondition::AllowedPrincipal,
+                    ))
+                })?
+                .account_id
+                .ok_or_else(|| {
+                    DavError::Condition(DavErrorCondition::new(
+                        StatusCode::FORBIDDEN,
+                        BaseCondition::AllowedPrincipal,
+                    ))
+                })?;
+
+            // Verify that the principal is a valid principal
+            let principal = self
+                .directory()
+                .query(QueryBy::Id(principal_id), false)
+                .await
+                .caused_by(trc::location!())?
+                .ok_or_else(|| {
+                    DavError::Condition(DavErrorCondition::new(
+                        StatusCode::FORBIDDEN,
+                        BaseCondition::AllowedPrincipal,
+                    ))
+                })?;
+            if !matches!(principal.typ(), Type::Individual | Type::Group) {
+                return Err(DavError::Condition(DavErrorCondition::new(
+                    StatusCode::FORBIDDEN,
+                    BaseCondition::AllowedPrincipal,
+                )));
+            }
+
+            grants.push(AclGrant {
+                account_id: principal_id,
+                grants: acls,
+            });
+        }
+
+        Ok(grants)
+    }
+
     async fn validate_and_map_parent_acl(
         &self,
         access_token: &AccessToken,

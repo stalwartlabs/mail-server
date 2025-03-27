@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken};
+use common::{
+    Server,
+    auth::{AccessToken, AsTenantId},
+};
 use dav_proto::{
     Depth, RequestHeaders,
     schema::{
@@ -12,6 +15,10 @@ use dav_proto::{
         request::{DavPropertyValue, PropFind},
         response::{BaseCondition, MultiStatus, PropStat, Response},
     },
+};
+use directory::{
+    Type,
+    backend::internal::{PrincipalField, manage::ManageDirectory},
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
@@ -161,9 +168,20 @@ impl PropFindRequestHandler for Server {
                     RoaringBitmap::from_iter(access_token.all_ids())
                 } else {
                     // Return all principals
-                    self.get_document_ids(u32::MAX, Collection::Principal)
-                        .await?
-                        .unwrap_or_default()
+                    let principals = self
+                        .store()
+                        .list_principals(
+                            None,
+                            access_token.tenant_id(),
+                            &[Type::Individual, Type::Group],
+                            &[PrincipalField::Name],
+                            0,
+                            0,
+                        )
+                        .await
+                        .caused_by(trc::location!())?;
+
+                    RoaringBitmap::from_iter(principals.items.into_iter().map(|p| p.id()))
                 };
 
                 self.prepare_principal_propfind_response(

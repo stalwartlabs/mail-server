@@ -6,13 +6,20 @@
 
 use calcard::icalendar::ICalendar;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
+use store::{SERIALIZE_OBJ_14_V1, SerializedVersion};
 use utils::map::vec_map::VecMap;
 
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct Calendar {
     pub preferences: VecMap<u32, CalendarPreferences>,
     pub acls: Vec<AclGrant>,
 }
 
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct CalendarPreferences {
     pub name: String,
     pub description: Option<String>,
@@ -21,10 +28,10 @@ pub struct CalendarPreferences {
     pub is_subscribed: bool,
     pub is_default: bool,
     pub is_visible: bool,
-    pub include_in_availability: IncludeInAvailability,
+    /*pub include_in_availability: IncludeInAvailability,
     pub default_alerts_with_time: VecMap<String, ICalendar>,
     pub default_alerts_without_time: VecMap<String, ICalendar>,
-    pub time_zone: Timezone,
+    pub time_zone: Timezone,*/
 }
 
 pub struct CalendarEvent {
@@ -93,5 +100,11 @@ impl From<CalendarRight> for Acl {
             CalendarRight::Share => Acl::Share,
             CalendarRight::Delete => Acl::Delete,
         }
+    }
+}
+
+impl SerializedVersion for Calendar {
+    fn serialize_version() -> u8 {
+        SERIALIZE_OBJ_14_V1
     }
 }

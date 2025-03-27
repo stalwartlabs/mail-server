@@ -12,7 +12,8 @@ use dav_proto::schema::{
     },
     request::{DavPropertyValue, PropFind},
     response::{
-        AclRestrictions, Href, MultiStatus, PropStat, Response, ResponseType, SupportedPrivilege,
+        AclRestrictions, BaseCondition, Href, MultiStatus, PropStat, Response, ResponseType,
+        SupportedPrivilege,
     },
 };
 use groupware::file::{FileNode, hierarchy::FileHierarchy};
@@ -30,7 +31,7 @@ use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    DavResource,
+    DavError, DavErrorCondition, DavResource,
     common::{
         DavQuery, ETag,
         acl::{DavAclHandler, Privileges},
@@ -146,6 +147,11 @@ impl HandleFilePropFindRequest for Server {
             return Ok(
                 HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string())
             );
+        } else if query.depth == usize::MAX && paths.len() > self.core.dav.max_match_results {
+            return Err(DavError::Condition(DavErrorCondition::new(
+                StatusCode::PRECONDITION_FAILED,
+                BaseCondition::NumberOfMatchesWithinLimit,
+            )));
         }
 
         // Prepare response
@@ -379,7 +385,11 @@ impl HandleFilePropFindRequest for Server {
                                 if node.file.is_none() {
                                     fields.push(DavPropertyValue::new(
                                         property.clone(),
-                                        vec![ReportSet::SyncCollection],
+                                        vec![
+                                            ReportSet::SyncCollection,
+                                            ReportSet::AclPrincipalPropSet,
+                                            ReportSet::PrincipalMatch,
+                                        ],
                                     ));
                                 } else if !is_all_prop {
                                     fields_not_found
@@ -492,7 +502,9 @@ impl HandleFilePropFindRequest for Server {
                             WebDavProperty::AclRestrictions => {
                                 fields.push(DavPropertyValue::new(
                                     property.clone(),
-                                    AclRestrictions::default().with_no_invert(),
+                                    AclRestrictions::default()
+                                        .with_no_invert()
+                                        .with_grant_only(),
                                 ));
                             }
                             WebDavProperty::InheritedAclSet => {

@@ -103,8 +103,6 @@ impl FileDeleteRequestHandler for Server {
         )
         .await?;
 
-        let c = println!("DELETE files: {:?}", sorted_ids);
-
         delete_files(self, access_token, account_id, sorted_ids).await?;
 
         Ok(HttpResponse::new(StatusCode::NO_CONTENT))

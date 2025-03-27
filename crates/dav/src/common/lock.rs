@@ -11,7 +11,6 @@ use dav_proto::schema::request::{DavPropertyValue, DeadProperty};
 use dav_proto::schema::response::{BaseCondition, List, PropResponse};
 use dav_proto::{Condition, Depth, Timeout};
 use dav_proto::{RequestHeaders, schema::request::LockInfo};
-use groupware::file::hierarchy::FileHierarchy;
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
@@ -24,7 +23,7 @@ use store::{SERIALIZE_OBJ_02_V1, Serialize, SerializedVersion, U32_LEN};
 use trc::AddContext;
 
 use super::ETag;
-use super::uri::{DavUriResource, OwnedUri, Urn};
+use super::uri::{DavUriResource, OwnedUri, UriResource, Urn};
 use crate::{DavError, DavErrorCondition, DavMethod};
 
 #[derive(Debug, Default, Clone)]
@@ -476,24 +475,17 @@ impl LockRequestHandler for Server {
                 // Fetch eTag
                 if needs_etag && resource_state.etag.is_none() {
                     if resource_state.document_id.is_none() {
-                        let todo = "map cal, card";
-
-                        resource_state.document_id = match resource_state.collection {
-                            Collection::FileNode => self
-                                .fetch_file_hierarchy(resource_state.account_id)
-                                .await
-                                .caused_by(trc::location!())?
-                                .files
-                                .by_name(resource_state.path)
-                                .map(|f| f.document_id),
-                            Collection::Calendar => todo!(),
-                            Collection::CalendarEvent => todo!(),
-                            Collection::AddressBook => todo!(),
-                            Collection::ContactCard => todo!(),
-                            _ => None,
-                        }
-                        .unwrap_or(u32::MAX)
-                        .into();
+                        resource_state.document_id = self
+                            .map_uri_resource(UriResource {
+                                collection: resource_state.collection,
+                                account_id: resource_state.account_id,
+                                resource: resource_state.path.into(),
+                            })
+                            .await
+                            .caused_by(trc::location!())?
+                            .map(|uri| uri.resource)
+                            .unwrap_or(u32::MAX)
+                            .into();
                     }
 
                     if let Some(document_id) =

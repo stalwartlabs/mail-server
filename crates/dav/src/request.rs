@@ -12,8 +12,11 @@ use dav_proto::{
     parser::{DavParser, tokenizer::Tokenizer},
     schema::{
         Namespace,
+        property::WebDavProperty,
         request::{Acl, LockInfo, MkCol, PropFind, PropertyUpdate, Report},
-        response::{BaseCondition, ErrorResponse},
+        response::{
+            BaseCondition, ErrorResponse, PrincipalSearchProperty, PrincipalSearchPropertySet,
+        },
     },
 };
 use directory::Permission;
@@ -24,6 +27,7 @@ use crate::{
     DavError, DavMethod, DavResource,
     common::{
         DavQuery,
+        acl::DavAclHandler,
         lock::{LockRequest, LockRequestHandler},
         propfind::PropFindRequestHandler,
         uri::DavUriResource,
@@ -34,6 +38,7 @@ use crate::{
         mkcol::FileMkColRequestHandler, propfind::HandleFilePropFindRequest,
         proppatch::FilePropPatchRequestHandler, update::FileUpdateRequestHandler,
     },
+    principal::{matching::PrincipalMatching, propsearch::PrincipalPropSearch},
 };
 
 pub trait DavRequestHandler: Sync + Send {
@@ -86,7 +91,6 @@ impl DavRequestDispatcher for Server {
             DavMethod::PROPPATCH => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     self.handle_file_proppatch_request(
                         &access_token,
@@ -95,11 +99,11 @@ impl DavRequestDispatcher for Server {
                     )
                     .await
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::MKCOL => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     self.handle_file_mkcol_request(
                         &access_token,
@@ -112,20 +116,20 @@ impl DavRequestDispatcher for Server {
                     )
                     .await
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::GET => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     self.handle_file_get_request(&access_token, headers, false)
                         .await
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::HEAD => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     #[cfg(debug_assertions)]
                     {
@@ -144,6 +148,7 @@ impl DavRequestDispatcher for Server {
                             .await
                     }
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::DELETE => {
                 // Include any fragments in the URI
@@ -155,53 +160,52 @@ impl DavRequestDispatcher for Server {
                 match resource {
                     DavResource::Card => todo!(),
                     DavResource::Cal => todo!(),
-                    DavResource::Principal => todo!(),
                     DavResource::File => {
                         self.handle_file_delete_request(&access_token, headers)
                             .await
                     }
+                    DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
                 }
             }
             DavMethod::PUT | DavMethod::POST => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     self.handle_file_update_request(&access_token, headers, body, false)
                         .await
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::PATCH => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     self.handle_file_update_request(&access_token, headers, body, true)
                         .await
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::COPY => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     self.handle_file_copy_move_request(&access_token, headers, false)
                         .await
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::MOVE => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     self.handle_file_copy_move_request(&access_token, headers, true)
                         .await
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::LOCK => match resource {
                 DavResource::Card => todo!(),
                 DavResource::Cal => todo!(),
-                DavResource::Principal => todo!(),
                 DavResource::File => {
                     self.handle_lock_request(
                         &access_token,
@@ -214,6 +218,7 @@ impl DavRequestDispatcher for Server {
                     )
                     .await
                 }
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::UNLOCK => {
                 self.handle_lock_request(&access_token, headers, LockRequest::Unlock)
@@ -253,15 +258,40 @@ impl DavRequestDispatcher for Server {
                         }
                     }
                 }
-                Report::Addressbook(addressbook_query) => todo!(),
-                Report::AddressbookMultiGet(multi_get) => todo!(),
-                Report::CalendarQuery(calendar_query) => todo!(),
-                Report::CalendarMultiGet(multi_get) => todo!(),
-                Report::FreeBusyQuery(free_busy_query) => todo!(),
-                Report::AclPrincipalPropSet(acl_principal_prop_set) => todo!(),
-                Report::PrincipalMatch(principal_match) => todo!(),
-                Report::PrincipalPropertySearch(principal_property_search) => todo!(),
-                Report::PrincipalSearchPropertySet => todo!(),
+                Report::AclPrincipalPropSet(report) => {
+                    self.handle_acl_prop_set(&access_token, headers, report)
+                        .await
+                }
+                Report::PrincipalMatch(report) => {
+                    self.handle_principal_match(&access_token, headers, report)
+                        .await
+                }
+                Report::PrincipalPropertySearch(report) => {
+                    if resource == DavResource::Principal {
+                        self.handle_principal_property_search(&access_token, report)
+                            .await
+                    } else {
+                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
+                    }
+                }
+                Report::PrincipalSearchPropertySet => {
+                    if resource == DavResource::Principal {
+                        Ok(HttpResponse::new(StatusCode::OK).with_xml_body(
+                            PrincipalSearchPropertySet::new(vec![PrincipalSearchProperty::new(
+                                WebDavProperty::DisplayName,
+                                "Account or Group name",
+                            )])
+                            .to_string(),
+                        ))
+                    } else {
+                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
+                    }
+                }
+                Report::Addressbook(report) => todo!(),
+                Report::AddressbookMultiGet(report) => todo!(),
+                Report::CalendarQuery(report) => todo!(),
+                Report::CalendarMultiGet(report) => todo!(),
+                Report::FreeBusyQuery(report) => todo!(),
             },
             DavMethod::OPTIONS => unreachable!(),
         }

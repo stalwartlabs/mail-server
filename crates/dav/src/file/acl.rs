@@ -13,7 +13,11 @@ use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
 use store::write::{AlignedBytes, Archive};
 use trc::AddContext;
 
-use crate::{DavError, common::uri::DavUriResource, file::DavFileResource};
+use crate::{
+    DavError,
+    common::{acl::DavAclHandler, uri::DavUriResource},
+    file::{DavFileResource, update_file_node},
+};
 
 pub(crate) trait FileAclRequestHandler: Sync + Send {
     fn handle_file_acl_request(
@@ -63,21 +67,48 @@ impl FileAclRequestHandler for Server {
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        let node = node_.unarchive::<FileNode>().caused_by(trc::location!())?;
+        let node = node_
+            .to_unarchived::<FileNode>()
+            .caused_by(trc::location!())?;
 
         // Validate ACL
         self.validate_file_acl(
             access_token,
             account_id,
-            node,
+            node.inner,
             Acl::Administer,
             Acl::Administer,
         )
         .await?;
 
-        for ace in request.aces {}
+        let grants = self
+            .validate_and_map_aces(access_token, request, Collection::FileNode)
+            .await?;
 
-        todo!()
+        if grants.len() != node.inner.acls.len()
+            || node
+                .inner
+                .acls
+                .iter()
+                .zip(grants.iter())
+                .any(|(a, b)| a != b)
+        {
+            let mut new_node = node.deserialize().caused_by(trc::location!())?;
+            new_node.acls = grants;
+            update_file_node(
+                self,
+                access_token,
+                node,
+                new_node,
+                account_id,
+                resource.resource,
+                false,
+            )
+            .await
+            .caused_by(trc::location!())?;
+        }
+
+        Ok(HttpResponse::new(StatusCode::OK))
     }
 
     async fn validate_file_acl(
