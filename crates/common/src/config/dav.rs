@@ -14,6 +14,7 @@ pub struct DavConfig {
     pub max_lock_timeout: u64,
     pub max_locks_per_user: usize,
     pub max_changes: usize,
+    pub max_match_results: usize,
 }
 
 impl DavConfig {
@@ -33,6 +34,9 @@ impl DavConfig {
                 .property("dav.limits.max-locks-per-user")
                 .unwrap_or(10),
             max_changes: config.property("dav.limits.max-changes").unwrap_or(1000),
+            max_match_results: config
+                .property("dav.limits.max-match-results")
+                .unwrap_or(1000),
         }
     }
 }

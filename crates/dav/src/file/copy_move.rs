@@ -365,7 +365,7 @@ async fn move_container(
         if parent_id != 0 && to_files.is_ancestor_of(from_document_id, parent_id - 1) {
             return Err(DavError::Code(StatusCode::BAD_GATEWAY));
         }
-        let node = server
+        let node_ = server
             .get_property::<Archive<AlignedBytes>>(
                 from_account_id,
                 Collection::FileNode,
@@ -374,10 +374,11 @@ async fn move_container(
             )
             .await
             .caused_by(trc::location!())?
-            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
-            .into_deserialized::<FileNode>()
+            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+        let node = node_
+            .to_unarchived::<FileNode>()
             .caused_by(trc::location!())?;
-        let mut new_node = node.inner.clone();
+        let mut new_node = node.deserialize().caused_by(trc::location!())?;
         new_node.parent_id = parent_id;
         if let Some(new_name) = destination.new_name {
             new_node.name = new_name;
@@ -579,7 +580,7 @@ async fn overwrite_and_delete_item(
     let to_document_id = destination.document_id.unwrap();
 
     // dest_node is the current file at the destination
-    let dest_node = server
+    let dest_node_ = server
         .get_property::<Archive<AlignedBytes>>(
             to_account_id,
             Collection::FileNode,
@@ -588,12 +589,14 @@ async fn overwrite_and_delete_item(
         )
         .await
         .caused_by(trc::location!())?
-        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
-        .into_deserialized::<FileNode>()
+        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+
+    let dest_node = dest_node_
+        .to_unarchived::<FileNode>()
         .caused_by(trc::location!())?;
 
     // source_node is the file to be copied
-    let source_node_ = server
+    let source_node__ = server
         .get_property::<Archive<AlignedBytes>>(
             from_account_id,
             Collection::FileNode,
@@ -602,16 +605,17 @@ async fn overwrite_and_delete_item(
         )
         .await
         .caused_by(trc::location!())?
-        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
-        .into_deserialized::<FileNode>()
+        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+    let source_node_ = source_node__
+        .to_unarchived::<FileNode>()
         .caused_by(trc::location!())?;
-    let mut source_node = source_node_.inner.clone();
+    let mut source_node = source_node_.deserialize().caused_by(trc::location!())?;
     source_node.name = if let Some(new_name) = destination.new_name {
         new_name
     } else {
-        dest_node.inner.name.clone()
+        dest_node.inner.name.to_string()
     };
-    source_node.parent_id = dest_node.inner.parent_id;
+    source_node.parent_id = dest_node.inner.parent_id.into();
 
     let etag = update_file_node(
         server,
@@ -651,7 +655,7 @@ async fn overwrite_item(
     let to_document_id = destination.document_id.unwrap();
 
     // dest_node is the current file at the destination
-    let dest_node = server
+    let dest_node_ = server
         .get_property::<Archive<AlignedBytes>>(
             to_account_id,
             Collection::FileNode,
@@ -660,8 +664,10 @@ async fn overwrite_item(
         )
         .await
         .caused_by(trc::location!())?
-        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
-        .into_deserialized::<FileNode>()
+        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+
+    let dest_node = dest_node_
+        .to_unarchived::<FileNode>()
         .caused_by(trc::location!())?;
 
     // source_node is the file to be copied
@@ -680,9 +686,9 @@ async fn overwrite_item(
     source_node.name = if let Some(new_name) = destination.new_name {
         new_name
     } else {
-        dest_node.inner.name.clone()
+        dest_node.inner.name.to_string()
     };
-    source_node.parent_id = dest_node.inner.parent_id;
+    source_node.parent_id = dest_node.inner.parent_id.into();
 
     let etag = update_file_node(
         server,
@@ -711,7 +717,7 @@ async fn move_item(
     let from_document_id = from_resource.resource.document_id;
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
 
-    let node = server
+    let node_ = server
         .get_property::<Archive<AlignedBytes>>(
             from_account_id,
             Collection::FileNode,
@@ -720,10 +726,11 @@ async fn move_item(
         )
         .await
         .caused_by(trc::location!())?
-        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
-        .into_deserialized::<FileNode>()
+        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+    let node = node_
+        .to_unarchived::<FileNode>()
         .caused_by(trc::location!())?;
-    let mut new_node = node.inner.clone();
+    let mut new_node = node.deserialize().caused_by(trc::location!())?;
     new_node.parent_id = parent_id;
     if let Some(new_name) = destination.new_name {
         new_node.name = new_name;
@@ -807,7 +814,7 @@ async fn rename_item(
     let from_account_id = from_resource.account_id;
     let from_document_id = from_resource.resource.document_id;
 
-    let node = server
+    let node_ = server
         .get_property::<Archive<AlignedBytes>>(
             from_account_id,
             Collection::FileNode,
@@ -816,10 +823,11 @@ async fn rename_item(
         )
         .await
         .caused_by(trc::location!())?
-        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
-        .into_deserialized::<FileNode>()
+        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+    let node = node_
+        .to_unarchived::<FileNode>()
         .caused_by(trc::location!())?;
-    let mut new_node = node.inner.clone();
+    let mut new_node = node.deserialize().caused_by(trc::location!())?;
     if let Some(new_name) = destination.new_name {
         new_node.name = new_name;
     }

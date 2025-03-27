@@ -55,7 +55,7 @@ pub struct SyncToken(pub String);
 #[repr(transparent)]
 pub struct Href(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct List<T: Display>(pub Vec<T>);

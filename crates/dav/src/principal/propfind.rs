@@ -141,11 +141,21 @@ impl PrincipalPropFind for Server {
                                 fields.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
-                        WebDavProperty::SupportedReportSet if !is_principal => {
-                            fields.push(DavPropertyValue::new(
-                                property.clone(),
-                                vec![ReportSet::SyncCollection],
-                            ));
+                        WebDavProperty::SupportedReportSet => {
+                            let reports = if !is_principal {
+                                vec![
+                                    ReportSet::SyncCollection,
+                                    ReportSet::AclPrincipalPropSet,
+                                    ReportSet::PrincipalMatch,
+                                ]
+                            } else {
+                                vec![
+                                    ReportSet::PrincipalPropertySearch,
+                                    ReportSet::PrincipalSearchPropertySet,
+                                    ReportSet::PrincipalMatch,
+                                ]
+                            };
+                            fields.push(DavPropertyValue::new(property.clone(), reports));
                         }
                         WebDavProperty::CurrentUserPrincipal => {
                             fields.push(DavPropertyValue::new(

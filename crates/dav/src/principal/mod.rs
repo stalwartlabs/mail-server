@@ -10,7 +10,9 @@ use percent_encoding::NON_ALPHANUMERIC;
 
 use crate::DavResource;
 
+pub mod matching;
 pub mod propfind;
+pub mod propsearch;
 
 pub trait CurrentUserPrincipal {
     fn current_user_principal(&self) -> Href;

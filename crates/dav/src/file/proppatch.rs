@@ -69,6 +69,10 @@ impl FilePropPatchRequestHandler for Server {
             .caused_by(trc::location!())?;
         let resource = files.map_resource(&resource_)?;
 
+        if !request.has_changes() {
+            return Ok(HttpResponse::new(StatusCode::NO_CONTENT));
+        }
+
         // Fetch node
         let node_ = self
             .get_property::<Archive<AlignedBytes>>(
@@ -112,8 +116,7 @@ impl FilePropPatchRequestHandler for Server {
         .await?;
 
         // Deserialize
-        let node = node.to_deserialized().caused_by(trc::location!())?;
-        let mut new_node = node.inner.clone();
+        let mut new_node = node.deserialize().caused_by(trc::location!())?;
 
         // Remove properties
         let mut items = Vec::with_capacity(request.remove.len() + request.set.len());
@@ -133,7 +136,7 @@ impl FilePropPatchRequestHandler for Server {
             remove_file_properties(&mut new_node, request.remove, &mut items);
         }
 
-        let etag = if new_node != node.inner {
+        let etag = if is_success {
             update_file_node(
                 self,
                 access_token,

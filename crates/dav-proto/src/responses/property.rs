@@ -170,6 +170,18 @@ impl Display for ReportSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ReportSet::SyncCollection => write!(f, "<D:sync-collection/>"),
+            ReportSet::ExpandProperty => write!(f, "<D:expand-property/>"),
+            ReportSet::AddressbookQuery => write!(f, "<C:addressbook-query/>"),
+            ReportSet::AddressbookMultiGet => write!(f, "<C:addressbook-multiget/>"),
+            ReportSet::CalendarQuery => write!(f, "<C:calendar-query/>"),
+            ReportSet::CalendarMultiGet => write!(f, "<C:calendar-multiget/>"),
+            ReportSet::FreeBusyQuery => write!(f, "<C:free-busy-query/>"),
+            ReportSet::AclPrincipalPropSet => write!(f, "<D:acl-principal-prop-set/>"),
+            ReportSet::PrincipalMatch => write!(f, "<D:principal-match/>"),
+            ReportSet::PrincipalPropertySearch => write!(f, "<D:principal-property-search/>"),
+            ReportSet::PrincipalSearchPropertySet => {
+                write!(f, "<D:principal-search-property-set/>")
+            }
         }
     }
 }

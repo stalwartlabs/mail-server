@@ -5,7 +5,7 @@
  */
 
 use common::{FileItem, Files, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
-use groupware::file::FileNode;
+use groupware::file::{ArchivedFileNode, FileNode};
 use hyper::StatusCode;
 use jmap_proto::types::{collection::Collection, type_state::DataType};
 use store::write::{
@@ -126,7 +126,7 @@ impl FromFileItem for FileItemId {
 pub(crate) async fn update_file_node(
     server: &Server,
     access_token: &AccessToken,
-    node: Archive<FileNode>,
+    node: Archive<&ArchivedFileNode>,
     mut new_node: FileNode,
     account_id: u32,
     document_id: u32,
@@ -202,7 +202,7 @@ pub(crate) async fn insert_file_node(
 pub(crate) async fn delete_file_node(
     server: &Server,
     access_token: &AccessToken,
-    node: Archive<FileNode>,
+    node: Archive<&ArchivedFileNode>,
     account_id: u32,
     document_id: u32,
 ) -> trc::Result<()> {

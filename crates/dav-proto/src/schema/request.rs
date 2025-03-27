@@ -338,3 +338,9 @@ impl ArchivedDeadProperty {
         }
     }
 }
+
+impl PropertyUpdate {
+    pub fn has_changes(&self) -> bool {
+        !self.set.is_empty() || !self.remove.is_empty()
+    }
+}

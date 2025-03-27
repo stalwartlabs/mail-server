@@ -160,6 +160,16 @@ pub enum DavValue {
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum ReportSet {
     SyncCollection,
+    ExpandProperty,
+    AddressbookQuery,
+    AddressbookMultiGet,
+    CalendarQuery,
+    CalendarMultiGet,
+    FreeBusyQuery,
+    AclPrincipalPropSet,
+    PrincipalMatch,
+    PrincipalPropertySearch,
+    PrincipalSearchPropertySet,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

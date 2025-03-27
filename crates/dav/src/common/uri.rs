@@ -9,6 +9,7 @@ use std::fmt::Display;
 use common::{Server, auth::AccessToken};
 
 use directory::backend::internal::manage::ManageDirectory;
+use groupware::file::hierarchy::FileHierarchy;
 use http_proto::request::decode_path_element;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
@@ -29,7 +30,7 @@ pub(crate) enum Urn {
 
 pub(crate) type UnresolvedUri<'x> = UriResource<Option<u32>, Option<&'x str>>;
 pub(crate) type OwnedUri<'x> = UriResource<u32, Option<&'x str>>;
-//pub(crate) type DocumentUri<'x> = UriResource<u32, u32>;
+pub(crate) type DocumentUri = UriResource<u32, u32>;
 
 pub(crate) trait DavUriResource: Sync + Send {
     fn validate_uri<'x>(
@@ -37,6 +38,11 @@ pub(crate) trait DavUriResource: Sync + Send {
         access_token: &AccessToken,
         uri: &'x str,
     ) -> impl Future<Output = crate::Result<UnresolvedUri<'x>>> + Send;
+
+    fn map_uri_resource(
+        &self,
+        uri: OwnedUri<'_>,
+    ) -> impl Future<Output = trc::Result<Option<DocumentUri>>> + Send;
 }
 
 impl DavUriResource for Server {
@@ -94,6 +100,41 @@ impl DavUriResource for Server {
         }
 
         Ok(resource)
+    }
+
+    async fn map_uri_resource(&self, uri: OwnedUri<'_>) -> trc::Result<Option<DocumentUri>> {
+        let todo = "map cal, card";
+
+        let resource = if let Some(resource) = uri.resource {
+            resource
+        } else {
+            return Ok(None);
+        };
+
+        let document_id = match uri.collection {
+            Collection::FileNode => self
+                .fetch_file_hierarchy(uri.account_id)
+                .await
+                .caused_by(trc::location!())?
+                .files
+                .by_name(resource)
+                .map(|f| f.document_id),
+            Collection::Calendar => todo!(),
+            Collection::CalendarEvent => todo!(),
+            Collection::AddressBook => todo!(),
+            Collection::ContactCard => todo!(),
+            _ => None,
+        };
+
+        if let Some(document_id) = document_id {
+            Ok(Some(DocumentUri {
+                collection: uri.collection,
+                account_id: uri.account_id,
+                resource: document_id,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }
 
