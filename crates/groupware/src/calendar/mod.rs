@@ -28,12 +28,15 @@ pub struct CalendarPreferences {
     pub is_subscribed: bool,
     pub is_default: bool,
     pub is_visible: bool,
-    /*pub include_in_availability: IncludeInAvailability,
+    pub include_in_availability: IncludeInAvailability,
     pub default_alerts_with_time: VecMap<String, ICalendar>,
     pub default_alerts_without_time: VecMap<String, ICalendar>,
-    pub time_zone: Timezone,*/
+    pub time_zone: Timezone,
 }
 
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct CalendarEvent {
     pub name: Option<String>,
     pub event: ICalendar,
@@ -47,15 +50,24 @@ pub struct CalendarEvent {
     pub is_draft: bool,
 }
 
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub enum Timezone {
     IANA(String),
     Custom(ICalendar),
+    #[default]
     Default,
 }
 
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+#[rkyv(derive(Debug))]
 pub enum IncludeInAvailability {
     All,
     Attending,
+    #[default]
     None,
 }
 

@@ -6,7 +6,7 @@
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use dav_proto::RequestHeaders;
-use groupware::file::{FileNode, hierarchy::FileHierarchy};
+use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{
@@ -50,7 +50,7 @@ impl FileDeleteRequestHandler for Server {
             .filter(|r| !r.is_empty())
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
         let files = self
-            .fetch_file_hierarchy(account_id)
+            .fetch_dav_hierarchy(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
 

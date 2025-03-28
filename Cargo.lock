@@ -1014,6 +1014,7 @@ dependencies = [
  "hashify",
  "mail-builder",
  "mail-parser",
+ "rkyv 0.8.10",
  "serde",
 ]
 
@@ -1670,7 +1671,7 @@ checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
 
 [[package]]
 name = "dav"
-version = "0.11.5"
+version = "0.11.7"
 dependencies = [
  "common",
  "dav-proto",
@@ -1689,7 +1690,7 @@ dependencies = [
 
 [[package]]
 name = "dav-proto"
-version = "0.1.0"
+version = "0.11.7"
 dependencies = [
  "calcard",
  "hashify",
@@ -2738,7 +2739,7 @@ dependencies = [
 
 [[package]]
 name = "groupware"
-version = "0.11.5"
+version = "0.11.7"
 dependencies = [
  "calcard",
  "common",
@@ -3027,7 +3028,7 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.11.5"
+version = "0.11.7"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -3135,7 +3136,7 @@ dependencies = [
 
 [[package]]
 name = "http_proto"
-version = "0.11.5"
+version = "0.11.7"
 dependencies = [
  "common",
  "form_urlencoded",
@@ -4181,7 +4182,7 @@ dependencies = [
  "directory",
  "email",
  "groupware",
- "http 0.11.5",
+ "http 0.11.7",
  "imap",
  "jemallocator",
  "jmap",
@@ -6639,7 +6640,7 @@ dependencies = [
 
 [[package]]
 name = "services"
-version = "0.11.5"
+version = "0.11.7"
 dependencies = [
  "aes-gcm",
  "aes-gcm-siv",
@@ -7206,7 +7207,7 @@ dependencies = [
  "flate2",
  "form_urlencoded",
  "futures",
- "http 0.11.5",
+ "http 0.11.7",
  "http-body-util",
  "http_proto",
  "hyper 1.6.0",

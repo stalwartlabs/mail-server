@@ -6,7 +6,6 @@
 
 use std::{
     borrow::Cow,
-    collections::BTreeSet,
     fmt::Write,
     time::{Duration, Instant},
 };
@@ -37,7 +36,6 @@ use std::future::Future;
 use store::{
     BlobClass, IndexKey, IndexKeyPrefix, IterateParams, U32_LEN,
     ahash::AHashMap,
-    query::Filter,
     roaring::RoaringBitmap,
     write::{
         AlignedBytes, Archive, AssignedIds, BatchBuilder, MaybeDynamicValue, SerializeWithId,
@@ -106,7 +104,8 @@ pub trait EmailIngest: Sync + Send {
         &self,
         account_id: u32,
         thread_name: &str,
-        references: &[&str],
+        references: Vec<&[u8]>,
+        skip_duplicate: Option<(&[u8], u32)>,
     ) -> impl Future<Output = trc::Result<u32>> + Send;
     fn assign_imap_uid(
         &self,
@@ -258,7 +257,7 @@ impl EmailIngest for Server {
         }
 
         // Obtain message references and thread name
-        let mut message_id = String::new();
+        let mut message_id = None;
         let thread_id = {
             let mut references = Vec::with_capacity(5);
             let mut subject = "";
@@ -266,10 +265,11 @@ impl EmailIngest for Server {
                 match &header.name {
                     HeaderName::MessageId => header.value.visit_text(|id| {
                         if !id.is_empty() && id.len() < MAX_ID_LENGTH {
-                            if message_id.is_empty() {
-                                message_id = id.to_string();
+                            // Used by find_or_merge_thread to skip duplicates
+                            if params.source.is_smtp() && message_id.is_none() {
+                                message_id = references.len().into();
                             }
-                            references.push(id);
+                            references.push(id.as_bytes());
                         }
                     }),
                     HeaderName::InReplyTo
@@ -277,7 +277,7 @@ impl EmailIngest for Server {
                     | HeaderName::ResentMessageId => {
                         header.value.visit_text(|id| {
                             if !id.is_empty() && id.len() < MAX_ID_LENGTH {
-                                references.push(id);
+                                references.push(id.as_bytes());
                             }
                         });
                     }
@@ -295,29 +295,19 @@ impl EmailIngest for Server {
                 }
             }
 
-            // Check for duplicates
-            if params.source.is_smtp()
-                && !message_id.is_empty()
-                && !self
-                    .core
-                    .storage
-                    .data
-                    .filter(
-                        account_id,
-                        Collection::Email,
-                        vec![
-                            Filter::eq(Property::MessageId, message_id.as_str().serialize()),
-                            Filter::is_in_bitmap(
-                                Property::MailboxIds,
-                                params.mailbox_ids.first().copied().unwrap_or(INBOX_ID),
-                            ),
-                        ],
-                    )
-                    .await
-                    .caused_by(trc::location!())?
-                    .results
-                    .is_empty()
-            {
+            let skip_duplicate = message_id.map(|idx| {
+                (
+                    references[idx],
+                    params.mailbox_ids.first().copied().unwrap_or(INBOX_ID),
+                )
+            });
+            let thread_id = self
+                .find_or_merge_thread(account_id, subject, references, skip_duplicate)
+                .await?;
+            if thread_id != u32::MAX {
+                thread_id
+            } else {
+                // Duplicate message
                 trc::event!(
                     MessageIngest(MessageIngestEvent::Duplicate),
                     SpanId = params.session_id,
@@ -333,9 +323,6 @@ impl EmailIngest for Server {
                     size: 0,
                 });
             }
-
-            self.find_or_merge_thread(account_id, subject, &references)
-                .await?
         };
 
         // Add additional headers to message
@@ -586,7 +573,8 @@ impl EmailIngest for Server {
         &self,
         account_id: u32,
         thread_name: &str,
-        references: &[&str],
+        mut references: Vec<&[u8]>,
+        skip_duplicate: Option<(&[u8], u32)>,
     ) -> trc::Result<u32> {
         if references.is_empty() {
             return self.create_thread_id(account_id).await;
@@ -599,10 +587,9 @@ impl EmailIngest for Server {
             "!"
         }
         .serialize();
-        let references = references
-            .iter()
-            .map(|r| r.as_bytes())
-            .collect::<BTreeSet<_>>();
+
+        // Sort references ascending
+        references.sort_unstable();
 
         loop {
             // Find messages with a matching subject
@@ -642,12 +629,15 @@ impl EmailIngest for Server {
                 )
                 .await
                 .caused_by(trc::location!())?;
+
+            // No matching subjects were found, skip early
             if subj_results.is_empty() {
                 return self.create_thread_id(account_id).await;
             }
 
             // Find messages with matching references
             let mut results = RoaringBitmap::new();
+            let mut found_message_id = Vec::new();
             self.store()
                 .iterate(
                     IterateParams::new(
@@ -670,13 +660,27 @@ impl EmailIngest for Server {
                     .ascending(),
                     |key, _| {
                         let id_pos = key.len() - U32_LEN;
-                        let value = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
-                            trc::Error::corrupted_key(key, None, trc::location!())
-                        })?;
+                        let mut value =
+                            key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
+                                trc::Error::corrupted_key(key, None, trc::location!())
+                            })?;
                         let document_id = key.deserialize_be_u32(id_pos)?;
 
-                        if subj_results.contains(document_id) && references.contains(value) {
+                        if let Some(message_id) = value.strip_suffix(&[0]) {
+                            value = message_id;
+                            if skip_duplicate.is_some_and(|(message_id, _)| message_id == value) {
+                                found_message_id.push(document_id);
+                            }
+                        }
+
+                        if subj_results.contains(document_id)
+                            && references.binary_search(&value).is_ok()
+                        {
                             results.insert(document_id);
+
+                            if subj_results.len() == results.len() {
+                                return Ok(false);
+                            }
                         }
 
                         Ok(true)
@@ -684,8 +688,28 @@ impl EmailIngest for Server {
                 )
                 .await
                 .caused_by(trc::location!())?;
+
+            // No matching messages
             if results.is_empty() {
                 return self.create_thread_id(account_id).await;
+            }
+
+            // Skip duplicate messages
+            if !found_message_id.is_empty() {
+                if let Some(ids) = self
+                    .get_tag(
+                        account_id,
+                        Collection::Email,
+                        Property::MailboxIds,
+                        skip_duplicate.unwrap().1,
+                    )
+                    .await
+                    .caused_by(trc::location!())?
+                {
+                    if found_message_id.iter().any(|id| ids.contains(*id)) {
+                        return Ok(u32::MAX);
+                    }
+                }
             }
 
             // Find the most common threadId

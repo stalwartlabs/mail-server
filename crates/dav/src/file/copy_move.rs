@@ -6,9 +6,9 @@
 
 use std::sync::Arc;
 
-use common::{Files, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{DavResources, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use dav_proto::{Depth, RequestHeaders};
-use groupware::file::{FileNode, hierarchy::FileHierarchy};
+use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{
@@ -31,7 +31,7 @@ use crate::{
     file::{DavFileResource, FileItemId, insert_file_node, update_file_node},
 };
 
-use super::{FromFileItem, delete::delete_files, delete_file_node};
+use super::{FromDavResource, delete::delete_files, delete_file_node};
 
 pub(crate) trait FileCopyMoveRequestHandler: Sync + Send {
     fn handle_file_copy_move_request(
@@ -56,7 +56,7 @@ impl FileCopyMoveRequestHandler for Server {
             .into_owned_uri()?;
         let from_account_id = from_resource_.account_id;
         let from_files = self
-            .fetch_file_hierarchy(from_account_id)
+            .fetch_dav_hierarchy(from_account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let from_resource = from_files.map_resource::<FileItemId>(&from_resource_)?;
@@ -113,7 +113,7 @@ impl FileCopyMoveRequestHandler for Server {
         let to_files = if to_account_id == from_account_id {
             from_files.clone()
         } else {
-            self.fetch_file_hierarchy(to_account_id)
+            self.fetch_dav_hierarchy(to_account_id, Collection::FileNode)
                 .await
                 .caused_by(trc::location!())?
         };
@@ -130,7 +130,7 @@ impl FileCopyMoveRequestHandler for Server {
             if let Some(mut existing_destination) = to_files
                 .files
                 .by_name(destination_resource_name)
-                .map(Destination::from_file_item)
+                .map(Destination::from_dav_resource)
             {
                 if !headers.overwrite_fail {
                     existing_destination.account_id = to_account_id;
@@ -350,8 +350,8 @@ impl Default for Destination {
 async fn move_container(
     server: &Server,
     access_token: &AccessToken,
-    from_files: Arc<Files>,
-    to_files: Arc<Files>,
+    from_files: Arc<DavResources>,
+    to_files: Arc<DavResources>,
     from_resource: UriResource<u32, FileItemId>,
     destination: Destination,
     depth: Depth,
@@ -413,7 +413,7 @@ async fn move_container(
 async fn copy_container(
     server: &Server,
     access_token: &AccessToken,
-    from_files: Arc<Files>,
+    from_files: Arc<DavResources>,
     from_resource: UriResource<u32, FileItemId>,
     mut destination: Destination,
     depth: Depth,
@@ -846,8 +846,8 @@ async fn rename_item(
     Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
 }
 
-impl FromFileItem for Destination {
-    fn from_file_item(item: &common::FileItem) -> Self {
+impl FromDavResource for Destination {
+    fn from_dav_resource(item: &common::DavResource) -> Self {
         Destination {
             account_id: u32::MAX,
             document_id: Some(item.document_id),

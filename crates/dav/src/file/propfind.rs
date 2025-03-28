@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{FileItem, Server, auth::AccessToken};
+use common::{Server, auth::AccessToken};
 use dav_proto::schema::{
     property::{
         DavProperty, DavValue, Privilege, ReportSet, ResourceType, Rfc1123DateTime, SupportedLock,
@@ -16,7 +16,7 @@ use dav_proto::schema::{
         SupportedPrivilege,
     },
 };
-use groupware::file::{FileNode, hierarchy::FileHierarchy};
+use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
@@ -58,7 +58,7 @@ impl HandleFilePropFindRequest for Server {
     ) -> crate::Result<HttpResponse> {
         let account_id = query.resource.account_id;
         let files = self
-            .fetch_file_hierarchy(account_id)
+            .fetch_dav_hierarchy(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
 
@@ -657,11 +657,11 @@ static ALL_PROPS: [DavProperty; 17] = [
 struct Paths<'x> {
     min: u32,
     max: u32,
-    items: AHashMap<u32, &'x FileItem>,
+    items: AHashMap<u32, &'x common::DavResource>,
 }
 
 impl<'x> Paths<'x> {
-    pub fn new(iter: impl Iterator<Item = &'x FileItem>) -> Self {
+    pub fn new(iter: impl Iterator<Item = &'x common::DavResource>) -> Self {
         let mut paths = Paths {
             min: u32::MAX,
             max: 0,
