@@ -28,6 +28,7 @@ use trc::AddContext;
 
 use crate::{
     DavErrorCondition,
+    card::propfind::CardPropFindRequestHandler,
     common::uri::DavUriResource,
     file::propfind::HandleFilePropFindRequest,
     principal::{CurrentUserPrincipal, propfind::PrincipalPropFind},
@@ -86,7 +87,7 @@ impl PropFindRequestHandler for Server {
                         access_token,
                         DavQuery::propfind(
                             UriResource::new_owned(
-                                Collection::FileNode,
+                                resource.collection,
                                 account_id,
                                 resource.resource,
                             ),
@@ -97,7 +98,21 @@ impl PropFindRequestHandler for Server {
                     .await
                 }
                 Collection::Calendar => todo!(),
-                Collection::AddressBook => todo!(),
+                Collection::AddressBook => {
+                    self.handle_card_propfind_request(
+                        access_token,
+                        DavQuery::propfind(
+                            UriResource::new_owned(
+                                resource.collection,
+                                account_id,
+                                resource.resource,
+                            ),
+                            request,
+                            headers,
+                        ),
+                    )
+                    .await
+                }
                 Collection::Principal => {
                     let mut response = MultiStatus::new(Vec::with_capacity(16));
 

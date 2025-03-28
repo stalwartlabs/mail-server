@@ -58,17 +58,22 @@ pub struct LockInfo {
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(test, serde(tag = "type"))]
 pub enum Report {
-    Addressbook(AddressbookQuery),
+    AddressbookQuery(AddressbookQuery),
     AddressbookMultiGet(MultiGet),
     CalendarQuery(CalendarQuery),
     CalendarMultiGet(MultiGet),
     FreeBusyQuery(FreeBusyQuery),
     SyncCollection(SyncCollection),
+    ExpandProperty(ExpandProperty),
     AclPrincipalPropSet(AclPrincipalPropSet),
     PrincipalMatch(PrincipalMatch),
     PrincipalPropertySearch(PrincipalPropertySearch),
     PrincipalSearchPropertySet,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
+pub struct ExpandProperty {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]

@@ -146,7 +146,7 @@ pub struct Caches {
     pub account: Cache<AccountId, Arc<Account>>,
     pub mailbox: Cache<MailboxId, Arc<MailboxState>>,
     pub threads: Cache<u32, Arc<Threads>>,
-    pub files: Cache<u32, Arc<Files>>,
+    pub dav: Cache<DavResourceId, Arc<DavResources>>,
 
     pub bayes: CacheWithTtl<TokenHash, Weights>,
 
@@ -250,15 +250,21 @@ pub struct Threads {
 
 pub struct NameWrapper(pub String);
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct DavResourceId {
+    pub account_id: u32,
+    pub collection: u8,
+}
+
 #[derive(Debug, Default)]
-pub struct Files {
-    pub files: IdBimap<FileItem>,
+pub struct DavResources {
+    pub files: IdBimap<DavResource>,
     pub size: u64,
     pub modseq: Option<u64>,
 }
 
 #[derive(Debug, Default)]
-pub struct FileItem {
+pub struct DavResource {
     pub document_id: u32,
     pub parent_id: Option<u32>,
     pub name: String,
@@ -296,6 +302,12 @@ impl CacheItemWeight for MailboxId {
     }
 }
 
+impl CacheItemWeight for DavResourceId {
+    fn weight(&self) -> u64 {
+        std::mem::size_of::<DavResourceId>() as u64
+    }
+}
+
 impl CacheItemWeight for Threads {
     fn weight(&self) -> u64 {
         ((self.threads.len() + 2) * std::mem::size_of::<Threads>()) as u64
@@ -320,7 +332,7 @@ impl CacheItemWeight for HttpAuthCache {
     }
 }
 
-impl CacheItemWeight for Files {
+impl CacheItemWeight for DavResources {
     fn weight(&self) -> u64 {
         self.size
     }
@@ -441,7 +453,7 @@ impl Default for Caches {
             account: Cache::new(1024, 10 * 1024 * 1024),
             mailbox: Cache::new(1024, 10 * 1024 * 1024),
             threads: Cache::new(1024, 10 * 1024 * 1024),
-            files: Cache::new(1024, 10 * 1024 * 1024),
+            dav: Cache::new(1024, 10 * 1024 * 1024),
             bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_rbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_txt: CacheWithTtl::new(1024, 10 * 1024 * 1024),
@@ -493,8 +505,8 @@ pub fn ip_to_bytes_prefix(prefix: u8, ip: &IpAddr) -> Vec<u8> {
     }
 }
 
-impl Files {
-    pub fn subtree(&self, search_path: &str) -> impl Iterator<Item = &FileItem> {
+impl DavResources {
+    pub fn subtree(&self, search_path: &str) -> impl Iterator<Item = &DavResource> {
         let prefix = format!("{search_path}/");
         self.files
             .iter()
@@ -505,7 +517,7 @@ impl Files {
         &self,
         search_path: &str,
         depth: usize,
-    ) -> impl Iterator<Item = &FileItem> {
+    ) -> impl Iterator<Item = &DavResource> {
         let prefix = format!("{search_path}/");
         self.files.iter().filter(move |item| {
             item.name
@@ -515,7 +527,7 @@ impl Files {
         })
     }
 
-    pub fn tree_with_depth(&self, depth: usize) -> impl Iterator<Item = &FileItem> {
+    pub fn tree_with_depth(&self, depth: usize) -> impl Iterator<Item = &DavResource> {
         self.files.iter().filter(move |item| {
             item.name.as_bytes().iter().filter(|&&c| c == b'/').count() <= depth
         })
@@ -530,7 +542,7 @@ impl Files {
     }
 }
 
-impl IdBimapItem for FileItem {
+impl IdBimapItem for DavResource {
     fn id(&self) -> &u32 {
         &self.document_id
     }
@@ -540,21 +552,21 @@ impl IdBimapItem for FileItem {
     }
 }
 
-impl std::hash::Hash for FileItem {
+impl std::hash::Hash for DavResource {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.document_id.hash(state);
     }
 }
 
-impl PartialEq for FileItem {
+impl PartialEq for DavResource {
     fn eq(&self, other: &Self) -> bool {
         self.document_id == other.document_id
     }
 }
 
-impl Eq for FileItem {}
+impl Eq for DavResource {}
 
-impl std::borrow::Borrow<u32> for FileItem {
+impl std::borrow::Borrow<u32> for DavResource {
     fn borrow(&self) -> &u32 {
         &self.document_id
     }

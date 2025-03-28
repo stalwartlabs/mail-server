@@ -6,7 +6,7 @@
 
 use common::{Server, auth::AccessToken};
 use dav_proto::{RequestHeaders, schema::property::Rfc1123DateTime};
-use groupware::file::{FileNode, hierarchy::FileHierarchy};
+use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
@@ -46,7 +46,7 @@ impl FileGetRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource_.account_id;
         let files = self
-            .fetch_file_hierarchy(account_id)
+            .fetch_dav_hierarchy(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource = files.map_resource(&resource_)?;

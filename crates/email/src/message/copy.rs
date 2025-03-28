@@ -108,7 +108,7 @@ impl EmailCopy for Server {
                 | HeaderName::ResentMessageId => {
                     header.value.visit_text(|id| {
                         if !id.is_empty() && id.len() < MAX_ID_LENGTH {
-                            references.push(id);
+                            references.push(id.as_bytes());
                         }
                     });
                 }
@@ -128,7 +128,7 @@ impl EmailCopy for Server {
 
         // Obtain threadId
         let thread_id = self
-            .find_or_merge_thread(account_id, subject, &references)
+            .find_or_merge_thread(account_id, subject, references, None)
             .await
             .caused_by(trc::location!())?;
 

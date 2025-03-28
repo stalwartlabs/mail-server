@@ -40,7 +40,7 @@ impl DavParser for Report {
             NamedElement {
                 ns: Namespace::CardDav,
                 element: Element::AddressbookQuery,
-            } => AddressbookQuery::parse(stream).map(Report::Addressbook),
+            } => AddressbookQuery::parse(stream).map(Report::AddressbookQuery),
             NamedElement {
                 ns: Namespace::CardDav,
                 element: Element::AddressbookMultiget,

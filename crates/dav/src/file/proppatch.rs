@@ -13,7 +13,7 @@ use dav_proto::{
         response::{BaseCondition, MultiStatus, PropStat, Response},
     },
 };
-use groupware::file::{FileNode, hierarchy::FileHierarchy};
+use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
@@ -64,7 +64,7 @@ impl FilePropPatchRequestHandler for Server {
         let uri = headers.uri;
         let account_id = resource_.account_id;
         let files = self
-            .fetch_file_hierarchy(account_id)
+            .fetch_dav_hierarchy(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource = files.map_resource(&resource_)?;

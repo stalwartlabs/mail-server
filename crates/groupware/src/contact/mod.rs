@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod index;
+
 use calcard::vcard::VCard;
+use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
 use store::{SERIALIZE_OBJ_15_V1, SerializedVersion};
 
@@ -19,6 +22,7 @@ pub struct AddressBook {
     pub sort_order: u32,
     pub is_default: bool,
     pub subscribers: Vec<u32>,
+    pub dead_properties: DeadProperty,
     pub acls: Vec<AclGrant>,
 }
 
@@ -29,13 +33,19 @@ pub enum AddressBookRight {
     Delete,
 }
 
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+#[rkyv(derive(Debug))]
 pub struct ContactCard {
-    pub name: Option<String>,
+    pub name: String,
     pub display_name: Option<String>,
     pub addressbook_ids: Vec<u32>,
     pub card: VCard,
+    pub dead_properties: DeadProperty,
     pub created: u64,
     pub updated: u64,
+    pub size: u32,
 }
 
 impl TryFrom<Acl> for AddressBookRight {

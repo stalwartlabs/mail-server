@@ -25,6 +25,13 @@ use hyper::{StatusCode, header};
 
 use crate::{
     DavError, DavMethod, DavResource,
+    card::{
+        acl::CardAclRequestHandler, copy_move::CardCopyMoveRequestHandler,
+        delete::CardDeleteRequestHandler, get::CardGetRequestHandler,
+        mkcol::CardMkColRequestHandler, propfind::CardPropFindRequestHandler,
+        proppatch::CardPropPatchRequestHandler, query::CardQueryRequestHandler,
+        update::CardUpdateRequestHandler,
+    },
     common::{
         DavQuery,
         acl::DavAclHandler,
@@ -88,38 +95,46 @@ impl DavRequestDispatcher for Server {
                 )
                 .await
             }
-            DavMethod::PROPPATCH => match resource {
-                DavResource::Card => todo!(),
-                DavResource::Cal => todo!(),
-                DavResource::File => {
-                    self.handle_file_proppatch_request(
-                        &access_token,
-                        headers,
-                        PropertyUpdate::parse(&mut Tokenizer::new(&body))?,
-                    )
-                    .await
+            DavMethod::PROPPATCH => {
+                let request = PropertyUpdate::parse(&mut Tokenizer::new(&body))?;
+                match resource {
+                    DavResource::Card => {
+                        self.handle_card_proppatch_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResource::Cal => todo!(),
+                    DavResource::File => {
+                        self.handle_file_proppatch_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
                 }
-                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-            },
-            DavMethod::MKCOL => match resource {
-                DavResource::Card => todo!(),
-                DavResource::Cal => todo!(),
-                DavResource::File => {
-                    self.handle_file_mkcol_request(
-                        &access_token,
-                        headers,
-                        if !body.is_empty() {
-                            Some(MkCol::parse(&mut Tokenizer::new(&body))?)
-                        } else {
-                            None
-                        },
-                    )
-                    .await
+            }
+            DavMethod::MKCOL => {
+                let request = if !body.is_empty() {
+                    Some(MkCol::parse(&mut Tokenizer::new(&body))?)
+                } else {
+                    None
+                };
+
+                match resource {
+                    DavResource::Card => {
+                        self.handle_card_mkcol_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResource::Cal => todo!(),
+                    DavResource::File => {
+                        self.handle_file_mkcol_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
                 }
-                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-            },
+            }
             DavMethod::GET => match resource {
-                DavResource::Card => todo!(),
+                DavResource::Card => {
+                    self.handle_card_get_request(&access_token, headers, false)
+                        .await
+                }
                 DavResource::Cal => todo!(),
                 DavResource::File => {
                     self.handle_file_get_request(&access_token, headers, false)
@@ -128,7 +143,10 @@ impl DavRequestDispatcher for Server {
                 DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::HEAD => match resource {
-                DavResource::Card => todo!(),
+                DavResource::Card => {
+                    self.handle_card_get_request(&access_token, headers, true)
+                        .await
+                }
                 DavResource::Cal => todo!(),
                 DavResource::File => {
                     #[cfg(debug_assertions)]
@@ -158,7 +176,10 @@ impl DavRequestDispatcher for Server {
                 }
 
                 match resource {
-                    DavResource::Card => todo!(),
+                    DavResource::Card => {
+                        self.handle_card_delete_request(&access_token, headers)
+                            .await
+                    }
                     DavResource::Cal => todo!(),
                     DavResource::File => {
                         self.handle_file_delete_request(&access_token, headers)
@@ -168,7 +189,10 @@ impl DavRequestDispatcher for Server {
                 }
             }
             DavMethod::PUT | DavMethod::POST => match resource {
-                DavResource::Card => todo!(),
+                DavResource::Card => {
+                    self.handle_card_update_request(&access_token, headers, body, false)
+                        .await
+                }
                 DavResource::Cal => todo!(),
                 DavResource::File => {
                     self.handle_file_update_request(&access_token, headers, body, false)
@@ -177,7 +201,10 @@ impl DavRequestDispatcher for Server {
                 DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::PATCH => match resource {
-                DavResource::Card => todo!(),
+                DavResource::Card => {
+                    self.handle_card_update_request(&access_token, headers, body, true)
+                        .await
+                }
                 DavResource::Cal => todo!(),
                 DavResource::File => {
                     self.handle_file_update_request(&access_token, headers, body, true)
@@ -186,7 +213,10 @@ impl DavRequestDispatcher for Server {
                 DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::COPY => match resource {
-                DavResource::Card => todo!(),
+                DavResource::Card => {
+                    self.handle_card_copy_move_request(&access_token, headers, false)
+                        .await
+                }
                 DavResource::Cal => todo!(),
                 DavResource::File => {
                     self.handle_file_copy_move_request(&access_token, headers, false)
@@ -195,7 +225,10 @@ impl DavRequestDispatcher for Server {
                 DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::MOVE => match resource {
-                DavResource::Card => todo!(),
+                DavResource::Card => {
+                    self.handle_card_copy_move_request(&access_token, headers, false)
+                        .await
+                }
                 DavResource::Cal => todo!(),
                 DavResource::File => {
                     self.handle_file_copy_move_request(&access_token, headers, true)
@@ -204,9 +237,8 @@ impl DavRequestDispatcher for Server {
                 DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::LOCK => match resource {
-                DavResource::Card => todo!(),
-                DavResource::Cal => todo!(),
-                DavResource::File => {
+                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
+                _ => {
                     self.handle_lock_request(
                         &access_token,
                         headers,
@@ -218,40 +250,42 @@ impl DavRequestDispatcher for Server {
                     )
                     .await
                 }
-                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
             DavMethod::UNLOCK => {
                 self.handle_lock_request(&access_token, headers, LockRequest::Unlock)
                     .await
             }
-            DavMethod::ACL => match resource {
-                DavResource::Card => todo!(),
-                DavResource::Cal => todo!(),
-                DavResource::File => {
-                    self.handle_file_acl_request(
-                        &access_token,
-                        headers,
-                        Acl::parse(&mut Tokenizer::new(&body))?,
-                    )
-                    .await
+            DavMethod::ACL => {
+                let request = Acl::parse(&mut Tokenizer::new(&body))?;
+                match resource {
+                    DavResource::Card => {
+                        self.handle_card_acl_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResource::Cal => todo!(),
+                    DavResource::File => {
+                        self.handle_file_acl_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
                 }
-                DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-            },
+            }
             DavMethod::REPORT => match Report::parse(&mut Tokenizer::new(&body))? {
                 Report::SyncCollection(sync_collection) => {
                     let uri = self
                         .validate_uri(&access_token, headers.uri)
                         .await
                         .and_then(|d| d.into_owned_uri())?;
+                    let request = DavQuery::changes(uri, sync_collection, headers);
                     match resource {
-                        DavResource::Card => todo!(),
+                        DavResource::Card => {
+                            self.handle_card_propfind_request(&access_token, request)
+                                .await
+                        }
                         DavResource::Cal => todo!(),
                         DavResource::File => {
-                            self.handle_file_propfind_request(
-                                &access_token,
-                                DavQuery::changes(uri, sync_collection, headers),
-                            )
-                            .await
+                            self.handle_file_propfind_request(&access_token, request)
+                                .await
                         }
                         DavResource::Principal => {
                             Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
@@ -287,11 +321,18 @@ impl DavRequestDispatcher for Server {
                         Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
                     }
                 }
-                Report::Addressbook(report) => todo!(),
-                Report::AddressbookMultiGet(report) => todo!(),
+                Report::AddressbookQuery(report) => {
+                    self.handle_card_query_request(&access_token, headers, report)
+                        .await
+                }
+                Report::AddressbookMultiGet(report) => {
+                    self.handle_card_multiget_request(&access_token, headers, report)
+                        .await
+                }
                 Report::CalendarQuery(report) => todo!(),
                 Report::CalendarMultiGet(report) => todo!(),
                 Report::FreeBusyQuery(report) => todo!(),
+                Report::ExpandProperty(report) => todo!(),
             },
             DavMethod::OPTIONS => unreachable!(),
         }

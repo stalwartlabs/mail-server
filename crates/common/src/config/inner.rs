@@ -125,9 +125,9 @@ impl Caches {
                 MB_10,
                 (std::mem::size_of::<Threads>() + (500 * std::mem::size_of::<u64>())) as u64,
             ),
-            files: Cache::from_config(
+            dav: Cache::from_config(
                 config,
-                "file",
+                "dav",
                 MB_10,
                 (std::mem::size_of::<Threads>() + (500 * std::mem::size_of::<u64>())) as u64,
             ),

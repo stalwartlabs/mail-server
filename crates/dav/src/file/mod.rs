@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{FileItem, Files, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{
+    DavResource, DavResources, Server, auth::AccessToken, storage::index::ObjectIndexBuilder,
+};
 use groupware::file::{ArchivedFileNode, FileNode};
 use hyper::StatusCode;
 use jmap_proto::types::{collection::Collection, type_state::DataType};
@@ -31,8 +33,8 @@ pub mod propfind;
 pub mod proppatch;
 pub mod update;
 
-pub(crate) trait FromFileItem {
-    fn from_file_item(item: &FileItem) -> Self;
+pub(crate) trait FromDavResource {
+    fn from_dav_resource(item: &DavResource) -> Self;
 }
 
 pub(crate) struct FileItemId {
@@ -42,22 +44,23 @@ pub(crate) struct FileItemId {
 }
 
 pub(crate) trait DavFileResource {
-    fn map_resource<T: FromFileItem>(
+    fn map_resource<T: FromDavResource>(
         &self,
         resource: &OwnedUri<'_>,
     ) -> crate::Result<UriResource<u32, T>>;
 
-    fn map_parent<'x, T: FromFileItem>(&self, resource: &'x str) -> Option<(Option<T>, &'x str)>;
+    fn map_parent<'x, T: FromDavResource>(&self, resource: &'x str)
+    -> Option<(Option<T>, &'x str)>;
 
     #[allow(clippy::type_complexity)]
-    fn map_parent_resource<'x, T: FromFileItem>(
+    fn map_parent_resource<'x, T: FromDavResource>(
         &self,
         resource: &OwnedUri<'x>,
     ) -> crate::Result<UriResource<u32, (Option<T>, &'x str)>>;
 }
 
-impl DavFileResource for Files {
-    fn map_resource<T: FromFileItem>(
+impl DavFileResource for DavResources {
+    fn map_resource<T: FromDavResource>(
         &self,
         resource: &OwnedUri<'_>,
     ) -> crate::Result<UriResource<u32, T>> {
@@ -67,15 +70,18 @@ impl DavFileResource for Files {
             .map(|r| UriResource {
                 collection: resource.collection,
                 account_id: resource.account_id,
-                resource: T::from_file_item(r),
+                resource: T::from_dav_resource(r),
             })
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))
     }
 
-    fn map_parent<'x, T: FromFileItem>(&self, resource: &'x str) -> Option<(Option<T>, &'x str)> {
+    fn map_parent<'x, T: FromDavResource>(
+        &self,
+        resource: &'x str,
+    ) -> Option<(Option<T>, &'x str)> {
         let (parent, child) = if let Some((parent, child)) = resource.rsplit_once('/') {
             (
-                Some(self.files.by_name(parent).map(T::from_file_item)?),
+                Some(self.files.by_name(parent).map(T::from_dav_resource)?),
                 child,
             )
         } else {
@@ -85,7 +91,7 @@ impl DavFileResource for Files {
         Some((parent, child))
     }
 
-    fn map_parent_resource<'x, T: FromFileItem>(
+    fn map_parent_resource<'x, T: FromDavResource>(
         &self,
         resource: &OwnedUri<'x>,
     ) -> crate::Result<UriResource<u32, (Option<T>, &'x str)>> {
@@ -107,14 +113,14 @@ impl DavFileResource for Files {
     }
 }
 
-impl FromFileItem for u32 {
-    fn from_file_item(item: &FileItem) -> Self {
+impl FromDavResource for u32 {
+    fn from_dav_resource(item: &DavResource) -> Self {
         item.document_id
     }
 }
 
-impl FromFileItem for FileItemId {
-    fn from_file_item(item: &FileItem) -> Self {
+impl FromDavResource for FileItemId {
+    fn from_dav_resource(item: &DavResource) -> Self {
         FileItemId {
             document_id: item.document_id,
             parent_id: item.parent_id,

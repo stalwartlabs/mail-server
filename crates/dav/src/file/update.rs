@@ -6,7 +6,10 @@
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use dav_proto::{RequestHeaders, Return, schema::property::Rfc1123DateTime};
-use groupware::file::{FileNode, FileProperties, hierarchy::FileHierarchy};
+use groupware::{
+    file::{FileNode, FileProperties},
+    hierarchy::DavHierarchy,
+};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{
@@ -58,7 +61,7 @@ impl FileUpdateRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource.account_id;
         let files = self
-            .fetch_file_hierarchy(account_id)
+            .fetch_dav_hierarchy(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource_name = resource

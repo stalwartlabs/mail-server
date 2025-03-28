@@ -9,7 +9,7 @@ use std::fmt::Display;
 use common::{Server, auth::AccessToken};
 
 use directory::backend::internal::manage::ManageDirectory;
-use groupware::file::hierarchy::FileHierarchy;
+use groupware::hierarchy::DavHierarchy;
 use http_proto::request::decode_path_element;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
@@ -103,35 +103,28 @@ impl DavUriResource for Server {
     }
 
     async fn map_uri_resource(&self, uri: OwnedUri<'_>) -> trc::Result<Option<DocumentUri>> {
-        let todo = "map cal, card";
-
-        let resource = if let Some(resource) = uri.resource {
-            resource
-        } else {
-            return Ok(None);
-        };
-
-        let document_id = match uri.collection {
-            Collection::FileNode => self
-                .fetch_file_hierarchy(uri.account_id)
+        if let Some(resource) = uri.resource {
+            if let Some(resource) = self
+                .fetch_dav_hierarchy(uri.account_id, uri.collection)
                 .await
                 .caused_by(trc::location!())?
                 .files
                 .by_name(resource)
-                .map(|f| f.document_id),
-            Collection::Calendar => todo!(),
-            Collection::CalendarEvent => todo!(),
-            Collection::AddressBook => todo!(),
-            Collection::ContactCard => todo!(),
-            _ => None,
-        };
-
-        if let Some(document_id) = document_id {
-            Ok(Some(DocumentUri {
-                collection: uri.collection,
-                account_id: uri.account_id,
-                resource: document_id,
-            }))
+            {
+                Ok(Some(DocumentUri {
+                    collection: if resource.is_container || uri.collection == Collection::FileNode {
+                        uri.collection
+                    } else if uri.collection == Collection::Calendar {
+                        Collection::CalendarEvent
+                    } else {
+                        Collection::ContactCard
+                    },
+                    account_id: uri.account_id,
+                    resource: resource.document_id,
+                }))
+            } else {
+                Ok(None)
+            }
         } else {
             Ok(None)
         }

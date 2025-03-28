@@ -116,13 +116,9 @@ impl MessageMetadata {
                         // Add ids to inverted index
                         if id.len() < MAX_ID_LENGTH {
                             if set {
-                                batch
-                                    .index(Property::MessageId, id.serialize())
-                                    .index(Property::References, id.serialize());
+                                batch.index(Property::References, encode_message_id(id));
                             } else {
-                                batch
-                                    .unindex(Property::MessageId, id.serialize())
-                                    .unindex(Property::References, id.serialize());
+                                batch.unindex(Property::References, encode_message_id(id));
                             }
                         }
                     });
@@ -229,6 +225,13 @@ impl MessageMetadata {
     }
 }
 
+fn encode_message_id(message_id: &str) -> Vec<u8> {
+    let mut msg_id = Vec::with_capacity(message_id.len() + 1);
+    msg_id.extend_from_slice(message_id.as_bytes());
+    msg_id.push(0);
+    msg_id
+}
+
 impl ArchivedMessageMetadata {
     #[inline(always)]
     pub fn root_part(&self) -> &ArchivedMessageMetadataPart {
@@ -307,13 +310,9 @@ impl ArchivedMessageMetadata {
                         // Add ids to inverted index
                         if id.len() < MAX_ID_LENGTH {
                             if set {
-                                batch
-                                    .index(Property::MessageId, id.serialize())
-                                    .index(Property::References, id.serialize());
+                                batch.index(Property::References, encode_message_id(id));
                             } else {
-                                batch
-                                    .unindex(Property::MessageId, id.serialize())
-                                    .unindex(Property::References, id.serialize());
+                                batch.unindex(Property::References, encode_message_id(id));
                             }
                         }
                     });

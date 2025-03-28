@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod hierarchy;
 pub mod index;
 
 use dav_proto::schema::request::DeadProperty;
