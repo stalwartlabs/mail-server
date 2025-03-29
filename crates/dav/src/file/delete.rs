@@ -14,12 +14,10 @@ use jmap_proto::types::{
 };
 use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
 use trc::AddContext;
-use utils::map::bitmap::Bitmap;
 
 use crate::{
     DavError, DavMethod,
     common::{
-        acl::DavAclHandler,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
@@ -50,7 +48,7 @@ impl FileDeleteRequestHandler for Server {
             .filter(|r| !r.is_empty())
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
         let files = self
-            .fetch_dav_hierarchy(account_id, Collection::FileNode)
+            .fetch_dav_resources(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
 
@@ -62,30 +60,22 @@ impl FileDeleteRequestHandler for Server {
 
         // Sort ids descending from the deepest to the root
         ids.sort_unstable_by(|a, b| b.hierarchy_sequence.cmp(&a.hierarchy_sequence));
-        let (document_id, parent_id, is_container) = ids
-            .last()
-            .map(|a| (a.document_id, a.parent_id, a.is_container))
-            .unwrap();
+        let document_id = ids.last().map(|a| a.document_id).unwrap();
         let mut sorted_ids = Vec::with_capacity(ids.len());
         sorted_ids.extend(ids.into_iter().map(|a| a.document_id));
 
         // Validate ACLs
-        self.validate_child_or_parent_acl(
-            access_token,
-            account_id,
-            Collection::FileNode,
-            document_id,
-            parent_id,
-            if is_container {
-                Bitmap::new()
-                    .with_item(Acl::Delete)
-                    .with_item(Acl::RemoveItems)
-            } else {
-                Bitmap::new().with_item(Acl::RemoveItems)
-            },
-            Acl::RemoveItems,
-        )
-        .await?;
+        if !access_token.is_member(account_id) {
+            let permissions = self
+                .shared_containers(access_token, account_id, Collection::FileNode, Acl::Delete)
+                .await
+                .caused_by(trc::location!())?;
+            if permissions.len() != sorted_ids.len() as u64
+                || sorted_ids.iter().all(|id| permissions.contains(*id))
+            {
+                return Err(DavError::Code(StatusCode::FORBIDDEN));
+            }
+        }
 
         // Validate headers
         self.validate_headers(

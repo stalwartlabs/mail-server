@@ -559,7 +559,7 @@ impl SieveScriptIngest for Server {
             .filter(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(Property::IsActive, 1u32.serialize())],
+                vec![Filter::eq(Property::IsActive, vec![1u8])],
             )
             .await
             .caused_by(trc::location!())?

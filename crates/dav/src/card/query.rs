@@ -8,8 +8,6 @@ use common::{Server, auth::AccessToken};
 use dav_proto::{RequestHeaders, schema::request::AddressbookQuery};
 use http_proto::HttpResponse;
 
-use crate::common::uri::DavUriResource;
-
 pub(crate) trait CardQueryRequestHandler: Sync + Send {
     fn handle_card_query_request(
         &self,
@@ -26,12 +24,6 @@ impl CardQueryRequestHandler for Server {
         headers: RequestHeaders<'_>,
         request: AddressbookQuery,
     ) -> crate::Result<HttpResponse> {
-        // Validate URI
-        let resource_ = self
-            .validate_uri(access_token, headers.uri)
-            .await?
-            .into_owned_uri()?;
-
         todo!()
     }
 }

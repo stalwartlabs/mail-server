@@ -9,6 +9,8 @@ use jmap_proto::types::{acl::Acl, value::AclGrant};
 use store::{SERIALIZE_OBJ_14_V1, SerializedVersion};
 use utils::map::vec_map::VecMap;
 
+use crate::DavName;
+
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
@@ -38,9 +40,8 @@ pub struct CalendarPreferences {
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct CalendarEvent {
-    pub name: Option<String>,
+    pub names: Vec<DavName>,
     pub event: ICalendar,
-    pub calendar_ids: Vec<u32>,
     pub user_properties: VecMap<u32, ICalendar>,
     pub created: u64,
     pub updated: u64,

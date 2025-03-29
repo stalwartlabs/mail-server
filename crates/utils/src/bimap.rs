@@ -45,7 +45,7 @@ impl<T: IdBimapItem> IdBimap<T> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.id_to_name.values().map(|v| v.as_ref())
+        self.name_to_id.values().map(|v| v.as_ref())
     }
 }
 

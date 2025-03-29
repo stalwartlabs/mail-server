@@ -71,6 +71,7 @@ impl Server {
         if shared_containers.is_empty() {
             return Ok(shared_containers);
         }
+        let todo = "maybe cache?";
         let mut shared_items = RoaringBitmap::new();
         for document_id in shared_containers {
             if let Some(documents_in_folder) = self
@@ -147,9 +148,9 @@ impl Server {
     ) -> trc::Result<bool> {
         let to_collection = to_collection.into();
         let check_acls = check_acls.into();
-        for &grant_account_id in [access_token.primary_id]
-            .iter()
-            .chain(access_token.member_of.clone().iter())
+        for grant_account_id in [access_token.primary_id]
+            .into_iter()
+            .chain(access_token.member_of.iter().copied())
         {
             match self
                 .core

@@ -58,7 +58,7 @@ impl HandleFilePropFindRequest for Server {
     ) -> crate::Result<HttpResponse> {
         let account_id = query.resource.account_id;
         let files = self
-            .fetch_dav_hierarchy(account_id, Collection::FileNode)
+            .fetch_dav_resources(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
 

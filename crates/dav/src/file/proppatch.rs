@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken};
+use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use dav_proto::{
     RequestHeaders, Return,
     schema::{
@@ -27,7 +27,7 @@ use crate::{
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
-    file::{DavFileResource, acl::FileAclRequestHandler},
+    file::DavFileResource,
 };
 
 use super::update_file_node;
@@ -64,7 +64,7 @@ impl FilePropPatchRequestHandler for Server {
         let uri = headers.uri;
         let account_id = resource_.account_id;
         let files = self
-            .fetch_dav_hierarchy(account_id, Collection::FileNode)
+            .fetch_dav_resources(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource = files.map_resource(&resource_)?;
@@ -89,14 +89,15 @@ impl FilePropPatchRequestHandler for Server {
             .caused_by(trc::location!())?;
 
         // Validate ACL
-        self.validate_file_acl(
-            access_token,
-            account_id,
-            node.inner,
-            Acl::Modify,
-            Acl::ModifyItems,
-        )
-        .await?;
+        if !access_token.is_member(account_id)
+            && !node
+                .inner
+                .acls
+                .effective_acl(access_token)
+                .contains(Acl::Modify)
+        {
+            return Err(DavError::Code(StatusCode::FORBIDDEN));
+        }
 
         // Validate headers
         self.validate_headers(

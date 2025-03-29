@@ -258,7 +258,7 @@ pub struct DavResourceId {
 
 #[derive(Debug, Default)]
 pub struct DavResources {
-    pub files: IdBimap<DavResource>,
+    pub paths: IdBimap<DavResource>,
     pub size: u64,
     pub modseq: Option<u64>,
 }
@@ -508,7 +508,7 @@ pub fn ip_to_bytes_prefix(prefix: u8, ip: &IpAddr) -> Vec<u8> {
 impl DavResources {
     pub fn subtree(&self, search_path: &str) -> impl Iterator<Item = &DavResource> {
         let prefix = format!("{search_path}/");
-        self.files
+        self.paths
             .iter()
             .filter(move |item| item.name.starts_with(&prefix) || item.name == search_path)
     }
@@ -519,7 +519,7 @@ impl DavResources {
         depth: usize,
     ) -> impl Iterator<Item = &DavResource> {
         let prefix = format!("{search_path}/");
-        self.files.iter().filter(move |item| {
+        self.paths.iter().filter(move |item| {
             item.name
                 .strip_prefix(&prefix)
                 .is_some_and(|name| name.as_bytes().iter().filter(|&&c| c == b'/').count() <= depth)
@@ -528,14 +528,14 @@ impl DavResources {
     }
 
     pub fn tree_with_depth(&self, depth: usize) -> impl Iterator<Item = &DavResource> {
-        self.files.iter().filter(move |item| {
+        self.paths.iter().filter(move |item| {
             item.name.as_bytes().iter().filter(|&&c| c == b'/').count() <= depth
         })
     }
 
     pub fn is_ancestor_of(&self, ancestor: u32, descendant: u32) -> bool {
-        let ancestor = &self.files.by_id(ancestor).unwrap().name;
-        let descendant = &self.files.by_id(descendant).unwrap().name;
+        let ancestor = &self.paths.by_id(ancestor).unwrap().name;
+        let descendant = &self.paths.by_id(descendant).unwrap().name;
 
         let prefix = format!("{ancestor}/");
         descendant.starts_with(&prefix) || descendant == ancestor

@@ -12,25 +12,25 @@ use super::{ArchivedEmailSubmission, EmailSubmission};
 impl IndexableObject for EmailSubmission {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::UndoStatus.into(),
                 value: self.undo_status.as_index().into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::EmailId.into(),
-                value: Some(self.email_id),
+                value: self.email_id.into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::ThreadId.into(),
-                value: Some(self.thread_id),
+                value: self.thread_id.into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::IdentityId.into(),
-                value: Some(self.identity_id),
+                value: self.identity_id.into(),
             },
-            IndexValue::U64 {
+            IndexValue::Index {
                 field: Property::SendAt.into(),
-                value: Some(self.send_at),
+                value: self.send_at.into(),
             },
         ]
         .into_iter()
@@ -40,25 +40,25 @@ impl IndexableObject for EmailSubmission {
 impl IndexableObject for &ArchivedEmailSubmission {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::UndoStatus.into(),
                 value: self.undo_status.as_index().into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::EmailId.into(),
-                value: Some(u32::from(self.email_id)),
+                value: self.email_id.into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::ThreadId.into(),
-                value: Some(u32::from(self.thread_id)),
+                value: self.thread_id.into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::IdentityId.into(),
-                value: Some(u32::from(self.identity_id)),
+                value: self.identity_id.into(),
             },
-            IndexValue::U64 {
+            IndexValue::Index {
                 field: Property::SendAt.into(),
-                value: Some(u64::from(self.send_at)),
+                value: self.send_at.into(),
             },
         ]
         .into_iter()

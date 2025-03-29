@@ -56,44 +56,33 @@ impl FileCopyMoveRequestHandler for Server {
             .into_owned_uri()?;
         let from_account_id = from_resource_.account_id;
         let from_files = self
-            .fetch_dav_hierarchy(from_account_id, Collection::FileNode)
+            .fetch_dav_resources(from_account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let from_resource = from_files.map_resource::<FileItemId>(&from_resource_)?;
 
         // Validate source ACLs
-        let mut child_acl = Bitmap::new();
-        let mut parent_acl = Bitmap::new();
-        match (from_resource.resource.is_container, is_move) {
-            (true, true) => {
-                child_acl.insert(Acl::Delete);
-                child_acl.insert(Acl::RemoveItems);
-                parent_acl.insert(Acl::RemoveItems);
-            }
-            (true, false) => {
-                child_acl.insert(Acl::Read);
-                child_acl.insert(Acl::ReadItems);
-                parent_acl.insert(Acl::ReadItems);
-            }
-            (false, true) => {
-                child_acl.insert(Acl::Delete);
-                parent_acl.insert(Acl::RemoveItems);
-            }
-            (false, false) => {
-                child_acl.insert(Acl::Read);
-                parent_acl.insert(Acl::ReadItems);
+        if !access_token.is_member(from_account_id) {
+            let shared = self
+                .shared_containers(
+                    access_token,
+                    from_account_id,
+                    Collection::FileNode,
+                    if is_move {
+                        Bitmap::<Acl>::from_iter([Acl::Read, Acl::Modify])
+                    } else {
+                        Bitmap::<Acl>::from_iter([Acl::Read])
+                    },
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+            for resource in from_files.subtree(from_resource_.resource.unwrap()) {
+                if !shared.contains(resource.document_id) {
+                    return Err(DavError::Code(StatusCode::FORBIDDEN));
+                }
             }
         }
-        self.validate_child_or_parent_acl(
-            access_token,
-            from_account_id,
-            Collection::FileNode,
-            from_resource.resource.document_id,
-            from_resource.resource.parent_id,
-            child_acl,
-            parent_acl,
-        )
-        .await?;
 
         // Validate destination
         let destination = self
@@ -113,7 +102,7 @@ impl FileCopyMoveRequestHandler for Server {
         let to_files = if to_account_id == from_account_id {
             from_files.clone()
         } else {
-            self.fetch_dav_hierarchy(to_account_id, Collection::FileNode)
+            self.fetch_dav_resources(to_account_id, Collection::FileNode)
                 .await
                 .caused_by(trc::location!())?
         };
@@ -128,7 +117,7 @@ impl FileCopyMoveRequestHandler for Server {
             to_files.map_parent::<Destination>(destination_resource_name)
         {
             if let Some(mut existing_destination) = to_files
-                .files
+                .paths
                 .by_name(destination_resource_name)
                 .map(Destination::from_dav_resource)
             {
@@ -154,53 +143,32 @@ impl FileCopyMoveRequestHandler for Server {
                 return Ok(HttpResponse::new(StatusCode::BAD_GATEWAY));
             } else if from_resource.resource.parent_id == destination.parent_id
                 && destination.new_name.is_some()
+                && is_move
             {
                 // Rename
-                self.validate_child_or_parent_acl(
-                    access_token,
-                    from_account_id,
-                    Collection::FileNode,
-                    from_resource.resource.document_id,
-                    from_resource.resource.parent_id,
-                    Acl::Modify,
-                    Acl::ModifyItems,
-                )
-                .await?;
                 return rename_item(self, access_token, from_resource, destination).await;
             }
         }
 
         // Validate destination ACLs
         if let Some(document_id) = destination.document_id {
-            let mut child_acl = Bitmap::new();
-
-            if destination.is_container {
-                child_acl.insert(Acl::AddItems);
-            } else {
-                child_acl.insert(Acl::Modify);
-            }
-
             if let Some(delete_destination) = &delete_destination {
-                self.validate_child_or_parent_acl(
+                self.validate_acl(
                     access_token,
                     to_account_id,
                     Collection::FileNode,
                     delete_destination.document_id.unwrap(),
-                    delete_destination.parent_id,
                     Acl::Delete,
-                    Acl::RemoveItems,
                 )
                 .await?;
             }
 
-            self.validate_child_or_parent_acl(
+            self.validate_acl(
                 access_token,
                 to_account_id,
                 Collection::FileNode,
                 document_id,
-                destination.parent_id,
-                child_acl,
-                Acl::AddItems,
+                Acl::Modify,
             )
             .await?;
         } else if !access_token.is_member(to_account_id) {
@@ -239,7 +207,7 @@ impl FileCopyMoveRequestHandler for Server {
         // Validate quota
         if !is_move || from_account_id != to_account_id {
             let res = from_files
-                .files
+                .paths
                 .by_id(from_resource.resource.document_id)
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
             let space_needed = from_files
@@ -434,7 +402,7 @@ async fn copy_container(
 
     // Obtain files to copy
     let res = from_files
-        .files
+        .paths
         .by_id(from_document_id)
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
     let mut copy_files = if infinity_copy {

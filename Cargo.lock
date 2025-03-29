@@ -1673,6 +1673,7 @@ checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
 name = "dav"
 version = "0.11.7"
 dependencies = [
+ "calcard",
  "common",
  "dav-proto",
  "directory",

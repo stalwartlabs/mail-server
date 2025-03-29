@@ -51,7 +51,7 @@ impl FileMkColRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource_.account_id;
         let files = self
-            .fetch_dav_hierarchy(account_id, Collection::FileNode)
+            .fetch_dav_resources(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource = files.map_parent_resource(&resource_)?;
@@ -63,7 +63,7 @@ impl FileMkColRequestHandler for Server {
                 account_id,
                 Collection::FileNode,
                 resource.resource.0,
-                Acl::CreateChild,
+                Acl::AddItems,
             )
             .await?;
 

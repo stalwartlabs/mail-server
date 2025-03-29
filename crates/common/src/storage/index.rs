@@ -6,6 +6,11 @@
 
 use ahash::AHashSet;
 use jmap_proto::types::{property::Property, value::AclGrant};
+use rkyv::{
+    option::ArchivedOption,
+    primitive::{ArchivedU32, ArchivedU64},
+    string::ArchivedString,
+};
 use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible, SerializedVersion,
@@ -20,21 +25,13 @@ use crate::auth::AsTenantId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexValue<'x> {
-    Text {
+    Index {
         field: u8,
-        value: Cow<'x, str>,
+        value: IndexItem<'x>,
     },
-    U32 {
+    IndexList {
         field: u8,
-        value: Option<u32>,
-    },
-    U64 {
-        field: u8,
-        value: Option<u64>,
-    },
-    U32List {
-        field: u8,
-        value: Cow<'x, [u32]>,
+        value: Vec<IndexItem<'x>>,
     },
     Tag {
         field: u8,
@@ -49,6 +46,156 @@ pub enum IndexValue<'x> {
     Acl {
         value: Cow<'x, [AclGrant]>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum IndexItem<'x> {
+    Vec(Vec<u8>),
+    Slice(&'x [u8]),
+    ShortInt([u8; std::mem::size_of::<u32>()]),
+    LongInt([u8; std::mem::size_of::<u64>()]),
+    None,
+}
+
+impl IndexItem<'_> {
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            IndexItem::Vec(v) => v,
+            IndexItem::Slice(s) => s,
+            IndexItem::ShortInt(s) => s,
+            IndexItem::LongInt(s) => s,
+            IndexItem::None => &[],
+        }
+    }
+
+    pub fn into_owned(self) -> Vec<u8> {
+        match self {
+            IndexItem::Vec(v) => v,
+            IndexItem::Slice(s) => s.to_vec(),
+            IndexItem::ShortInt(s) => s.to_vec(),
+            IndexItem::LongInt(s) => s.to_vec(),
+            IndexItem::None => vec![],
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            IndexItem::Vec(v) => v.is_empty(),
+            IndexItem::Slice(s) => s.is_empty(),
+            IndexItem::None => true,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq for IndexItem<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Eq for IndexItem<'_> {}
+
+impl std::hash::Hash for IndexItem<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            IndexItem::Vec(v) => v.as_slice().hash(state),
+            IndexItem::Slice(s) => s.hash(state),
+            IndexItem::ShortInt(s) => s.as_slice().hash(state),
+            IndexItem::LongInt(s) => s.as_slice().hash(state),
+            IndexItem::None => 0.hash(state),
+        }
+    }
+}
+
+impl From<u32> for IndexItem<'_> {
+    fn from(value: u32) -> Self {
+        IndexItem::ShortInt(value.to_be_bytes())
+    }
+}
+
+impl From<&u32> for IndexItem<'_> {
+    fn from(value: &u32) -> Self {
+        IndexItem::ShortInt(value.to_be_bytes())
+    }
+}
+
+impl From<u64> for IndexItem<'_> {
+    fn from(value: u64) -> Self {
+        IndexItem::LongInt(value.to_be_bytes())
+    }
+}
+
+impl<'x> From<&'x [u8]> for IndexItem<'x> {
+    fn from(value: &'x [u8]) -> Self {
+        IndexItem::Slice(value)
+    }
+}
+
+impl From<Vec<u8>> for IndexItem<'_> {
+    fn from(value: Vec<u8>) -> Self {
+        IndexItem::Vec(value)
+    }
+}
+
+impl<'x> From<&'x str> for IndexItem<'x> {
+    fn from(value: &'x str) -> Self {
+        IndexItem::Slice(value.as_bytes())
+    }
+}
+
+impl<'x> From<&'x String> for IndexItem<'x> {
+    fn from(value: &'x String) -> Self {
+        IndexItem::Slice(value.as_bytes())
+    }
+}
+
+impl From<String> for IndexItem<'_> {
+    fn from(value: String) -> Self {
+        IndexItem::Vec(value.into_bytes())
+    }
+}
+
+impl<'x> From<&'x ArchivedString> for IndexItem<'x> {
+    fn from(value: &'x ArchivedString) -> Self {
+        IndexItem::Slice(value.as_bytes())
+    }
+}
+
+impl From<ArchivedU32> for IndexItem<'_> {
+    fn from(value: ArchivedU32) -> Self {
+        IndexItem::ShortInt(value.to_native().to_be_bytes())
+    }
+}
+
+impl From<&ArchivedU32> for IndexItem<'_> {
+    fn from(value: &ArchivedU32) -> Self {
+        IndexItem::ShortInt(value.to_native().to_be_bytes())
+    }
+}
+
+impl From<ArchivedU64> for IndexItem<'_> {
+    fn from(value: ArchivedU64) -> Self {
+        IndexItem::LongInt(value.to_native().to_be_bytes())
+    }
+}
+
+impl<'x, T: Into<IndexItem<'x>>> From<Option<T>> for IndexItem<'x> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(v) => v.into(),
+            None => IndexItem::None,
+        }
+    }
+}
+
+impl<'x, T: Into<IndexItem<'x>>> From<ArchivedOption<T>> for IndexItem<'x> {
+    fn from(value: ArchivedOption<T>) -> Self {
+        match value {
+            ArchivedOption::Some(v) => v.into(),
+            ArchivedOption::None => IndexItem::None,
+        }
+    }
 }
 
 pub trait IndexableObject: Sync + Send {
@@ -164,38 +311,20 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> IntoOperations
 
 fn build_index(batch: &mut BatchBuilder, item: IndexValue<'_>, tenant_id: Option<u32>, set: bool) {
     match item {
-        IndexValue::Text { field, value } => {
+        IndexValue::Index { field, value } => {
             if !value.is_empty() {
                 batch.ops.push(Operation::Index {
                     field,
-                    key: value.into_owned().into_bytes(),
+                    key: value.into_owned(),
                     set,
                 });
             }
         }
-        IndexValue::U32 { field, value } => {
-            if let Some(value) = value {
+        IndexValue::IndexList { field, value } => {
+            for key in value {
                 batch.ops.push(Operation::Index {
                     field,
-                    key: value.serialize(),
-                    set,
-                });
-            }
-        }
-        IndexValue::U64 { field, value } => {
-            if let Some(value) = value {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: value.serialize(),
-                    set,
-                });
-            }
-        }
-        IndexValue::U32List { field, value } => {
-            for item in value.as_ref() {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: (*item).serialize(),
+                    key: key.into_owned(),
                     set,
                 });
             }
@@ -249,18 +378,18 @@ fn merge_index(
 ) -> trc::Result<()> {
     match (current, change) {
         (
-            IndexValue::Text {
+            IndexValue::Index {
                 field,
                 value: old_value,
             },
-            IndexValue::Text {
+            IndexValue::Index {
                 value: new_value, ..
             },
         ) => {
             if !old_value.is_empty() {
                 batch.ops.push(Operation::Index {
                     field,
-                    key: old_value.into_owned().into_bytes(),
+                    key: old_value.into_owned(),
                     set: false,
                 });
             }
@@ -268,88 +397,38 @@ fn merge_index(
             if !new_value.is_empty() {
                 batch.ops.push(Operation::Index {
                     field,
-                    key: new_value.into_owned().into_bytes(),
+                    key: new_value.into_owned(),
                     set: true,
                 });
             }
         }
         (
-            IndexValue::U32 {
+            IndexValue::IndexList {
                 field,
                 value: old_value,
             },
-            IndexValue::U32 {
+            IndexValue::IndexList {
                 value: new_value, ..
             },
         ) => {
-            if let Some(value) = old_value {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: value.serialize(),
-                    set: false,
-                });
-            }
-            if let Some(value) = new_value {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: value.serialize(),
-                    set: true,
-                });
-            }
-        }
-        (
-            IndexValue::U64 {
-                field,
-                value: old_value,
-            },
-            IndexValue::U64 {
-                value: new_value, ..
-            },
-        ) => {
-            if let Some(value) = old_value {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: value.serialize(),
-                    set: false,
-                });
-            }
-            if let Some(value) = new_value {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: value.serialize(),
-                    set: true,
-                });
-            }
-        }
-        (
-            IndexValue::U32List {
-                field,
-                value: old_value,
-            },
-            IndexValue::U32List {
-                value: new_value, ..
-            },
-        ) => {
-            let mut add_values = AHashSet::new();
-            let mut remove_values = AHashSet::new();
+            let mut remove_values = AHashSet::from_iter(old_value);
 
-            for current_value in old_value.as_ref() {
-                remove_values.insert(current_value);
-            }
-            for value in new_value.as_ref() {
+            for value in new_value {
                 if !remove_values.remove(&value) {
-                    add_values.insert(value);
-                }
-            }
-
-            for (values, set) in [(add_values, true), (remove_values, false)] {
-                for value in values {
                     batch.ops.push(Operation::Index {
                         field,
-                        key: value.serialize(),
-                        set,
+                        key: value.into_owned(),
+                        set: true,
                     });
                 }
+            }
+
+            for value in remove_values {
+                batch.ops.push(Operation::Index {
+                    field,
+                    key: value.into_owned(),
+                    set: false,
+                });
             }
         }
         (

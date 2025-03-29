@@ -21,7 +21,7 @@ impl IndexableObject for FileNode {
         let mut values = Vec::with_capacity(6);
 
         values.extend([
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::Name.into(),
                 value: percent_encoding::percent_decode_str(&self.name)
                     .decode_utf8()
@@ -29,7 +29,7 @@ impl IndexableObject for FileNode {
                     .to_lowercase()
                     .into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::ParentId.into(),
                 value: self.parent_id.into(),
             },
@@ -44,7 +44,7 @@ impl IndexableObject for FileNode {
                 IndexValue::Blob {
                     value: file.blob_hash.clone(),
                 },
-                IndexValue::U32 {
+                IndexValue::Index {
                     field: Property::Size.into(),
                     value: size.into(),
                 },
@@ -63,11 +63,11 @@ impl IndexableObject for &ArchivedFileNode {
         let mut values = Vec::with_capacity(6);
 
         values.extend([
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::Name.into(),
                 value: self.name.to_lowercase().into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::ParentId.into(),
                 value: u32::from(self.parent_id).into(),
             },
@@ -87,7 +87,7 @@ impl IndexableObject for &ArchivedFileNode {
                 IndexValue::Blob {
                     value: (&file.blob_hash).into(),
                 },
-                IndexValue::U32 {
+                IndexValue::Index {
                     field: Property::Size.into(),
                     value: size.into(),
                 },

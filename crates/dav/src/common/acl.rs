@@ -62,15 +62,13 @@ pub(crate) trait DavAclHandler: Sync + Send {
     ) -> impl Future<Output = crate::Result<u32>> + Send;
 
     #[allow(clippy::too_many_arguments)]
-    fn validate_child_or_parent_acl(
+    fn validate_acl(
         &self,
         access_token: &AccessToken,
         account_id: u32,
         collection: Collection,
         document_id: u32,
-        parent_id: Option<u32>,
-        child_acl: impl Into<Bitmap<Acl>> + Send,
-        parent_acl: impl Into<Bitmap<Acl>> + Send,
+        acl: impl Into<Bitmap<Acl>> + Send,
     ) -> impl Future<Output = crate::Result<()>> + Send;
 
     fn resolve_ace(
@@ -102,18 +100,6 @@ impl DavAclHandler for Server {
         ) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
-
-        // Validate ACLs
-        self.validate_child_or_parent_acl(
-            access_token,
-            uri.account_id,
-            uri.collection,
-            uri.resource,
-            None,
-            Acl::Read,
-            Acl::Read,
-        )
-        .await?;
 
         let archive = self
             .get_property::<Archive<AlignedBytes>>(
@@ -147,8 +133,16 @@ impl DavAclHandler for Server {
             }
             _ => unreachable!(),
         };
-        let account_ids = RoaringBitmap::from_iter(acls.iter().map(|a| u32::from(a.account_id)));
 
+        // Validate ACLs
+        if !access_token.is_member(uri.account_id)
+            && !acls.effective_acl(access_token).contains(Acl::Read)
+        {
+            return Err(DavError::Code(StatusCode::FORBIDDEN));
+        }
+
+        // Validate
+        let account_ids = RoaringBitmap::from_iter(acls.iter().map(|a| u32::from(a.account_id)));
         let mut response = MultiStatus::new(Vec::with_capacity(16));
 
         if !account_ids.is_empty() {
@@ -338,38 +332,19 @@ impl DavAclHandler for Server {
         }
     }
 
-    async fn validate_child_or_parent_acl(
+    async fn validate_acl(
         &self,
         access_token: &AccessToken,
         account_id: u32,
         collection: Collection,
         document_id: u32,
-        parent_id: Option<u32>,
-        child_acl: impl Into<Bitmap<Acl>> + Send,
-        parent_acl: impl Into<Bitmap<Acl>> + Send,
+        acl: impl Into<Bitmap<Acl>> + Send,
     ) -> crate::Result<()> {
         if access_token.is_member(account_id)
             || self
-                .has_access_to_document(
-                    access_token,
-                    account_id,
-                    collection,
-                    document_id,
-                    child_acl,
-                )
+                .has_access_to_document(access_token, account_id, collection, document_id, acl)
                 .await
                 .caused_by(trc::location!())?
-            || (parent_id.is_some()
-                && self
-                    .has_access_to_document(
-                        access_token,
-                        account_id,
-                        collection,
-                        parent_id.unwrap(),
-                        parent_acl,
-                    )
-                    .await
-                    .caused_by(trc::location!())?)
         {
             Ok(())
         } else {

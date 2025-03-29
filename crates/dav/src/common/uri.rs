@@ -105,10 +105,10 @@ impl DavUriResource for Server {
     async fn map_uri_resource(&self, uri: OwnedUri<'_>) -> trc::Result<Option<DocumentUri>> {
         if let Some(resource) = uri.resource {
             if let Some(resource) = self
-                .fetch_dav_hierarchy(uri.account_id, uri.collection)
+                .fetch_dav_resources(uri.account_id, uri.collection)
                 .await
                 .caused_by(trc::location!())?
-                .files
+                .paths
                 .by_name(resource)
             {
                 Ok(Some(DocumentUri {

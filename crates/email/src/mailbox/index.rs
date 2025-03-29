@@ -18,13 +18,13 @@ use super::{ArchivedMailbox, Mailbox};
 impl IndexableObject for Mailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::Name.into(),
                 value: self.name.to_lowercase().into(),
             },
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::Role.into(),
-                value: self.role.as_str().unwrap_or_default().into(),
+                value: self.role.as_str().into(),
             },
             IndexValue::Tag {
                 field: Property::Role.into(),
@@ -34,17 +34,17 @@ impl IndexableObject for Mailbox {
                     vec![]
                 },
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::ParentId.into(),
                 value: self.parent_id.into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::SortOrder.into(),
-                value: self.sort_order,
+                value: self.sort_order.into(),
             },
-            IndexValue::U32List {
+            IndexValue::IndexList {
                 field: Property::IsSubscribed.into(),
-                value: (&self.subscribers).into(),
+                value: self.subscribers.iter().map(Into::into).collect::<Vec<_>>(),
             },
             IndexValue::Acl {
                 value: (&self.acls).into(),
@@ -57,13 +57,13 @@ impl IndexableObject for Mailbox {
 impl IndexableObject for &ArchivedMailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::Name.into(),
                 value: self.name.to_lowercase().into(),
             },
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::Role.into(),
-                value: self.role.as_str().unwrap_or_default().into(),
+                value: self.role.as_str().into(),
             },
             IndexValue::Tag {
                 field: Property::Role.into(),
@@ -73,22 +73,17 @@ impl IndexableObject for &ArchivedMailbox {
                     vec![]
                 },
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::ParentId.into(),
-                value: u32::from(self.parent_id).into(),
+                value: self.parent_id.into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::SortOrder.into(),
-                value: self.sort_order.as_ref().map(u32::from),
+                value: self.sort_order.into(),
             },
-            IndexValue::U32List {
+            IndexValue::IndexList {
                 field: Property::IsSubscribed.into(),
-                value: self
-                    .subscribers
-                    .iter()
-                    .map(u32::from)
-                    .collect::<Vec<_>>()
-                    .into(),
+                value: self.subscribers.iter().map(Into::into).collect::<Vec<_>>(),
             },
             IndexValue::Acl {
                 value: self

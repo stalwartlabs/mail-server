@@ -15,6 +15,7 @@ pub struct DavConfig {
     pub max_locks_per_user: usize,
     pub max_changes: usize,
     pub max_match_results: usize,
+    pub max_vcard_size: usize,
 }
 
 impl DavConfig {
@@ -37,6 +38,9 @@ impl DavConfig {
             max_match_results: config
                 .property("dav.limits.max-match-results")
                 .unwrap_or(1000),
+            max_vcard_size: config
+                .property("dav.limits.size.vcard")
+                .unwrap_or(512 * 1024),
         }
     }
 }

@@ -7,7 +7,6 @@
 use common::{Server, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    SerializeInfallible,
     query::Filter,
     write::{AlignedBytes, Archive, BatchBuilder},
 };
@@ -36,7 +35,7 @@ impl SieveScriptActivate for Server {
             .filter(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(Property::IsActive, 1u32.serialize())],
+                vec![Filter::eq(Property::IsActive, vec![1u8])],
             )
             .await?
             .results;

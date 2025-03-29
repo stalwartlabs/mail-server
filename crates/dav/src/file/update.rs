@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{
+    Server, auth::AccessToken, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder,
+};
 use dav_proto::{RequestHeaders, Return, schema::property::Rfc1123DateTime};
 use groupware::{
     file::{FileNode, FileProperties},
@@ -34,8 +36,6 @@ use crate::{
     file::DavFileResource,
 };
 
-use super::acl::FileAclRequestHandler;
-
 pub(crate) trait FileUpdateRequestHandler: Sync + Send {
     fn handle_file_update_request(
         &self,
@@ -61,16 +61,16 @@ impl FileUpdateRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource.account_id;
         let files = self
-            .fetch_dav_hierarchy(account_id, Collection::FileNode)
+            .fetch_dav_resources(account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource_name = resource
             .resource
             .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
-        if let Some(document_id) = files.files.by_name(resource_name).map(|r| r.document_id) {
+        if let Some(document_id) = files.paths.by_name(resource_name).map(|r| r.document_id) {
             // Update
-            let node_archive_ = self
+            let node_ = self
                 .get_property::<Archive<AlignedBytes>>(
                     account_id,
                     Collection::FileNode,
@@ -80,20 +80,20 @@ impl FileUpdateRequestHandler for Server {
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-            let node_archive = node_archive_
+            let node = node_
                 .to_unarchived::<FileNode>()
                 .caused_by(trc::location!())?;
-            let node = node_archive.inner;
 
             // Validate ACL
-            self.validate_file_acl(
-                access_token,
-                account_id,
-                node,
-                Acl::Modify,
-                Acl::ModifyItems,
-            )
-            .await?;
+            if !access_token.is_member(account_id)
+                && !node
+                    .inner
+                    .acls
+                    .effective_acl(access_token)
+                    .contains(Acl::Modify)
+            {
+                return Err(DavError::Code(StatusCode::FORBIDDEN));
+            }
 
             // Validate headers
             match self
@@ -104,7 +104,7 @@ impl FileUpdateRequestHandler for Server {
                         account_id,
                         collection: resource.collection,
                         document_id: Some(document_id),
-                        etag: node_archive_.etag().into(),
+                        etag: node.etag().into(),
                         path: resource_name,
                         ..Default::default()
                     }],
@@ -117,7 +117,7 @@ impl FileUpdateRequestHandler for Server {
                 Err(DavError::Code(StatusCode::PRECONDITION_FAILED))
                     if headers.ret == Return::Representation =>
                 {
-                    let file = node.file.as_ref().unwrap();
+                    let file = node.inner.file.as_ref().unwrap();
                     let contents = self
                         .blob_store()
                         .get_blob(file.blob_hash.0.as_slice(), 0..usize::MAX)
@@ -132,9 +132,9 @@ impl FileUpdateRequestHandler for Server {
                                 .map(|v| v.as_str())
                                 .unwrap_or("application/octet-stream"),
                         )
-                        .with_etag(node_archive_.etag())
+                        .with_etag(node.etag())
                         .with_last_modified(
-                            Rfc1123DateTime::new(i64::from(node.modified)).to_string(),
+                            Rfc1123DateTime::new(i64::from(node.inner.modified)).to_string(),
                         )
                         .with_header("Preference-Applied", "return=representation")
                         .with_binary_body(contents));
@@ -143,7 +143,7 @@ impl FileUpdateRequestHandler for Server {
             }
 
             // Verify that the node is a file
-            if let Some(file) = node.file.as_ref() {
+            if let Some(file) = node.inner.file.as_ref() {
                 if BlobHash::generate(&bytes).as_slice() == file.blob_hash.0.as_slice() {
                     return Ok(HttpResponse::new(StatusCode::OK));
                 }
@@ -153,7 +153,7 @@ impl FileUpdateRequestHandler for Server {
 
             // Validate quota
             let extra_bytes = (bytes.len() as u64)
-                .saturating_sub(u32::from(node.file.as_ref().unwrap().size) as u64);
+                .saturating_sub(u32::from(node.inner.file.as_ref().unwrap().size) as u64);
             if extra_bytes > 0 {
                 self.has_available_quota(
                     &self.get_resource_token(access_token, account_id).await?,
@@ -171,8 +171,7 @@ impl FileUpdateRequestHandler for Server {
 
             // Build node
             let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
-            let node = node_archive.to_deserialized().caused_by(trc::location!())?;
-            let mut new_node = node.inner.clone();
+            let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
             let new_file = new_node.file.as_mut().unwrap();
             new_file.blob_hash = blob_hash;
             new_file.media_type = headers.content_type.map(|v| v.to_string());

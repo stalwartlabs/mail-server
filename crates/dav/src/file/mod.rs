@@ -66,7 +66,7 @@ impl DavFileResource for DavResources {
     ) -> crate::Result<UriResource<u32, T>> {
         resource
             .resource
-            .and_then(|r| self.files.by_name(r))
+            .and_then(|r| self.paths.by_name(r))
             .map(|r| UriResource {
                 collection: resource.collection,
                 account_id: resource.account_id,
@@ -81,7 +81,7 @@ impl DavFileResource for DavResources {
     ) -> Option<(Option<T>, &'x str)> {
         let (parent, child) = if let Some((parent, child)) = resource.rsplit_once('/') {
             (
-                Some(self.files.by_name(parent).map(T::from_dav_resource)?),
+                Some(self.paths.by_name(parent).map(T::from_dav_resource)?),
                 child,
             )
         } else {
@@ -96,7 +96,7 @@ impl DavFileResource for DavResources {
         resource: &OwnedUri<'x>,
     ) -> crate::Result<UriResource<u32, (Option<T>, &'x str)>> {
         if let Some(r) = resource.resource {
-            if self.files.by_name(r).is_none() {
+            if self.paths.by_name(r).is_none() {
                 self.map_parent(r)
                     .map(|r| UriResource {
                         collection: resource.collection,

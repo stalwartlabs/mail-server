@@ -12,13 +12,15 @@ use super::{ArchivedSieveScript, SieveScript};
 impl IndexableObject for SieveScript {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::Name.into(),
                 value: self.name.to_lowercase().into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::IsActive.into(),
-                value: Some(self.is_active as u32),
+                value: if self.is_active { &[1u8] } else { &[0u8] }
+                    .as_slice()
+                    .into(),
             },
             IndexValue::Blob {
                 value: self.blob_hash.clone(),
@@ -34,13 +36,15 @@ impl IndexableAndSerializableObject for SieveScript {}
 impl IndexableObject for &ArchivedSieveScript {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Text {
+            IndexValue::Index {
                 field: Property::Name.into(),
                 value: self.name.to_lowercase().into(),
             },
-            IndexValue::U32 {
+            IndexValue::Index {
                 field: Property::IsActive.into(),
-                value: Some(self.is_active as u32),
+                value: if self.is_active { &[1u8] } else { &[0u8] }
+                    .as_slice()
+                    .into(),
             },
             IndexValue::Blob {
                 value: (&self.blob_hash).into(),

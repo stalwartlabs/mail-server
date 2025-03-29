@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use common::{DavResource, DavResourceId, DavResources, Server};
-use jmap_proto::types::{collection::Collection, property::Property};
+use jmap_proto::types::collection::Collection;
 use store::{
     Deserialize, IndexKey, IterateParams, SerializeInfallible, U32_LEN, ahash::AHashMap,
     write::key::DeserializeBigEndian,
@@ -15,10 +15,10 @@ use store::{
 use trc::AddContext;
 use utils::bimap::IdBimap;
 
-use crate::file::FileNode;
+use crate::{DavName, IDX_NAME, file::FileNode};
 
 pub trait DavHierarchy: Sync + Send {
-    fn fetch_dav_hierarchy(
+    fn fetch_dav_resources(
         &self,
         account_id: u32,
         collection: Collection,
@@ -26,7 +26,7 @@ pub trait DavHierarchy: Sync + Send {
 }
 
 impl DavHierarchy for Server {
-    async fn fetch_dav_hierarchy(
+    async fn fetch_dav_resources(
         &self,
         account_id: u32,
         collection: Collection,
@@ -65,20 +65,14 @@ impl DavHierarchy for Server {
     }
 }
 
-#[derive(Default)]
-struct DavTempResource {
-    name: String,
-    parent_id: Vec<u32>,
-}
-
 async fn build_hierarchy(
     server: &Server,
     account_id: u32,
     collection: Collection,
 ) -> trc::Result<DavResources> {
     let collection = u8::from(collection);
-    let mut containers: AHashMap<u32, DavTempResource> = AHashMap::with_capacity(16);
-    let mut resources: AHashMap<u32, DavTempResource> = AHashMap::with_capacity(16);
+    let mut containers: AHashMap<u32, String> = AHashMap::with_capacity(16);
+    let mut resources: AHashMap<u32, Vec<DavName>> = AHashMap::with_capacity(16);
 
     server
         .store()
@@ -88,14 +82,14 @@ async fn build_hierarchy(
                     account_id,
                     collection,
                     document_id: 0,
-                    field: 0,
+                    field: IDX_NAME,
                     key: 0u32.serialize(),
                 },
                 IndexKey {
                     account_id,
                     collection: collection + 1,
                     document_id: u32::MAX,
-                    field: u8::MAX,
+                    field: IDX_NAME,
                     key: u32::MAX.serialize(),
                 },
             )
@@ -110,24 +104,17 @@ async fn build_hierarchy(
                     .get(U32_LEN)
                     .copied()
                     .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
-                let key_property = key
-                    .get(U32_LEN + 1)
-                    .copied()
-                    .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
 
-                let resource = if key_collection == collection {
-                    containers.entry(document_id).or_default()
+                if key_collection == collection {
+                    containers.insert(
+                        document_id,
+                        std::str::from_utf8(value)
+                            .map_err(|_| trc::Error::corrupted_key(key, None, trc::location!()))?
+                            .to_string(),
+                    );
                 } else {
-                    resources.entry(document_id).or_default()
-                };
-
-                if key_property == u8::from(Property::Value) {
-                    resource.name = std::str::from_utf8(value)
-                        .map_err(|_| trc::Error::corrupted_key(key, None, trc::location!()))?
-                        .to_string();
-                } else if key_property == u8::from(Property::ParentId) {
-                    resource.parent_id.push(
-                        u32::deserialize(value)
+                    resources.entry(document_id).or_default().push(
+                        DavName::deserialize(value)
                             .map_err(|_| trc::Error::corrupted_key(key, None, trc::location!()))?,
                     );
                 }
@@ -139,21 +126,21 @@ async fn build_hierarchy(
         .caused_by(trc::location!())?;
 
     let mut files = DavResources {
-        files: IdBimap::with_capacity(containers.len() + resources.len()),
+        paths: IdBimap::with_capacity(containers.len() + resources.len()),
         size: std::mem::size_of::<DavResources>() as u64,
         modseq: None,
     };
 
-    for (document_id, resource) in resources {
-        for parent_id in resource.parent_id {
-            if let Some(container) = containers.get(&parent_id) {
-                let name = format!("{}/{}", container.name, resource.name);
+    for (document_id, dav_names) in resources {
+        for dav_name in dav_names {
+            if let Some(container) = containers.get(&dav_name.parent_id) {
+                let name = format!("{}/{}", container, dav_name.name);
                 files.size += (std::mem::size_of::<u32>()
                     + std::mem::size_of::<String>()
                     + name.len()) as u64;
-                files.files.insert(DavResource {
+                files.paths.insert(DavResource {
                     document_id,
-                    parent_id: parent_id.into(),
+                    parent_id: dav_name.parent_id.into(),
                     name,
                     size: 0,
                     is_container: false,
@@ -163,14 +150,13 @@ async fn build_hierarchy(
         }
     }
 
-    for (document_id, container) in containers {
-        files.size += (std::mem::size_of::<u32>()
-            + std::mem::size_of::<String>()
-            + container.name.len()) as u64;
-        files.files.insert(DavResource {
+    for (document_id, name) in containers {
+        files.size +=
+            (std::mem::size_of::<u32>() + std::mem::size_of::<String>() + name.len()) as u64;
+        files.paths.insert(DavResource {
             document_id,
             parent_id: None,
-            name: container.name,
+            name,
             size: 0,
             is_container: true,
             hierarchy_sequence: 0,
@@ -186,7 +172,7 @@ async fn build_file_hierarchy(server: &Server, account_id: u32) -> trc::Result<D
         .await
         .caused_by(trc::location!())?;
     let mut files = DavResources {
-        files: IdBimap::with_capacity(list.len()),
+        paths: IdBimap::with_capacity(list.len()),
         size: std::mem::size_of::<DavResources>() as u64,
         modseq: None,
     };
@@ -195,7 +181,7 @@ async fn build_file_hierarchy(server: &Server, account_id: u32) -> trc::Result<D
         files.size += (std::mem::size_of::<u32>()
             + std::mem::size_of::<String>()
             + expanded.name.len()) as u64;
-        files.files.insert(DavResource {
+        files.paths.insert(DavResource {
             document_id: expanded.document_id,
             parent_id: expanded.parent_id,
             name: expanded.name,

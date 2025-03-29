@@ -9,7 +9,9 @@ pub mod index;
 use calcard::vcard::VCard;
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
-use store::{SERIALIZE_OBJ_15_V1, SerializedVersion};
+use store::{SERIALIZE_OBJ_15_V1, SERIALIZE_OBJ_16_V1, SerializedVersion};
+
+use crate::DavName;
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -24,6 +26,8 @@ pub struct AddressBook {
     pub subscribers: Vec<u32>,
     pub dead_properties: DeadProperty,
     pub acls: Vec<AclGrant>,
+    pub created: i64,
+    pub modified: i64,
 }
 
 pub enum AddressBookRight {
@@ -38,13 +42,12 @@ pub enum AddressBookRight {
 )]
 #[rkyv(derive(Debug))]
 pub struct ContactCard {
-    pub name: String,
+    pub names: Vec<DavName>,
     pub display_name: Option<String>,
-    pub addressbook_ids: Vec<u32>,
     pub card: VCard,
     pub dead_properties: DeadProperty,
-    pub created: u64,
-    pub updated: u64,
+    pub created: i64,
+    pub modified: i64,
     pub size: u32,
 }
 
@@ -76,5 +79,11 @@ impl From<AddressBookRight> for Acl {
 impl SerializedVersion for AddressBook {
     fn serialize_version() -> u8 {
         SERIALIZE_OBJ_15_V1
+    }
+}
+
+impl SerializedVersion for ContactCard {
+    fn serialize_version() -> u8 {
+        SERIALIZE_OBJ_16_V1
     }
 }
