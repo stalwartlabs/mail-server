@@ -39,14 +39,10 @@ use mail_builder::{
     mime::{BodyPart, MimePart},
 };
 use mail_parser::MessageParser;
-use store::{
-    ahash::AHashSet,
-    roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder},
-};
+use store::{ahash::AHashSet, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 
-use crate::{JmapMethods, blob::download::BlobDownload, changes::state::StateManager};
+use crate::{JmapMethods, blob::download::BlobDownload};
 use std::future::Future;
 
 use super::headers::{BuildHeader, ValueToHeader};
@@ -110,6 +106,7 @@ impl EmailSet for Server {
                 (None, None, None)
             };
 
+        let mut last_change_id = None;
         let will_destroy = request.unwrap_destroy();
 
         // Obtain quota
@@ -743,6 +740,7 @@ impl EmailSet for Server {
                 .await
             {
                 Ok(message) => {
+                    last_change_id = message.change_id.into();
                     response.created.insert(id, message.into());
                 }
                 Err(err) if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) => {
@@ -757,7 +755,9 @@ impl EmailSet for Server {
         }
 
         // Process updates
-        let mut changes = ChangeLogBuilder::new();
+        let mut batch = BatchBuilder::new();
+        let mut changed_mailboxes = AHashSet::new();
+        let mut will_update = Vec::with_capacity(request.update.as_ref().map_or(0, |u| u.len()));
         'update: for (id, object) in request.unwrap_update() {
             // Make sure id won't be destroyed
             if will_destroy.contains(&id) {
@@ -768,12 +768,7 @@ impl EmailSet for Server {
             // Obtain message data
             let document_id = id.document_id();
             let data_ = match self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Email,
-                    document_id,
-                    &Property::Value,
-                )
+                .get_archive(account_id, Collection::Email, document_id)
                 .await?
             {
                 Some(data) => data,
@@ -853,19 +848,6 @@ impl EmailSet for Server {
                 );
                 continue 'update;
             }
-
-            // Prepare write batch
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Email)
-                .update_document(document_id);
-            if changes.change_id == u64::MAX {
-                changes.change_id = self.assign_change_id(account_id)?;
-            }
-            new_data.change_id = changes.change_id;
-            let mut changed_mailboxes = AHashSet::new();
-            changes.log_update(Collection::Email, id);
 
             // Process keywords
             if has_keyword_changes {
@@ -966,32 +948,47 @@ impl EmailSet for Server {
                 }
             }
 
-            // Log mailbox changes
-            for mailbox_id in changed_mailboxes {
-                changes.log_child_update(Collection::Mailbox, mailbox_id);
-            }
+            // Update change id
+            new_data.change_id = batch.change_id();
+            last_change_id = new_data.change_id.into();
 
             // Write changes
             batch
+                .with_account_id(account_id)
+                .with_collection(Collection::Email)
+                .update_document(document_id)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(data)
                         .with_changes(new_data),
                 )
-                .caused_by(trc::location!())?;
+                .caused_by(trc::location!())?
+                .commit_point();
+            will_update.push(id);
+        }
 
-            match self.core.storage.data.write(batch.build()).await {
+        if !batch.is_empty() {
+            // Log mailbox changes
+            for parent_id in changed_mailboxes {
+                batch.log_child_update(Collection::Mailbox, parent_id);
+            }
+
+            match self.commit_batch(batch).await {
                 Ok(_) => {
                     // Add to updated list
-                    response.updated.append(id, None);
+                    for id in will_update {
+                        response.updated.append(id, None);
+                    }
                 }
                 Err(err) if err.is_assertion_failure() => {
-                    response.not_updated.append(
-                        id,
-                        SetError::forbidden().with_description(
-                            "Another process modified this message, please try again.",
-                        ),
-                    );
+                    for id in will_update {
+                        response.not_updated.append(
+                            id,
+                            SetError::forbidden().with_description(
+                                "Another process modified this message, please try again.",
+                            ),
+                        );
+                    }
                 }
                 Err(err) => {
                     return Err(err.caused_by(trc::location!()));
@@ -1044,11 +1041,14 @@ impl EmailSet for Server {
 
             if !destroy_ids.is_empty() {
                 // Batch delete (tombstone) messages
-                let (change, not_destroyed) =
-                    self.emails_tombstone(account_id, destroy_ids).await?;
-
-                // Merge changes
-                changes.merge(change);
+                let mut batch = BatchBuilder::new();
+                let not_destroyed = self
+                    .emails_tombstone(account_id, &mut batch, destroy_ids)
+                    .await?;
+                if !batch.is_empty() {
+                    last_change_id = batch.change_id().into();
+                    self.commit_batch(batch).await.caused_by(trc::location!())?;
+                }
 
                 // Mark messages that were not found as not destroyed (this should not occur in practice)
                 if !not_destroyed.is_empty() {
@@ -1070,21 +1070,19 @@ impl EmailSet for Server {
         }
 
         // Update state
-        if !changes.is_empty() || !response.created.is_empty() {
-            let new_state = if !changes.is_empty() {
-                self.commit_changes(account_id, changes).await?.into()
-            } else {
-                self.get_state(account_id, Collection::Email).await?
-            };
-            if let State::Exact(change_id) = &new_state {
-                response.state_change = StateChange::new(account_id)
-                    .with_change(DataType::Email, *change_id)
-                    .with_change(DataType::Mailbox, *change_id)
-                    .with_change(DataType::Thread, *change_id)
-                    .into();
+        if let Some(change_id) = last_change_id {
+            if response.updated.is_empty() && response.destroyed.is_empty() {
+                // Message ingest does not broadcast state changes
+                self.broadcast_state_change(
+                    StateChange::new(account_id)
+                        .with_change(DataType::Email, change_id)
+                        .with_change(DataType::Mailbox, change_id)
+                        .with_change(DataType::Thread, change_id),
+                )
+                .await;
             }
 
-            response.new_state = new_state.into();
+            response.new_state = State::Exact(change_id).into();
         }
 
         Ok(response)

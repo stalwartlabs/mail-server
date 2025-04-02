@@ -8,7 +8,7 @@ use crate::backend::MAX_TOKEN_LENGTH;
 
 use super::{BitmapClass, BitmapHash};
 
-impl<T> BitmapClass<T> {
+impl BitmapClass {
     pub fn word(token: impl AsRef<[u8]>, field: impl Into<u8>) -> Self {
         BitmapClass::Text {
             field: field.into(),

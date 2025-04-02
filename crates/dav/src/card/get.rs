@@ -9,8 +9,7 @@ use dav_proto::{RequestHeaders, schema::property::Rfc1123DateTime};
 use groupware::{contact::ContactCard, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
-use store::write::{AlignedBytes, Archive};
+use jmap_proto::types::{acl::Acl, collection::Collection};
 use trc::AddContext;
 
 use crate::{
@@ -78,12 +77,7 @@ impl CardGetRequestHandler for Server {
 
         // Fetch card
         let card_ = self
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::ContactCard,
-                resource.document_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::ContactCard, resource.document_id)
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

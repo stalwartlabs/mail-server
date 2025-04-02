@@ -18,10 +18,7 @@ use jmap_proto::{
 };
 use mail_parser::decoders::html::html_to_text;
 use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer};
-use store::{
-    backend::MAX_TOKEN_LENGTH,
-    write::{AlignedBytes, Archive},
-};
+use store::backend::MAX_TOKEN_LENGTH;
 use trc::AddContext;
 use utils::BlobHash;
 
@@ -125,11 +122,11 @@ impl EmailSearchSnippet for Server {
                 continue;
             }
             let metadata_ = match self
-                .get_property::<Archive<AlignedBytes>>(
+                .get_archive_by_property(
                     account_id,
                     Collection::Email,
                     document_id,
-                    &Property::BodyStructure,
+                    Property::BodyStructure,
                 )
                 .await?
             {

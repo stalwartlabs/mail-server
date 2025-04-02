@@ -61,7 +61,7 @@ impl SmtpSpool for Server {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         Message {
-            queue_id: self.inner.data.queue_id_gen.generate().unwrap_or(created),
+            queue_id: self.inner.data.queue_id_gen.generate(),
             span_id,
             created,
             return_path: return_path.into(),
@@ -220,7 +220,7 @@ impl Message {
             },
             0u32.serialize(),
         );
-        if let Err(err) = server.store().write(batch.build()).await {
+        if let Err(err) = server.store().write(batch.build_all()).await {
             trc::error!(
                 err.details("Failed to write to store.")
                     .span_id(session_id)
@@ -326,7 +326,7 @@ impl Message {
                 },
             );
 
-        if let Err(err) = server.store().write(batch.build()).await {
+        if let Err(err) = server.store().write(batch.build_all()).await {
             trc::error!(
                 err.details("Failed to write to store.")
                     .span_id(session_id)
@@ -458,7 +458,7 @@ impl Message {
             },
         );
 
-        if let Err(err) = server.store().write(batch.build()).await {
+        if let Err(err) = server.store().write(batch.build_all()).await {
             trc::error!(
                 err.details("Failed to save changes.")
                     .span_id(span_id)
@@ -501,7 +501,7 @@ impl Message {
             )))
             .clear(ValueClass::Queue(QueueClass::Message(self.queue_id)));
 
-        if let Err(err) = server.store().write(batch.build()).await {
+        if let Err(err) = server.store().write(batch.build_all()).await {
             trc::error!(
                 err.details("Failed to write to update queue.")
                     .span_id(self.span_id)

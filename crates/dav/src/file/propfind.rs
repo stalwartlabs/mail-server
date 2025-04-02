@@ -19,7 +19,7 @@ use dav_proto::schema::{
 use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
+use jmap_proto::types::{acl::Acl, collection::Collection};
 use store::{
     ahash::AHashMap,
     dispatch::DocumentSet,
@@ -268,7 +268,6 @@ impl HandleFilePropFindRequest for Server {
             account_id,
             Collection::FileNode,
             &paths,
-            Property::Value,
             |document_id, node_| {
                 let node = node_.unarchive::<FileNode>().caused_by(trc::location!())?;
                 let item = paths.items.get(&document_id).unwrap();

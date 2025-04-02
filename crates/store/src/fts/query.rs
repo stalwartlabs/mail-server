@@ -18,9 +18,7 @@ use crate::{
     BitmapKey, IterateParams, Store, U32_LEN, ValueKey,
     backend::MAX_TOKEN_LENGTH,
     fts::FtsFilter,
-    write::{
-        BitmapHash, DynamicDocumentId, ValueClass, hash::TokenType, key::DeserializeBigEndian,
-    },
+    write::{BitmapHash, ValueClass, hash::TokenType, key::DeserializeBigEndian},
 };
 
 use super::postings::SerializedPostings;
@@ -324,7 +322,7 @@ impl Store {
             }
 
             // Fetch from store
-            let key_len = ValueClass::FtsIndex::<DynamicDocumentId>(*token).serialized_size();
+            let key_len = ValueClass::FtsIndex(*token).serialized_size();
             self.iterate(
                 IterateParams::new(
                     ValueKey {

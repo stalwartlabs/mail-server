@@ -30,6 +30,7 @@ use dns::DnsManagement;
 use enterprise::telemetry::TelemetryApi;
 use hyper::{Method, StatusCode, header};
 use jmap::api::{ToJmapHttpResponse, ToRequestError};
+use jmap_proto::error::request::RequestError;
 use log::LogManagement;
 use mail_parser::DateTime;
 use principal::PrincipalManager;
@@ -276,6 +277,10 @@ impl ToManageHttpResponse for &trc::Error {
                 HttpResponse::new(StatusCode::UNAUTHORIZED)
                     .with_header(header::WWW_AUTHENTICATE, "Bearer realm=\"Stalwart Server\"")
                     .with_header(header::WWW_AUTHENTICATE, "Basic realm=\"Stalwart Server\"")
+                    .with_content_type("application/problem+json")
+                    .with_text_body(
+                        serde_json::to_string(&RequestError::unauthorized()).unwrap_or_default(),
+                    )
             }
             _ => self.to_request_error().into_http_response(),
         }

@@ -139,7 +139,7 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                     builder
                         .with_account_id(0)
                         .with_collection(COLLECTION_ID)
-                        .create_document_with_id(document_id as u32);
+                        .create_document(document_id as u32);
                     for (pos, field) in record.iter().enumerate() {
                         let field_id = pos as u8;
                         match FIELDS_OPTIONS[pos] {
@@ -186,10 +186,7 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                         }
                     }
 
-                    documents
-                        .lock()
-                        .unwrap()
-                        .push((builder.build(), fts_builder));
+                    documents.lock().unwrap().push((builder, fts_builder));
                 });
             }
         });
@@ -206,11 +203,11 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
         let mut fts_chunk = Vec::new();
 
         print!("Inserting... ",);
-        for (batch, fts_batch) in batches {
+        for (mut batch, fts_batch) in batches {
             let chunk_instance = Instant::now();
             chunk.push({
                 let db = db.clone();
-                tokio::spawn(async move { db.write(batch).await })
+                tokio::spawn(async move { db.write(batch.build_all()).await })
             });
             fts_chunk.push({
                 let fts_store = fts_store.clone();

@@ -864,7 +864,7 @@ impl Core {
                     .send(Op::Family(Family::Bitmap))
                     .failed("Failed to send family");
 
-                let mut bitmaps: AHashMap<(u32, u8), AHashSet<BitmapClass<u32>>> = AHashMap::new();
+                let mut bitmaps: AHashMap<(u32, u8), AHashSet<BitmapClass>> = AHashMap::new();
 
                 for subspace in [
                     SUBSPACE_BITMAP_ID,

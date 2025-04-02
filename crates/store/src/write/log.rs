@@ -9,11 +9,8 @@ use utils::{codec::leb128::Leb128Vec, map::vec_map::VecMap};
 
 use crate::SerializeInfallible;
 
-use super::{IntoOperations, MaybeDynamicValue, Operation, SerializeWithId};
-
 #[derive(Default, Debug)]
-pub struct ChangeLogBuilder {
-    pub change_id: u64,
+pub(crate) struct ChangeLogBuilder {
     pub changes: VecMap<u8, Changes>,
 }
 
@@ -26,98 +23,43 @@ pub struct Changes {
 }
 
 impl ChangeLogBuilder {
-    pub fn new() -> ChangeLogBuilder {
-        ChangeLogBuilder {
-            change_id: u64::MAX,
-            changes: VecMap::default(),
-        }
+    pub fn serialize(self) -> impl Iterator<Item = (u8, Vec<u8>)> {
+        self.changes
+            .into_iter()
+            .map(|(collection, changes)| (collection, changes.serialize()))
     }
 
-    pub fn with_change_id(change_id: u64) -> ChangeLogBuilder {
-        ChangeLogBuilder {
-            change_id,
-            changes: VecMap::default(),
-        }
-    }
-
-    pub fn log_insert(&mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) {
+    pub fn log_insert(&mut self, collection: impl Into<u8>, prefix: Option<u32>, document_id: u32) {
         self.changes
             .get_mut_or_insert(collection.into())
             .inserts
-            .insert(jmap_id.into());
+            .insert(build_id(prefix, document_id));
     }
 
-    pub fn log_update(&mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) {
+    pub fn log_update(&mut self, collection: impl Into<u8>, prefix: Option<u32>, document_id: u32) {
         self.changes
             .get_mut_or_insert(collection.into())
             .updates
-            .insert(jmap_id.into());
+            .insert(build_id(prefix, document_id));
     }
 
-    pub fn log_child_update(&mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) {
+    pub fn log_delete(&mut self, collection: impl Into<u8>, prefix: Option<u32>, document_id: u32) {
+        let changes = self.changes.get_mut_or_insert(collection.into());
+        let id = build_id(prefix, document_id);
+        changes.updates.remove(&id);
+        changes.deletes.insert(id);
+    }
+
+    pub fn log_child_update(
+        &mut self,
+        collection: impl Into<u8>,
+        prefix: Option<u32>,
+        document_id: u32,
+    ) {
         self.changes
             .get_mut_or_insert(collection.into())
             .child_updates
-            .insert(jmap_id.into());
-    }
-
-    pub fn log_delete(&mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) {
-        self.changes
-            .get_mut_or_insert(collection.into())
-            .deletes
-            .insert(jmap_id.into());
-    }
-
-    pub fn log_move(
-        &mut self,
-        collection: impl Into<u8>,
-        old_jmap_id: impl Into<u64>,
-        new_jmap_id: impl Into<u64>,
-    ) {
-        let change = self.changes.get_mut_or_insert(collection.into());
-        change.deletes.insert(old_jmap_id.into());
-        change.inserts.insert(new_jmap_id.into());
-    }
-
-    pub fn with_log_insert(mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) -> Self {
-        self.log_insert(collection, jmap_id);
-        self
-    }
-
-    pub fn with_log_move(
-        mut self,
-        collection: impl Into<u8>,
-        old_jmap_id: impl Into<u64>,
-        new_jmap_id: impl Into<u64>,
-    ) -> Self {
-        self.log_move(collection, old_jmap_id, new_jmap_id);
-        self
-    }
-
-    pub fn with_log_update(mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) -> Self {
-        self.log_update(collection, jmap_id);
-        self
-    }
-
-    pub fn with_log_delete(mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) -> Self {
-        self.log_delete(collection, jmap_id);
-        self
-    }
-
-    pub fn merge(&mut self, changes: ChangeLogBuilder) {
-        for (collection, other) in changes.changes {
-            let this = self.changes.get_mut_or_insert(collection);
-            for id in other.deletes {
-                if !this.inserts.remove(&id) {
-                    this.deletes.insert(id);
-                }
-                this.updates.remove(&id);
-                this.child_updates.remove(&id);
-            }
-            this.inserts.extend(other.inserts);
-            this.updates.extend(other.updates);
-            this.child_updates.extend(other.child_updates);
-        }
+            .insert(build_id(prefix, document_id));
     }
 
     pub fn is_empty(&self) -> bool {
@@ -125,16 +67,12 @@ impl ChangeLogBuilder {
     }
 }
 
-impl IntoOperations for ChangeLogBuilder {
-    fn build(self, batch: &mut super::BatchBuilder) -> trc::Result<()> {
-        batch.with_change_id(self.change_id);
-        for (collection, changes) in self.changes {
-            batch.ops.push(Operation::Collection { collection });
-            batch.ops.push(Operation::Log {
-                set: changes.serialize().into(),
-            });
-        }
-        Ok(())
+#[inline(always)]
+fn build_id(prefix: Option<u32>, document_id: u32) -> u64 {
+    if let Some(prefix) = prefix {
+        ((prefix as u64) << 32) | document_id as u64
+    } else {
+        document_id as u64
     }
 }
 
@@ -211,26 +149,5 @@ impl SerializeInfallible for Changes {
             }
         }
         buf
-    }
-}
-
-impl From<Changes> for MaybeDynamicValue {
-    fn from(changes: Changes) -> Self {
-        MaybeDynamicValue::Static(changes.serialize())
-    }
-}
-
-pub struct LogInsert();
-
-impl SerializeWithId for LogInsert {
-    fn serialize_with_id(&self, ids: &super::AssignedIds) -> trc::Result<Vec<u8>> {
-        ids.last_document_id()
-            .map(|id| Changes::insert([id]).serialize())
-    }
-}
-
-impl From<LogInsert> for MaybeDynamicValue {
-    fn from(value: LogInsert) -> Self {
-        MaybeDynamicValue::Dynamic(Box::new(value))
     }
 }

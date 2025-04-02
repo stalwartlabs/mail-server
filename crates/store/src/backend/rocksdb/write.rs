@@ -11,25 +11,21 @@ use std::{
 };
 
 use rand::Rng;
-use roaring::RoaringBitmap;
 use rocksdb::{
-    BoundColumnFamily, Direction, ErrorKind, IteratorMode, OptimisticTransactionDB,
+    BoundColumnFamily, ErrorKind, IteratorMode, OptimisticTransactionDB,
     OptimisticTransactionOptions, WriteOptions,
 };
 
 use super::{CF_INDEXES, CF_LOGS, CfHandle, RocksDbStore, into_error};
 use crate::{
-    BitmapKey, Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER,
-    SUBSPACE_QUOTA, U32_LEN,
+    Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER,
+    SUBSPACE_QUOTA,
     backend::deserialize_i64_le,
-    write::{
-        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
-        RandomAvailableId, ValueOp, key::DeserializeBigEndian,
-    },
+    write::{AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueOp},
 };
 
 impl RocksDbStore {
-    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
+    pub(crate) async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
         let db = self.db.clone();
 
         self.spawn_worker(move || {
@@ -128,7 +124,7 @@ struct RocksDBTransaction<'x> {
     cf_indexes: Arc<BoundColumnFamily<'x>>,
     cf_logs: Arc<BoundColumnFamily<'x>>,
     txn_opts: OptimisticTransactionOptions,
-    batch: &'x Batch,
+    batch: &'x Batch<'x>,
 }
 
 enum CommitError {
@@ -141,14 +137,13 @@ impl RocksDBTransaction<'_> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
-        let mut change_id = u64::MAX;
         let mut result = AssignedIds::default();
 
         let txn = self
             .db
             .transaction_opt(&WriteOptions::default(), &self.txn_opts);
 
-        for op in &self.batch.ops {
+        for op in self.batch.ops {
             match op {
                 Operation::AccountId {
                     account_id: account_id_,
@@ -165,19 +160,13 @@ impl RocksDBTransaction<'_> {
                 } => {
                     document_id = *document_id_;
                 }
-                Operation::ChangeId {
-                    change_id: change_id_,
-                } => {
-                    change_id = *change_id_;
-                }
                 Operation::Value { class, op } => {
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
                     let cf = self.db.subspace_handle(class.subspace(collection));
 
                     match op {
                         ValueOp::Set(value) => {
-                            txn.put_cf(&cf, &key, value.resolve(&result)?.as_ref())?;
+                            txn.put_cf(&cf, &key, value)?;
                         }
                         ValueOp::AtomicAdd(by) => {
                             txn.merge_cf(&cf, &key, &by.to_le_bytes()[..])?;
@@ -220,46 +209,8 @@ impl RocksDBTransaction<'_> {
                     }
                 }
                 Operation::Bitmap { class, set } => {
-                    let is_document_id = matches!(class, BitmapClass::DocumentIds);
                     let cf = self.db.subspace_handle(class.subspace());
-                    if *set && is_document_id && document_id == u32::MAX {
-                        let begin = BitmapKey {
-                            account_id,
-                            collection,
-                            class: BitmapClass::DocumentIds,
-                            document_id: 0,
-                        }
-                        .serialize(0);
-                        let end = BitmapKey {
-                            account_id,
-                            collection,
-                            class: BitmapClass::DocumentIds,
-                            document_id: u32::MAX,
-                        }
-                        .serialize(0);
-                        let key_len = begin.len();
-                        let mut found_ids = RoaringBitmap::new();
-
-                        for row in
-                            txn.iterator_cf(&cf, IteratorMode::From(&begin, Direction::Forward))
-                        {
-                            let (key, _) = row?;
-                            let key = key.as_ref();
-                            if key.len() == key_len
-                                && key >= begin.as_slice()
-                                && key <= end.as_slice()
-                            {
-                                found_ids.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-                            } else {
-                                break;
-                            }
-                        }
-
-                        document_id = found_ids.random_available_id();
-                        result.push_document_id(document_id);
-                    }
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
 
                     if *set {
                         txn.put_cf(&cf, &key, [])?;
@@ -267,22 +218,25 @@ impl RocksDBTransaction<'_> {
                         txn.delete_cf(&cf, &key)?;
                     }
                 }
-                Operation::Log { set } => {
+                Operation::Log {
+                    collection,
+                    change_id,
+                    set,
+                } => {
                     let key = LogKey {
                         account_id,
-                        collection,
-                        change_id,
+                        collection: *collection,
+                        change_id: *change_id,
                     }
                     .serialize(0);
 
-                    txn.put_cf(&self.cf_logs, &key, set.resolve(&result)?.as_ref())?;
+                    txn.put_cf(&self.cf_logs, &key, set)?;
                 }
                 Operation::AssertValue {
                     class,
                     assert_value,
                 } => {
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
                     let cf = self.db.subspace_handle(class.subspace(collection));
 
                     let matches = txn

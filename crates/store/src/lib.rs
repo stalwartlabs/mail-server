@@ -15,6 +15,7 @@ pub mod write;
 
 pub use ahash;
 pub use blake3;
+pub use gxhash;
 pub use parking_lot;
 pub use rand;
 pub use rkyv;
@@ -99,7 +100,7 @@ pub trait Key: Sync + Send + Clone {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BitmapKey<T: AsRef<BitmapClass<u32>>> {
+pub struct BitmapKey<T: AsRef<BitmapClass>> {
     pub account_id: u32,
     pub collection: u8,
     pub class: T,
@@ -123,7 +124,7 @@ pub struct IndexKeyPrefix {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ValueKey<T: AsRef<ValueClass<u32>>> {
+pub struct ValueKey<T: AsRef<ValueClass>> {
     pub account_id: u32,
     pub collection: u8,
     pub document_id: u32,

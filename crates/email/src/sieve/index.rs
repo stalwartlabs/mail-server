@@ -25,6 +25,7 @@ impl IndexableObject for SieveScript {
             IndexValue::Blob {
                 value: self.blob_hash.clone(),
             },
+            IndexValue::LogChild { prefix: None },
             IndexValue::Quota { used: self.size },
         ]
         .into_iter()
@@ -49,6 +50,7 @@ impl IndexableObject for &ArchivedSieveScript {
             IndexValue::Blob {
                 value: (&self.blob_hash).into(),
             },
+            IndexValue::LogChild { prefix: None },
             IndexValue::Quota {
                 used: u32::from(self.size),
             },

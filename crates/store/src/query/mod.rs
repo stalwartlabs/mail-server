@@ -38,7 +38,7 @@ pub enum Filter {
         text: String,
         tokenize: bool,
     },
-    InBitmap(BitmapClass<u32>),
+    InBitmap(BitmapClass),
     DocumentSet(RoaringBitmap),
     And,
     Or,
@@ -152,7 +152,7 @@ impl Filter {
         }
     }
 
-    pub fn is_in_bitmap(field: impl Into<u8>, value: impl Into<TagValue<u32>>) -> Self {
+    pub fn is_in_bitmap(field: impl Into<u8>, value: impl Into<TagValue>) -> Self {
         Self::InBitmap(BitmapClass::Tag {
             field: field.into(),
             value: value.into(),
@@ -191,7 +191,7 @@ impl Comparator {
     }
 }
 
-impl BitmapKey<BitmapClass<u32>> {
+impl BitmapKey<BitmapClass> {
     pub fn document_ids(account_id: u32, collection: impl Into<u8>) -> Self {
         BitmapKey {
             account_id,
@@ -222,7 +222,7 @@ impl BitmapKey<BitmapClass<u32>> {
         account_id: u32,
         collection: impl Into<u8>,
         field: impl Into<u8>,
-        value: impl Into<TagValue<u32>>,
+        value: impl Into<TagValue>,
     ) -> Self {
         BitmapKey {
             account_id,

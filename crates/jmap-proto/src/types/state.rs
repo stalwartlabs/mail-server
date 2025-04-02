@@ -42,6 +42,10 @@ impl StateChange {
         }
     }
 
+    pub fn set_change(&mut self, type_state: DataType, change_id: u64) {
+        self.types.push((type_state, change_id));
+    }
+
     pub fn with_change(mut self, type_state: DataType, change_id: u64) -> Self {
         if let Some((_, last_change_id)) = self.types.iter_mut().find(|(ts, _)| ts == &type_state) {
             *last_change_id = change_id;

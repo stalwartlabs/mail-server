@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::Server;
+use common::{Server, storage::index::ObjectIndexBuilder};
 use directory::{QueryBy, backend::internal::PrincipalField};
 use email::identity::{ArchivedEmailAddress, Identity};
 use jmap_proto::{
@@ -16,10 +16,9 @@ use jmap_proto::{
     },
 };
 use store::{
-    Serialize,
     rkyv::{option::ArchivedOption, vec::ArchivedVec},
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder},
+    write::BatchBuilder,
 };
 use trc::AddContext;
 use utils::sanitize_email;
@@ -85,12 +84,7 @@ impl IdentityGet for Server {
                 continue;
             }
             let _identity = if let Some(identity) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Identity,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::Identity, document_id)
                 .await?
             {
                 identity
@@ -174,8 +168,12 @@ impl IdentityGet for Server {
             .trim()
             .to_string();
         let has_many = num_emails > 1;
-        for (idx, email) in principal.iter_str(PrincipalField::Emails).enumerate() {
-            let document_id = idx as u32;
+        let mut next_document_id = self
+            .store()
+            .assign_document_ids(account_id, Collection::Identity, num_emails as u64)
+            .await
+            .caused_by(trc::location!())?;
+        for email in principal.iter_str(PrincipalField::Emails) {
             let email = sanitize_email(email).unwrap_or_default();
             if email.is_empty() {
                 continue;
@@ -187,24 +185,19 @@ impl IdentityGet for Server {
             } else {
                 name.clone()
             };
-            batch.create_document_with_id(document_id).set(
-                Property::Value,
-                Archiver::new(Identity {
+            let document_id = next_document_id;
+            next_document_id -= 1;
+            batch
+                .create_document(document_id)
+                .custom(ObjectIndexBuilder::<(), _>::new().with_changes(Identity {
                     name,
                     email,
                     ..Default::default()
-                })
-                .serialize()
-                .caused_by(trc::location!())?,
-            );
+                }))
+                .caused_by(trc::location!())?;
             identity_ids.insert(document_id);
         }
-        self.core
-            .storage
-            .data
-            .write(batch.build())
-            .await
-            .caused_by(trc::location!())?;
+        self.commit_batch(batch).await.caused_by(trc::location!())?;
 
         Ok(identity_ids)
     }

@@ -22,11 +22,8 @@ use imap_proto::{
     receiver::Request,
 };
 
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, property::Property, state::StateChange, type_state::DataType,
-    value::AclGrant,
-};
-use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
+use jmap_proto::types::{acl::Acl, collection::Collection, value::AclGrant};
+use store::write::{AlignedBytes, Archive, BatchBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -332,25 +329,12 @@ impl<T: SessionStream> Session<T> {
                         .with_current(current_mailbox),
                 )
                 .imap_ctx(&arguments.tag, trc::location!())?;
+
             if !batch.is_empty() {
                 data.server
-                    .store()
-                    .write(batch)
+                    .commit_batch(batch)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
-                let mut changes = ChangeLogBuilder::new();
-                changes.log_update(Collection::Mailbox, mailbox_id.mailbox_id);
-                let change_id = data
-                    .server
-                    .commit_changes(mailbox_id.account_id, changes)
-                    .await
-                    .imap_ctx(&arguments.tag, trc::location!())?;
-                data.server
-                    .broadcast_state_change(
-                        StateChange::new(mailbox_id.account_id)
-                            .with_change(DataType::Mailbox, change_id),
-                    )
-                    .await;
             }
 
             // Invalidate ACLs
@@ -439,12 +423,7 @@ impl<T: SessionStream> SessionData<T> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(values) = self
                 .server
-                .get_property::<Archive<AlignedBytes>>(
-                    mailbox.account_id,
-                    Collection::Mailbox,
-                    mailbox.mailbox_id,
-                    Property::Value,
-                )
+                .get_archive(mailbox.account_id, Collection::Mailbox, mailbox.mailbox_id)
                 .await
                 .caused_by(trc::location!())?
             {

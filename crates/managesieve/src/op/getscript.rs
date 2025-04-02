@@ -10,8 +10,7 @@ use common::listener::SessionStream;
 use directory::Permission;
 use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
-use jmap_proto::types::{blob::BlobSection, collection::Collection, property::Property};
-use store::write::{AlignedBytes, Archive};
+use jmap_proto::types::{blob::BlobSection, collection::Collection};
 use trc::AddContext;
 use utils::BlobHash;
 
@@ -37,12 +36,7 @@ impl<T: SessionStream> Session<T> {
         let document_id = self.get_script_id(account_id, &name).await?;
         let sieve_ = self
             .server
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::SieveScript,
-                document_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::SieveScript, document_id)
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {

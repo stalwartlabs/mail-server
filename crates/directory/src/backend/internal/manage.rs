@@ -7,10 +7,10 @@
 use ahash::{AHashMap, AHashSet};
 use jmap_proto::types::collection::Collection;
 use store::{
-    Deserialize, IterateParams, Serialize, Store, U32_LEN, ValueKey,
+    Deserialize, IterateParams, Serialize, SerializeInfallible, Store, U32_LEN, ValueKey,
     write::{
-        AssignedIds, BatchBuilder, DirectoryClass, MaybeDynamicId, MaybeDynamicValue,
-        SerializeWithId, ValueClass, assert::LegacyHashedValue, key::DeserializeBigEndian,
+        BatchBuilder, DirectoryClass, ValueClass, assert::LegacyHashedValue,
+        key::DeserializeBigEndian,
     },
 };
 use trc::AddContext;
@@ -141,6 +141,7 @@ impl ManageDirectory for Store {
     async fn get_or_create_principal_id(&self, name: &str, typ: Type) -> trc::Result<u32> {
         let mut try_count = 0;
         let name = name.to_lowercase();
+        let mut principal_id = None;
 
         loop {
             // Try to obtain ID
@@ -152,6 +153,17 @@ impl ManageDirectory for Store {
                 return Ok(principal_id);
             }
 
+            let principal_id = if let Some(principal_id) = principal_id {
+                principal_id
+            } else {
+                let principal_id_ = self
+                    .assign_document_ids(u32::MAX, Collection::Principal, 1)
+                    .await
+                    .caused_by(trc::location!())?;
+                principal_id = Some(principal_id_);
+                principal_id_
+            };
+
             // Write principal ID
             let name_key =
                 ValueClass::Directory(DirectoryClass::NameToId(name.as_bytes().to_vec()));
@@ -160,15 +172,21 @@ impl ManageDirectory for Store {
                 .with_account_id(u32::MAX)
                 .with_collection(Collection::Principal)
                 .assert_value(name_key.clone(), ())
-                .create_document()
-                .set(name_key, DynamicPrincipalInfo::new(typ, None))
+                .create_document(principal_id)
                 .set(
-                    ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Dynamic(0))),
+                    name_key,
+                    PrincipalInfo::new(principal_id, typ, None).serialize(),
+                )
+                .set(
+                    ValueClass::Directory(DirectoryClass::Principal(principal_id)),
                     Principal {
+                        id: principal_id,
                         typ,
                         ..Default::default()
                     }
-                    .with_field(PrincipalField::Name, name.to_string()),
+                    .with_field(PrincipalField::Name, name.to_string())
+                    .serialize()
+                    .caused_by(trc::location!())?,
                 );
 
             // Add default user role
@@ -176,26 +194,22 @@ impl ManageDirectory for Store {
                 batch
                     .set(
                         ValueClass::Directory(DirectoryClass::MemberOf {
-                            principal_id: MaybeDynamicId::Dynamic(0),
-                            member_of: MaybeDynamicId::Static(ROLE_USER),
+                            principal_id,
+                            member_of: ROLE_USER,
                         }),
                         vec![Type::Role as u8],
                     )
                     .set(
                         ValueClass::Directory(DirectoryClass::Members {
-                            principal_id: MaybeDynamicId::Static(ROLE_USER),
-                            has_member: MaybeDynamicId::Dynamic(0),
+                            principal_id: ROLE_USER,
+                            has_member: principal_id,
                         }),
                         vec![],
                     );
             }
 
-            match self
-                .write(batch.build())
-                .await
-                .and_then(|r| r.last_document_id())
-            {
-                Ok(principal_id) => {
+            match self.write(batch.build_all()).await {
+                Ok(_) => {
                     return Ok(principal_id);
                 }
                 Err(err) => {
@@ -442,13 +456,18 @@ impl ManageDirectory for Store {
         }
 
         // Write principal
+        let principal_id = self
+            .assign_document_ids(u32::MAX, Collection::Principal, 1)
+            .await
+            .caused_by(trc::location!())?;
+        principal.id = principal_id;
         let mut batch = BatchBuilder::new();
-        let pinfo_name = DynamicPrincipalInfo::new(principal.typ, tenant_id);
-        let pinfo_email = DynamicPrincipalInfo::new(principal.typ, None);
+        let pinfo_name = PrincipalInfo::new(principal_id, principal.typ, tenant_id);
+        let pinfo_email = PrincipalInfo::new(principal_id, principal.typ, None);
         batch
             .with_account_id(u32::MAX)
             .with_collection(Collection::Principal)
-            .create_document()
+            .create_document(principal_id)
             .assert_value(
                 ValueClass::Directory(DirectoryClass::NameToId(
                     principal.name().to_string().into_bytes(),
@@ -456,7 +475,7 @@ impl ManageDirectory for Store {
                 (),
             )
             .set(
-                ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Dynamic(0))),
+                ValueClass::Directory(DirectoryClass::Principal(principal_id)),
                 principal.serialize().caused_by(trc::location!())?,
             )
             .set(
@@ -466,7 +485,7 @@ impl ManageDirectory for Store {
                         .unwrap()
                         .into_bytes(),
                 )),
-                pinfo_name,
+                pinfo_name.serialize(),
             );
 
         // Write email to id mapping
@@ -477,7 +496,7 @@ impl ManageDirectory for Store {
             for email in emails {
                 batch.set(
                     ValueClass::Directory(DirectoryClass::EmailToId(email.into_bytes())),
-                    pinfo_email,
+                    pinfo_email.serialize(),
                 );
             }
         }
@@ -486,15 +505,15 @@ impl ManageDirectory for Store {
         for member_of in member_of {
             batch.set(
                 ValueClass::Directory(DirectoryClass::MemberOf {
-                    principal_id: MaybeDynamicId::Dynamic(0),
-                    member_of: MaybeDynamicId::Static(member_of.id),
+                    principal_id,
+                    member_of: member_of.id,
                 }),
                 vec![member_of.typ as u8],
             );
             batch.set(
                 ValueClass::Directory(DirectoryClass::Members {
-                    principal_id: MaybeDynamicId::Static(member_of.id),
-                    has_member: MaybeDynamicId::Dynamic(0),
+                    principal_id: member_of.id,
+                    has_member: principal_id,
                 }),
                 vec![],
             );
@@ -502,25 +521,24 @@ impl ManageDirectory for Store {
         for member in members {
             batch.set(
                 ValueClass::Directory(DirectoryClass::MemberOf {
-                    principal_id: MaybeDynamicId::Static(member.id),
-                    member_of: MaybeDynamicId::Dynamic(0),
+                    principal_id: member.id,
+                    member_of: principal_id,
                 }),
                 vec![principal.typ as u8],
             );
             batch.set(
                 ValueClass::Directory(DirectoryClass::Members {
-                    principal_id: MaybeDynamicId::Dynamic(0),
-                    has_member: MaybeDynamicId::Static(member.id),
+                    principal_id,
+                    has_member: member.id,
                 }),
                 vec![],
             );
         }
 
-        self.write(batch.build())
+        self.write(batch.build_all())
             .await
-            .and_then(|r| r.last_document_id())
-            .map(|id| CreatedPrincipal {
-                id,
+            .map(|_| CreatedPrincipal {
+                id: principal_id,
                 changed_principals,
             })
     }
@@ -698,9 +716,7 @@ impl ManageDirectory for Store {
                     .unwrap_or_default()
                     .into_bytes(),
             ))
-            .clear(DirectoryClass::Principal(MaybeDynamicId::Static(
-                principal_id,
-            )))
+            .clear(DirectoryClass::Principal(principal_id))
             .clear(DirectoryClass::UsedQuota(principal_id));
 
         if let Some(emails) = principal.take_str_array(PrincipalField::Emails) {
@@ -724,12 +740,12 @@ impl ManageDirectory for Store {
 
             // Remove memberOf
             batch.clear(DirectoryClass::MemberOf {
-                principal_id: MaybeDynamicId::Static(principal_id),
-                member_of: MaybeDynamicId::Static(member.principal_id),
+                principal_id,
+                member_of: member.principal_id,
             });
             batch.clear(DirectoryClass::Members {
-                principal_id: MaybeDynamicId::Static(member.principal_id),
-                has_member: MaybeDynamicId::Static(principal_id),
+                principal_id: member.principal_id,
+                has_member: principal_id,
             });
         }
 
@@ -754,16 +770,16 @@ impl ManageDirectory for Store {
 
             // Remove members
             batch.clear(DirectoryClass::MemberOf {
-                principal_id: MaybeDynamicId::Static(member_id),
-                member_of: MaybeDynamicId::Static(principal_id),
+                principal_id: member_id,
+                member_of: principal_id,
             });
             batch.clear(DirectoryClass::Members {
-                principal_id: MaybeDynamicId::Static(principal_id),
-                has_member: MaybeDynamicId::Static(member_id),
+                principal_id,
+                has_member: member_id,
             });
         }
 
-        self.write(batch.build())
+        self.write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
 
@@ -816,12 +832,8 @@ impl ManageDirectory for Store {
         // Prepare changes
         let mut batch = BatchBuilder::new();
         let mut pinfo_name =
-            PrincipalInfo::new(principal_id, principal_type, principal.inner.tenant())
-                .serialize()
-                .caused_by(trc::location!())?;
-        let pinfo_email = PrincipalInfo::new(principal_id, principal_type, None)
-            .serialize()
-            .caused_by(trc::location!())?;
+            PrincipalInfo::new(principal_id, principal_type, principal.inner.tenant()).serialize();
+        let pinfo_email = PrincipalInfo::new(principal_id, principal_type, None).serialize();
         let update_principal = !changes.is_empty()
             && !changes.iter().all(|c| {
                 matches!(
@@ -835,9 +847,7 @@ impl ManageDirectory for Store {
 
         if update_principal {
             batch.assert_value(
-                ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
-                    principal_id,
-                ))),
+                ValueClass::Directory(DirectoryClass::Principal(principal_id)),
                 &principal,
             );
         }
@@ -986,8 +996,7 @@ impl ManageDirectory for Store {
                         principal.inner.set(PrincipalField::Tenant, tenant_info.id);
                         pinfo_name =
                             PrincipalInfo::new(principal_id, principal_type, tenant_info.id.into())
-                                .serialize()
-                                .caused_by(trc::location!())?;
+                                .serialize();
                     } else if let Some(tenant_id) = principal.inner.tenant() {
                         // Update quota
                         if let Some(used_quota) = used_quota {
@@ -998,9 +1007,8 @@ impl ManageDirectory for Store {
                         changed_principals.add_change(principal_id, principal_type, change.field);
 
                         principal.inner.remove(PrincipalField::Tenant);
-                        pinfo_name = PrincipalInfo::new(principal_id, principal_type, None)
-                            .serialize()
-                            .caused_by(trc::location!())?;
+                        pinfo_name =
+                            PrincipalInfo::new(principal_id, principal_type, None).serialize();
                     } else {
                         continue;
                     }
@@ -1240,15 +1248,15 @@ impl ManageDirectory for Store {
 
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::MemberOf {
-                                    principal_id: MaybeDynamicId::Static(principal_id),
-                                    member_of: MaybeDynamicId::Static(member_info.id),
+                                    principal_id,
+                                    member_of: member_info.id,
                                 }),
                                 vec![member_info.typ as u8],
                             );
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::Members {
-                                    principal_id: MaybeDynamicId::Static(member_info.id),
-                                    has_member: MaybeDynamicId::Static(principal_id),
+                                    principal_id: member_info.id,
+                                    has_member: principal_id,
                                 }),
                                 vec![],
                             );
@@ -1274,12 +1282,12 @@ impl ManageDirectory for Store {
                             );
 
                             batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(principal_id),
-                                member_of: MaybeDynamicId::Static(member.principal_id),
+                                principal_id,
+                                member_of: member.principal_id,
                             }));
                             batch.clear(ValueClass::Directory(DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(member.principal_id),
-                                has_member: MaybeDynamicId::Static(principal_id),
+                                principal_id: member.principal_id,
+                                has_member: principal_id,
                             }));
                         }
                     }
@@ -1318,16 +1326,16 @@ impl ManageDirectory for Store {
 
                         batch.set(
                             ValueClass::Directory(DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(principal_id),
-                                member_of: MaybeDynamicId::Static(member_info.id),
+                                principal_id,
+                                member_of: member_info.id,
                             }),
                             vec![member_info.typ as u8],
                         );
 
                         batch.set(
                             ValueClass::Directory(DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(member_info.id),
-                                has_member: MaybeDynamicId::Static(principal_id),
+                                principal_id: member_info.id,
+                                has_member: principal_id,
                             }),
                             vec![],
                         );
@@ -1368,13 +1376,13 @@ impl ManageDirectory for Store {
                                 );
 
                                 batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
-                                    principal_id: MaybeDynamicId::Static(principal_id),
-                                    member_of: MaybeDynamicId::Static(member_info.id),
+                                    principal_id,
+                                    member_of: member_info.id,
                                 }));
 
                                 batch.clear(ValueClass::Directory(DirectoryClass::Members {
-                                    principal_id: MaybeDynamicId::Static(member_info.id),
-                                    has_member: MaybeDynamicId::Static(principal_id),
+                                    principal_id: member_info.id,
+                                    has_member: principal_id,
                                 }));
 
                                 member_of.remove(pos);
@@ -1425,15 +1433,15 @@ impl ManageDirectory for Store {
 
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::MemberOf {
-                                    principal_id: MaybeDynamicId::Static(member_info.id),
-                                    member_of: MaybeDynamicId::Static(principal_id),
+                                    principal_id: member_info.id,
+                                    member_of: principal_id,
                                 }),
                                 vec![principal_type as u8],
                             );
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::Members {
-                                    principal_id: MaybeDynamicId::Static(principal_id),
-                                    has_member: MaybeDynamicId::Static(member_info.id),
+                                    principal_id,
+                                    has_member: member_info.id,
                                 }),
                                 vec![],
                             );
@@ -1461,12 +1469,12 @@ impl ManageDirectory for Store {
                             }
 
                             batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(*member_id),
-                                member_of: MaybeDynamicId::Static(principal_id),
+                                principal_id: *member_id,
+                                member_of: principal_id,
                             }));
                             batch.clear(ValueClass::Directory(DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(principal_id),
-                                has_member: MaybeDynamicId::Static(*member_id),
+                                principal_id,
+                                has_member: *member_id,
                             }));
                         }
                     }
@@ -1511,15 +1519,15 @@ impl ManageDirectory for Store {
 
                         batch.set(
                             ValueClass::Directory(DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(member_info.id),
-                                member_of: MaybeDynamicId::Static(principal_id),
+                                principal_id: member_info.id,
+                                member_of: principal_id,
                             }),
                             vec![principal_type as u8],
                         );
                         batch.set(
                             ValueClass::Directory(DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(principal_id),
-                                has_member: MaybeDynamicId::Static(member_info.id),
+                                principal_id,
+                                has_member: member_info.id,
                             }),
                             vec![],
                         );
@@ -1547,12 +1555,12 @@ impl ManageDirectory for Store {
                                 );
 
                                 batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
-                                    principal_id: MaybeDynamicId::Static(member_info.id),
-                                    member_of: MaybeDynamicId::Static(principal_id),
+                                    principal_id: member_info.id,
+                                    member_of: principal_id,
                                 }));
                                 batch.clear(ValueClass::Directory(DirectoryClass::Members {
-                                    principal_id: MaybeDynamicId::Static(principal_id),
-                                    has_member: MaybeDynamicId::Static(member_info.id),
+                                    principal_id,
+                                    has_member: member_info.id,
                                 }));
                                 members.remove(pos);
                                 break;
@@ -1726,14 +1734,12 @@ impl ManageDirectory for Store {
 
         if update_principal {
             batch.set(
-                ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
-                    principal_id,
-                ))),
+                ValueClass::Directory(DirectoryClass::Principal(principal_id)),
                 principal.inner.serialize().caused_by(trc::location!())?,
             );
         }
 
-        self.write(batch.build())
+        self.write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
 
@@ -2150,20 +2156,6 @@ impl PrincipalField {
     }
 }
 
-impl SerializeWithId for Principal {
-    fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>> {
-        let mut principal = self.clone();
-        principal.id = ids.last_document_id().caused_by(trc::location!())?;
-        principal.serialize()
-    }
-}
-
-impl From<Principal> for MaybeDynamicValue {
-    fn from(principal: Principal) -> Self {
-        MaybeDynamicValue::Dynamic(Box::new(principal))
-    }
-}
-
 impl<'x> UpdatePrincipal<'x> {
     pub fn by_id(id: u32) -> Self {
         Self {
@@ -2239,18 +2231,6 @@ fn validate_member_of(
         ))
     } else {
         Ok(())
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct DynamicPrincipalInfo {
-    typ: Type,
-    tenant: Option<u32>,
-}
-
-impl DynamicPrincipalInfo {
-    pub fn new(typ: Type, tenant: Option<u32>) -> Self {
-        Self { typ, tenant }
     }
 }
 
@@ -2385,20 +2365,6 @@ impl ChangedPrincipal {
         if !self.member_change && member_change {
             self.member_change = true;
         }
-    }
-}
-
-impl SerializeWithId for DynamicPrincipalInfo {
-    fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>> {
-        ids.last_document_id().and_then(|principal_id| {
-            PrincipalInfo::new(principal_id, self.typ, self.tenant).serialize()
-        })
-    }
-}
-
-impl From<DynamicPrincipalInfo> for MaybeDynamicValue {
-    fn from(value: DynamicPrincipalInfo) -> Self {
-        MaybeDynamicValue::Dynamic(Box::new(value))
     }
 }
 

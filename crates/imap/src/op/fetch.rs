@@ -37,13 +37,11 @@ use jmap_proto::types::{
     id::Id,
     keyword::{ArchivedKeyword, Keyword},
     property::Property,
-    state::StateChange,
-    type_state::DataType,
 };
 use store::{
     query::log::{Change, Query},
     rkyv::rend::u16_le,
-    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder},
+    write::BatchBuilder,
 };
 
 use super::{FromModSeq, ImapContext};
@@ -288,9 +286,8 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
 
-        let mut update_batches = Vec::new();
-
         // Process each message
+        let mut batch = BatchBuilder::new();
         let mut ids = ids
             .into_iter()
             .map(|(id, imap_id)| (imap_id.seqnum, imap_id.uid, id))
@@ -300,30 +297,21 @@ impl<T: SessionStream> SessionData<T> {
             .iter()
             .map(|id| trc::Value::from(id.2))
             .collect::<Vec<_>>();
-        let change_id = self
-            .server
-            .generate_snowflake_id()
-            .imap_ctx(&arguments.tag, trc::location!())?;
 
         for (seqnum, uid, id) in ids {
             // Obtain attributes and keywords
             let (metadata_, data_) = if let (Some(email), Some(keywords)) = (
                 self.server
-                    .get_property::<Archive<AlignedBytes>>(
+                    .get_archive_by_property(
                         account_id,
                         Collection::Email,
                         id,
-                        &Property::BodyStructure,
+                        Property::BodyStructure,
                     )
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
                 self.server
-                    .get_property::<Archive<AlignedBytes>>(
-                        account_id,
-                        Collection::Email,
-                        id,
-                        &Property::Value,
-                    )
+                    .get_archive(account_id, Collection::Email, id)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
             ) {
@@ -551,10 +539,8 @@ impl<T: SessionStream> SessionData<T> {
                     .deserialize()
                     .imap_ctx(&arguments.tag, trc::location!())?;
                 new_data.keywords.push(Keyword::Seen);
-                new_data.change_id = change_id;
-                let thread_id = new_data.thread_id;
+                new_data.change_id = batch.change_id();
 
-                let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Email)
@@ -564,46 +550,28 @@ impl<T: SessionStream> SessionData<T> {
                             .with_current(data)
                             .with_changes(new_data),
                     )
-                    .imap_ctx(&arguments.tag, trc::location!())?;
-
-                update_batches.push((Id::from_parts(thread_id, id), batch));
+                    .imap_ctx(&arguments.tag, trc::location!())?
+                    .commit_point();
             }
         }
 
         // Set Seen ids
-        if !update_batches.is_empty() {
-            let mut changelog = ChangeLogBuilder::with_change_id(change_id);
-            for (id, batch) in update_batches {
-                match self
-                    .server
-                    .store()
-                    .write(batch)
-                    .await
-                    .imap_ctx(&arguments.tag, trc::location!())
-                {
-                    Ok(_) => {
-                        changelog.log_update(Collection::Email, id);
-                    }
-                    Err(err) => {
-                        if !err.is_assertion_failure() {
-                            return Err(err.id(arguments.tag));
-                        }
+        if !batch.is_empty() {
+            let change_id = batch.change_id();
+            match self
+                .server
+                .commit_batch(batch)
+                .await
+                .imap_ctx(&arguments.tag, trc::location!())
+            {
+                Ok(_) => {
+                    modseq = change_id.into();
+                }
+                Err(err) => {
+                    if !err.is_assertion_failure() {
+                        return Err(err.id(arguments.tag));
                     }
                 }
-            }
-            if !changelog.is_empty() {
-                // Write changes
-                let change_id = self
-                    .server
-                    .commit_changes(account_id, changelog)
-                    .await
-                    .imap_ctx(&arguments.tag, trc::location!())?;
-                modseq = change_id.into();
-                self.server
-                    .broadcast_state_change(
-                        StateChange::new(account_id).with_change(DataType::Email, change_id),
-                    )
-                    .await;
             }
         }
 

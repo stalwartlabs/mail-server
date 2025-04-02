@@ -27,10 +27,7 @@ use mail_parser::decoders::html::html_to_text;
 use std::future::Future;
 use store::{
     Serialize,
-    write::{
-        AlignedBytes, Archive, BatchBuilder, LegacyBincode,
-        log::{Changes, LogInsert},
-    },
+    write::{BatchBuilder, LegacyBincode},
 };
 use trc::AddContext;
 
@@ -119,9 +116,7 @@ impl VacationResponseSet for Server {
 
         // Prepare write batch
         let mut batch = BatchBuilder::new();
-        let change_id = self.assign_change_id(account_id)?;
         batch
-            .with_change_id(change_id)
             .with_account_id(account_id)
             .with_collection(Collection::SieveScript);
 
@@ -133,12 +128,7 @@ impl VacationResponseSet for Server {
 
             let (mut sieve, prev_sieve) = if let Some(document_id) = document_id {
                 let prev_sieve = self
-                    .get_property::<Archive<AlignedBytes>>(
-                        account_id,
-                        Collection::SieveScript,
-                        document_id,
-                        Property::Value,
-                    )
+                    .get_archive(account_id, Collection::SieveScript, document_id)
                     .await?
                     .ok_or_else(|| {
                         trc::StoreEvent::NotFound
@@ -261,14 +251,18 @@ impl VacationResponseSet for Server {
                 .with_tenant_id(&resource_token);
 
             // Update id
-            if let Some(document_id) = document_id {
-                batch
-                    .update_document(document_id)
-                    .clear(Property::EmailIds)
-                    .log(Changes::update([document_id]));
+            let document_id = if let Some(document_id) = document_id {
+                batch.update_document(document_id);
+                document_id
             } else {
-                batch.create_document().log(LogInsert());
-            }
+                let document_id = self
+                    .store()
+                    .assign_document_ids(account_id, Collection::SieveScript, 1)
+                    .await
+                    .caused_by(trc::location!())?;
+                batch.create_document(document_id);
+                document_id
+            };
 
             // Create sieve script only if there are changes
             if build_script {
@@ -285,25 +279,19 @@ impl VacationResponseSet for Server {
 
             // Write changes
             batch.custom(obj).caused_by(trc::location!())?;
-            let document_id = if !batch.is_empty() {
-                let ids = self
-                    .store()
-                    .write(batch)
-                    .await
-                    .caused_by(trc::location!())?;
-                response.new_state = Some(change_id.into());
-                match document_id {
-                    Some(document_id) => document_id,
-                    None => ids.last_document_id()?,
-                }
-            } else {
-                document_id.unwrap_or(u32::MAX)
-            };
+            if !batch.is_empty() {
+                response.new_state = Some(batch.change_id().into());
+                self.commit_batch(batch).await.caused_by(trc::location!())?;
+            }
 
             // Deactivate other sieve scripts
             if !was_active && is_active {
-                self.sieve_activate_script(account_id, document_id.into())
+                let (change_id, _) = self
+                    .sieve_activate_script(account_id, document_id.into())
                     .await?;
+                if change_id > 0 {
+                    response.new_state = Some(change_id.into());
+                }
             }
 
             // Add result
@@ -320,9 +308,8 @@ impl VacationResponseSet for Server {
                 if id.is_singleton() {
                     if let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await?
                     {
-                        self.sieve_script_delete(&resource_token, document_id, false)
+                        self.sieve_script_delete(&resource_token, document_id, false, &mut batch)
                             .await?;
-                        batch.log(Changes::delete([document_id]));
                         response.destroyed.push(id);
                         continue;
                     }
@@ -333,11 +320,8 @@ impl VacationResponseSet for Server {
 
             // Write changes
             if !batch.is_empty() {
-                self.store()
-                    .write(batch)
-                    .await
-                    .caused_by(trc::location!())?;
-                response.new_state = Some(change_id.into());
+                response.new_state = Some(batch.change_id().into());
+                self.commit_batch(batch).await.caused_by(trc::location!())?;
             }
         }
 

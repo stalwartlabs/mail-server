@@ -13,16 +13,10 @@ use dav_proto::{
 use groupware::{DavName, IDX_CARD_UID, contact::ContactCard, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, property::Property, state::StateChange, type_state::DataType,
-};
+use jmap_proto::types::{acl::Acl, collection::Collection};
 use store::{
     query::Filter,
-    write::{
-        AlignedBytes, Archive, BatchBuilder,
-        log::{Changes, LogInsert},
-        now,
-    },
+    write::{BatchBuilder, now},
 };
 use trc::AddContext;
 
@@ -33,6 +27,7 @@ use crate::{
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
+    file::DavFileResource,
 };
 
 pub(crate) trait CardUpdateRequestHandler: Sync + Send {
@@ -115,12 +110,7 @@ impl CardUpdateRequestHandler for Server {
 
             // Update
             let card_ = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::FileNode,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::FileNode, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -188,7 +178,6 @@ impl CardUpdateRequestHandler for Server {
             }
 
             // Build node
-            let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
             let mut new_card = card
                 .deserialize::<ContactCard>()
                 .caused_by(trc::location!())?;
@@ -199,15 +188,9 @@ impl CardUpdateRequestHandler for Server {
             // Prepare write batch
             let mut batch = BatchBuilder::new();
             batch
-                .with_change_id(change_id)
                 .with_account_id(account_id)
-                .with_collection(Collection::AddressBook)
-                .log(Changes::child_update(
-                    card.inner.names.iter().map(|n| n.parent_id.to_native()),
-                ))
                 .with_collection(Collection::ContactCard)
                 .update_document(document_id)
-                .log(Changes::update([document_id]))
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(card)
@@ -216,24 +199,10 @@ impl CardUpdateRequestHandler for Server {
                 )
                 .caused_by(trc::location!())?;
             let etag = batch.etag();
-            self.store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-
-            // Broadcast state change
-            self.broadcast_state_change(
-                StateChange::new(account_id)
-                    .with_change(DataType::ContactCard, change_id)
-                    .with_change(DataType::AddressBook, change_id),
-            )
-            .await;
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
-        } else if let Some((parent, name)) = resource_name
-            .rsplit_once('/')
-            .and_then(|(parent, name)| resources.paths.by_name(parent).map(|parent| (parent, name)))
-        {
+        } else if let Some((Some(parent), name)) = resources.map_parent(resource_name) {
             if !parent.is_container {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
@@ -308,7 +277,6 @@ impl CardUpdateRequestHandler for Server {
             }
 
             // Build node
-            let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
             let now = now();
             let card = ContactCard {
                 names: vec![DavName {
@@ -324,14 +292,15 @@ impl CardUpdateRequestHandler for Server {
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
+            let document_id = self
+                .store()
+                .assign_document_ids(account_id, Collection::ContactCard, 1)
+                .await
+                .caused_by(trc::location!())?;
             batch
-                .with_change_id(change_id)
                 .with_account_id(account_id)
-                .with_collection(Collection::AddressBook)
-                .log(Changes::child_update([parent.document_id]))
                 .with_collection(Collection::ContactCard)
-                .create_document()
-                .log(LogInsert())
+                .create_document(document_id)
                 .custom(
                     ObjectIndexBuilder::<(), _>::new()
                         .with_changes(card)
@@ -339,18 +308,7 @@ impl CardUpdateRequestHandler for Server {
                 )
                 .caused_by(trc::location!())?;
             let etag = batch.etag();
-            self.store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-
-            // Broadcast state change
-            self.broadcast_state_change(
-                StateChange::new(account_id)
-                    .with_change(DataType::ContactCard, change_id)
-                    .with_change(DataType::AddressBook, change_id),
-            )
-            .await;
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
         } else {

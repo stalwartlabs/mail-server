@@ -10,8 +10,8 @@ use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
-use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
+use jmap_proto::types::collection::Collection;
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -60,12 +60,7 @@ impl<T: SessionStream> Session<T> {
         // Obtain script values
         let script = self
             .server
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::SieveScript,
-                document_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::SieveScript, document_id)
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {
@@ -91,14 +86,7 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
         if !batch.is_empty() {
             self.server
-                .store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-            let mut changelog = ChangeLogBuilder::new();
-            changelog.log_update(Collection::SieveScript, document_id);
-            self.server
-                .commit_changes(account_id, changelog)
+                .commit_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
         }

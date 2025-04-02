@@ -9,11 +9,11 @@ use std::slice::IterMut;
 use jmap_proto::types::property::Property;
 use store::{
     Serialize, SerializedVersion,
-    write::{Archive, Archiver, BatchBuilder, MaybeDynamicId, TagValue, ValueClass},
+    write::{Archive, Archiver, BatchBuilder, TagValue, ValueClass},
 };
 
 pub struct TagManager<
-    T: Into<TagValue<MaybeDynamicId>>
+    T: Into<TagValue>
         + PartialEq
         + Clone
         + Sync
@@ -40,7 +40,7 @@ enum LastTag {
 }
 
 impl<
-    T: Into<TagValue<MaybeDynamicId>>
+    T: Into<TagValue>
         + PartialEq
         + Clone
         + Sync

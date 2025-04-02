@@ -260,7 +260,7 @@ impl UndeleteApi for Server {
                     self.core
                         .storage
                         .data
-                        .write(batch.build())
+                        .write(batch.build_all())
                         .await
                         .caused_by(trc::location!())?;
                 }

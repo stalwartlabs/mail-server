@@ -93,7 +93,7 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
         let listener = TcpListener::bind("127.0.0.1:8821")
             .await
             .unwrap_or_else(|e| {
-                panic!("Failed to bind mock Milter server to 127.0.0.1:8821: {e}");
+                panic!("Failed to bind mock Webhooks server to 127.0.0.1:8821: {e}");
             });
         let mut rx_ = rx.clone();
 
@@ -113,7 +113,7 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
                                     async move {
                                         // Verify HMAC signature
                                         let key = hmac::Key::new(hmac::HMAC_SHA256, "ovos-moles".as_bytes());
-                                        let body = fetch_body(&mut req, 1024 * 1024, 0).await.unwrap();
+                                        let body = fetch_body(&mut req, usize::MAX, 0).await.unwrap();
                                         let tag = STANDARD.decode(req.headers().get("X-Signature").unwrap().to_str().unwrap()).unwrap();
                                         hmac::verify(&key, &body, &tag).expect("Invalid signature");
 

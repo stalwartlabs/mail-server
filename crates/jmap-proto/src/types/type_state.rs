@@ -7,7 +7,7 @@
 use std::fmt::Display;
 
 use serde::Serialize;
-use utils::map::bitmap::BitmapItem;
+use utils::map::bitmap::{BitmapItem, ShortId};
 
 use crate::parser::{JsonObjectParser, json::Parser};
 
@@ -167,6 +167,29 @@ impl TryFrom<&str> for DataType {
             0x004e_444d => Ok(DataType::Mdn),
             0x0061_746f_7551 => Ok(DataType::Quota),
             0x0074_7069_7263_5365_7665_6953 => Ok(DataType::SieveScript),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<ShortId> for DataType {
+    type Error = ();
+
+    fn try_from(value: ShortId) -> Result<Self, Self::Error> {
+        match value.0 {
+            0 => Ok(DataType::Email),
+            1 => Ok(DataType::Mailbox),
+            2 => Ok(DataType::Thread),
+            3 => Ok(DataType::Identity),
+            4 => Ok(DataType::EmailSubmission),
+            5 => Ok(DataType::SieveScript),
+            6 => Ok(DataType::PushSubscription),
+            8 => Ok(DataType::Calendar),
+            9 => Ok(DataType::CalendarEvent),
+            10 => Ok(DataType::CalendarEventNotification),
+            11 => Ok(DataType::AddressBook),
+            12 => Ok(DataType::ContactCard),
+            13 => Ok(DataType::FileNode),
             _ => Err(()),
         }
     }

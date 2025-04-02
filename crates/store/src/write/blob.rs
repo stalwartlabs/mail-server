@@ -215,9 +215,9 @@ impl Store {
         let mut batch = BatchBuilder::new();
         let mut last_account_id = u32::MAX;
         for (account_id, op) in delete_keys.into_iter() {
-            if batch.ops.len() >= 1000 {
+            if batch.len() >= 1000 {
                 last_account_id = u32::MAX;
-                self.write(batch.build())
+                self.write(batch.build_all())
                     .await
                     .caused_by(trc::location!())?;
                 batch = BatchBuilder::new();
@@ -226,13 +226,13 @@ impl Store {
                 batch.with_account_id(account_id);
                 last_account_id = account_id;
             }
-            batch.ops.push(Operation::Value {
+            batch.any_op(Operation::Value {
                 class: ValueClass::Blob(op),
                 op: ValueOp::Clear,
-            })
+            });
         }
         if !batch.is_empty() {
-            self.write(batch.build())
+            self.write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
         }
@@ -290,8 +290,8 @@ impl Store {
         batch.with_account_id(account_id);
         let mut last_collection = u8::MAX;
         for (collection, document_id, op) in delete_keys.into_iter() {
-            if batch.ops.len() >= 1000 {
-                self.write(batch.build())
+            if batch.len() >= 1000 {
+                self.write(batch.build_all())
                     .await
                     .caused_by(trc::location!())?;
                 batch = BatchBuilder::new();
@@ -303,13 +303,13 @@ impl Store {
                 last_collection = collection;
             }
             batch.update_document(document_id);
-            batch.ops.push(Operation::Value {
+            batch.any_op(Operation::Value {
                 class: ValueClass::Blob(op),
                 op: ValueOp::Clear,
             });
         }
         if !batch.is_empty() {
-            self.write(batch.build())
+            self.write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
         }

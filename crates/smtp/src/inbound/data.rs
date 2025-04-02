@@ -363,13 +363,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Add Received header
-        let message_id = self
-            .server
-            .inner
-            .data
-            .queue_id_gen
-            .generate()
-            .unwrap_or_else(now);
+        let message_id = self.server.inner.data.queue_id_gen.generate();
         let mut headers = Vec::with_capacity(64);
         if self
             .server

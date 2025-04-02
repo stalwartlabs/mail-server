@@ -15,10 +15,7 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use store::{
-    BlobClass,
-    write::{AlignedBytes, Archive},
-};
+use store::BlobClass;
 use trc::AddContext;
 
 use crate::changes::state::StateManager;
@@ -76,12 +73,7 @@ impl SieveScriptGet for Server {
                 continue;
             }
             let sieve_ = if let Some(sieve) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::SieveScript,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::SieveScript, document_id)
                 .await?
             {
                 sieve

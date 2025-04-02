@@ -30,15 +30,16 @@ use jmap_proto::{
         collection::Collection,
         id::Id,
         property::Property,
+        state::State,
         value::{MaybePatchValue, Object, SetValue, Value},
     },
 };
 use smtp::{
-    core::{Session, SessionData, State},
+    core::{Session, SessionData},
     queue::spool::SmtpSpool,
 };
 use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
-use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder, now};
+use store::write::{BatchBuilder, now};
 use trc::AddContext;
 use utils::{BlobHash, map::vec_map::VecMap, sanitize_email};
 
@@ -74,8 +75,8 @@ impl EmailSubmissionSet for Server {
         let will_destroy = request.unwrap_destroy();
 
         // Process creates
-        let mut changes = ChangeLogBuilder::new();
         let mut success_email_ids = HashMap::new();
+        let mut batch = BatchBuilder::new();
         for (id, object) in request.unwrap_create() {
             match self
                 .send_message(account_id, &response, instance, object)
@@ -89,19 +90,18 @@ impl EmailSubmissionSet for Server {
                     );
 
                     // Insert record
-                    let mut batch = BatchBuilder::new();
+                    let document_id = self
+                        .store()
+                        .assign_document_ids(account_id, Collection::EmailSubmission, 1)
+                        .await
+                        .caused_by(trc::location!())?;
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::EmailSubmission)
-                        .create_document()
+                        .create_document(document_id)
                         .custom(ObjectIndexBuilder::<(), _>::new().with_changes(submission))
-                        .caused_by(trc::location!())?;
-                    let document_id = self
-                        .store()
-                        .write_expect_id(batch)
-                        .await
-                        .caused_by(trc::location!())?;
-                    changes.log_insert(Collection::EmailSubmission, document_id);
+                        .caused_by(trc::location!())?
+                        .commit_point();
                     response.created(id, document_id);
                 }
                 Err(err) => {
@@ -121,12 +121,7 @@ impl EmailSubmissionSet for Server {
             // Obtain submission
             let document_id = id.document_id();
             let submission = if let Some(submission) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::EmailSubmission,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::EmailSubmission, document_id)
                 .await?
             {
                 submission
@@ -177,7 +172,6 @@ impl EmailSubmissionSet for Server {
                         // Update record
                         let mut new_submission = submission.inner.clone();
                         new_submission.undo_status = UndoStatus::Canceled;
-                        let mut batch = BatchBuilder::new();
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::EmailSubmission)
@@ -187,12 +181,8 @@ impl EmailSubmissionSet for Server {
                                     .with_current(submission)
                                     .with_changes(new_submission),
                             )
-                            .caused_by(trc::location!())?;
-                        self.store()
-                            .write(batch)
-                            .await
-                            .caused_by(trc::location!())?;
-                        changes.log_update(Collection::EmailSubmission, document_id);
+                            .caused_by(trc::location!())?
+                            .commit_point();
                         response.updated.append(id, None);
                     } else {
                         response.not_updated.append(
@@ -225,16 +215,10 @@ impl EmailSubmissionSet for Server {
         for id in will_destroy {
             let document_id = id.document_id();
             if let Some(submission) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::EmailSubmission,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::EmailSubmission, document_id)
                 .await?
             {
                 // Update record
-                let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::EmailSubmission)
@@ -246,12 +230,8 @@ impl EmailSubmissionSet for Server {
                                 .caused_by(trc::location!())?,
                         ),
                     )
-                    .caused_by(trc::location!())?;
-                self.store()
-                    .write(batch)
-                    .await
-                    .caused_by(trc::location!())?;
-                changes.log_delete(Collection::EmailSubmission, document_id);
+                    .caused_by(trc::location!())?
+                    .commit_point();
                 response.destroyed.push(id);
             } else {
                 response.not_destroyed.append(id, SetError::not_found());
@@ -259,8 +239,10 @@ impl EmailSubmissionSet for Server {
         }
 
         // Write changes
-        if !changes.is_empty() {
-            response.new_state = Some(self.commit_changes(account_id, changes).await?.into());
+        if !batch.is_empty() {
+            let change_id = batch.change_id();
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
+            response.new_state = State::Exact(change_id).into();
         }
 
         // On success
@@ -458,12 +440,7 @@ impl EmailSubmissionSet for Server {
 
         // Fetch identity's mailFrom
         let identity_mail_from = if let Some(identity) = self
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::Identity,
-                submission.identity_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::Identity, submission.identity_id)
             .await?
         {
             identity
@@ -499,7 +476,7 @@ impl EmailSubmissionSet for Server {
 
         // Obtain message metadata
         let metadata_ = if let Some(metadata) = self
-            .get_property::<Archive<AlignedBytes>>(
+            .get_archive_by_property(
                 account_id,
                 Collection::Email,
                 submission.email_id,
@@ -596,8 +573,19 @@ impl EmailSubmissionSet for Server {
         }
 
         // Begin local SMTP session
-        let mut session =
-            Session::<NullIo>::local(self.clone(), instance.clone(), SessionData::default());
+        let mut session = Session::<NullIo>::local(
+            self.clone(),
+            instance.clone(),
+            SessionData::local(
+                Box::pin(self.get_access_token(account_id))
+                    .await
+                    .caused_by(trc::location!())?,
+                None,
+                vec![],
+                vec![],
+                0,
+            ),
+        );
 
         // MAIL FROM
         let _ = Box::pin(session.handle_mail_from(mail_from)).await;
@@ -626,7 +614,7 @@ impl EmailSubmissionSet for Server {
         if has_success {
             session.data.message = message;
             let response = Box::pin(session.queue_message()).await;
-            if let State::Accepted(queue_id) = session.state {
+            if let smtp::core::State::Accepted(queue_id) = session.state {
                 submission.queue_id = Some(queue_id);
             } else {
                 return Ok(Err(SetError::new(SetErrorType::ForbiddenToSend)

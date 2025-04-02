@@ -20,15 +20,10 @@ use hyper::StatusCode;
 use jmap_proto::types::{
     acl::Acl,
     collection::Collection,
-    property::Property,
     value::{AclGrant, ArchivedAclGrant},
 };
 use rkyv::vec::ArchivedVec;
-use store::{
-    ahash::AHashSet,
-    roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive},
-};
+use store::{ahash::AHashSet, roaring::RoaringBitmap};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -102,12 +97,7 @@ impl DavAclHandler for Server {
         }
 
         let archive = self
-            .get_property::<Archive<AlignedBytes>>(
-                uri.account_id,
-                uri.collection,
-                uri.resource,
-                Property::Value,
-            )
+            .get_archive(uri.account_id, uri.collection, uri.resource)
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

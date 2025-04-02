@@ -14,14 +14,8 @@ use groupware::{
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, property::Property, type_state::DataType,
-};
-use store::write::{
-    AlignedBytes, Archive, BatchBuilder,
-    log::{Changes, LogInsert},
-    now,
-};
+use jmap_proto::types::{acl::Acl, collection::Collection};
+use store::write::{BatchBuilder, now};
 use trc::AddContext;
 use utils::BlobHash;
 
@@ -71,12 +65,7 @@ impl FileUpdateRequestHandler for Server {
         if let Some(document_id) = files.paths.by_name(resource_name).map(|r| r.document_id) {
             // Update
             let node_ = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::FileNode,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::FileNode, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -170,7 +159,6 @@ impl FileUpdateRequestHandler for Server {
                 .hash;
 
             // Build node
-            let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
             let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
             let new_file = new_node.file.as_mut().unwrap();
             new_file.blob_hash = blob_hash;
@@ -181,11 +169,9 @@ impl FileUpdateRequestHandler for Server {
             // Prepare write batch
             let mut batch = BatchBuilder::new();
             batch
-                .with_change_id(change_id)
                 .with_account_id(account_id)
                 .with_collection(Collection::FileNode)
                 .update_document(document_id)
-                .log(Changes::update([document_id]))
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(node)
@@ -194,20 +180,13 @@ impl FileUpdateRequestHandler for Server {
                 )
                 .caused_by(trc::location!())?;
             let etag = batch.etag();
-            self.store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-
-            // Broadcast state change
-            self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-                .await;
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
         } else {
             // Insert
             let orig_resource_name = resource_name;
-            let (parent_id, resource_name) = files
+            let (parent, resource_name) = files
                 .map_parent(resource_name)
                 .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
@@ -217,7 +196,7 @@ impl FileUpdateRequestHandler for Server {
                     access_token,
                     account_id,
                     Collection::FileNode,
-                    parent_id,
+                    parent.map(|r| r.document_id),
                     Acl::AddItems,
                 )
                 .await?;
@@ -225,12 +204,7 @@ impl FileUpdateRequestHandler for Server {
             // Verify that parent is a collection
             if parent_id > 0
                 && self
-                    .get_property::<Archive<AlignedBytes>>(
-                        account_id,
-                        Collection::FileNode,
-                        parent_id - 1,
-                        Property::Value,
-                    )
+                    .get_archive(account_id, Collection::FileNode, parent_id - 1)
                     .await
                     .caused_by(trc::location!())?
                     .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
@@ -275,7 +249,6 @@ impl FileUpdateRequestHandler for Server {
                 .hash;
 
             // Build node
-            let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
             let now = now();
             let node = FileNode {
                 parent_id,
@@ -295,12 +268,15 @@ impl FileUpdateRequestHandler for Server {
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
+            let document_id = self
+                .store()
+                .assign_document_ids(account_id, Collection::FileNode, 1)
+                .await
+                .caused_by(trc::location!())?;
             batch
-                .with_change_id(change_id)
                 .with_account_id(account_id)
                 .with_collection(Collection::FileNode)
-                .create_document()
-                .log(LogInsert())
+                .create_document(document_id)
                 .custom(
                     ObjectIndexBuilder::<(), _>::new()
                         .with_changes(node)
@@ -308,14 +284,7 @@ impl FileUpdateRequestHandler for Server {
                 )
                 .caused_by(trc::location!())?;
             let etag = batch.etag();
-            self.store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-
-            // Broadcast state change
-            self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-                .await;
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
         }

@@ -7,7 +7,6 @@
 use std::time::Duration;
 
 use common::{config::server::ServerProtocol, core::BuildServer, manager::boot::BootManager};
-use directory::backend::internal::MigrateDirectory;
 use http::HttpSessionManager;
 use imap::core::ImapSessionManager;
 use managesieve::core::ManageSieveSessionManager;
@@ -44,12 +43,6 @@ async fn main() -> std::io::Result<()> {
         // Log licensing information
         #[cfg(feature = "enterprise")]
         server.log_license_details();
-
-        // Migrate directory
-        if let Err(err) = server.store().migrate_directory().await {
-            trc::error!(err.details("Directory migration failed"));
-            std::process::exit(1);
-        }
     }
 
     // Spawn servers

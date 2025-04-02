@@ -10,8 +10,7 @@ use common::listener::SessionStream;
 use directory::Permission;
 use email::sieve::delete::SieveScriptDelete;
 use imap_proto::receiver::Request;
-use jmap_proto::types::collection::Collection;
-use store::write::log::ChangeLogBuilder;
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -37,34 +36,44 @@ impl<T: SessionStream> Session<T> {
         let access_token = self.state.access_token();
         let account_id = access_token.primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
-        if self
+        let mut batch = BatchBuilder::new();
+
+        match self
             .server
-            .sieve_script_delete(&access_token.as_resource_token(), document_id, true)
+            .sieve_script_delete(
+                &access_token.as_resource_token(),
+                document_id,
+                true,
+                &mut batch,
+            )
             .await
             .caused_by(trc::location!())?
         {
-            // Write changes
-            let mut changelog = ChangeLogBuilder::new();
-            changelog.log_delete(Collection::SieveScript, document_id);
-            self.server
-                .commit_changes(account_id, changelog)
-                .await
-                .caused_by(trc::location!())?;
+            Some(true) => {
+                if !batch.is_empty() {
+                    self.server
+                        .commit_batch(batch)
+                        .await
+                        .caused_by(trc::location!())?;
+                }
 
-            trc::event!(
-                ManageSieve(trc::ManageSieveEvent::DeleteScript),
-                SpanId = self.session_id,
-                Id = name,
-                DocumentId = document_id,
-                Elapsed = op_start.elapsed()
-            );
+                trc::event!(
+                    ManageSieve(trc::ManageSieveEvent::DeleteScript),
+                    SpanId = self.session_id,
+                    Id = name,
+                    DocumentId = document_id,
+                    Elapsed = op_start.elapsed()
+                );
 
-            Ok(StatusResponse::ok("Deleted.").into_bytes())
-        } else {
-            Err(trc::ManageSieveEvent::Error
+                Ok(StatusResponse::ok("Deleted.").into_bytes())
+            }
+            Some(false) => Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("You may not delete an active script")
-                .code(ResponseCode::Active))
+                .code(ResponseCode::Active)),
+            None => Err(trc::ManageSieveEvent::Error
+                .into_err()
+                .details("Script not found")),
         }
     }
 }

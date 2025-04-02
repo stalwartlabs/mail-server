@@ -5,12 +5,17 @@
  */
 
 use common::Server;
+use email::thread::cache::ThreadCache;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{collection::Collection, id::Id, property::Property, value::Object},
 };
 use std::future::Future;
-use store::query::{Comparator, ResultSet, sort::Pagination};
+use store::{
+    ahash::AHashMap,
+    query::{Comparator, ResultSet, sort::Pagination},
+    roaring::RoaringBitmap,
+};
 use trc::AddContext;
 
 use crate::changes::state::StateManager;
@@ -28,13 +33,25 @@ impl ThreadGet for Server {
         mut request: GetRequest<RequestArguments>,
     ) -> trc::Result<GetResponse> {
         let account_id = request.account_id.document_id();
+        let mut thread_map: AHashMap<u32, RoaringBitmap> = AHashMap::with_capacity(32);
+        for (document_id, thread_id) in &self
+            .get_cached_thread_ids(account_id)
+            .await
+            .caused_by(trc::location!())?
+            .threads
+        {
+            thread_map
+                .entry(*thread_id)
+                .or_default()
+                .insert(*document_id);
+        }
+
         let ids = if let Some(ids) = request.unwrap_ids(self.core.jmap.get_max_objects)? {
             ids
         } else {
-            self.get_document_ids(account_id, Collection::Thread)
-                .await?
-                .unwrap_or_default()
-                .into_iter()
+            thread_map
+                .keys()
+                .copied()
                 .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
                 .collect()
@@ -51,21 +68,19 @@ impl ThreadGet for Server {
 
         for id in ids {
             let thread_id = id.document_id();
-            if let Some(document_ids) = self
-                .get_tag(account_id, Collection::Email, Property::ThreadId, thread_id)
-                .await?
-            {
+            if let Some(document_ids) = thread_map.remove(&thread_id) {
                 let mut thread = Object::with_capacity(2).with_property(Property::Id, id);
                 if add_email_ids {
+                    let doc_count = document_ids.len() as usize;
                     thread.append(
                         Property::EmailIds,
                         self.core
                             .storage
                             .data
                             .sort(
-                                ResultSet::new(account_id, Collection::Email, document_ids.clone()),
+                                ResultSet::new(account_id, Collection::Email, document_ids),
                                 vec![Comparator::ascending(Property::ReceivedAt)],
-                                Pagination::new(document_ids.len() as usize, 0, None, 0),
+                                Pagination::new(doc_count, 0, None, 0),
                             )
                             .await
                             .caused_by(trc::location!())?

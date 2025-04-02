@@ -6,10 +6,7 @@
 
 use std::fmt::Display;
 
-use store::{
-    Serialize,
-    write::{MaybeDynamicId, TagValue},
-};
+use store::{Serialize, write::TagValue};
 
 use crate::parser::{JsonObjectParser, json::Parser};
 
@@ -276,7 +273,7 @@ impl ArchivedKeyword {
     }
 }
 
-impl From<Keyword> for TagValue<u32> {
+impl From<Keyword> for TagValue {
     fn from(value: Keyword) -> Self {
         match value.into_id() {
             Ok(id) => TagValue::Id(id),
@@ -285,7 +282,7 @@ impl From<Keyword> for TagValue<u32> {
     }
 }
 
-impl From<&Keyword> for TagValue<u32> {
+impl From<&Keyword> for TagValue {
     fn from(value: &Keyword) -> Self {
         match value.id() {
             Ok(id) => TagValue::Id(id),
@@ -294,10 +291,10 @@ impl From<&Keyword> for TagValue<u32> {
     }
 }
 
-impl From<&ArchivedKeyword> for TagValue<MaybeDynamicId> {
+impl From<&ArchivedKeyword> for TagValue {
     fn from(value: &ArchivedKeyword) -> Self {
         match value.id() {
-            Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
+            Ok(id) => TagValue::Id(id),
             Err(string) => TagValue::Text(string.into_bytes()),
         }
     }

@@ -55,51 +55,6 @@ pub trait MailDelivery: Sync + Send {
     ) -> impl Future<Output = LocalDeliveryResult> + Send;
 }
 
-/*
-
-let semaphore = Arc::new(Semaphore::new(
-            inner
-                .shared_core
-                .load()
-                .smtp
-                .queue
-                .throttle
-                .local_concurrency,
-        ));
-
-        loop {
-            let permit = match semaphore.clone().acquire_owned().await {
-                Ok(permit) => permit,
-                Err(_) => {
-                    trc::error!(trc::StoreEvent::UnexpectedError
-                        .into_err()
-                        .details("Semaphore error")
-                        .caused_by(trc::location!()));
-                    break;
-                }
-            };
-
-            match delivery_rx.recv().await {
-                Some(event) => match event {
-                    DeliveryEvent::Ingest { message, result_tx } => {
-                        let server = inner.build_server();
-
-                        tokio::spawn(async move {
-                            result_tx.send(server.deliver_message(message).await).ok();
-
-                            drop(permit);
-                        });
-                    }
-                    DeliveryEvent::Stop => break,
-                },
-                None => {
-                    break;
-                }
-            }
-        }
-
-*/
-
 impl MailDelivery for Server {
     async fn deliver_message(&self, message: IngestMessage) -> LocalDeliveryResult {
         // Obtain permit

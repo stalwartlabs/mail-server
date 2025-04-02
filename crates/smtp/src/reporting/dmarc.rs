@@ -22,7 +22,7 @@ use mail_auth::{
 };
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{BatchBuilder, LegacyBincode, QueueClass, ReportEvent, ValueClass, now},
+    write::{BatchBuilder, LegacyBincode, QueueClass, ReportEvent, ValueClass},
 };
 use trc::{AddContext, OutgoingReportEvent};
 use utils::config::Rate;
@@ -320,7 +320,7 @@ pub trait DmarcReporting: Sync + Send {
 
 impl DmarcReporting for Server {
     async fn send_dmarc_aggregate_report(&self, event: ReportEvent) {
-        let span_id = self.inner.data.span_id_gen.generate().unwrap_or_else(now);
+        let span_id = self.inner.data.span_id_gen.generate();
 
         trc::event!(
             OutgoingReport(OutgoingReportEvent::DmarcAggregateReport),
@@ -606,7 +606,7 @@ impl DmarcReporting for Server {
 
         let mut batch = BatchBuilder::new();
         batch.clear(ValueClass::Queue(QueueClass::DmarcReportHeader(event)));
-        if let Err(err) = self.core.storage.data.write(batch.build()).await {
+        if let Err(err) = self.core.storage.data.write(batch.build_all()).await {
             trc::error!(
                 err.caused_by(trc::location!())
                     .details("Failed to delete DMARC report")
@@ -664,7 +664,7 @@ impl DmarcReporting for Server {
         }
 
         // Write entry
-        report_event.seq_id = self.inner.data.queue_id_gen.generate().unwrap_or_else(now);
+        report_event.seq_id = self.inner.data.queue_id_gen.generate();
         builder.set(
             ValueClass::Queue(QueueClass::DmarcReportEvent(report_event)),
             match LegacyBincode::new(event.report_record).serialize() {
@@ -679,7 +679,7 @@ impl DmarcReporting for Server {
             },
         );
 
-        if let Err(err) = self.core.storage.data.write(builder.build()).await {
+        if let Err(err) = self.core.storage.data.write(builder.build_all()).await {
             trc::error!(
                 err.caused_by(trc::location!())
                     .details("Failed to write DMARC report")

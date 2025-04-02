@@ -20,7 +20,7 @@ use store::{
     fts::index::FtsDocument,
     roaring::RoaringBitmap,
     write::{
-        AlignedBytes, Archive, BatchBuilder, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
+        BatchBuilder, BlobOp, TaskQueueClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
         now,
     },
@@ -81,7 +81,7 @@ pub trait Indexer: Sync + Send {
 
 impl Indexer for Server {
     async fn email_task_queued(&self, locked_seq_ids: &mut AHashMap<u64, Instant>) {
-        let from_key = ValueKey::<ValueClass<u32>> {
+        let from_key = ValueKey::<ValueClass> {
             account_id: 0,
             collection: 0,
             document_id: 0,
@@ -90,7 +90,7 @@ impl Indexer for Server {
                 hash: BlobHash::default(),
             }),
         };
-        let to_key = ValueKey::<ValueClass<u32>> {
+        let to_key = ValueKey::<ValueClass> {
             account_id: u32::MAX,
             collection: u8::MAX,
             document_id: u32::MAX,
@@ -166,7 +166,7 @@ impl Indexer for Server {
             match event.action {
                 EmailTaskAction::Index => {
                     match self
-                        .get_property::<Archive<AlignedBytes>>(
+                        .get_archive_by_property(
                             event.account_id,
                             Collection::Email,
                             event.document_id,
@@ -275,7 +275,7 @@ impl Indexer for Server {
                         .with_collection(Collection::Email)
                         .update_document(event.document_id)
                         .clear(event.value_class())
-                        .build_batch(),
+                        .build_all(),
                 )
                 .await
             {
@@ -415,7 +415,7 @@ impl Indexer for Server {
             .await
             .caused_by(trc::location!())?;
 
-        let mut seq = self.generate_snowflake_id().caused_by(trc::location!())?;
+        let mut seq = self.generate_snowflake_id();
 
         for (account_id, hashes) in hashes {
             let mut batch = BatchBuilder::new();
@@ -430,8 +430,8 @@ impl Indexer for Server {
                 );
                 seq += 1;
 
-                if batch.ops.len() >= 2000 {
-                    self.core.storage.data.write(batch.build()).await?;
+                if batch.len() >= 2000 {
+                    self.core.storage.data.write(batch.build_all()).await?;
                     batch = BatchBuilder::new();
                     batch
                         .with_account_id(account_id)
@@ -440,7 +440,7 @@ impl Indexer for Server {
             }
 
             if !batch.is_empty() {
-                self.core.storage.data.write(batch.build()).await?;
+                self.core.storage.data.write(batch.build_all()).await?;
             }
         }
 
@@ -477,7 +477,7 @@ impl EmailTask {
         }
     }
 
-    fn value_class(&self) -> ValueClass<MaybeDynamicId> {
+    fn value_class(&self) -> ValueClass {
         ValueClass::TaskQueue(match self.action {
             EmailTaskAction::Index => TaskQueueClass::IndexEmail {
                 hash: self.hash.clone(),

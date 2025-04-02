@@ -24,10 +24,7 @@ use jmap_proto::{
 use mail_builder::encoders::base64::base64_encode;
 use sha1::{Digest, Sha1};
 use sha2::{Sha256, Sha512};
-use store::{
-    BlobClass,
-    write::{AlignedBytes, Archive},
-};
+use store::BlobClass;
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
@@ -217,12 +214,7 @@ impl BlobOperations for Server {
                             let collection = Collection::from(*collection);
                             if collection == Collection::Email {
                                 if let Some(data_) = self
-                                    .get_property::<Archive<AlignedBytes>>(
-                                        req_account_id,
-                                        Collection::Email,
-                                        *document_id,
-                                        Property::Value,
-                                    )
+                                    .get_archive(req_account_id, Collection::Email, *document_id)
                                     .await?
                                 {
                                     let data = data_

@@ -6,10 +6,9 @@
 
 use std::collections::HashSet;
 
-use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    BitmapKey, Store, ValueKey,
-    write::{BatchBuilder, BitmapClass, DirectoryClass, MaybeDynamicId, TagValue, ValueClass},
+    Store, ValueKey,
+    write::{BatchBuilder, DirectoryClass, ValueClass},
 };
 
 // FDB max value
@@ -33,7 +32,7 @@ pub async fn test(db: Store) {
             );
 
             if n % 10000 == 0 {
-                db.write(batch.build_batch()).await.unwrap();
+                db.write(batch.build_all()).await.unwrap();
                 batch = BatchBuilder::new();
                 batch
                     .with_account_id(0)
@@ -41,7 +40,7 @@ pub async fn test(db: Store) {
                     .update_document(0);
             }
         }
-        db.write(batch.build_batch()).await.unwrap();
+        db.write(batch.build_all()).await.unwrap();
         println!("Created 900.000 keys...");
 
         // Iterate over all keys
@@ -85,7 +84,7 @@ pub async fn test(db: Store) {
             batch.clear(ValueClass::Config(format!("key{n:10}").into_bytes()));
 
             if n % 10000 == 0 {
-                db.write(batch.build_batch()).await.unwrap();
+                db.write(batch.build_all()).await.unwrap();
                 batch = BatchBuilder::new();
                 batch
                     .with_account_id(0)
@@ -93,93 +92,8 @@ pub async fn test(db: Store) {
                     .update_document(0);
             }
         }
-        db.write(batch.build_batch()).await.unwrap();
+        db.write(batch.build_all()).await.unwrap();
     }
-
-    // Testing ID assignment
-    println!("Running dynamic ID assignment tests...");
-    let mut builder = BatchBuilder::new();
-    builder
-        .with_account_id(0)
-        .with_collection(Collection::Thread)
-        .create_document()
-        .with_collection(Collection::Email)
-        .create_document()
-        .tag(Property::ThreadId, TagValue::Id(MaybeDynamicId::Dynamic(0)))
-        .set(Property::ThreadId, MaybeDynamicId::Dynamic(0));
-
-    let assigned_ids = db.write(builder.build_batch()).await.unwrap();
-    assert_eq!(assigned_ids.document_ids.len(), 2);
-    let thread_id = assigned_ids.first_document_id().unwrap();
-    let email_id = assigned_ids.last_document_id().unwrap();
-
-    let email_ids = db
-        .get_bitmap(BitmapKey {
-            account_id: 0,
-            collection: Collection::Email.into(),
-            class: BitmapClass::DocumentIds,
-            document_id: 0,
-        })
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(email_ids.len(), 1);
-    assert!(email_ids.contains(email_id));
-
-    let thread_ids = db
-        .get_bitmap(BitmapKey {
-            account_id: 0,
-            collection: Collection::Thread.into(),
-            class: BitmapClass::DocumentIds,
-            document_id: 0,
-        })
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(thread_ids.len(), 1);
-    assert!(thread_ids.contains(thread_id));
-
-    let tagged_ids = db
-        .get_bitmap(BitmapKey {
-            account_id: 0,
-            collection: Collection::Email.into(),
-            class: BitmapClass::Tag {
-                field: Property::ThreadId.into(),
-                value: TagValue::Id(thread_id),
-            },
-            document_id: 0,
-        })
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(tagged_ids.len(), 1);
-    assert!(tagged_ids.contains(email_id));
-
-    let stored_thread_id = db
-        .get_value::<u32>(ValueKey {
-            account_id: 0,
-            collection: Collection::Email.into(),
-            document_id: email_id,
-            class: ValueClass::Property(Property::ThreadId.into()),
-        })
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored_thread_id, thread_id);
-
-    let mut builder = BatchBuilder::new();
-    builder
-        .with_account_id(0)
-        .with_collection(Collection::Thread)
-        .delete_document(thread_id)
-        .with_collection(Collection::Email)
-        .delete_document(email_id)
-        .untag(
-            Property::ThreadId,
-            TagValue::Id(MaybeDynamicId::Static(thread_id)),
-        )
-        .clear(Property::ThreadId);
-    db.write(builder.build_batch()).await.unwrap();
 
     // Increment a counter 1000 times concurrently
     let mut handles = Vec::new();
@@ -195,7 +109,7 @@ pub async fn test(db: Store) {
                     .with_collection(0)
                     .update_document(0)
                     .add_and_get(ValueClass::Directory(DirectoryClass::UsedQuota(0)), 1);
-                db.write(builder.build_batch())
+                db.write(builder.build_all())
                     .await
                     .unwrap()
                     .last_counter_id()
@@ -255,7 +169,7 @@ pub async fn test(db: Store) {
                 .set(ValueClass::Property(1), value.as_slice())
                 .set(ValueClass::Property(0), "check1".as_bytes())
                 .set(ValueClass::Property(2), "check2".as_bytes())
-                .build_batch(),
+                .build_all(),
         )
         .await
         .unwrap();
@@ -282,7 +196,7 @@ pub async fn test(db: Store) {
                 .with_collection(0)
                 .update_document(0)
                 .clear(ValueClass::Property(1))
-                .build_batch(),
+                .build_all(),
         )
         .await
         .unwrap();
@@ -328,7 +242,7 @@ pub async fn test(db: Store) {
                 .clear(ValueClass::Property(0))
                 .clear(ValueClass::Property(2))
                 .clear(ValueClass::Directory(DirectoryClass::UsedQuota(0)))
-                .build_batch(),
+                .build_all(),
         )
         .await
         .unwrap();

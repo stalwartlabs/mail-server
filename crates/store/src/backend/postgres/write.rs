@@ -8,17 +8,13 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use deadpool_postgres::Object;
-use futures::{TryStreamExt, pin_mut};
 use rand::Rng;
-use roaring::RoaringBitmap;
 use tokio_postgres::{IsolationLevel, error::SqlState};
 
 use crate::{
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
-    U32_LEN,
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
     write::{
-        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
-        RandomAvailableId, ValueOp, key::DeserializeBigEndian,
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueOp,
     },
 };
 
@@ -32,7 +28,7 @@ enum CommitError {
 }
 
 impl PostgresStore {
-    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
+    pub(crate) async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
         let mut conn = self.conn_pool.get().await.map_err(into_error)?;
         let start = Instant::now();
         let mut retry_count = 0;
@@ -76,12 +72,11 @@ impl PostgresStore {
     async fn write_trx(
         &self,
         conn: &mut Object,
-        batch: &Batch,
+        batch: &Batch<'_>,
     ) -> Result<AssignedIds, CommitError> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
-        let mut change_id = u64::MAX;
         let mut asserted_values = AHashMap::new();
         let trx = conn
             .build_transaction()
@@ -90,7 +85,7 @@ impl PostgresStore {
             .await?;
         let mut result = AssignedIds::default();
 
-        for op in &batch.ops {
+        for op in batch.ops {
             match op {
                 Operation::AccountId {
                     account_id: account_id_,
@@ -107,14 +102,8 @@ impl PostgresStore {
                 } => {
                     document_id = *document_id_;
                 }
-                Operation::ChangeId {
-                    change_id: change_id_,
-                } => {
-                    change_id = *change_id_;
-                }
                 Operation::Value { class, op } => {
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
                     let table = char::from(class.subspace(collection));
 
                     match op {
@@ -144,11 +133,7 @@ impl PostgresStore {
                                 .await?
                             };
 
-                            if trx
-                                .execute(&s, &[&key, &value.resolve(&result)?.as_ref()])
-                                .await?
-                                == 0
-                            {
+                            if trx.execute(&s, &[&key, &value]).await? == 0 {
                                 return Err(trc::StoreEvent::AssertValueFailed.into_err().into());
                             }
                         }
@@ -218,47 +203,8 @@ impl PostgresStore {
                     trx.execute(&s, &[&key]).await?;
                 }
                 Operation::Bitmap { class, set } => {
-                    // Find the next available document id
                     let is_document_id = matches!(class, BitmapClass::DocumentIds);
-                    if *set && is_document_id && document_id == u32::MAX {
-                        let begin = BitmapKey {
-                            account_id,
-                            collection,
-                            class: BitmapClass::DocumentIds,
-                            document_id: 0,
-                        }
-                        .serialize(0);
-                        let end = BitmapKey {
-                            account_id,
-                            collection,
-                            class: BitmapClass::DocumentIds,
-                            document_id: u32::MAX,
-                        }
-                        .serialize(0);
-                        let key_len = begin.len();
-
-                        let s = trx
-                            .prepare_cached("SELECT k FROM b WHERE k >= $1 AND k <= $2")
-                            .await?;
-                        let rows = trx.query_raw(&s, &[&begin, &end]).await?;
-
-                        pin_mut!(rows);
-
-                        let mut found_ids = RoaringBitmap::new();
-
-                        while let Some(row) = rows.try_next().await? {
-                            let key: &[u8] = row.try_get(0)?;
-                            if key.len() == key_len {
-                                found_ids.insert(key.deserialize_be_u32(key_len - U32_LEN)?);
-                            }
-                        }
-
-                        document_id = found_ids.random_available_id();
-                        result.push_document_id(document_id);
-                    }
-
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
                     let table = char::from(class.subspace());
 
                     let s = if *set {
@@ -285,11 +231,15 @@ impl PostgresStore {
                         }
                     })?;
                 }
-                Operation::Log { set } => {
+                Operation::Log {
+                    collection,
+                    change_id,
+                    set,
+                } => {
                     let key = LogKey {
                         account_id,
-                        collection,
-                        change_id,
+                        collection: *collection,
+                        change_id: *change_id,
                     }
                     .serialize(0);
 
@@ -300,15 +250,13 @@ impl PostgresStore {
                         ))
                         .await?;
 
-                    trx.execute(&s, &[&key, &set.resolve(&result)?.as_ref()])
-                        .await?;
+                    trx.execute(&s, &[&key, &set]).await?;
                 }
                 Operation::AssertValue {
                     class,
                     assert_value,
                 } => {
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
                     let table = char::from(class.subspace(collection));
 
                     let s = trx

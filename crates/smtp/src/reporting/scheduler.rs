@@ -170,7 +170,7 @@ async fn next_report_event(store: &Store) -> Vec<QueueClass> {
         for event in old_locks {
             batch.clear(ValueClass::Queue(event));
         }
-        if let Err(err) = store.write(batch.build()).await {
+        if let Err(err) = store.write(batch.build_all()).await {
             trc::error!(
                 err.caused_by(trc::location!())
                     .details("Failed to remove old report events")

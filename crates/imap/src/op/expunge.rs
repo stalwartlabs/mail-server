@@ -18,14 +18,8 @@ use trc::AddContext;
 
 use crate::core::{SavedSearch, SelectedMailbox, Session, SessionData};
 use common::{ImapId, listener::SessionStream, storage::index::ObjectIndexBuilder};
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
-    state::StateChange, type_state::DataType,
-};
-use store::{
-    roaring::RoaringBitmap,
-    write::{BatchBuilder, log::ChangeLogBuilder},
-};
+use jmap_proto::types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property};
+use store::{roaring::RoaringBitmap, write::BatchBuilder};
 
 use super::{ImapContext, ToModSeq};
 
@@ -146,15 +140,10 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Delete ids
-        let mut changelog = ChangeLogBuilder::new();
-        self.email_untag_or_delete(
-            account_id,
-            mailbox.id.mailbox_id,
-            &deleted_ids,
-            &mut changelog,
-        )
-        .await
-        .caused_by(trc::location!())?;
+        let mut batch = BatchBuilder::new();
+        self.email_untag_or_delete(account_id, mailbox.id.mailbox_id, &deleted_ids, &mut batch)
+            .await
+            .caused_by(trc::location!())?;
 
         trc::event!(
             Imap(trc::ImapEvent::Expunge),
@@ -166,16 +155,11 @@ impl<T: SessionStream> SessionData<T> {
         );
 
         // Write changes on source account
-        if !changelog.is_empty() {
-            let change_id = self.server.commit_changes(account_id, changelog).await?;
+        if !batch.is_empty() {
             self.server
-                .broadcast_state_change(
-                    StateChange::new(account_id)
-                        .with_change(DataType::Email, change_id)
-                        .with_change(DataType::Mailbox, change_id)
-                        .with_change(DataType::Thread, change_id),
-                )
-                .await;
+                .commit_batch(batch)
+                .await
+                .caused_by(trc::location!())?;
         }
 
         Ok(())
@@ -186,89 +170,54 @@ impl<T: SessionStream> SessionData<T> {
         account_id: u32,
         mailbox_id: u32,
         deleted_ids: &RoaringBitmap,
-        changelog: &mut ChangeLogBuilder,
+        batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         let mut destroy_ids = RoaringBitmap::new();
-        let mut batch = BatchBuilder::new();
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Email);
 
         self.server
-            .get_archives(
-                account_id,
-                Collection::Email,
-                deleted_ids,
-                Property::Value,
-                |id, data_| {
-                    let data = data_
-                        .to_unarchived::<MessageData>()
-                        .caused_by(trc::location!())?;
+            .get_archives(account_id, Collection::Email, deleted_ids, |id, data_| {
+                let data = data_
+                    .to_unarchived::<MessageData>()
+                    .caused_by(trc::location!())?;
 
-                    if !data.inner.has_mailbox_id(mailbox_id) {
-                        return Ok(true);
-                    } else if data.inner.mailboxes.len() == 1 {
-                        destroy_ids.insert(id);
-                        return Ok(true);
-                    }
+                if !data.inner.has_mailbox_id(mailbox_id) {
+                    return Ok(true);
+                } else if data.inner.mailboxes.len() == 1 {
+                    destroy_ids.insert(id);
+                    return Ok(true);
+                }
 
-                    // Prepare changes
-                    let mut new_data = data.deserialize().caused_by(trc::location!())?;
-                    if changelog.change_id == u64::MAX {
-                        changelog.change_id = self.server.assign_change_id(account_id)?
-                    }
+                // Untag message from this mailbox and remove Deleted flag
+                let mut new_data = data.deserialize().caused_by(trc::location!())?;
+                new_data.change_id = batch.change_id();
+                new_data.remove_mailbox(mailbox_id);
+                new_data.remove_keyword(&Keyword::Deleted);
 
-                    new_data.change_id = changelog.change_id;
-                    let thread_id = new_data.thread_id;
+                // Write changes
+                batch
+                    .update_document(id)
+                    .custom(
+                        ObjectIndexBuilder::new()
+                            .with_current(data)
+                            .with_changes(new_data),
+                    )
+                    .caused_by(trc::location!())?
+                    .commit_point();
 
-                    // Untag message from this mailbox and remove Deleted flag
-                    new_data.remove_mailbox(mailbox_id);
-                    new_data.remove_keyword(&Keyword::Deleted);
-
-                    changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
-                    changelog.log_child_update(Collection::Mailbox, mailbox_id);
-
-                    // Write changes
-                    batch
-                        .update_document(id)
-                        .custom(
-                            ObjectIndexBuilder::new()
-                                .with_current(data)
-                                .with_changes(new_data),
-                        )
-                        .caused_by(trc::location!())?;
-
-                    Ok(true)
-                },
-            )
+                Ok(true)
+            })
             .await
             .caused_by(trc::location!())?;
 
-        if !batch.is_empty() {
-            match self
-                .server
-                .store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())
-            {
-                Ok(_) => {}
-                Err(err) => {
-                    if !err.is_assertion_failure() {
-                        return Err(err.caused_by(trc::location!()));
-                    }
-                }
-            }
-        }
-
         if !destroy_ids.is_empty() {
             // Delete message from all mailboxes
-            let (changes, _) = self
-                .server
-                .emails_tombstone(account_id, destroy_ids)
+            self.server
+                .emails_tombstone(account_id, batch, destroy_ids)
                 .await
                 .caused_by(trc::location!())?;
-            changelog.merge(changes);
         }
 
         Ok(())

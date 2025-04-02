@@ -13,10 +13,8 @@ use crate::{
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
-use jmap_proto::types::{
-    collection::Collection, property::Property, state::StateChange, type_state::DataType,
-};
-use store::write::{AlignedBytes, Archive, BatchBuilder};
+use jmap_proto::types::collection::Collection;
+use store::write::BatchBuilder;
 
 use super::ImapContext;
 
@@ -94,14 +92,9 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Obtain mailbox
-        let mailbox = self
+        let mailbox_ = self
             .server
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::Mailbox,
-                mailbox_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::Mailbox, mailbox_id)
             .await
             .imap_ctx(&tag, trc::location!())?
             .ok_or_else(|| {
@@ -111,19 +104,16 @@ impl<T: SessionStream> SessionData<T> {
                     .code(ResponseCode::NonExistent)
                     .id(tag.clone())
                     .caused_by(trc::location!())
-            })?
-            .into_deserialized::<email::mailbox::Mailbox>()
+            })?;
+        let mailbox = mailbox_
+            .to_unarchived::<email::mailbox::Mailbox>()
             .imap_ctx(&tag, trc::location!())?;
 
         if (subscribe && !mailbox.inner.is_subscribed(self.account_id))
             || (!subscribe && mailbox.inner.is_subscribed(self.account_id))
         {
             // Build batch
-            let mut changes = self
-                .server
-                .begin_changes(account_id)
-                .imap_ctx(&tag, trc::location!())?;
-            let mut new_mailbox = mailbox.inner.clone();
+            let mut new_mailbox = mailbox.deserialize().imap_ctx(&tag, trc::location!())?;
             if subscribe {
                 new_mailbox.subscribers.push(self.account_id);
             } else {
@@ -140,22 +130,11 @@ impl<T: SessionStream> SessionData<T> {
                         .with_changes(new_mailbox),
                 )
                 .imap_ctx(&tag, trc::location!())?;
-            changes.log_update(Collection::Mailbox, mailbox_id);
-
-            let change_id = changes.change_id;
-            batch.custom(changes).imap_ctx(&tag, trc::location!())?;
+            let change_id = batch.change_id();
             self.server
-                .store()
-                .write(batch)
+                .commit_batch(batch)
                 .await
                 .imap_ctx(&tag, trc::location!())?;
-
-            // Broadcast changes
-            self.server
-                .broadcast_state_change(
-                    StateChange::new(account_id).with_change(DataType::Mailbox, change_id),
-                )
-                .await;
 
             // Update mailbox cache
             for account in self.mailboxes.lock().iter_mut() {

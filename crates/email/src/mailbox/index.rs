@@ -46,6 +46,7 @@ impl IndexableObject for Mailbox {
                 field: Property::IsSubscribed.into(),
                 value: self.subscribers.iter().map(Into::into).collect::<Vec<_>>(),
             },
+            IndexValue::LogChild { prefix: None },
             IndexValue::Acl {
                 value: (&self.acls).into(),
             },
@@ -85,6 +86,7 @@ impl IndexableObject for &ArchivedMailbox {
                 field: Property::IsSubscribed.into(),
                 value: self.subscribers.iter().map(Into::into).collect::<Vec<_>>(),
             },
+            IndexValue::LogChild { prefix: None },
             IndexValue::Acl {
                 value: self
                     .acls

@@ -7,17 +7,13 @@
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use futures::TryStreamExt;
 use mysql_async::{Conn, Error, IsolationLevel, TxOpts, params, prelude::Queryable};
 use rand::Rng;
-use roaring::RoaringBitmap;
 
 use crate::{
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
-    U32_LEN,
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
     write::{
-        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
-        RandomAvailableId, ValueOp, key::DeserializeBigEndian,
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueOp,
     },
 };
 
@@ -31,7 +27,7 @@ enum CommitError {
 }
 
 impl MysqlStore {
-    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
+    pub(crate) async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
         let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
@@ -70,11 +66,14 @@ impl MysqlStore {
         }
     }
 
-    async fn write_trx(&self, conn: &mut Conn, batch: &Batch) -> Result<AssignedIds, CommitError> {
+    async fn write_trx(
+        &self,
+        conn: &mut Conn,
+        batch: &Batch<'_>,
+    ) -> Result<AssignedIds, CommitError> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
-        let mut change_id = u64::MAX;
         let mut asserted_values = AHashMap::new();
         let mut tx_opts = TxOpts::default();
         tx_opts
@@ -83,7 +82,7 @@ impl MysqlStore {
         let mut trx = conn.start_transaction(tx_opts).await?;
         let mut result = AssignedIds::default();
 
-        for op in &batch.ops {
+        for op in batch.ops {
             match op {
                 Operation::AccountId {
                     account_id: account_id_,
@@ -100,14 +99,8 @@ impl MysqlStore {
                 } => {
                     document_id = *document_id_;
                 }
-                Operation::ChangeId {
-                    change_id: change_id_,
-                } => {
-                    change_id = *change_id_;
-                }
                 Operation::Value { class, op } => {
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
                     let table = char::from(class.subspace(collection));
 
                     match op {
@@ -132,13 +125,7 @@ impl MysqlStore {
                             .await?
                             };
 
-                            match trx
-                                .exec_drop(
-                                    &s,
-                                    params! {"k" => key, "v" => value.resolve(&result)?.as_ref()},
-                                )
-                                .await
-                            {
+                            match trx.exec_drop(&s, params! {"k" => key, "v" => value}).await {
                                 Ok(_) => {
                                     if exists.is_some() && trx.affected_rows() == 0 {
                                         trx.rollback().await?;
@@ -221,42 +208,8 @@ impl MysqlStore {
                     trx.exec_drop(&s, (key,)).await?;
                 }
                 Operation::Bitmap { class, set } => {
-                    // Find the next available document id
                     let is_document_id = matches!(class, BitmapClass::DocumentIds);
-                    if *set && is_document_id && document_id == u32::MAX {
-                        let begin = BitmapKey {
-                            account_id,
-                            collection,
-                            class: BitmapClass::DocumentIds,
-                            document_id: 0,
-                        }
-                        .serialize(0);
-                        let end = BitmapKey {
-                            account_id,
-                            collection,
-                            class: BitmapClass::DocumentIds,
-                            document_id: u32::MAX,
-                        }
-                        .serialize(0);
-                        let key_len = begin.len();
-
-                        let s = trx.prep("SELECT k FROM b WHERE k >= ? AND k <= ?").await?;
-                        let mut rows = trx.exec_stream::<Vec<u8>, _, _>(&s, (begin, end)).await?;
-                        let mut found_ids = RoaringBitmap::new();
-
-                        while let Some(key) = rows.try_next().await? {
-                            if key.len() == key_len {
-                                found_ids.insert(
-                                    key.as_slice().deserialize_be_u32(key.len() - U32_LEN)?,
-                                );
-                            }
-                        }
-
-                        document_id = found_ids.random_available_id();
-                        result.push_document_id(document_id);
-                    }
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
                     let table = char::from(class.subspace());
 
                     let s = if *set {
@@ -284,11 +237,15 @@ impl MysqlStore {
                         );
                     }
                 }
-                Operation::Log { set } => {
+                Operation::Log {
+                    collection,
+                    change_id,
+                    set,
+                } => {
                     let key = LogKey {
                         account_id,
-                        collection,
-                        change_id,
+                        collection: *collection,
+                        change_id: *change_id,
                     }
                     .serialize(0);
 
@@ -296,15 +253,13 @@ impl MysqlStore {
                         .prep("INSERT INTO l (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")
                         .await?;
 
-                    trx.exec_drop(&s, (key, set.resolve(&result)?.as_ref()))
-                        .await?;
+                    trx.exec_drop(&s, (key, &set)).await?;
                 }
                 Operation::AssertValue {
                     class,
                     assert_value,
                 } => {
-                    let key =
-                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let key = class.serialize(account_id, collection, document_id, 0);
                     let table = char::from(class.subspace(collection));
 
                     let s = trx

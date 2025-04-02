@@ -11,12 +11,10 @@ use dav_proto::{Depth, RequestHeaders};
 use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, property::Property, type_state::DataType,
-};
+use jmap_proto::types::{acl::Acl, collection::Collection};
 use store::{
     ahash::AHashMap,
-    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder, now},
+    write::{BatchBuilder, now},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -113,28 +111,29 @@ impl FileCopyMoveRequestHandler for Server {
             .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?;
         let mut delete_destination = None;
         // Check if the resource exists
-        let mut destination = if let Some((destination, new_name)) =
-            to_files.map_parent::<Destination>(destination_resource_name)
-        {
-            if let Some(mut existing_destination) = to_files
-                .paths
-                .by_name(destination_resource_name)
-                .map(Destination::from_dav_resource)
-            {
-                if !headers.overwrite_fail {
-                    existing_destination.account_id = to_account_id;
-                    delete_destination = Some(existing_destination);
-                } else {
-                    return Ok(HttpResponse::new(StatusCode::PRECONDITION_FAILED));
+        let mut destination =
+            if let Some((destination, new_name)) = to_files.map_parent(destination_resource_name) {
+                if let Some(mut existing_destination) = to_files
+                    .paths
+                    .by_name(destination_resource_name)
+                    .map(Destination::from_dav_resource)
+                {
+                    if !headers.overwrite_fail {
+                        existing_destination.account_id = to_account_id;
+                        delete_destination = Some(existing_destination);
+                    } else {
+                        return Ok(HttpResponse::new(StatusCode::PRECONDITION_FAILED));
+                    }
                 }
-            }
 
-            let mut destination = destination.unwrap_or_default();
-            destination.new_name = Some(new_name.to_string());
-            destination
-        } else {
-            return Err(DavError::Code(StatusCode::CONFLICT));
-        };
+                let mut destination = destination
+                    .map(Destination::from_dav_resource)
+                    .unwrap_or_default();
+                destination.new_name = Some(new_name.to_string());
+                destination
+            } else {
+                return Err(DavError::Code(StatusCode::CONFLICT));
+            };
         destination.account_id = to_account_id;
 
         if from_account_id == destination.account_id && delete_destination.is_none() {
@@ -334,12 +333,7 @@ async fn move_container(
             return Err(DavError::Code(StatusCode::BAD_GATEWAY));
         }
         let node_ = server
-            .get_property::<Archive<AlignedBytes>>(
-                from_account_id,
-                Collection::FileNode,
-                from_document_id,
-                Property::Value,
-            )
+            .get_archive(from_account_id, Collection::FileNode, from_document_id)
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -351,17 +345,21 @@ async fn move_container(
         if let Some(new_name) = destination.new_name {
             new_node.name = new_name;
         }
+        let mut batch = BatchBuilder::new();
         let etag = update_file_node(
-            server,
             access_token,
             node,
             new_node,
             from_account_id,
             from_document_id,
             true,
+            &mut batch,
         )
-        .await
         .caused_by(trc::location!())?;
+        server
+            .commit_batch(batch)
+            .await
+            .caused_by(trc::location!())?;
 
         Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
     } else {
@@ -418,6 +416,7 @@ async fn copy_container(
     };
 
     // Top-down copy
+    let mut batch = BatchBuilder::new();
     let mut id_map = AHashMap::with_capacity(copy_files.len());
     let mut delete_files = if delete_source {
         Vec::with_capacity(copy_files.len())
@@ -425,17 +424,15 @@ async fn copy_container(
         Vec::new()
     };
     copy_files.sort_unstable_by(|a, b| a.1.cmp(&b.1));
-    let change_id = server.generate_snowflake_id()?;
-    let mut changes = ChangeLogBuilder::with_change_id(change_id);
     let now = now() as i64;
+    let mut next_document_id = server
+        .store()
+        .assign_document_ids(to_account_id, Collection::FileNode, copy_files.len() as u64)
+        .await
+        .caused_by(trc::location!())?;
     for (document_id, _) in copy_files.into_iter() {
         let node_ = server
-            .get_property::<Archive<AlignedBytes>>(
-                from_account_id,
-                Collection::FileNode,
-                document_id,
-                Property::Value,
-            )
+            .get_archive(from_account_id, Collection::FileNode, document_id)
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
@@ -462,46 +459,26 @@ async fn copy_container(
         };
 
         // Prepare write batch
-        let mut batch = BatchBuilder::new();
+        let new_document_id = next_document_id;
+        next_document_id -= 1;
         batch
-            .with_change_id(change_id)
             .with_account_id(to_account_id)
             .with_collection(Collection::FileNode)
-            .create_document()
+            .create_document(new_document_id)
             .custom(
                 ObjectIndexBuilder::<(), _>::new()
                     .with_changes(node)
                     .with_tenant_id(access_token),
             )
-            .caused_by(trc::location!())?;
-        let new_document_id = server
-            .store()
-            .write(batch)
-            .await
             .caused_by(trc::location!())?
-            .last_document_id()
-            .caused_by(trc::location!())?;
-        changes.log_insert(Collection::FileNode, new_document_id);
+            .commit_point();
         id_map.insert(document_id + 1, new_document_id + 1);
-    }
-
-    // Write changes
-    if !changes.is_empty() {
-        server
-            .commit_changes(to_account_id, changes)
-            .await
-            .caused_by(trc::location!())?;
-        server
-            .broadcast_single_state_change(to_account_id, change_id, DataType::FileNode)
-            .await;
     }
 
     // Delete nodes
     if !delete_files.is_empty() {
-        let mut changes = ChangeLogBuilder::with_change_id(change_id);
         for (document_id, node) in delete_files.into_iter().rev() {
             // Delete record
-            let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(from_account_id)
                 .with_collection(Collection::FileNode)
@@ -511,25 +488,17 @@ async fn copy_container(
                         .with_tenant_id(access_token)
                         .with_current(node),
                 )
-                .caused_by(trc::location!())?;
-            server
-                .store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-            changes.log_delete(Collection::FileNode, document_id);
+                .caused_by(trc::location!())?
+                .commit_point();
         }
+    }
 
-        // Write changes
-        if !changes.is_empty() {
-            server
-                .commit_changes(from_account_id, changes)
-                .await
-                .caused_by(trc::location!())?;
-            server
-                .broadcast_single_state_change(from_account_id, change_id, DataType::FileNode)
-                .await;
-        }
+    // Write changes
+    if !batch.is_empty() {
+        server
+            .commit_batch(batch)
+            .await
+            .caused_by(trc::location!())?;
     }
 
     Ok(HttpResponse::new(StatusCode::CREATED))
@@ -549,12 +518,7 @@ async fn overwrite_and_delete_item(
 
     // dest_node is the current file at the destination
     let dest_node_ = server
-        .get_property::<Archive<AlignedBytes>>(
-            to_account_id,
-            Collection::FileNode,
-            to_document_id,
-            Property::Value,
-        )
+        .get_archive(to_account_id, Collection::FileNode, to_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -565,12 +529,7 @@ async fn overwrite_and_delete_item(
 
     // source_node is the file to be copied
     let source_node__ = server
-        .get_property::<Archive<AlignedBytes>>(
-            from_account_id,
-            Collection::FileNode,
-            from_document_id,
-            Property::Value,
-        )
+        .get_archive(from_account_id, Collection::FileNode, from_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -585,27 +544,30 @@ async fn overwrite_and_delete_item(
     };
     source_node.parent_id = dest_node.inner.parent_id.into();
 
+    let mut batch = BatchBuilder::new();
     let etag = update_file_node(
-        server,
         access_token,
         dest_node,
         source_node,
         to_account_id,
         to_document_id,
         true,
+        &mut batch,
     )
-    .await
     .caused_by(trc::location!())?;
 
     delete_file_node(
-        server,
         access_token,
         source_node_,
         from_account_id,
         from_document_id,
+        &mut batch,
     )
-    .await
     .caused_by(trc::location!())?;
+    server
+        .commit_batch(batch)
+        .await
+        .caused_by(trc::location!())?;
 
     Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
 }
@@ -624,12 +586,7 @@ async fn overwrite_item(
 
     // dest_node is the current file at the destination
     let dest_node_ = server
-        .get_property::<Archive<AlignedBytes>>(
-            to_account_id,
-            Collection::FileNode,
-            to_document_id,
-            Property::Value,
-        )
+        .get_archive(to_account_id, Collection::FileNode, to_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -640,12 +597,7 @@ async fn overwrite_item(
 
     // source_node is the file to be copied
     let mut source_node = server
-        .get_property::<Archive<AlignedBytes>>(
-            from_account_id,
-            Collection::FileNode,
-            from_document_id,
-            Property::Value,
-        )
+        .get_archive(from_account_id, Collection::FileNode, from_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
@@ -657,18 +609,21 @@ async fn overwrite_item(
         dest_node.inner.name.to_string()
     };
     source_node.parent_id = dest_node.inner.parent_id.into();
-
+    let mut batch = BatchBuilder::new();
     let etag = update_file_node(
-        server,
         access_token,
         dest_node,
         source_node,
         to_account_id,
         to_document_id,
         true,
+        &mut batch,
     )
-    .await
     .caused_by(trc::location!())?;
+    server
+        .commit_batch(batch)
+        .await
+        .caused_by(trc::location!())?;
 
     Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
 }
@@ -686,12 +641,7 @@ async fn move_item(
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
 
     let node_ = server
-        .get_property::<Archive<AlignedBytes>>(
-            from_account_id,
-            Collection::FileNode,
-            from_document_id,
-            Property::Value,
-        )
+        .get_archive(from_account_id, Collection::FileNode, from_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -704,35 +654,49 @@ async fn move_item(
         new_node.name = new_name;
     }
 
+    let mut batch = BatchBuilder::new();
     let etag = if from_account_id == to_account_id {
         // Destination is in the same account: just update the parent id
         update_file_node(
-            server,
             access_token,
             node,
             new_node,
             from_account_id,
             from_document_id,
             true,
+            &mut batch,
         )
-        .await
         .caused_by(trc::location!())?
     } else {
         // Destination is in a different account: insert a new node, then delete the old one
-        let etag = insert_file_node(server, access_token, new_node, to_account_id, true)
+        let to_document_id = server
+            .store()
+            .assign_document_ids(to_account_id, Collection::FileNode, 1)
             .await
             .caused_by(trc::location!())?;
+        let etag = insert_file_node(
+            access_token,
+            new_node,
+            to_account_id,
+            to_document_id,
+            true,
+            &mut batch,
+        )
+        .caused_by(trc::location!())?;
         delete_file_node(
-            server,
             access_token,
             node,
             from_account_id,
             from_document_id,
+            &mut batch,
         )
-        .await
         .caused_by(trc::location!())?;
         etag
     };
+    server
+        .commit_batch(batch)
+        .await
+        .caused_by(trc::location!())?;
 
     Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
 }
@@ -750,12 +714,7 @@ async fn copy_item(
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
 
     let mut node = server
-        .get_property::<Archive<AlignedBytes>>(
-            from_account_id,
-            Collection::FileNode,
-            from_document_id,
-            Property::Value,
-        )
+        .get_archive(from_account_id, Collection::FileNode, from_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
@@ -765,7 +724,23 @@ async fn copy_item(
     if let Some(new_name) = destination.new_name {
         node.name = new_name;
     }
-    let etag = insert_file_node(server, access_token, node, to_account_id, true)
+    let mut batch = BatchBuilder::new();
+    let to_document_id = server
+        .store()
+        .assign_document_ids(to_account_id, Collection::FileNode, 1)
+        .await
+        .caused_by(trc::location!())?;
+    let etag = insert_file_node(
+        access_token,
+        node,
+        to_account_id,
+        to_document_id,
+        true,
+        &mut batch,
+    )
+    .caused_by(trc::location!())?;
+    server
+        .commit_batch(batch)
         .await
         .caused_by(trc::location!())?;
 
@@ -783,12 +758,7 @@ async fn rename_item(
     let from_document_id = from_resource.resource.document_id;
 
     let node_ = server
-        .get_property::<Archive<AlignedBytes>>(
-            from_account_id,
-            Collection::FileNode,
-            from_document_id,
-            Property::Value,
-        )
+        .get_archive(from_account_id, Collection::FileNode, from_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -799,17 +769,21 @@ async fn rename_item(
     if let Some(new_name) = destination.new_name {
         new_node.name = new_name;
     }
+    let mut batch = BatchBuilder::new();
     let etag = update_file_node(
-        server,
         access_token,
         node,
         new_node,
         from_account_id,
         from_document_id,
         true,
+        &mut batch,
     )
-    .await
     .caused_by(trc::location!())?;
+    server
+        .commit_batch(batch)
+        .await
+        .caused_by(trc::location!())?;
 
     Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
 }

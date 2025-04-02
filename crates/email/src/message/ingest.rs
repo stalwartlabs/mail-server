@@ -37,13 +37,7 @@ use store::{
     BlobClass, IndexKey, IndexKeyPrefix, IterateParams, U32_LEN,
     ahash::AHashMap,
     roaring::RoaringBitmap,
-    write::{
-        AlignedBytes, Archive, AssignedIds, BatchBuilder, MaybeDynamicValue, SerializeWithId,
-        TaskQueueClass, ValueClass,
-        key::DeserializeBigEndian,
-        log::{ChangeLogBuilder, Changes, LogInsert},
-        now,
-    },
+    write::{BatchBuilder, TaskQueueClass, ValueClass, key::DeserializeBigEndian, now},
 };
 use store::{SerializeInfallible, rand::Rng};
 use trc::{AddContext, MessageIngestEvent};
@@ -106,14 +100,19 @@ pub trait EmailIngest: Sync + Send {
         thread_name: &str,
         references: Vec<&[u8]>,
         skip_duplicate: Option<(&[u8], u32)>,
-    ) -> impl Future<Output = trc::Result<u32>> + Send;
+    ) -> impl Future<Output = trc::Result<ThreadResult>> + Send;
     fn assign_imap_uid(
         &self,
         account_id: u32,
         mailbox_id: u32,
     ) -> impl Future<Output = trc::Result<u32>> + Send;
     fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool;
-    fn create_thread_id(&self, account_id: u32) -> impl Future<Output = trc::Result<u32>> + Send;
+}
+
+pub enum ThreadResult {
+    Id(u32),
+    Create,
+    Skip,
 }
 
 impl EmailIngest for Server {
@@ -160,21 +159,44 @@ impl EmailIngest for Server {
                     && params.mailbox_ids == [INBOX_ID]
                 {
                     // Set the spam filter result
-                    is_spam = self
-                        .core
-                        .spam
-                        .headers
-                        .status
-                        .as_ref()
-                        .and_then(|name| {
-                            message
-                                .root_part()
-                                .headers
-                                .iter()
-                                .find(|h| h.name.as_str().eq_ignore_ascii_case(name.as_str()))
-                                .and_then(|v| v.value.as_text())
-                        })
-                        .is_some_and(|v| v.contains("Yes"));
+                    #[cfg(not(feature = "test_mode"))]
+                    {
+                        is_spam = self
+                            .core
+                            .spam
+                            .headers
+                            .status
+                            .as_ref()
+                            .and_then(|name| {
+                                message
+                                    .root_part()
+                                    .headers
+                                    .iter()
+                                    .find(|h| h.name.as_str().eq_ignore_ascii_case(name.as_str()))
+                                    .and_then(|v| v.value.as_text())
+                            })
+                            .is_some_and(|v| v.contains("Yes"));
+                    }
+
+                    #[cfg(feature = "test_mode")]
+                    {
+                        is_spam = self
+                            .core
+                            .spam
+                            .headers
+                            .status
+                            .as_ref()
+                            .and_then(|name| {
+                                message
+                                    .root_part()
+                                    .headers
+                                    .iter()
+                                    .rev()
+                                    .find(|h| h.name.as_str().eq_ignore_ascii_case(name.as_str()))
+                                    .and_then(|v| v.value.as_text())
+                            })
+                            .is_some_and(|v| v.contains("Yes"));
+                    }
 
                     // Classify the message with user's model
                     if let Some(bayes_config) = self
@@ -258,6 +280,7 @@ impl EmailIngest for Server {
 
         // Obtain message references and thread name
         let mut message_id = None;
+        let mut log_thread_create = false;
         let thread_id = {
             let mut references = Vec::with_capacity(5);
             let mut subject = "";
@@ -265,9 +288,8 @@ impl EmailIngest for Server {
                 match &header.name {
                     HeaderName::MessageId => header.value.visit_text(|id| {
                         if !id.is_empty() && id.len() < MAX_ID_LENGTH {
-                            // Used by find_or_merge_thread to skip duplicates
-                            if params.source.is_smtp() && message_id.is_none() {
-                                message_id = references.len().into();
+                            if message_id.is_none() {
+                                message_id = id.to_string().into();
                             }
                             references.push(id.as_bytes());
                         }
@@ -295,33 +317,48 @@ impl EmailIngest for Server {
                 }
             }
 
-            let skip_duplicate = message_id.map(|idx| {
-                (
-                    references[idx],
-                    params.mailbox_ids.first().copied().unwrap_or(INBOX_ID),
-                )
-            });
-            let thread_id = self
-                .find_or_merge_thread(account_id, subject, references, skip_duplicate)
-                .await?;
-            if thread_id != u32::MAX {
-                thread_id
+            let skip_duplicate = if params.source.is_smtp() {
+                message_id.as_deref().map(|message_id| {
+                    (
+                        message_id.as_bytes(),
+                        params.mailbox_ids.first().copied().unwrap_or(INBOX_ID),
+                    )
+                })
             } else {
-                // Duplicate message
-                trc::event!(
-                    MessageIngest(MessageIngestEvent::Duplicate),
-                    SpanId = params.session_id,
-                    AccountId = account_id,
-                    MessageId = message_id,
-                );
+                None
+            };
+            match self
+                .find_or_merge_thread(account_id, subject, references, skip_duplicate)
+                .await?
+            {
+                ThreadResult::Id(thread_id) => thread_id,
+                ThreadResult::Create => {
+                    log_thread_create = true;
+                    self.get_cached_thread_ids(account_id)
+                        .await
+                        .caused_by(trc::location!())?
+                        .assign_thread_id(
+                            subject.as_bytes(),
+                            message_id.as_deref().unwrap_or_default().as_bytes(),
+                        )
+                }
+                ThreadResult::Skip => {
+                    // Duplicate message
+                    trc::event!(
+                        MessageIngest(MessageIngestEvent::Duplicate),
+                        SpanId = params.session_id,
+                        AccountId = account_id,
+                        MessageId = message_id,
+                    );
 
-                return Ok(IngestedEmail {
-                    id: Id::default(),
-                    change_id: u64::MAX,
-                    blob_id: BlobId::default(),
-                    imap_uids: Vec::new(),
-                    size: 0,
-                });
+                    return Ok(IngestedEmail {
+                        id: Id::default(),
+                        change_id: u64::MAX,
+                        blob_id: BlobId::default(),
+                        imap_uids: Vec::new(),
+                        size: 0,
+                    });
+                }
             }
         };
 
@@ -384,12 +421,7 @@ impl EmailIngest for Server {
         };
         if do_encrypt && !message.is_encrypted() {
             if let Some(encrypt_params_) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Principal,
-                    0,
-                    Property::Parameters,
-                )
+                .get_archive_by_property(account_id, Collection::Principal, 0, Property::Parameters)
                 .await
                 .caused_by(trc::location!())?
             {
@@ -440,11 +472,6 @@ impl EmailIngest for Server {
             }
         }
 
-        // Obtain a documentId and changeId
-        let change_id = self
-            .assign_change_id(account_id)
-            .caused_by(trc::location!())?;
-
         // Store blob
         let blob_id = self
             .put_blob(account_id, raw_message.as_ref(), false)
@@ -463,24 +490,30 @@ impl EmailIngest for Server {
             imap_uids.push(uid);
         }
 
-        // Prepare batch
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_change_id(change_id)
-            .with_account_id(account_id)
-            .with_collection(Collection::Thread)
-            .log(Changes::update([thread_id]));
         // Build write batch
+        let mut batch = BatchBuilder::new();
+        let change_id = batch.change_id();
         let mailbox_ids_event = mailbox_ids
             .iter()
             .map(|m| trc::Value::from(m.mailbox_id))
             .collect::<Vec<_>>();
+        batch.with_account_id(account_id);
+
+        if log_thread_create {
+            batch
+                .with_collection(Collection::Thread)
+                .update_document(thread_id)
+                .log_insert(None);
+        }
+
+        let document_id = self
+            .store()
+            .assign_document_ids(account_id, Collection::Email, 1)
+            .await
+            .caused_by(trc::location!())?;
         batch
-            .with_collection(Collection::Mailbox)
-            .log(Changes::child_update(params.mailbox_ids.iter().copied()))
             .with_collection(Collection::Email)
-            .create_document()
-            .log(LogEmailInsert(thread_id.into()))
+            .create_document(document_id)
             .index_message(
                 account_id,
                 tenant_id,
@@ -497,7 +530,7 @@ impl EmailIngest for Server {
             .caused_by(trc::location!())?
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                    seq: self.generate_snowflake_id().caused_by(trc::location!())?,
+                    seq: change_id,
                     hash: blob_id.hash.clone(),
                 }),
                 vec![],
@@ -507,7 +540,7 @@ impl EmailIngest for Server {
         if let Some(learn_spam) = train_spam {
             batch.set(
                 ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                    seq: self.generate_snowflake_id()?,
+                    seq: change_id,
                     hash: blob_id.hash.clone(),
                     learn_spam,
                 }),
@@ -516,15 +549,10 @@ impl EmailIngest for Server {
         }
 
         // Insert and obtain ids
-        let ids = self
-            .core
-            .storage
-            .data
-            .write(batch.build())
+        self.store()
+            .write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
-
-        let document_id = ids.last_document_id().caused_by(trc::location!())?;
         let id = Id::from_parts(thread_id, document_id);
 
         // Request FTS index
@@ -575,9 +603,9 @@ impl EmailIngest for Server {
         thread_name: &str,
         mut references: Vec<&[u8]>,
         skip_duplicate: Option<(&[u8], u32)>,
-    ) -> trc::Result<u32> {
+    ) -> trc::Result<ThreadResult> {
         if references.is_empty() {
-            return self.create_thread_id(account_id).await;
+            return Ok(ThreadResult::Create);
         }
 
         let mut try_count = 0;
@@ -632,7 +660,7 @@ impl EmailIngest for Server {
 
             // No matching subjects were found, skip early
             if subj_results.is_empty() {
-                return self.create_thread_id(account_id).await;
+                return Ok(ThreadResult::Create);
             }
 
             // Find messages with matching references
@@ -691,7 +719,7 @@ impl EmailIngest for Server {
 
             // No matching messages
             if results.is_empty() {
-                return self.create_thread_id(account_id).await;
+                return Ok(ThreadResult::Create);
             }
 
             // Skip duplicate messages
@@ -707,7 +735,7 @@ impl EmailIngest for Server {
                     .caused_by(trc::location!())?
                 {
                     if found_message_id.iter().any(|id| ids.contains(*id)) {
-                        return Ok(u32::MAX);
+                        return Ok(ThreadResult::Skip);
                     }
                 }
             }
@@ -732,24 +760,19 @@ impl EmailIngest for Server {
             }
 
             if thread_id == u32::MAX {
-                return self.create_thread_id(account_id).await;
+                return Ok(ThreadResult::Create);
             } else if thread_counts.len() == 1 {
-                return Ok(thread_id);
+                return Ok(ThreadResult::Id(thread_id));
             }
 
             // Delete all but the most common threadId
             let mut batch = BatchBuilder::new();
-            let change_id = self
-                .assign_change_id(account_id)
-                .caused_by(trc::location!())?;
-            let mut changes = ChangeLogBuilder::with_change_id(change_id);
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Thread);
             for &delete_thread_id in thread_counts.keys() {
                 if delete_thread_id != thread_id {
-                    batch.delete_document(delete_thread_id);
-                    changes.log_delete(Collection::Thread, delete_thread_id);
+                    batch.update_document(delete_thread_id).log_delete(None);
                 }
             }
 
@@ -761,12 +784,7 @@ impl EmailIngest for Server {
                     continue;
                 }
                 if let Some(data_) = self
-                    .get_property::<Archive<AlignedBytes>>(
-                        account_id,
-                        Collection::Email,
-                        document_id,
-                        Property::Value,
-                    )
+                    .get_archive(account_id, Collection::Email, document_id)
                     .await
                     .caused_by(trc::location!())?
                 {
@@ -786,18 +804,11 @@ impl EmailIngest for Server {
                                 .with_changes(new_data),
                         )
                         .caused_by(trc::location!())?;
-                    changes.log_move(
-                        Collection::Email,
-                        Id::from_parts(old_thread_id, document_id),
-                        Id::from_parts(thread_id, document_id),
-                    );
                 }
             }
 
-            batch.custom(changes).caused_by(trc::location!())?;
-
-            match self.core.storage.data.write(batch.build()).await {
-                Ok(_) => return Ok(thread_id),
+            match self.commit_batch(batch).await {
+                Ok(_) => return Ok(ThreadResult::Id(thread_id)),
                 Err(err) if err.is_assertion_failure() && try_count < MAX_RETRIES => {
                     let backoff = store::rand::rng().random_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
@@ -821,7 +832,7 @@ impl EmailIngest for Server {
         self.core
             .storage
             .data
-            .write(batch.build())
+            .write(batch.build_all())
             .await
             .and_then(|v| v.last_counter_id().map(|id| id as u32))
     }
@@ -831,51 +842,11 @@ impl EmailIngest for Server {
             bayes.account_classify && access_token.has_permission(Permission::SpamFilterTrain)
         })
     }
-
-    async fn create_thread_id(&self, account_id: u32) -> trc::Result<u32> {
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_change_id(self.generate_snowflake_id().caused_by(trc::location!())?)
-            .with_account_id(account_id)
-            .with_collection(Collection::Thread)
-            .create_document()
-            .log(LogInsert());
-        self.store()
-            .write_expect_id(batch)
-            .await
-            .caused_by(trc::location!())
-    }
-}
-
-pub struct LogEmailInsert(Option<u32>);
-
-impl LogEmailInsert {
-    pub fn new(thread_id: Option<u32>) -> Self {
-        Self(thread_id)
-    }
 }
 
 impl IngestSource<'_> {
     pub fn is_smtp(&self) -> bool {
         matches!(self, Self::Smtp { .. })
-    }
-}
-
-impl SerializeWithId for LogEmailInsert {
-    fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>> {
-        let thread_id = match self.0 {
-            Some(thread_id) => thread_id,
-            None => ids.first_document_id()?,
-        };
-        let document_id = ids.last_document_id()?;
-
-        Ok(Changes::insert([Id::from_parts(thread_id, document_id)]).serialize())
-    }
-}
-
-impl From<LogEmailInsert> for MaybeDynamicValue {
-    fn from(log: LogEmailInsert) -> Self {
-        MaybeDynamicValue::Dynamic(Box::new(log))
     }
 }
 
@@ -888,19 +859,3 @@ impl From<IngestedEmail> for Object<Value> {
             .with_property(Property::Size, email.size)
     }
 }
-
-/*
-
- let thread_id = match thread_id {
-            Some(thread_id) => thread_id,
-            None => ids.first_document_id().caused_by(trc::location!())?,
-        };
-
- .with_collection(Collection::Thread);
-        if let Some(thread_id) = thread_id {
-            batch.log(Changes::update([thread_id]));
-        } else {
-            batch.create_document().log(LogInsert());
-
-
-*/

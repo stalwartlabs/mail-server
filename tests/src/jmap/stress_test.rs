@@ -17,10 +17,7 @@ use jmap_client::{
     mailbox::{self, Mailbox, Role},
 };
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
-use store::{
-    rand::{self, Rng},
-    write::{AlignedBytes, Archive},
-};
+use store::rand::{self, Rng};
 
 use super::assert_is_empty;
 
@@ -232,12 +229,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
 
             for email_id in &email_ids_in_mailbox {
                 if let Some(mailbox_tags) = server
-                    .get_property::<Archive<AlignedBytes>>(
-                        TEST_USER_ID,
-                        Collection::Email,
-                        email_id,
-                        &Property::MailboxIds,
-                    )
+                    .get_archive(TEST_USER_ID, Collection::Email, email_id)
                     .await
                     .unwrap()
                 {

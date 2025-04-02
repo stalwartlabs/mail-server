@@ -31,7 +31,7 @@ pub trait MailboxFnc: Sync + Send {
         &self,
         account_id: u32,
         path: &str,
-    ) -> impl Future<Output = trc::Result<Option<(u32, Option<u64>)>>> + Send;
+    ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
 
     fn mailbox_count_threads(
         &self,
@@ -101,26 +101,27 @@ impl MailboxFnc for Server {
                 object.add_subscriber(account_id);
             }
             batch
-                .create_document_with_id(document_id)
+                .create_document(document_id)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(object))
                 .caused_by(trc::location!())?;
             mailbox_ids.insert(document_id);
         }
+        self.store()
+            .assign_document_ids(account_id, Collection::Mailbox, (ARCHIVE_ID + 1) as u64)
+            .await
+            .caused_by(trc::location!())?;
 
         self.core
             .storage
             .data
-            .write(batch.build())
+            .write(batch.build_all())
             .await
-            .caused_by(trc::location!())
-            .map(|_| mailbox_ids)
+            .caused_by(trc::location!())?;
+
+        Ok(mailbox_ids)
     }
 
-    async fn mailbox_create_path(
-        &self,
-        account_id: u32,
-        path: &str,
-    ) -> trc::Result<Option<(u32, Option<u64>)>> {
+    async fn mailbox_create_path(&self, account_id: u32, path: &str) -> trc::Result<Option<u32>> {
         let folders = self
             .fetch_folders::<Mailbox>(account_id, Collection::Mailbox)
             .await
@@ -165,47 +166,38 @@ impl MailboxFnc for Server {
 
         // Create missing folders
         if !create_paths.is_empty() {
-            let mut changes = self.begin_changes(account_id)?;
+            if create_paths
+                .iter()
+                .any(|name| name.len() > self.core.jmap.mailbox_name_max_len)
+            {
+                return Ok(None);
+            }
 
+            let mut next_document_id = self
+                .store()
+                .assign_document_ids(account_id, Collection::Mailbox, create_paths.len() as u64)
+                .await
+                .caused_by(trc::location!())?;
+            let mut batch = BatchBuilder::new();
             for name in create_paths {
-                if name.len() > self.core.jmap.mailbox_name_max_len {
-                    return Ok(None);
-                }
-                let mut batch = BatchBuilder::new();
+                let document_id = next_document_id;
+                next_document_id -= 1;
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Mailbox)
-                    .create_document()
+                    .create_document(document_id)
                     .custom(
                         ObjectIndexBuilder::<(), _>::new()
                             .with_changes(Mailbox::new(name).with_parent_id(next_parent_id)),
                     )
                     .caused_by(trc::location!())?;
-                let document_id = self
-                    .store()
-                    .write_expect_id(batch)
-                    .await
-                    .caused_by(trc::location!())?;
-                changes.log_insert(Collection::Mailbox, document_id);
                 next_parent_id = document_id + 1;
             }
-            let change_id = changes.change_id;
-            let mut batch = BatchBuilder::new();
 
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Mailbox)
-                .custom(changes)
-                .caused_by(trc::location!())?;
-            self.store()
-                .write(batch.build())
-                .await
-                .caused_by(trc::location!())?;
-
-            Ok(Some((next_parent_id - 1, Some(change_id))))
-        } else {
-            Ok(Some((next_parent_id - 1, None)))
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
         }
+
+        Ok(Some(next_parent_id - 1))
     }
 
     async fn mailbox_count_threads(

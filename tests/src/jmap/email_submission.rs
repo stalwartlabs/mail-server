@@ -94,7 +94,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Test automatic identity creation
     client.set_default_account_id(&account_id);
-    for (identity_id, email) in [(0u64, "jdoe@example.com"), (1u64, "john.doe@example.com")] {
+    for (identity_id, email) in [(2u64, "jdoe@example.com"), (1u64, "john.doe@example.com")] {
         let identity = client
             .identity_get(&Id::from(identity_id).to_string(), None)
             .await
@@ -482,8 +482,8 @@ pub async fn test(params: &mut JMAPTest) {
     // Destroy the created mailbox, identity and all submissions
     for identity_id in [
         identity_id,
-        Id::from(0u64).to_string(),
         Id::from(1u64).to_string(),
+        Id::from(2u64).to_string(),
     ] {
         client.identity_destroy(&identity_id).await.unwrap();
     }

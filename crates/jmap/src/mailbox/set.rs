@@ -20,8 +20,7 @@ use jmap_proto::{
         collection::Collection,
         id::Id,
         property::Property,
-        state::StateChange,
-        type_state::DataType,
+        state::State,
         value::{MaybePatchValue, Object, SetValue, Value},
     },
 };
@@ -29,7 +28,7 @@ use store::{
     SerializeInfallible,
     query::Filter,
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, BatchBuilder, assert::AssertValue, log::ChangeLogBuilder},
+    write::{Archive, BatchBuilder, assert::AssertValue},
 };
 use trc::AddContext;
 use utils::config::utils::ParseValue;
@@ -84,13 +83,13 @@ impl MailboxSet for Server {
             mailbox_ids: self.mailbox_get_or_create(account_id).await?,
             will_destroy: request.unwrap_destroy(),
         };
+        let mut change_id = None;
 
         // Process creates
-        let mut changes = ChangeLogBuilder::new();
+        let mut batch = BatchBuilder::new();
         'create: for (id, object) in request.unwrap_create() {
             match self.mailbox_set_item(object, None, &ctx).await? {
                 Ok(builder) => {
-                    let mut batch = BatchBuilder::new();
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::Mailbox);
@@ -102,37 +101,20 @@ impl MailboxSet for Server {
                             .assert_value(Property::Value, AssertValue::Some);
                     }
 
-                    batch
-                        .create_document()
-                        .custom(builder)
+                    let document_id = self
+                        .store()
+                        .assign_document_ids(account_id, Collection::Mailbox, 1)
+                        .await
                         .caused_by(trc::location!())?;
 
-                    match self
-                        .core
-                        .storage
-                        .data
-                        .write(batch.build())
-                        .await
-                        .and_then(|ids| ids.last_document_id())
-                    {
-                        Ok(document_id) => {
-                            changes.log_insert(Collection::Mailbox, document_id);
-                            ctx.mailbox_ids.insert(document_id);
-                            ctx.response.created(id, document_id);
-                        }
-                        Err(err) if err.is_assertion_failure() => {
-                            ctx.response.not_created.append(
-                                id,
-                                SetError::forbidden().with_description(
-                                    "Another process deleted the parent mailbox, please try again.",
-                                ),
-                            );
-                            continue 'create;
-                        }
-                        Err(err) => {
-                            return Err(err.caused_by(trc::location!()));
-                        }
-                    }
+                    batch
+                        .create_document(document_id)
+                        .custom(builder)
+                        .caused_by(trc::location!())?
+                        .commit_point();
+
+                    ctx.mailbox_ids.insert(document_id);
+                    ctx.response.created(id, document_id);
                 }
                 Err(err) => {
                     ctx.response.not_created.append(id, err);
@@ -141,7 +123,14 @@ impl MailboxSet for Server {
             }
         }
 
+        if !batch.is_empty() {
+            change_id = Some(batch.change_id());
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
+        }
+
         // Process updates
+        let mut will_update = Vec::with_capacity(request.update.as_ref().map_or(0, |u| u.len()));
+        let mut batch = BatchBuilder::new();
         'update: for (id, object) in request.unwrap_update() {
             // Make sure id won't be destroyed
             if ctx.will_destroy.contains(&id) {
@@ -154,12 +143,7 @@ impl MailboxSet for Server {
             // Obtain mailbox
             let document_id = id.document_id();
             if let Some(mailbox) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Mailbox,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::Mailbox, document_id)
                 .await?
             {
                 // Validate ACL
@@ -193,7 +177,6 @@ impl MailboxSet for Server {
                     .await?
                 {
                     Ok(builder) => {
-                        let mut batch = BatchBuilder::new();
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::Mailbox);
@@ -208,25 +191,9 @@ impl MailboxSet for Server {
                         batch
                             .update_document(document_id)
                             .custom(builder)
-                            .caused_by(trc::location!())?;
-
-                        if !batch.is_empty() {
-                            match self.core.storage.data.write(batch.build()).await {
-                                Ok(_) => {
-                                    changes.log_update(Collection::Mailbox, document_id);
-                                }
-                                Err(err) if err.is_assertion_failure() => {
-                                    ctx.response.not_updated.append(id, SetError::forbidden().with_description(
-                                        "Another process modified this mailbox, please try again.",
-                                    ));
-                                    continue 'update;
-                                }
-                                Err(err) => {
-                                    return Err(err.caused_by(trc::location!()));
-                                }
-                            }
-                        }
-                        ctx.response.updated.append(id, None);
+                            .caused_by(trc::location!())?
+                            .commit_point();
+                        will_update.push(id);
                     }
                     Err(err) => {
                         ctx.response.not_updated.append(id, err);
@@ -238,21 +205,46 @@ impl MailboxSet for Server {
             }
         }
 
+        if !batch.is_empty() {
+            let change_id_ = batch.change_id();
+            match self.commit_batch(batch).await {
+                Ok(_) => {
+                    change_id = Some(change_id_);
+                    for id in will_update {
+                        ctx.response.updated.append(id, None);
+                    }
+                }
+                Err(err) if err.is_assertion_failure() => {
+                    for id in will_update {
+                        ctx.response.not_updated.append(
+                            id,
+                            SetError::forbidden().with_description(
+                                "Another process modified this mailbox, please try again.",
+                            ),
+                        );
+                    }
+                }
+                Err(err) => {
+                    return Err(err.caused_by(trc::location!()));
+                }
+            }
+        }
+
         // Process deletions
-        let mut did_remove_emails = false;
         for id in ctx.will_destroy {
             match self
                 .mailbox_destroy(
                     account_id,
                     id.document_id(),
-                    &mut changes,
                     ctx.access_token,
                     on_destroy_remove_emails,
                 )
                 .await?
             {
-                Ok(removed_emails) => {
-                    did_remove_emails |= removed_emails;
+                Ok(change_id_) => {
+                    if change_id_.is_some() {
+                        change_id = change_id_;
+                    }
                     ctx.response.destroyed.push(id);
                 }
                 Err(err) => {
@@ -262,18 +254,8 @@ impl MailboxSet for Server {
         }
 
         // Write changes
-        if !changes.is_empty() {
-            let state_change =
-                StateChange::new(account_id).with_change(DataType::Mailbox, changes.change_id);
-            ctx.response.state_change = if did_remove_emails {
-                state_change
-                    .with_change(DataType::Email, changes.change_id)
-                    .with_change(DataType::Thread, changes.change_id)
-            } else {
-                state_change
-            }
-            .into();
-            ctx.response.new_state = Some(self.commit_changes(account_id, changes).await?.into());
+        if let Some(change_id) = change_id {
+            ctx.response.new_state = State::Exact(change_id).into();
         }
 
         Ok(ctx.response)
@@ -408,12 +390,7 @@ impl MailboxSet for Server {
                 let parent_document_id = mailbox_parent_id - 1;
 
                 if let Some(mailbox_) = self
-                    .get_property::<Archive<AlignedBytes>>(
-                        ctx.account_id,
-                        Collection::Mailbox,
-                        parent_document_id,
-                        Property::Value,
-                    )
+                    .get_archive(ctx.account_id, Collection::Mailbox, parent_document_id)
                     .await?
                 {
                     let mailbox = mailbox_

@@ -14,7 +14,6 @@ use dav_proto::{RequestHeaders, schema::request::LockInfo};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
-use jmap_proto::types::property::Property;
 use std::collections::HashMap;
 use store::dispatch::lookup::KeyValue;
 use store::write::serialize::rkyv_deserialize;
@@ -492,11 +491,10 @@ impl LockRequestHandler for Server {
                         resource_state.document_id.filter(|&id| id != u32::MAX)
                     {
                         if let Some(archive) = self
-                            .get_property::<Archive<AlignedBytes>>(
+                            .get_archive(
                                 resource_state.account_id,
                                 resource_state.collection,
                                 document_id,
-                                Property::Value,
                             )
                             .await
                             .caused_by(trc::location!())?

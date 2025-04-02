@@ -32,6 +32,7 @@ impl IndexableObject for EmailSubmission {
                 field: Property::SendAt.into(),
                 value: self.send_at.into(),
             },
+            IndexValue::LogChild { prefix: None },
         ]
         .into_iter()
     }
@@ -60,6 +61,7 @@ impl IndexableObject for &ArchivedEmailSubmission {
                 field: Property::SendAt.into(),
                 value: self.send_at.into(),
             },
+            IndexValue::LogChild { prefix: None },
         ]
         .into_iter()
     }

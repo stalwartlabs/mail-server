@@ -15,10 +15,8 @@ use directory::Permission;
 use imap_proto::{
     Command, ResponseCode, StatusResponse, protocol::rename::Arguments, receiver::Request,
 };
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, property::Property, state::StateChange, type_state::DataType,
-};
-use store::write::{AlignedBytes, Archive, BatchBuilder};
+use jmap_proto::types::{acl::Acl, collection::Collection};
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use super::ImapContext;
@@ -88,12 +86,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox = self
             .server
-            .get_property::<Archive<AlignedBytes>>(
-                params.account_id,
-                Collection::Mailbox,
-                mailbox_id,
-                Property::Value,
-            )
+            .get_archive(params.account_id, Collection::Mailbox, mailbox_id)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
             .ok_or_else(|| {
@@ -130,37 +123,38 @@ impl<T: SessionStream> SessionData<T> {
         let new_mailbox_name = params.path.pop().unwrap();
 
         // Build batch
-        let mut changes = self
-            .server
-            .begin_changes(params.account_id)
-            .imap_ctx(&arguments.tag, trc::location!())?;
-
         let mut parent_id = params.parent_mailbox_id.map(|id| id + 1).unwrap_or(0);
         let mut create_ids = Vec::with_capacity(params.path.len());
+        let mut next_document_id = self
+            .server
+            .store()
+            .assign_document_ids(
+                params.account_id,
+                Collection::Mailbox,
+                params.path.len() as u64,
+            )
+            .await
+            .caused_by(trc::location!())?;
+        let mut batch = BatchBuilder::new();
+
         for &path_item in params.path.iter() {
-            let mut batch = BatchBuilder::new();
+            let mailbox_id = next_document_id;
+            next_document_id -= 1;
+
             batch
                 .with_account_id(params.account_id)
                 .with_collection(Collection::Mailbox)
-                .create_document()
+                .create_document(mailbox_id)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(
                     email::mailbox::Mailbox::new(path_item).with_parent_id(parent_id),
                 ))
-                .imap_ctx(&arguments.tag, trc::location!())?;
+                .imap_ctx(&arguments.tag, trc::location!())?
+                .commit_point();
 
-            let mailbox_id = self
-                .server
-                .store()
-                .write_expect_id(batch)
-                .await
-                .imap_ctx(&arguments.tag, trc::location!())?;
-
-            changes.log_insert(Collection::Mailbox, mailbox_id);
             parent_id = mailbox_id + 1;
             create_ids.push(mailbox_id);
         }
 
-        let mut batch = BatchBuilder::new();
         let mut new_mailbox = mailbox.inner.clone();
         new_mailbox.name = new_mailbox_name.to_string();
         new_mailbox.parent_id = parent_id;
@@ -175,24 +169,11 @@ impl<T: SessionStream> SessionData<T> {
                     .with_changes(new_mailbox),
             )
             .imap_ctx(&arguments.tag, trc::location!())?;
-        changes.log_update(Collection::Mailbox, mailbox_id);
-
-        let change_id = changes.change_id;
-        batch
-            .custom(changes)
-            .imap_ctx(&arguments.tag, trc::location!())?;
+        let change_id = batch.change_id();
         self.server
-            .store()
-            .write(batch)
+            .commit_batch(batch)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
-
-        // Broadcast changes
-        self.server
-            .broadcast_state_change(
-                StateChange::new(params.account_id).with_change(DataType::Mailbox, change_id),
-            )
-            .await;
 
         let mut mailboxes = if !create_ids.is_empty() {
             self.add_created_mailboxes(&mut params, change_id, create_ids)

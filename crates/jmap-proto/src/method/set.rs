@@ -25,7 +25,7 @@ use crate::{
         id::Id,
         keyword::Keyword,
         property::{HeaderForm, ObjectProperty, Property, SetProperty},
-        state::{State, StateChange},
+        state::State,
         value::{Object, SetValue, SetValueMap, Value},
     },
 };
@@ -90,9 +90,6 @@ pub struct SetResponse {
     #[serde(rename = "notDestroyed")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
     pub not_destroyed: VecMap<Id, SetError>,
-
-    #[serde(skip)]
-    pub state_change: Option<StateChange>,
 }
 
 impl JsonObjectParser for SetRequest<RequestArguments> {
@@ -475,7 +472,6 @@ impl SetResponse {
                 not_created: VecMap::new(),
                 not_updated: VecMap::new(),
                 not_destroyed: VecMap::new(),
-                state_change: None,
             })
         } else {
             Err(trc::JmapEvent::RequestTooLarge.into_err())

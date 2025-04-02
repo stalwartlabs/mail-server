@@ -12,10 +12,7 @@ use jmap_proto::{
     types::{collection::Collection, property::Property},
 };
 use std::future::Future;
-use store::{
-    SerializeInfallible,
-    query::{self},
-};
+use store::query::{self};
 
 use crate::JmapMethods;
 
@@ -37,10 +34,9 @@ impl SieveScriptQuery for Server {
         for cond in std::mem::take(&mut request.filter) {
             match cond {
                 Filter::Name(name) => filters.push(query::Filter::contains(Property::Name, &name)),
-                Filter::IsActive(is_active) => filters.push(query::Filter::eq(
-                    Property::IsActive,
-                    (is_active as u32).serialize(),
-                )),
+                Filter::IsActive(is_active) => {
+                    filters.push(query::Filter::eq(Property::IsActive, vec![is_active as u8]))
+                }
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                     filters.push(cond.into());
                 }

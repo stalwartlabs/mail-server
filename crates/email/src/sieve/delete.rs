@@ -6,7 +6,7 @@
 
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::{AlignedBytes, Archive, BatchBuilder};
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use super::SieveScript;
@@ -17,7 +17,8 @@ pub trait SieveScriptDelete: Sync + Send {
         resource_token: &ResourceToken,
         document_id: u32,
         fail_if_active: bool,
-    ) -> impl Future<Output = trc::Result<bool>> + Send;
+        batch: &mut BatchBuilder,
+    ) -> impl Future<Output = trc::Result<Option<bool>>> + Send;
 }
 
 impl SieveScriptDelete for Server {
@@ -26,34 +27,29 @@ impl SieveScriptDelete for Server {
         resource_token: &ResourceToken,
         document_id: u32,
         fail_if_active: bool,
-    ) -> trc::Result<bool> {
+        batch: &mut BatchBuilder,
+    ) -> trc::Result<Option<bool>> {
         // Fetch record
         let account_id = resource_token.account_id;
-        let obj_ = self
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::SieveScript,
-                document_id,
-                Property::Value,
-            )
+        let obj_ = if let Some(obj) = self
+            .get_archive(account_id, Collection::SieveScript, document_id)
             .await?
-            .ok_or_else(|| {
-                trc::StoreEvent::NotFound
-                    .into_err()
-                    .caused_by(trc::location!())
-                    .document_id(document_id)
-            })?;
+        {
+            obj
+        } else {
+            return Ok(None);
+        };
+
         let obj = obj_
             .to_unarchived::<SieveScript>()
             .caused_by(trc::location!())?;
 
         // Make sure the script is not active
         if fail_if_active && obj.inner.is_active {
-            return Ok(false);
+            return Ok(Some(false));
         }
 
         // Delete record
-        let mut batch = BatchBuilder::new();
         batch
             .with_account_id(account_id)
             .with_collection(Collection::SieveScript)
@@ -64,12 +60,9 @@ impl SieveScriptDelete for Server {
                     .with_current(obj)
                     .with_tenant_id(resource_token),
             )
-            .caused_by(trc::location!())?;
+            .caused_by(trc::location!())?
+            .commit_point();
 
-        self.store()
-            .write(batch)
-            .await
-            .caused_by(trc::location!())?;
-        Ok(true)
+        Ok(Some(true))
     }
 }

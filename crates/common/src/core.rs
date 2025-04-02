@@ -18,8 +18,8 @@ use store::{
     dispatch::DocumentSet,
     roaring::RoaringBitmap,
     write::{
-        AlignedBytes, Archive, BatchBuilder, BitmapClass, BlobOp, DirectoryClass, QueueClass,
-        TagValue, ValueClass, key::DeserializeBigEndian, log::ChangeLogBuilder, now,
+        AlignedBytes, Archive, AssignedIds, BatchBuilder, BitmapClass, BlobOp, DirectoryClass,
+        QueueClass, TagValue, ValueClass, key::DeserializeBigEndian, now,
     },
 };
 use trc::AddContext;
@@ -245,7 +245,7 @@ impl Server {
             .clear(DirectoryClass::UsedQuota(account_id))
             .add(DirectoryClass::UsedQuota(account_id), quota);
         self.store()
-            .write(batch)
+            .write(batch.build_all())
             .await
             .caused_by(trc::location!())
             .map(|_| ())
@@ -349,22 +349,44 @@ impl Server {
         })
     }
 
-    pub async fn get_property<U>(
+    #[inline(always)]
+    pub async fn get_archive(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        document_id: u32,
+    ) -> trc::Result<Option<Archive<AlignedBytes>>> {
+        self.core
+            .storage
+            .data
+            .get_value(ValueKey {
+                account_id,
+                collection: collection.into(),
+                document_id,
+                class: ValueClass::Property(Property::Value.into()),
+            })
+            .await
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(collection)
+                    .document_id(document_id)
+            })
+    }
+
+    #[inline(always)]
+    pub async fn get_archive_by_property(
         &self,
         account_id: u32,
         collection: Collection,
         document_id: u32,
         property: impl AsRef<Property> + Sync + Send,
-    ) -> trc::Result<Option<U>>
-    where
-        U: Deserialize + 'static,
-    {
+    ) -> trc::Result<Option<Archive<AlignedBytes>>> {
         let property = property.as_ref();
-
         self.core
             .storage
             .data
-            .get_value::<U>(ValueKey {
+            .get_value(ValueKey {
                 account_id,
                 collection: collection.into(),
                 document_id,
@@ -376,7 +398,6 @@ impl Server {
                     .account_id(account_id)
                     .collection(collection)
                     .document_id(document_id)
-                    .id(property.to_string())
             })
     }
 
@@ -385,14 +406,12 @@ impl Server {
         account_id: u32,
         collection: Collection,
         documents: &I,
-        property: Property,
         mut cb: CB,
     ) -> trc::Result<()>
     where
         I: DocumentSet + Send + Sync,
         CB: FnMut(u32, Archive<AlignedBytes>) -> trc::Result<bool> + Send + Sync,
     {
-        let property: u8 = property.as_ref().into();
         let collection: u8 = collection.into();
 
         self.core
@@ -404,13 +423,13 @@ impl Server {
                         account_id,
                         collection,
                         document_id: documents.min(),
-                        class: ValueClass::Property(property),
+                        class: ValueClass::Property(Property::Value.into()),
                     },
                     ValueKey {
                         account_id,
                         collection,
                         document_id: documents.max(),
-                        class: ValueClass::Property(property),
+                        class: ValueClass::Property(Property::Value.into()),
                     },
                 ),
                 |key, value| {
@@ -428,10 +447,10 @@ impl Server {
                 err.caused_by(trc::location!())
                     .account_id(account_id)
                     .collection(collection)
-                    .id(property.to_string())
             })
     }
 
+    #[inline(always)]
     pub async fn get_document_ids(
         &self,
         account_id: u32,
@@ -454,7 +473,7 @@ impl Server {
         account_id: u32,
         collection: Collection,
         property: impl AsRef<Property> + Sync + Send,
-        value: impl Into<TagValue<u32>> + Sync + Send,
+        value: impl Into<TagValue> + Sync + Send,
     ) -> trc::Result<Option<RoaringBitmap>> {
         let property = property.as_ref();
         self.core
@@ -478,6 +497,7 @@ impl Server {
             })
     }
 
+    #[inline(always)]
     pub fn notify_task_queue(&self) {
         self.inner.ipc.index_tx.notify_one();
     }
@@ -502,47 +522,37 @@ impl Server {
             .map(|_| total)
     }
 
-    pub fn begin_changes(&self, account_id: u32) -> trc::Result<ChangeLogBuilder> {
-        self.assign_change_id(account_id)
-            .map(ChangeLogBuilder::with_change_id)
-    }
-
     #[inline(always)]
-    pub fn assign_change_id(&self, _: u32) -> trc::Result<u64> {
-        self.generate_snowflake_id()
+    pub fn generate_snowflake_id(&self) -> u64 {
+        self.inner.data.jmap_id_gen.generate()
     }
 
-    pub fn generate_snowflake_id(&self) -> trc::Result<u64> {
-        self.inner.data.jmap_id_gen.generate().ok_or_else(|| {
-            trc::StoreEvent::UnexpectedError
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Reason, "Failed to generate snowflake id.")
-        })
-    }
+    pub async fn commit_batch(&self, mut builder: BatchBuilder) -> trc::Result<AssignedIds> {
+        let mut assigned_ids = AssignedIds::default();
+        let change_id = builder.last_change_id();
 
-    pub async fn commit_changes(
-        &self,
-        account_id: u32,
-        mut changes: ChangeLogBuilder,
-    ) -> trc::Result<u64> {
-        if changes.change_id == u64::MAX || changes.change_id == 0 {
-            changes.change_id = self.assign_change_id(account_id)?;
+        for batch in builder.build() {
+            assigned_ids = self.store().write(batch).await?;
         }
-        let state = changes.change_id;
 
-        let mut builder = BatchBuilder::new();
-        builder
-            .with_account_id(account_id)
-            .custom(changes)
-            .caused_by(trc::location!())?;
-        self.core
-            .storage
-            .data
-            .write(builder.build())
-            .await
-            .caused_by(trc::location!())
-            .map(|_| state)
+        if builder.has_logs() {
+            let change_id = change_id.unwrap();
+            for (account_id, changed_collections) in builder.changed_collections() {
+                let mut state_change = StateChange::new(*account_id);
+                for changed_collection in *changed_collections {
+                    if let Ok(data_type) = DataType::try_from(changed_collection) {
+                        state_change.set_change(data_type, change_id);
+                    }
+                }
+                if state_change.has_changes() {
+                    self.broadcast_state_change(state_change).await;
+                }
+            }
+
+            assigned_ids.change_id = change_id.into();
+        }
+
+        Ok(assigned_ids)
     }
 
     pub async fn delete_changes(&self, account_id: u32, before: Duration) -> trc::Result<()> {
@@ -602,17 +612,6 @@ impl Server {
         }
     }
 
-    #[inline]
-    pub async fn broadcast_single_state_change(
-        &self,
-        account_id: u32,
-        change_id: u64,
-        data_type: DataType,
-    ) {
-        self.broadcast_state_change(StateChange::new(account_id).with_change(data_type, change_id))
-            .await;
-    }
-
     #[allow(clippy::blocks_in_conditions)]
     pub async fn put_blob(
         &self,
@@ -635,7 +634,7 @@ impl Server {
         self.core
             .storage
             .data
-            .write(batch.build())
+            .write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
 
@@ -661,7 +660,7 @@ impl Server {
             self.core
                 .storage
                 .data
-                .write(batch.build())
+                .write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
         }

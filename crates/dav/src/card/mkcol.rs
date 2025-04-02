@@ -12,8 +12,8 @@ use dav_proto::{
 use groupware::{contact::AddressBook, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{collection::Collection, type_state::DataType};
-use store::write::{BatchBuilder, log::LogInsert, now};
+use jmap_proto::types::collection::Collection;
+use store::write::{BatchBuilder, now};
 use trc::AddContext;
 
 use crate::{
@@ -81,7 +81,6 @@ impl CardMkColRequestHandler for Server {
         .await?;
 
         // Build file container
-        let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
         let now = now();
         let mut book = AddressBook {
             name: name.to_string(),
@@ -108,22 +107,19 @@ impl CardMkColRequestHandler for Server {
 
         // Prepare write batch
         let mut batch = BatchBuilder::new();
-        batch
-            .with_change_id(change_id)
-            .with_account_id(account_id)
-            .with_collection(Collection::AddressBook)
-            .create_document()
-            .log(LogInsert())
-            .custom(ObjectIndexBuilder::<(), _>::new().with_changes(book))
-            .caused_by(trc::location!())?;
-        self.store()
-            .write(batch)
+        let document_id = self
+            .store()
+            .assign_document_ids(account_id, Collection::AddressBook, 1)
             .await
             .caused_by(trc::location!())?;
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::AddressBook)
+            .create_document(document_id)
+            .custom(ObjectIndexBuilder::<(), _>::new().with_changes(book))
+            .caused_by(trc::location!())?;
+        self.commit_batch(batch).await.caused_by(trc::location!())?;
 
-        // Broadcast state change
-        self.broadcast_single_state_change(account_id, change_id, DataType::AddressBook)
-            .await;
         if let Some(prop_stat) = return_prop_stat {
             Ok(HttpResponse::new(StatusCode::CREATED).with_xml_body(
                 MkColResponse::new(prop_stat)

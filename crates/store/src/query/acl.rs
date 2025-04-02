@@ -9,7 +9,7 @@ use trc::AddContext;
 
 use crate::{
     Deserialize, IterateParams, Store, U32_LEN, ValueKey,
-    write::{BatchBuilder, Operation, ValueClass, ValueOp, key::DeserializeBigEndian},
+    write::{BatchBuilder, ValueClass, key::DeserializeBigEndian},
 };
 
 pub enum AclQuery {
@@ -102,10 +102,7 @@ impl Store {
                 if account_id == key.deserialize_be_u32(U32_LEN)? {
                     let owner_account_id = key.deserialize_be_u32(0)?;
                     revoked_accounts.insert(owner_account_id);
-                    delete_keys.push((
-                        ValueClass::Acl(owner_account_id),
-                        AclItem::deserialize(key)?,
-                    ));
+                    delete_keys.push((owner_account_id, AclItem::deserialize(key)?));
                 }
 
                 Ok(true)
@@ -118,9 +115,9 @@ impl Store {
         let mut batch = BatchBuilder::new();
         batch.with_account_id(account_id);
         let mut last_collection = u8::MAX;
-        for (class, acl_item) in delete_keys.into_iter() {
-            if batch.ops.len() >= 1000 {
-                self.write(batch.build())
+        for (revoke_account_id, acl_item) in delete_keys.into_iter() {
+            if batch.len() >= 1000 {
+                self.write(batch.build_all())
                     .await
                     .caused_by(trc::location!())?;
                 batch = BatchBuilder::new();
@@ -131,14 +128,12 @@ impl Store {
                 batch.with_collection(acl_item.to_collection);
                 last_collection = acl_item.to_collection;
             }
-            batch.update_document(acl_item.to_document_id);
-            batch.ops.push(Operation::Value {
-                class,
-                op: ValueOp::Clear,
-            })
+            batch
+                .update_document(acl_item.to_document_id)
+                .acl_revoke(revoke_account_id);
         }
         if !batch.is_empty() {
-            self.write(batch.build())
+            self.write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
         }

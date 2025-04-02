@@ -11,6 +11,8 @@ use crate::{
     store::{deflate_test_resource, query::FIELDS},
 };
 
+use ::email::thread::cache::ThreadCache;
+use ahash::AHashSet;
 use jmap_client::{
     client::Client,
     core::query::{Comparator, Filter},
@@ -45,9 +47,15 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox);
         for mailbox_id in 1545..3010 {
-            batch.create_document_with_id(mailbox_id);
+            batch.create_document(mailbox_id);
         }
-        server.core.storage.data.write(batch.build()).await.unwrap();
+        server
+            .core
+            .storage
+            .data
+            .write(batch.build_all())
+            .await
+            .unwrap();
 
         // Create test messages
         println!("Inserting JMAP Mail query test messages...");
@@ -63,16 +71,25 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
                 .delete_document(mailbox_id)
                 .clear(ValueClass::Property(Property::EmailIds.into()));
         }
-        server.core.storage.data.write(batch.build()).await.unwrap();
+        server
+            .core
+            .storage
+            .data
+            .write(batch.build_all())
+            .await
+            .unwrap();
 
         assert_eq!(
             params
                 .server
-                .get_document_ids(account_id, Collection::Thread)
+                .get_cached_thread_ids(account_id)
                 .await
                 .unwrap()
-                .unwrap()
-                .len() as usize,
+                .threads
+                .values()
+                .copied()
+                .collect::<AHashSet<_>>()
+                .len(),
             MAX_THREADS
         );
 

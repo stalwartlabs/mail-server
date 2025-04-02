@@ -15,6 +15,7 @@ use jmap_proto::{
         collection::Collection,
         date::UTCDate,
         property::Property,
+        state::State,
         type_state::DataType,
         value::{MaybePatchValue, Object, Value},
     },
@@ -24,7 +25,7 @@ use std::future::Future;
 use store::{
     Serialize,
     rand::{Rng, rng},
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, now},
+    write::{Archiver, BatchBuilder, now},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -49,7 +50,7 @@ impl PushSubscriptionSet for Server {
         access_token: &AccessToken,
     ) -> trc::Result<SetResponse> {
         let account_id = access_token.primary_id();
-        let mut push_ids = self
+        let push_ids = self
             .get_document_ids(account_id, Collection::PushSubscription)
             .await?
             .unwrap_or_default();
@@ -57,6 +58,7 @@ impl PushSubscriptionSet for Server {
         let will_destroy = request.unwrap_destroy();
 
         // Process creates
+        let mut batch = BatchBuilder::new();
         'create: for (id, object) in request.unwrap_create() {
             let mut push = PushSubscription::default();
 
@@ -101,23 +103,22 @@ impl PushSubscriptionSet for Server {
                 .collect::<String>();
 
             // Insert record
-            let mut batch = BatchBuilder::new();
+            let document_id = self
+                .store()
+                .assign_document_ids(account_id, Collection::PushSubscription, 1)
+                .await
+                .caused_by(trc::location!())?;
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::PushSubscription)
-                .create_document()
+                .create_document(document_id)
                 .set(
                     Property::Value,
                     Archiver::new(push)
                         .serialize()
                         .caused_by(trc::location!())?,
-                );
-            let document_id = self
-                .store()
-                .write_expect_id(batch)
-                .await
-                .caused_by(trc::location!())?;
-            push_ids.insert(document_id);
+                )
+                .commit_point();
             response.created.insert(
                 id,
                 Object::with_capacity(1)
@@ -138,12 +139,7 @@ impl PushSubscriptionSet for Server {
             // Obtain push subscription
             let document_id = id.document_id();
             let mut push = if let Some(push) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::PushSubscription,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::PushSubscription, document_id)
                 .await?
             {
                 push.deserialize::<email::push::PushSubscription>()
@@ -164,7 +160,6 @@ impl PushSubscriptionSet for Server {
             }
 
             // Update record
-            let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::PushSubscription)
@@ -174,11 +169,8 @@ impl PushSubscriptionSet for Server {
                     Archiver::new(push)
                         .serialize()
                         .caused_by(trc::location!())?,
-                );
-            self.store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
+                )
+                .commit_point();
             response.updated.append(id, None);
         }
 
@@ -187,20 +179,23 @@ impl PushSubscriptionSet for Server {
             let document_id = id.document_id();
             if push_ids.contains(document_id) {
                 // Update record
-                let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::PushSubscription)
                     .delete_document(document_id)
-                    .clear(Property::Value);
-                self.store()
-                    .write(batch)
-                    .await
-                    .caused_by(trc::location!())?;
+                    .clear(Property::Value)
+                    .commit_point();
                 response.destroyed.push(id);
             } else {
                 response.not_destroyed.append(id, SetError::not_found());
             }
+        }
+
+        // Write changes
+        if !batch.is_empty() {
+            let change_id = batch.change_id();
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
+            response.new_state = State::Exact(change_id).into();
         }
 
         // Update push subscriptions

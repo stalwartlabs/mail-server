@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::Server;
+use common::{Server, storage::index::ObjectIndexBuilder};
 use directory::{QueryBy, backend::internal::PrincipalField};
 use email::identity::{EmailAddress, Identity};
 use jmap_proto::{
@@ -14,12 +14,12 @@ use jmap_proto::{
     types::{
         collection::Collection,
         property::Property,
+        state::State,
         value::{MaybePatchValue, Value},
     },
 };
 use std::future::Future;
-use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
-use store::{Serialize, write::Archiver};
+use store::write::BatchBuilder;
 use trc::AddContext;
 use utils::sanitize_email;
 
@@ -36,7 +36,7 @@ impl IdentitySet for Server {
         mut request: SetRequest<RequestArguments>,
     ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
-        let mut identity_ids = self
+        let identity_ids = self
             .get_document_ids(account_id, Collection::Identity)
             .await?
             .unwrap_or_default();
@@ -44,7 +44,7 @@ impl IdentitySet for Server {
         let will_destroy = request.unwrap_destroy();
 
         // Process creates
-        let mut changes = ChangeLogBuilder::new();
+        let mut batch = BatchBuilder::new();
         'create: for (id, object) in request.unwrap_create() {
             let mut identity = Identity::default();
 
@@ -89,24 +89,18 @@ impl IdentitySet for Server {
             }
 
             // Insert record
-            let mut batch = BatchBuilder::new();
+            let document_id = self
+                .store()
+                .assign_document_ids(account_id, Collection::Identity, 1)
+                .await
+                .caused_by(trc::location!())?;
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Identity)
-                .create_document()
-                .set(
-                    Property::Value,
-                    Archiver::new(identity)
-                        .serialize()
-                        .caused_by(trc::location!())?,
-                );
-            let document_id = self
-                .store()
-                .write_expect_id(batch)
-                .await
-                .caused_by(trc::location!())?;
-            identity_ids.insert(document_id);
-            changes.log_insert(Collection::Identity, document_id);
+                .create_document(document_id)
+                .custom(ObjectIndexBuilder::<(), _>::new().with_changes(identity))
+                .caused_by(trc::location!())?
+                .commit_point();
             response.created(id, document_id);
         }
 
@@ -120,26 +114,25 @@ impl IdentitySet for Server {
 
             // Obtain identity
             let document_id = id.document_id();
-            let mut identity = if let Some(identity) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Identity,
-                    document_id,
-                    Property::Value,
-                )
+            let identity_ = if let Some(identity_) = self
+                .get_archive(account_id, Collection::Identity, document_id)
                 .await?
             {
-                identity
-                    .deserialize::<Identity>()
-                    .caused_by(trc::location!())?
+                identity_
             } else {
                 response.not_updated.append(id, SetError::not_found());
                 continue 'update;
             };
+            let identity = identity_
+                .to_unarchived::<Identity>()
+                .caused_by(trc::location!())?;
+            let mut new_identity = identity
+                .deserialize::<Identity>()
+                .caused_by(trc::location!())?;
 
             for (property, value) in object.0 {
                 if let Err(err) = response.eval_object_references(value).and_then(|value| {
-                    validate_identity_value(&property, value, &mut identity, false)
+                    validate_identity_value(&property, value, &mut new_identity, false)
                 }) {
                     response.not_updated.append(id, err);
                     continue 'update;
@@ -147,22 +140,17 @@ impl IdentitySet for Server {
             }
 
             // Update record
-            let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Identity)
                 .update_document(document_id)
-                .set(
-                    Property::Value,
-                    Archiver::new(identity)
-                        .serialize()
-                        .caused_by(trc::location!())?,
-                );
-            self.store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-            changes.log_update(Collection::Identity, document_id);
+                .custom(
+                    ObjectIndexBuilder::new()
+                        .with_current(identity)
+                        .with_changes(new_identity),
+                )
+                .caused_by(trc::location!())?
+                .commit_point();
             response.updated.append(id, None);
         }
 
@@ -171,17 +159,13 @@ impl IdentitySet for Server {
             let document_id = id.document_id();
             if identity_ids.contains(document_id) {
                 // Update record
-                let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Identity)
                     .delete_document(document_id)
-                    .clear(Property::Value);
-                self.store()
-                    .write(batch)
-                    .await
-                    .caused_by(trc::location!())?;
-                changes.log_delete(Collection::Identity, document_id);
+                    .clear(Property::Value)
+                    .log_delete(None)
+                    .commit_point();
                 response.destroyed.push(id);
             } else {
                 response.not_destroyed.append(id, SetError::not_found());
@@ -189,8 +173,11 @@ impl IdentitySet for Server {
         }
 
         // Write changes
-        if !changes.is_empty() {
-            response.new_state = Some(self.commit_changes(account_id, changes).await?.into());
+        if !batch.is_empty() {
+            let change_id = batch.change_id();
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
+
+            response.new_state = State::Exact(change_id).into();
         }
 
         Ok(response)

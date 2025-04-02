@@ -23,7 +23,7 @@ use serde_json::json;
 use services::index::Indexer;
 use store::{
     Serialize, rand,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, ValueClass},
+    write::{Archiver, BatchBuilder, ValueClass},
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
@@ -332,12 +332,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .unwrap_or_default()
     {
         let mailbox = server
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::Mailbox,
-                mailbox_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::Mailbox, mailbox_id)
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?
@@ -359,7 +354,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .clear(Property::EmailIds);
         server
             .store()
-            .write(batch)
+            .write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
         mailbox_count += 1;
@@ -373,12 +368,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .unwrap_or_default()
     {
         let data = server
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::Email,
-                message_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::Email, message_id)
             .await
             .caused_by(trc::location!())?;
         let data_ = if let Some(data) = data {
@@ -415,7 +405,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             );
         server
             .store()
-            .write(batch)
+            .write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
         email_count += 1;

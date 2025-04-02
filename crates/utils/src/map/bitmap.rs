@@ -107,6 +107,20 @@ impl<T: BitmapItem> Bitmap<T> {
     }
 
     #[inline(always)]
+    pub fn contains_all(&self, items: impl Iterator<Item = T>) -> bool {
+        if !self.is_empty() {
+            for item in items {
+                if self.bitmap & (1 << item.into()) == 0 {
+                    return false;
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.bitmap == 0
     }
@@ -243,5 +257,31 @@ impl<T: BitmapItem> Default for Bitmap<T> {
             bitmap: 0,
             _state: std::marker::PhantomData,
         }
+    }
+}
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ShortId(pub u8);
+
+impl BitmapItem for ShortId {
+    fn max() -> u64 {
+        u8::MAX as u64
+    }
+
+    fn is_valid(&self) -> bool {
+        true
+    }
+}
+
+impl From<u64> for ShortId {
+    fn from(value: u64) -> Self {
+        ShortId(value as u8)
+    }
+}
+
+impl From<ShortId> for u64 {
+    fn from(value: ShortId) -> Self {
+        value.0 as u64
     }
 }

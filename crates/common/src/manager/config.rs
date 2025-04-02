@@ -194,7 +194,7 @@ impl ConfigManager {
         }
 
         if !batch.is_empty() {
-            self.cfg_store.write(batch.build()).await?;
+            self.cfg_store.write(batch.build_all()).await?;
         }
 
         if !local_batch.is_empty() {
@@ -236,7 +236,7 @@ impl ConfigManager {
         } else {
             let mut batch = BatchBuilder::new();
             batch.clear(ValueClass::Config(key.to_string().into_bytes()));
-            self.cfg_store.write(batch.build()).await.map(|_| ())
+            self.cfg_store.write(batch.build_all()).await.map(|_| ())
         }
     }
 

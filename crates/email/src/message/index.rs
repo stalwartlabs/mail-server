@@ -5,7 +5,7 @@
  */
 
 use common::storage::index::{IndexValue, IndexableObject, ObjectIndexBuilder};
-use jmap_proto::types::property::Property;
+use jmap_proto::types::{collection::Collection, property::Property};
 use mail_parser::{
     decoders::html::html_to_text,
     parsers::{fields::thread::thread_name, preview::preview_text},
@@ -16,7 +16,7 @@ use store::{
     Serialize, SerializeInfallible,
     backend::MAX_TOKEN_LENGTH,
     fts::{Field, index::FtsDocument},
-    write::{Archiver, BatchBuilder, BlobOp, DirectoryClass, MaybeDynamicId, TagValue},
+    write::{Archiver, BatchBuilder, BlobOp, DirectoryClass, TagValue},
 };
 use trc::AddContext;
 use utils::BlobHash;
@@ -582,7 +582,7 @@ impl IndexableObject for MessageData {
                 value: self
                     .mailboxes
                     .iter()
-                    .map(|m| TagValue::Id(MaybeDynamicId::Static(m.mailbox_id)))
+                    .map(|m| TagValue::Id(m.mailbox_id))
                     .collect(),
             },
             IndexValue::Tag {
@@ -591,14 +591,25 @@ impl IndexableObject for MessageData {
                     .keywords
                     .iter()
                     .map(|k| match k.id() {
-                        Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
+                        Ok(id) => TagValue::Id(id),
                         Err(string) => TagValue::Text(string.into_bytes()),
                     })
                     .collect(),
             },
             IndexValue::Tag {
                 field: Property::ThreadId.into(),
-                value: vec![TagValue::Id(MaybeDynamicId::Static(self.thread_id))],
+                value: vec![TagValue::Id(self.thread_id)],
+            },
+            IndexValue::LogChild {
+                prefix: self.thread_id.into(),
+            },
+            IndexValue::LogParent {
+                collection: Collection::Thread,
+                ids: vec![self.thread_id],
+            },
+            IndexValue::LogParent {
+                collection: Collection::Mailbox,
+                ids: self.mailboxes.iter().map(|m| m.mailbox_id).collect(),
             },
         ]
         .into_iter()
@@ -613,7 +624,7 @@ impl IndexableObject for &ArchivedMessageData {
                 value: self
                     .mailboxes
                     .iter()
-                    .map(|m| TagValue::Id(MaybeDynamicId::Static(u32::from(m.mailbox_id))))
+                    .map(|m| TagValue::Id(u32::from(m.mailbox_id)))
                     .collect(),
             },
             IndexValue::Tag {
@@ -622,16 +633,29 @@ impl IndexableObject for &ArchivedMessageData {
                     .keywords
                     .iter()
                     .map(|k| match k.id() {
-                        Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
+                        Ok(id) => TagValue::Id(id),
                         Err(string) => TagValue::Text(string.into_bytes()),
                     })
                     .collect(),
             },
             IndexValue::Tag {
                 field: Property::ThreadId.into(),
-                value: vec![TagValue::Id(MaybeDynamicId::Static(u32::from(
-                    self.thread_id,
-                )))],
+                value: vec![TagValue::Id(u32::from(self.thread_id))],
+            },
+            IndexValue::LogChild {
+                prefix: self.thread_id.to_native().into(),
+            },
+            IndexValue::LogParent {
+                collection: Collection::Thread,
+                ids: vec![self.thread_id.to_native()],
+            },
+            IndexValue::LogParent {
+                collection: Collection::Mailbox,
+                ids: self
+                    .mailboxes
+                    .iter()
+                    .map(|m| m.mailbox_id.to_native())
+                    .collect(),
             },
         ]
         .into_iter()

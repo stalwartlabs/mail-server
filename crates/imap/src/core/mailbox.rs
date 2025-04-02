@@ -19,10 +19,7 @@ use indexmap::IndexMap;
 use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, property::Property};
 use parking_lot::Mutex;
 use std::sync::{Arc, atomic::Ordering};
-use store::{
-    query::log::{Change, Query},
-    write::{AlignedBytes, Archive},
-};
+use store::query::log::{Change, Query};
 use trc::AddContext;
 use utils::topological::TopologicalSort;
 
@@ -164,7 +161,6 @@ impl<T: SessionStream> SessionData<T> {
                 account_id,
                 Collection::Mailbox,
                 &mailbox_ids,
-                Property::Value,
                 |mailbox_id, mailbox_| {
                     let mailbox = mailbox_
                         .unarchive::<email::mailbox::Mailbox>()
@@ -645,12 +641,7 @@ impl<T: SessionStream> SessionData<T> {
         Ok(access_token.is_member(account_id)
             || self
                 .server
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Mailbox,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::Mailbox, document_id)
                 .await
                 .and_then(|mailbox| {
                     if let Some(mailbox) = mailbox {

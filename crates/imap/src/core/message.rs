@@ -11,17 +11,12 @@ use common::{NextMailboxState, listener::SessionStream};
 use email::message::metadata::MessageData;
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::{
-    ValueKey,
-    write::{AlignedBytes, Archive, ValueClass},
-};
+use store::{ValueKey, write::ValueClass};
 use trc::AddContext;
 
 use crate::core::ImapId;
 
 use super::{ImapUidToId, MailboxId, MailboxState, SelectedMailbox, SessionData};
-
-pub(crate) const MAX_RETRIES: usize = 10;
 
 impl<T: SessionStream> SessionData<T> {
     pub async fn fetch_messages(&self, mailbox: &MailboxId) -> trc::Result<MailboxState> {
@@ -58,7 +53,6 @@ impl<T: SessionStream> SessionData<T> {
                 mailbox.account_id,
                 Collection::Email,
                 &message_ids,
-                Property::Value,
                 |message_id, message_data_| {
                     let message_data = message_data_
                         .unarchive::<MessageData>()
@@ -231,12 +225,7 @@ impl<T: SessionStream> SessionData<T> {
 
     pub async fn get_uid_validity(&self, mailbox: &MailboxId) -> trc::Result<u32> {
         self.server
-            .get_property::<Archive<AlignedBytes>>(
-                mailbox.account_id,
-                Collection::Mailbox,
-                mailbox.mailbox_id,
-                &Property::Value,
-            )
+            .get_archive(mailbox.account_id, Collection::Mailbox, mailbox.mailbox_id)
             .await?
             .ok_or_else(|| {
                 trc::ImapEvent::Error

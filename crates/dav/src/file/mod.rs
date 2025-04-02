@@ -4,17 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{
-    DavResource, DavResources, Server, auth::AccessToken, storage::index::ObjectIndexBuilder,
-};
+use common::{DavResource, DavResources, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use groupware::file::{ArchivedFileNode, FileNode};
 use hyper::StatusCode;
-use jmap_proto::types::{collection::Collection, type_state::DataType};
-use store::write::{
-    Archive, BatchBuilder,
-    log::{Changes, LogInsert},
-    now,
-};
+use jmap_proto::types::collection::Collection;
+use store::write::{Archive, BatchBuilder, now};
 
 use crate::{
     DavError,
@@ -49,8 +43,7 @@ pub(crate) trait DavFileResource {
         resource: &OwnedUri<'_>,
     ) -> crate::Result<UriResource<u32, T>>;
 
-    fn map_parent<'x, T: FromDavResource>(&self, resource: &'x str)
-    -> Option<(Option<T>, &'x str)>;
+    fn map_parent<'x>(&self, resource: &'x str) -> Option<(Option<&DavResource>, &'x str)>;
 
     #[allow(clippy::type_complexity)]
     fn map_parent_resource<'x, T: FromDavResource>(
@@ -75,15 +68,9 @@ impl DavFileResource for DavResources {
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))
     }
 
-    fn map_parent<'x, T: FromDavResource>(
-        &self,
-        resource: &'x str,
-    ) -> Option<(Option<T>, &'x str)> {
+    fn map_parent<'x>(&self, resource: &'x str) -> Option<(Option<&DavResource>, &'x str)> {
         let (parent, child) = if let Some((parent, child)) = resource.rsplit_once('/') {
-            (
-                Some(self.paths.by_name(parent).map(T::from_dav_resource)?),
-                child,
-            )
+            (Some(self.paths.by_name(parent)?), child)
         } else {
             (None, resource)
         };
@@ -98,10 +85,10 @@ impl DavFileResource for DavResources {
         if let Some(r) = resource.resource {
             if self.paths.by_name(r).is_none() {
                 self.map_parent(r)
-                    .map(|r| UriResource {
+                    .map(|(parent, child)| UriResource {
                         collection: resource.collection,
                         account_id: resource.account_id,
-                        resource: r,
+                        resource: (parent.map(T::from_dav_resource), child),
                     })
                     .ok_or(DavError::Code(StatusCode::CONFLICT))
             } else {
@@ -129,50 +116,39 @@ impl FromDavResource for FileItemId {
     }
 }
 
-pub(crate) async fn update_file_node(
-    server: &Server,
+pub(crate) fn update_file_node(
     access_token: &AccessToken,
     node: Archive<&ArchivedFileNode>,
     mut new_node: FileNode,
     account_id: u32,
     document_id: u32,
     with_etag: bool,
+    batch: &mut BatchBuilder,
 ) -> trc::Result<Option<String>> {
     // Build node
     new_node.modified = now() as i64;
-    let change_id = server.generate_snowflake_id()?;
-
-    // Prepare write batch
-    let mut batch = BatchBuilder::new();
     batch
-        .with_change_id(change_id)
         .with_account_id(account_id)
         .with_collection(Collection::FileNode)
         .update_document(document_id)
-        .log(Changes::update([document_id]))
         .custom(
             ObjectIndexBuilder::new()
                 .with_current(node)
                 .with_changes(new_node)
                 .with_tenant_id(access_token),
-        )?;
-    let etag = if with_etag { batch.etag() } else { None };
-    server.store().write(batch).await?;
+        )?
+        .commit_point();
 
-    // Broadcast state change
-    server
-        .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-        .await;
-
-    Ok(etag)
+    Ok(if with_etag { batch.etag() } else { None })
 }
 
-pub(crate) async fn insert_file_node(
-    server: &Server,
+pub(crate) fn insert_file_node(
     access_token: &AccessToken,
     mut node: FileNode,
     account_id: u32,
+    document_id: u32,
     with_etag: bool,
+    batch: &mut BatchBuilder,
 ) -> trc::Result<Option<String>> {
     // Build node
     let now = now() as i64;
@@ -180,57 +156,37 @@ pub(crate) async fn insert_file_node(
     node.created = now;
 
     // Prepare write batch
-    let mut batch = BatchBuilder::new();
-    let change_id = server.generate_snowflake_id()?;
     batch
-        .with_change_id(change_id)
         .with_account_id(account_id)
         .with_collection(Collection::FileNode)
-        .create_document()
-        .log(LogInsert())
+        .create_document(document_id)
         .custom(
             ObjectIndexBuilder::<(), _>::new()
                 .with_changes(node)
                 .with_tenant_id(access_token),
-        )?;
-    let etag = if with_etag { batch.etag() } else { None };
+        )?
+        .commit_point();
 
-    server.store().write(batch).await?;
-
-    // Broadcast state change
-    server
-        .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-        .await;
-
-    Ok(etag)
+    Ok(if with_etag { batch.etag() } else { None })
 }
 
-pub(crate) async fn delete_file_node(
-    server: &Server,
+pub(crate) fn delete_file_node(
     access_token: &AccessToken,
     node: Archive<&ArchivedFileNode>,
     account_id: u32,
     document_id: u32,
+    batch: &mut BatchBuilder,
 ) -> trc::Result<()> {
     // Prepare write batch
-    let mut batch = BatchBuilder::new();
-    let change_id = server.generate_snowflake_id()?;
     batch
-        .with_change_id(change_id)
         .with_account_id(account_id)
         .with_collection(Collection::FileNode)
         .delete_document(document_id)
-        .log(Changes::delete([document_id]))
         .custom(
             ObjectIndexBuilder::<_, ()>::new()
                 .with_current(node)
                 .with_tenant_id(access_token),
-        )?;
-    server.store().write(batch).await?;
-
-    // Broadcast state change
-    server
-        .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-        .await;
+        )?
+        .commit_point();
     Ok(())
 }

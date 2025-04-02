@@ -51,7 +51,7 @@ pub async fn blob_tests() {
                         },
                         1024u32.serialize(),
                     )
-                    .build_batch(),
+                    .build_all(),
             )
             .await
             .unwrap();
@@ -67,7 +67,7 @@ pub async fn blob_tests() {
             .write(
                 BatchBuilder::new()
                     .set(BlobOp::Commit { hash: hash.clone() }, Vec::new())
-                    .build_batch(),
+                    .build_all(),
             )
             .await
             .unwrap();
@@ -180,7 +180,7 @@ pub async fn blob_tests() {
                         .update_document(document_id as u32)
                         .set(blob_op, blob_value)
                         .set(BlobOp::Commit { hash: hash.clone() }, vec![])
-                        .build_batch(),
+                        .build_all(),
                 )
                 .await
                 .unwrap();
@@ -294,7 +294,7 @@ pub async fn blob_tests() {
                     .clear(BlobOp::Link {
                         hash: BlobHash::generate(b"789".as_slice()),
                     })
-                    .build_batch(),
+                    .build_all(),
             )
             .await
             .unwrap();

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod index;
+
 use store::{SERIALIZE_OBJ_03_V1, SerializedVersion};
 
 #[derive(

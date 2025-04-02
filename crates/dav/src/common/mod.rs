@@ -11,7 +11,7 @@ use dav_proto::{
 use jmap_proto::types::property::Property;
 use store::{
     U32_LEN,
-    write::{Archive, BatchBuilder, MaybeDynamicValue, Operation, ValueClass, ValueOp},
+    write::{Archive, BatchBuilder, Operation, ValueClass, ValueOp},
 };
 use uri::{OwnedUri, Urn};
 
@@ -48,11 +48,11 @@ impl<T> ETag for Archive<T> {
 impl ExtractETag for BatchBuilder {
     fn etag(&self) -> Option<String> {
         let p_value = u8::from(Property::Value);
-        for op in self.ops.iter().rev() {
+        for op in self.ops().iter().rev() {
             match op {
                 Operation::Value {
                     class: ValueClass::Property(p_id),
-                    op: ValueOp::Set(MaybeDynamicValue::Static(value)),
+                    op: ValueOp::Set(value),
                 } if *p_id == p_value => {
                     return value
                         .get(value.len() - U32_LEN..)

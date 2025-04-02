@@ -11,20 +11,18 @@ use std::{
 
 use foundationdb::{
     FdbError, KeySelector, RangeOption, Transaction,
-    options::{self, MutationType, StreamingMode},
+    options::{self, MutationType},
 };
 use futures::TryStreamExt;
 use rand::Rng;
-use roaring::RoaringBitmap;
 
 use crate::{
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
-    U32_LEN, WITH_SUBSPACE,
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    WITH_SUBSPACE,
     backend::deserialize_i64_le,
     write::{
-        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
-        RandomAvailableId, ValueOp,
-        key::{DeserializeBigEndian, KeySerializer},
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueOp,
+        key::KeySerializer,
     },
 };
 
@@ -34,7 +32,7 @@ use super::{
 };
 
 impl FdbStore {
-    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
+    pub(crate) async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
 
@@ -42,12 +40,11 @@ impl FdbStore {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
-            let mut change_id = u64::MAX;
             let mut result = AssignedIds::default();
 
             let trx = self.db.create_trx().map_err(into_error)?;
 
-            for op in &batch.ops {
+            for op in batch.ops {
                 match op {
                     Operation::AccountId {
                         account_id: account_id_,
@@ -64,24 +61,13 @@ impl FdbStore {
                     } => {
                         document_id = *document_id_;
                     }
-                    Operation::ChangeId {
-                        change_id: change_id_,
-                    } => {
-                        change_id = *change_id_;
-                    }
                     Operation::Value { class, op } => {
-                        let mut key = class.serialize(
-                            account_id,
-                            collection,
-                            document_id,
-                            WITH_SUBSPACE,
-                            (&result).into(),
-                        );
+                        let mut key =
+                            class.serialize(account_id, collection, document_id, WITH_SUBSPACE);
                         let do_chunk = !class.is_counter(collection);
 
                         match op {
                             ValueOp::Set(value) => {
-                                let value = value.resolve(&result)?;
                                 if !value.is_empty() && do_chunk {
                                     for (pos, chunk) in value.chunks(MAX_VALUE_SIZE).enumerate() {
                                         match pos.cmp(&1) {
@@ -154,59 +140,12 @@ impl FdbStore {
                         }
                     }
                     Operation::Bitmap { class, set } => {
-                        // Find the next available document id
-                        let assign_id = *set
-                            && matches!(class, BitmapClass::DocumentIds)
-                            && document_id == u32::MAX;
-                        if assign_id {
-                            let begin = BitmapKey {
-                                account_id,
-                                collection,
-                                class: BitmapClass::DocumentIds,
-                                document_id: 0,
-                            }
-                            .serialize(WITH_SUBSPACE);
-                            let end = BitmapKey {
-                                account_id,
-                                collection,
-                                class: BitmapClass::DocumentIds,
-                                document_id: u32::MAX,
-                            }
-                            .serialize(WITH_SUBSPACE);
-                            let key_len = begin.len();
-                            let mut values = trx.get_ranges_keyvalues(
-                                RangeOption {
-                                    begin: KeySelector::first_greater_or_equal(begin),
-                                    end: KeySelector::first_greater_or_equal(end),
-                                    mode: StreamingMode::WantAll,
-                                    reverse: false,
-                                    ..RangeOption::default()
-                                },
-                                true,
-                            );
-                            let mut found_ids = RoaringBitmap::new();
-                            while let Some(value) = values.try_next().await.map_err(into_error)? {
-                                let key = value.key();
-                                if key.len() == key_len {
-                                    found_ids.insert(key.deserialize_be_u32(key_len - U32_LEN)?);
-                                } else {
-                                    break;
-                                }
-                            }
-                            document_id = found_ids.random_available_id();
-                            result.push_document_id(document_id);
-                        }
-
-                        let key = class.serialize(
-                            account_id,
-                            collection,
-                            document_id,
-                            WITH_SUBSPACE,
-                            (&result).into(),
-                        );
+                        let is_document_id = matches!(class, BitmapClass::DocumentIds);
+                        let key =
+                            class.serialize(account_id, collection, document_id, WITH_SUBSPACE);
 
                         if *set {
-                            if assign_id {
+                            if is_document_id {
                                 trx.add_conflict_range(
                                     &key,
                                     &class.serialize(
@@ -214,7 +153,6 @@ impl FdbStore {
                                         collection,
                                         document_id + 1,
                                         WITH_SUBSPACE,
-                                        (&result).into(),
                                     ),
                                     options::ConflictRangeType::Read,
                                 )
@@ -226,26 +164,25 @@ impl FdbStore {
                             trx.clear(&key);
                         }
                     }
-                    Operation::Log { set } => {
+                    Operation::Log {
+                        collection,
+                        change_id,
+                        set,
+                    } => {
                         let key = LogKey {
                             account_id,
-                            collection,
-                            change_id,
+                            collection: *collection,
+                            change_id: *change_id,
                         }
                         .serialize(WITH_SUBSPACE);
-                        trx.set(&key, set.resolve(&result)?.as_ref());
+                        trx.set(&key, set);
                     }
                     Operation::AssertValue {
                         class,
                         assert_value,
                     } => {
-                        let key = class.serialize(
-                            account_id,
-                            collection,
-                            document_id,
-                            WITH_SUBSPACE,
-                            (&result).into(),
-                        );
+                        let key =
+                            class.serialize(account_id, collection, document_id, WITH_SUBSPACE);
 
                         let matches = match read_chunked_value(&key, &trx, false).await {
                             Ok(ChunkedValue::Single(bytes)) => assert_value.matches(bytes.as_ref()),

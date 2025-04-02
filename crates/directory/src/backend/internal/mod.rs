@@ -10,16 +10,8 @@ pub mod manage;
 use std::{fmt::Display, slice::Iter};
 
 use ahash::AHashMap;
-use jmap_proto::types::collection::Collection;
-use manage::DynamicPrincipalInfo;
-use store::{
-    Deserialize, IterateParams, SUBSPACE_DIRECTORY, Serialize, Store, U32_LEN, ValueKey,
-    write::{
-        AnyClass, BatchBuilder, DirectoryClass, MaybeDynamicId, ValueClass, key::KeySerializer,
-    },
-};
-use trc::AddContext;
-use utils::codec::leb128::{Leb128Iterator, Leb128Reader};
+use store::{Deserialize, Serialize, SerializeInfallible, U32_LEN, write::key::KeySerializer};
+use utils::codec::leb128::Leb128Iterator;
 
 use crate::{Principal, ROLE_ADMIN, ROLE_USER, Type};
 
@@ -115,9 +107,9 @@ impl PrincipalInfo {
     }
 }
 
-impl Serialize for PrincipalInfo {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        Ok(if let Some(tenant) = self.tenant {
+impl SerializeInfallible for PrincipalInfo {
+    fn serialize(&self) -> Vec<u8> {
+        if let Some(tenant) = self.tenant {
             KeySerializer::new((U32_LEN * 2) + 1)
                 .write_leb128(self.id)
                 .write(self.typ as u8)
@@ -128,7 +120,7 @@ impl Serialize for PrincipalInfo {
                 .write_leb128(self.id)
                 .write(self.typ as u8)
                 .finalize()
-        })
+        }
     }
 }
 
@@ -240,7 +232,7 @@ fn deserialize(bytes: &[u8]) -> Option<Principal> {
     }
 }
 
-pub trait MigrateDirectory: Sync + Send {
+/*pub trait MigrateDirectory: Sync + Send {
     fn migrate_directory(&self) -> impl std::future::Future<Output = trc::Result<()>> + Send;
 }
 
@@ -305,9 +297,7 @@ impl MigrateDirectory for Store {
                 .with_account_id(u32::MAX)
                 .with_collection(Collection::Principal)
                 .set(
-                    ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
-                        account_id,
-                    ))),
+                    ValueClass::Directory(DirectoryClass::Principal(account_id)),
                     principal.serialize().caused_by(trc::location!())?,
                 );
 
@@ -315,21 +305,21 @@ impl MigrateDirectory for Store {
                 batch
                     .set(
                         ValueClass::Directory(DirectoryClass::MemberOf {
-                            principal_id: MaybeDynamicId::Static(account_id),
-                            member_of: MaybeDynamicId::Static(role),
+                            principal_id: account_id,
+                            member_of: role,
                         }),
                         vec![Type::Role as u8],
                     )
                     .set(
                         ValueClass::Directory(DirectoryClass::Members {
-                            principal_id: MaybeDynamicId::Static(role),
-                            has_member: MaybeDynamicId::Static(account_id),
+                            principal_id: role,
+                            has_member: account_id,
                         }),
                         vec![],
                     );
             }
 
-            self.write(batch.build())
+            self.write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
         }
@@ -365,7 +355,7 @@ impl MigrateDirectory for Store {
                     key: [3u8].iter().chain(domain.as_bytes()).copied().collect(),
                 }));
 
-            if let Err(err) = self.write(batch.build()).await {
+            if let Err(err) = self.write(batch.build_all()).await {
                 trc::error!(
                     err.caused_by(trc::location!())
                         .details("Failed to migrate domain, probably a principal already exists")
@@ -386,6 +376,7 @@ impl MigrateDirectory for Store {
         Ok(())
     }
 }
+*/
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Hash, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,

@@ -12,8 +12,8 @@ use dav_proto::{
 use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection, type_state::DataType};
-use store::write::{BatchBuilder, log::LogInsert, now};
+use jmap_proto::types::{acl::Acl, collection::Collection};
+use store::write::{BatchBuilder, now};
 use trc::AddContext;
 
 use crate::{
@@ -84,7 +84,6 @@ impl FileMkColRequestHandler for Server {
         .await?;
 
         // Build file container
-        let change_id = self.generate_snowflake_id().caused_by(trc::location!())?;
         let now = now();
         let mut node = FileNode {
             parent_id,
@@ -114,23 +113,20 @@ impl FileMkColRequestHandler for Server {
         }
 
         // Prepare write batch
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_change_id(change_id)
-            .with_account_id(account_id)
-            .with_collection(Collection::FileNode)
-            .create_document()
-            .log(LogInsert())
-            .custom(ObjectIndexBuilder::<(), _>::new().with_changes(node))
-            .caused_by(trc::location!())?;
-        self.store()
-            .write(batch)
+        let document_id = self
+            .store()
+            .assign_document_ids(account_id, Collection::FileNode, 1)
             .await
             .caused_by(trc::location!())?;
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::FileNode)
+            .create_document(document_id)
+            .custom(ObjectIndexBuilder::<(), _>::new().with_changes(node))
+            .caused_by(trc::location!())?;
+        self.commit_batch(batch).await.caused_by(trc::location!())?;
 
-        // Broadcast state change
-        self.broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-            .await;
         if let Some(prop_stat) = return_prop_stat {
             Ok(HttpResponse::new(StatusCode::CREATED).with_xml_body(
                 MkColResponse::new(prop_stat)

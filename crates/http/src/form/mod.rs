@@ -190,7 +190,7 @@ impl FormHandler for Server {
                 0u32.serialize(),
             );
             self.store()
-                .write(batch.build())
+                .write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
             self.blob_store()

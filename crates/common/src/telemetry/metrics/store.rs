@@ -186,7 +186,7 @@ impl MetricsStore for Store {
         }
 
         if !batch.is_empty() {
-            self.write(batch.build())
+            self.write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
         }

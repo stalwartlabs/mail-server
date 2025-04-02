@@ -15,15 +15,15 @@ use jmap_proto::{
 use mail_parser::parsers::fields::thread::thread_name;
 use store::{
     BlobClass,
-    write::{AlignedBytes, Archive, BatchBuilder, TaskQueueClass, ValueClass, log::Changes},
+    write::{BatchBuilder, TaskQueueClass, ValueClass},
 };
 use trc::AddContext;
 
-use crate::mailbox::UidMailbox;
+use crate::{mailbox::UidMailbox, thread::cache::ThreadCache};
 
 use super::{
     index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue},
-    ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
+    ingest::{EmailIngest, IngestedEmail, ThreadResult},
     metadata::{HeaderName, HeaderValue, MessageData, MessageMetadata},
 };
 
@@ -56,7 +56,7 @@ impl EmailCopy for Server {
         // Obtain metadata
         let account_id = resource_token.account_id;
         let mut metadata = if let Some(metadata) = self
-            .get_property::<Archive<AlignedBytes>>(
+            .get_archive_by_property(
                 from_account_id,
                 Collection::Email,
                 from_message_id,
@@ -100,12 +100,18 @@ impl EmailCopy for Server {
         // Obtain threadId
         let mut references = Vec::with_capacity(5);
         let mut subject = "";
+        let mut message_id = "";
         for header in &metadata.contents[0].parts[0].headers {
             match &header.name {
-                HeaderName::MessageId
-                | HeaderName::InReplyTo
-                | HeaderName::References
-                | HeaderName::ResentMessageId => {
+                HeaderName::MessageId => {
+                    header.value.visit_text(|id| {
+                        if !id.is_empty() && id.len() < MAX_ID_LENGTH {
+                            references.push(id.as_bytes());
+                            message_id = id;
+                        }
+                    });
+                }
+                HeaderName::InReplyTo | HeaderName::References | HeaderName::ResentMessageId => {
                     header.value.visit_text(|id| {
                         if !id.is_empty() && id.len() < MAX_ID_LENGTH {
                             references.push(id.as_bytes());
@@ -127,10 +133,21 @@ impl EmailCopy for Server {
         }
 
         // Obtain threadId
-        let thread_id = self
+        let (is_new_thread, thread_id) = match self
             .find_or_merge_thread(account_id, subject, references, None)
             .await
-            .caused_by(trc::location!())?;
+            .caused_by(trc::location!())?
+        {
+            ThreadResult::Id(thread_id) => (false, thread_id),
+            ThreadResult::Create => (
+                true,
+                self.get_cached_thread_ids(account_id)
+                    .await
+                    .caused_by(trc::location!())?
+                    .assign_thread_id(subject.as_bytes(), message_id.as_bytes()),
+            ),
+            ThreadResult::Skip => unreachable!(),
+        };
 
         // Assign id
         let mut email = IngestedEmail {
@@ -152,18 +169,26 @@ impl EmailCopy for Server {
         }
 
         // Prepare batch
-        let change_id = self.assign_change_id(account_id)?;
         let mut batch = BatchBuilder::new();
+        let change_id = batch.change_id();
+        batch.with_account_id(account_id);
+
+        if is_new_thread {
+            batch
+                .with_collection(Collection::Thread)
+                .update_document(thread_id)
+                .log_insert(None);
+        }
+
+        let document_id = self
+            .store()
+            .assign_document_ids(account_id, Collection::Email, 1)
+            .await
+            .caused_by(trc::location!())?;
+
         batch
-            .with_account_id(account_id)
-            .with_change_id(change_id)
-            .with_collection(Collection::Thread)
-            .log(Changes::update([thread_id]))
-            .with_collection(Collection::Mailbox)
-            .log(Changes::child_update(mailboxes.iter().copied()))
             .with_collection(Collection::Email)
-            .create_document()
-            .log(LogEmailInsert::new(thread_id.into()))
+            .create_document(document_id)
             .custom(
                 ObjectIndexBuilder::<(), _>::new().with_changes(MessageData {
                     mailboxes: mailbox_ids,
@@ -175,7 +200,7 @@ impl EmailCopy for Server {
             .caused_by(trc::location!())?
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                    seq: self.generate_snowflake_id()?,
+                    seq: change_id,
                     hash: metadata.blob_hash.clone(),
                 }),
                 vec![],
@@ -190,14 +215,10 @@ impl EmailCopy for Server {
             .caused_by(trc::location!())?;
 
         // Insert and obtain ids
-        let ids = self
-            .core
-            .storage
-            .data
-            .write(batch.build())
+        self.store()
+            .write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
-        let document_id = ids.last_document_id().caused_by(trc::location!())?;
 
         // Request FTS index
         self.notify_task_queue();

@@ -6,10 +6,7 @@
 
 use common::{Server, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::{
-    query::Filter,
-    write::{AlignedBytes, Archive, BatchBuilder},
-};
+use store::{query::Filter, write::BatchBuilder};
 use trc::AddContext;
 
 use super::SieveScript;
@@ -19,7 +16,7 @@ pub trait SieveScriptActivate: Sync + Send {
         &self,
         account_id: u32,
         activate_id: Option<u32>,
-    ) -> impl Future<Output = trc::Result<Vec<(u32, bool)>>> + Send;
+    ) -> impl Future<Output = trc::Result<(u64, Vec<(u32, bool)>)>> + Send;
 }
 
 impl SieveScriptActivate for Server {
@@ -27,7 +24,7 @@ impl SieveScriptActivate for Server {
         &self,
         account_id: u32,
         mut activate_id: Option<u32>,
-    ) -> trc::Result<Vec<(u32, bool)>> {
+    ) -> trc::Result<(u64, Vec<(u32, bool)>)> {
         let mut changed_ids = Vec::new();
         // Find the currently active script
         let mut active_ids = self
@@ -43,7 +40,7 @@ impl SieveScriptActivate for Server {
         // Check if script is already active
         if activate_id.is_some_and(|id| active_ids.remove(id)) {
             if active_ids.is_empty() {
-                return Ok(changed_ids);
+                return Ok((0, changed_ids));
             } else {
                 activate_id = None;
             }
@@ -57,19 +54,14 @@ impl SieveScriptActivate for Server {
 
         // Deactivate scripts
         for document_id in active_ids {
-            if let Some(sieve) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::SieveScript,
-                    document_id,
-                    Property::Value,
-                )
+            if let Some(sieve_) = self
+                .get_archive(account_id, Collection::SieveScript, document_id)
                 .await?
             {
-                let sieve = sieve
-                    .into_deserialized::<SieveScript>()
+                let sieve = sieve_
+                    .to_unarchived::<SieveScript>()
                     .caused_by(trc::location!())?;
-                let mut new_sieve = sieve.inner.clone();
+                let mut new_sieve = sieve.deserialize().caused_by(trc::location!())?;
                 new_sieve.is_active = false;
                 batch
                     .update_document(document_id)
@@ -79,26 +71,22 @@ impl SieveScriptActivate for Server {
                             .with_changes(new_sieve)
                             .with_current(sieve),
                     )
-                    .caused_by(trc::location!())?;
+                    .caused_by(trc::location!())?
+                    .commit_point();
                 changed_ids.push((document_id, false));
             }
         }
 
         // Activate script
         if let Some(document_id) = activate_id {
-            if let Some(sieve) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::SieveScript,
-                    document_id,
-                    Property::Value,
-                )
+            if let Some(sieve_) = self
+                .get_archive(account_id, Collection::SieveScript, document_id)
                 .await?
             {
-                let sieve = sieve
-                    .into_deserialized::<SieveScript>()
+                let sieve = sieve_
+                    .to_unarchived::<SieveScript>()
                     .caused_by(trc::location!())?;
-                let mut new_sieve = sieve.inner.clone();
+                let mut new_sieve = sieve.deserialize().caused_by(trc::location!())?;
                 new_sieve.is_active = true;
                 batch
                     .update_document(document_id)
@@ -114,17 +102,14 @@ impl SieveScriptActivate for Server {
 
         // Write changes
         if !changed_ids.is_empty() {
-            match self.core.storage.data.write(batch.build()).await {
-                Ok(_) => (),
-                Err(err) if err.is_assertion_failure() => {
-                    return Ok(vec![]);
-                }
-                Err(err) => {
-                    return Err(err.caused_by(trc::location!()));
-                }
+            let change_id = batch.change_id();
+            match self.commit_batch(batch).await {
+                Ok(_) => Ok((change_id, changed_ids)),
+                Err(err) if err.is_assertion_failure() => Ok((0, vec![])),
+                Err(err) => Err(err.caused_by(trc::location!())),
             }
+        } else {
+            Ok((0, changed_ids))
         }
-
-        Ok(changed_ids)
     }
 }

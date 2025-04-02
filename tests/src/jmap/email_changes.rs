@@ -8,10 +8,7 @@ use jmap_proto::{
     parser::{JsonObjectParser, json::Parser},
     types::{collection::Collection, id::Id, state::State},
 };
-use store::{
-    ahash::AHashSet,
-    write::{BatchBuilder, log::ChangeLogBuilder},
-};
+use store::{ahash::AHashSet, write::BatchBuilder};
 
 use crate::jmap::assert_is_empty;
 
@@ -24,7 +21,7 @@ pub async fn test(params: &mut JMAPTest) {
     params.client.set_default_account_id(Id::new(1));
     let mut states = vec![State::Initial];
 
-    for (change_id, (changes, expected_changelog)) in [
+    for (changes, expected_changelog) in [
         (
             vec![
                 LogAction::Insert(0),
@@ -135,18 +132,30 @@ pub async fn test(params: &mut JMAPTest) {
         ),
     ]
     .into_iter()
-    .enumerate()
     {
-        let mut changelog = ChangeLogBuilder::with_change_id(change_id as u64);
+        let mut batch = BatchBuilder::new();
+        batch.with_account_id(1).with_collection(Collection::Email);
 
         for change in changes {
             match change {
-                LogAction::Insert(id) => changelog.log_insert(Collection::Email, id),
-                LogAction::Update(id) => changelog.log_update(Collection::Email, id),
-                LogAction::Delete(id) => changelog.log_delete(Collection::Email, id),
-                LogAction::UpdateChild(id) => changelog.log_child_update(Collection::Email, id),
+                LogAction::Insert(id) => {
+                    batch.update_document(id as u32).log_insert(None);
+                }
+                LogAction::Update(id) => {
+                    batch.update_document(id as u32).log_update(None);
+                }
+                LogAction::Delete(id) => {
+                    batch.update_document(id as u32).log_delete(None);
+                }
+                LogAction::UpdateChild(id) => {
+                    batch.log_child_update(Collection::Email, id as u32);
+                }
                 LogAction::Move(old_id, new_id) => {
-                    changelog.log_move(Collection::Email, old_id, new_id)
+                    batch
+                        .update_document(old_id as u32)
+                        .log_delete(None)
+                        .update_document(new_id as u32)
+                        .log_insert(None);
                 }
             }
         }
@@ -155,14 +164,7 @@ pub async fn test(params: &mut JMAPTest) {
             .core
             .storage
             .data
-            .write(
-                BatchBuilder::new()
-                    .with_account_id(1)
-                    .with_collection(Collection::Email)
-                    .custom(changelog)
-                    .unwrap()
-                    .build_batch(),
-            )
+            .write(batch.build_all())
             .await
             .unwrap();
 

@@ -9,8 +9,8 @@ use dav_proto::RequestHeaders;
 use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
-use store::write::{AlignedBytes, Archive};
+use jmap_proto::types::{acl::Acl, collection::Collection};
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
@@ -49,12 +49,7 @@ impl FileAclRequestHandler for Server {
 
         // Fetch node
         let node_ = self
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::FileNode,
-                resource.resource,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::FileNode, resource.resource)
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -87,17 +82,18 @@ impl FileAclRequestHandler for Server {
         {
             let mut new_node = node.deserialize().caused_by(trc::location!())?;
             new_node.acls = grants;
+            let mut batch = BatchBuilder::new();
             update_file_node(
-                self,
                 access_token,
                 node,
                 new_node,
                 account_id,
                 resource.resource,
                 false,
+                &mut batch,
             )
-            .await
             .caused_by(trc::location!())?;
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
         }
 
         Ok(HttpResponse::new(StatusCode::OK))

@@ -259,7 +259,7 @@ impl TestSession for Session<DummyIo> {
                         dsn_info: None,
                     },
                 ],
-                self.server.inner.data.queue_id_gen.generate().unwrap(),
+                self.server.inner.data.queue_id_gen.generate(),
                 0,
             )
             .await;

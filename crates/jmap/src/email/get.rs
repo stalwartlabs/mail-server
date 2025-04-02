@@ -27,10 +27,7 @@ use jmap_proto::{
     },
 };
 
-use store::{
-    BlobClass,
-    write::{AlignedBytes, Archive},
-};
+use store::BlobClass;
 use trc::{AddContext, StoreEvent};
 use utils::BlobHash;
 
@@ -157,7 +154,7 @@ impl EmailGet for Server {
                 continue;
             }
             let metadata_ = match self
-                .get_property::<Archive<AlignedBytes>>(
+                .get_archive_by_property(
                     account_id,
                     Collection::Email,
                     id.document_id(),
@@ -177,12 +174,7 @@ impl EmailGet for Server {
 
             // Obtain message data
             let data_ = match self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Email,
-                    id.document_id(),
-                    &Property::Value,
-                )
+                .get_archive(account_id, Collection::Email, id.document_id())
                 .await?
             {
                 Some(data) => data,

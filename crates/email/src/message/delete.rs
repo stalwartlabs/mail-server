@@ -7,19 +7,14 @@
 use std::time::Duration;
 
 use common::{KV_LOCK_PURGE_ACCOUNT, Server, storage::index::ObjectIndexBuilder};
-use jmap_proto::types::{
-    collection::Collection, id::Id, property::Property, state::StateChange, type_state::DataType,
-};
+use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    BitmapKey, IterateParams, U32_LEN, ValueKey,
+    BitmapKey, ValueKey,
     roaring::RoaringBitmap,
-    write::{
-        AlignedBytes, Archive, BatchBuilder, BitmapClass, MaybeDynamicId, TagValue, ValueClass,
-        log::{ChangeLogBuilder, Changes},
-    },
+    write::{AlignedBytes, Archive, BatchBuilder, BitmapClass, TagValue, ValueClass},
 };
 use trc::AddContext;
-use utils::{BlobHash, codec::leb128::Leb128Reader};
+use utils::BlobHash;
 
 use std::future::Future;
 use store::rand::prelude::SliceRandom;
@@ -32,8 +27,9 @@ pub trait EmailDeletion: Sync + Send {
     fn emails_tombstone(
         &self,
         account_id: u32,
+        batch: &mut BatchBuilder,
         document_ids: RoaringBitmap,
-    ) -> impl Future<Output = trc::Result<(ChangeLogBuilder, RoaringBitmap)>> + Send;
+    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
 
     fn purge_accounts(&self) -> impl Future<Output = ()> + Send;
 
@@ -49,83 +45,45 @@ pub trait EmailDeletion: Sync + Send {
         &self,
         account_id: u32,
     ) -> impl Future<Output = trc::Result<()>> + Send;
-
-    fn emails_purge_threads(&self, account_id: u32)
-    -> impl Future<Output = trc::Result<()>> + Send;
 }
 
 impl EmailDeletion for Server {
     async fn emails_tombstone(
         &self,
         account_id: u32,
+        batch: &mut BatchBuilder,
         document_ids: RoaringBitmap,
-    ) -> trc::Result<(ChangeLogBuilder, RoaringBitmap)> {
-        // Create batch
-        let mut changes = ChangeLogBuilder::with_change_id(0);
-
+    ) -> trc::Result<RoaringBitmap> {
         // Tombstone message and untag it from the mailboxes
-        let mut batch = BatchBuilder::new();
+        let mut deleted_ids = RoaringBitmap::new();
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Email);
-        let mut batches = Vec::new();
-        let mut deleted_ids = RoaringBitmap::new();
         self.get_archives(
             account_id,
             Collection::Email,
             &document_ids,
-            Property::Value,
             |document_id, data_| {
-                let data = data_
-                    .to_unarchived::<MessageData>()
-                    .caused_by(trc::location!())?;
-                let thread_id = u32::from(data.inner.thread_id);
-
-                // Log mailbox changes
-                for mailbox in data.inner.mailboxes.iter() {
-                    changes.log_child_update(Collection::Mailbox, u32::from(mailbox.mailbox_id));
-                }
-
-                // Log message deletion
-                changes.log_delete(Collection::Email, Id::from_parts(thread_id, document_id));
-
-                // Log thread changes
-                changes.log_child_update(Collection::Thread, thread_id);
-
                 // Add changes to batch
                 batch
                     .update_document(document_id)
-                    .custom(ObjectIndexBuilder::<_, ()>::new().with_current(data))
+                    .custom(
+                        ObjectIndexBuilder::<_, ()>::new().with_current(
+                            data_
+                                .to_unarchived::<MessageData>()
+                                .caused_by(trc::location!())?,
+                        ),
+                    )
                     .caused_by(trc::location!())?
-                    .tag(
-                        Property::MailboxIds,
-                        TagValue::Id(MaybeDynamicId::Static(TOMBSTONE_ID)),
-                    );
+                    .tag(Property::MailboxIds, TagValue::Id(TOMBSTONE_ID))
+                    .commit_point();
 
                 deleted_ids.insert(document_id);
-
-                if batch.ops.len() >= 1000 {
-                    batches.push(std::mem::replace(&mut batch, BatchBuilder::new()));
-                    batch
-                        .with_account_id(account_id)
-                        .with_collection(Collection::Email);
-                }
 
                 Ok(true)
             },
         )
         .await?;
-
-        for batch in batches.into_iter().chain([batch]) {
-            if !batch.is_empty() {
-                self.core
-                    .storage
-                    .data
-                    .write(batch.build())
-                    .await
-                    .caused_by(trc::location!())?;
-            }
-        }
 
         let not_destroyed = if document_ids.len() == deleted_ids.len() {
             RoaringBitmap::new()
@@ -134,7 +92,7 @@ impl EmailDeletion for Server {
             deleted_ids
         };
 
-        Ok((changes, not_destroyed))
+        Ok(not_destroyed)
     }
 
     async fn purge_accounts(&self) {
@@ -248,7 +206,6 @@ impl EmailDeletion for Server {
             account_id,
             Collection::Email,
             &deletion_candidates,
-            Property::Value,
             |document_id, data| {
                 if data.unarchive::<MessageData>()?.change_id < reference_cid {
                     destroy_ids.insert(document_id);
@@ -270,19 +227,10 @@ impl EmailDeletion for Server {
         );
 
         // Tombstone messages
-        let (changes, _) = self.emails_tombstone(account_id, destroy_ids).await?;
-
-        // Write and broadcast changes
-        if !changes.is_empty() {
-            let change_id = self.commit_changes(account_id, changes).await?;
-            self.broadcast_state_change(
-                StateChange::new(account_id)
-                    .with_change(DataType::Email, change_id)
-                    .with_change(DataType::Mailbox, change_id)
-                    .with_change(DataType::Thread, change_id),
-            )
-            .await;
-        }
+        let mut batch = BatchBuilder::new();
+        self.emails_tombstone(account_id, &mut batch, destroy_ids)
+            .await?;
+        self.commit_batch(batch).await?;
 
         Ok(())
     }
@@ -315,9 +263,6 @@ impl EmailDeletion for Server {
             Total = tombstoned_ids.len(),
         );
 
-        // Delete threadIds
-        self.emails_purge_threads(account_id).await?;
-
         // Delete full-text index
         self.core
             .storage
@@ -334,17 +279,15 @@ impl EmailDeletion for Server {
             .map(|t| t.id);
 
         // Delete messages
+        let mut batch = BatchBuilder::new();
+        batch.with_account_id(account_id);
+
         for document_id in tombstoned_ids {
-            let mut batch = BatchBuilder::new();
             batch
-                .with_account_id(account_id)
                 .with_collection(Collection::Email)
                 .delete_document(document_id)
                 .clear(Property::Value)
-                .untag(
-                    Property::MailboxIds,
-                    TagValue::Id(MaybeDynamicId::Static(TOMBSTONE_ID)),
-                );
+                .untag(Property::MailboxIds, TagValue::Id(TOMBSTONE_ID));
 
             // Remove message metadata
             if let Some(metadata_) = self
@@ -383,8 +326,8 @@ impl EmailDeletion for Server {
                     .index(&mut batch, account_id, tenant_id, false)
                     .caused_by(trc::location!())?;
 
-                // Commit batch
-                self.core.storage.data.write(batch.build()).await?;
+                // Commit point
+                batch.commit_point();
             } else {
                 trc::event!(
                     Purge(trc::PurgeEvent::Error),
@@ -396,79 +339,7 @@ impl EmailDeletion for Server {
             }
         }
 
-        Ok(())
-    }
-
-    async fn emails_purge_threads(&self, account_id: u32) -> trc::Result<()> {
-        // Delete threadIs without documents
-        let mut thread_ids = self
-            .get_document_ids(account_id, Collection::Thread)
-            .await
-            .caused_by(trc::location!())?
-            .unwrap_or_default();
-
-        if thread_ids.is_empty() {
-            return Ok(());
-        }
-
-        self.core
-            .storage
-            .data
-            .iterate(
-                IterateParams::new(
-                    BitmapKey {
-                        account_id,
-                        collection: Collection::Email.into(),
-                        class: BitmapClass::Tag {
-                            field: Property::ThreadId.into(),
-                            value: TagValue::Id(0),
-                        },
-                        document_id: 0,
-                    },
-                    BitmapKey {
-                        account_id,
-                        collection: Collection::Email.into(),
-                        class: BitmapClass::Tag {
-                            field: Property::ThreadId.into(),
-                            value: TagValue::Id(u32::MAX),
-                        },
-                        document_id: u32::MAX,
-                    },
-                )
-                .no_values(),
-                |key, _| {
-                    let (thread_id, _) = key
-                        .get(U32_LEN + 2..)
-                        .and_then(|bytes| bytes.read_leb128::<u32>())
-                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
-                    thread_ids.remove(thread_id);
-
-                    Ok(!thread_ids.is_empty())
-                },
-            )
-            .await
-            .caused_by(trc::location!())?;
-
-        if thread_ids.is_empty() {
-            return Ok(());
-        }
-
-        // Create batch
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::Thread)
-            .with_change_id(self.generate_snowflake_id().caused_by(trc::location!())?)
-            .log(Changes::delete(thread_ids.iter().map(|id| id as u64)));
-        for thread_id in thread_ids {
-            batch.delete_document(thread_id);
-        }
-        self.core
-            .storage
-            .data
-            .write(batch.build())
-            .await
-            .caused_by(trc::location!())?;
+        self.commit_batch(batch).await?;
 
         Ok(())
     }

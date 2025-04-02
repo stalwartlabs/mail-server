@@ -55,7 +55,7 @@ impl BlobCopy for Server {
                     0u32.serialize(),
                 );
                 self.store()
-                    .write(batch)
+                    .write(batch.build_all())
                     .await
                     .caused_by(trc::location!())?;
                 let dest_blob_id = BlobId {

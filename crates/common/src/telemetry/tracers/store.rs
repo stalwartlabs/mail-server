@@ -13,7 +13,7 @@ use std::{future::Future, time::Duration};
 use ahash::{AHashMap, AHashSet};
 use store::{
     Deserialize, IterateParams, Store, U64_LEN, ValueKey,
-    write::{BatchBuilder, MaybeDynamicId, TelemetryClass, ValueClass, key::DeserializeBigEndian},
+    write::{BatchBuilder, TelemetryClass, ValueClass, key::DeserializeBigEndian},
 };
 use trc::{
     AddContext, AuthEvent, Event, EventDetails, EventType, Key, MessageIngestEvent,
@@ -123,7 +123,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
             }
 
             if !batch.is_empty() {
-                if let Err(err) = store.write(batch.build()).await {
+                if let Err(err) = store.write(batch.build_all()).await {
                     trc::error!(err.caused_by(trc::location!()));
                 }
                 batch = BatchBuilder::new();
@@ -261,7 +261,7 @@ impl TracingStore for Store {
         .await
         .caused_by(trc::location!())?;
 
-        let mut delete_keys: Vec<ValueClass<MaybeDynamicId>> = Vec::new();
+        let mut delete_keys: Vec<ValueClass> = Vec::new();
         self.iterate(
             IterateParams::new(
                 ValueKey::from(ValueClass::Telemetry(TelemetryClass::Index {
@@ -296,15 +296,15 @@ impl TracingStore for Store {
             let mut batch = BatchBuilder::new();
 
             for key in delete_keys {
-                if batch.ops.len() >= 1000 {
-                    self.write(batch.build()).await?;
+                if batch.len() >= 1000 {
+                    self.write(batch.build_all()).await?;
                     batch = BatchBuilder::new();
                 }
                 batch.clear(key);
             }
 
             if !batch.is_empty() {
-                self.write(batch.build()).await?;
+                self.write(batch.build_all()).await?;
             }
         }
 

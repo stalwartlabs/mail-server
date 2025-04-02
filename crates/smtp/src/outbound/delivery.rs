@@ -50,7 +50,7 @@ impl QueuedMessage {
             let status = if server.try_lock_event(queue_id).await {
                 if let Some(mut message) = server.read_message(queue_id).await {
                     // Generate span id
-                    message.span_id = server.inner.data.span_id_gen.generate().unwrap_or_else(now);
+                    message.span_id = server.inner.data.span_id_gen.generate();
                     let span_id = message.span_id;
 
                     trc::event!(
@@ -104,7 +104,7 @@ impl QueuedMessage {
                         },
                     )));
 
-                    if let Err(err) = server.store().write(batch.build()).await {
+                    if let Err(err) = server.store().write(batch.build_all()).await {
                         trc::error!(
                             err.details("Failed to delete queue event.")
                                 .caused_by(trc::location!())

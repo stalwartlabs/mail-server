@@ -42,6 +42,7 @@ use manager::webadmin::{Resource, WebAdminManager};
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
+use store::roaring::RoaringBitmap;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
 use utils::{
@@ -569,5 +570,39 @@ impl Eq for DavResource {}
 impl std::borrow::Borrow<u32> for DavResource {
     fn borrow(&self) -> &u32 {
         &self.document_id
+    }
+}
+
+impl Threads {
+    pub fn assign_thread_id(&self, thread_name: &[u8], message_id: &[u8]) -> u32 {
+        let mut bytes = Vec::with_capacity(thread_name.len() + message_id.len());
+        bytes.extend_from_slice(thread_name);
+        bytes.extend_from_slice(message_id);
+        let mut hash = store::gxhash::gxhash32(&bytes, 791120);
+
+        if self.threads.is_empty() {
+            return hash;
+        }
+
+        // Naive pass, assume hash is unique
+        let mut threads_ids = RoaringBitmap::new();
+        let mut is_unique_hash = true;
+        for &thread_id in self.threads.keys() {
+            if is_unique_hash && thread_id != hash {
+                is_unique_hash = false;
+            }
+            threads_ids.insert(thread_id);
+        }
+
+        if is_unique_hash {
+            hash
+        } else {
+            loop {
+                hash = hash.wrapping_add(1);
+                if !threads_ids.contains(hash) {
+                    return hash;
+                }
+            }
+        }
     }
 }

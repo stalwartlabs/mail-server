@@ -629,17 +629,19 @@ async fn internal_directory() {
         let mut document_id = u32::MAX;
         for account_id in [john_id, jane_id] {
             document_id = store
+                .assign_document_ids(u32::MAX, Collection::Principal, 1)
+                .await
+                .unwrap();
+            store
                 .write(
                     BatchBuilder::new()
                         .with_account_id(account_id)
                         .with_collection(Collection::Email)
-                        .create_document()
+                        .create_document(document_id)
                         .set(ValueClass::Property(0), "hello".as_bytes())
-                        .build_batch(),
+                        .build_all(),
                 )
                 .await
-                .unwrap()
-                .last_document_id()
                 .unwrap();
             assert_eq!(
                 store

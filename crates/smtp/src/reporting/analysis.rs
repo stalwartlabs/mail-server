@@ -274,7 +274,7 @@ impl AnalyzeReport for Server {
                 // Store report
                 if let Some(expires_in) = &core.core.smtp.report.analysis.store {
                     let expires = now() + expires_in.as_secs();
-                    let id = core.inner.data.queue_id_gen.generate().unwrap_or(expires);
+                    let id = core.inner.data.queue_id_gen.generate();
 
                     let mut batch = BatchBuilder::new();
                     match report {
@@ -318,8 +318,7 @@ impl AnalyzeReport for Server {
                             );
                         }
                     }
-                    let batch = batch.build();
-                    if let Err(err) = core.core.storage.data.write(batch).await {
+                    if let Err(err) = core.core.storage.data.write(batch.build_all()).await {
                         trc::error!(
                             err.span_id(session_id)
                                 .caused_by(trc::location!())

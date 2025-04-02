@@ -5,7 +5,7 @@
  */
 
 use ahash::AHashSet;
-use jmap_proto::types::{property::Property, value::AclGrant};
+use jmap_proto::types::{collection::Collection, property::Property, value::AclGrant};
 use rkyv::{
     option::ArchivedOption,
     primitive::{ArchivedU32, ArchivedU64},
@@ -14,10 +14,7 @@ use rkyv::{
 use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible, SerializedVersion,
-    write::{
-        Archive, Archiver, BatchBuilder, BitmapClass, BlobOp, DirectoryClass, IntoOperations,
-        MaybeDynamicId, Operation, TagValue,
-    },
+    write::{Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, TagValue},
 };
 use utils::BlobHash;
 
@@ -35,13 +32,20 @@ pub enum IndexValue<'x> {
     },
     Tag {
         field: u8,
-        value: Vec<TagValue<MaybeDynamicId>>,
+        value: Vec<TagValue>,
     },
     Blob {
         value: BlobHash,
     },
     Quota {
         used: u32,
+    },
+    LogChild {
+        prefix: Option<u32>,
+    },
+    LogParent {
+        collection: Collection,
+        ids: Vec<u32>,
     },
     Acl {
         value: Cow<'x, [AclGrant]>,
@@ -289,6 +293,8 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> IntoOperations
                 for (current, change) in current.inner.index_values().zip(changes.index_values()) {
                     if current != change {
                         merge_index(batch, current, change, self.tenant_id)?;
+                    } else if let IndexValue::LogChild { prefix } = current {
+                        batch.log_update(prefix);
                     }
                 }
                 batch.set(Property::Value, Archiver::new(changes).serialize()?);
@@ -313,28 +319,29 @@ fn build_index(batch: &mut BatchBuilder, item: IndexValue<'_>, tenant_id: Option
     match item {
         IndexValue::Index { field, value } => {
             if !value.is_empty() {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: value.into_owned(),
-                    set,
-                });
+                if set {
+                    batch.index(field, value.into_owned());
+                } else {
+                    batch.unindex(field, value.into_owned());
+                }
             }
         }
         IndexValue::IndexList { field, value } => {
             for key in value {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: key.into_owned(),
-                    set,
-                });
+                if set {
+                    batch.index(field, key.into_owned());
+                } else {
+                    batch.unindex(field, key.into_owned());
+                }
             }
         }
         IndexValue::Tag { field, value } => {
             for item in value {
-                batch.ops.push(Operation::Bitmap {
-                    class: BitmapClass::Tag { field, value: item },
-                    set,
-                });
+                if set {
+                    batch.tag(field, item);
+                } else {
+                    batch.untag(field, item);
+                }
             }
         }
         IndexValue::Blob { value } => {
@@ -346,14 +353,11 @@ fn build_index(batch: &mut BatchBuilder, item: IndexValue<'_>, tenant_id: Option
         }
         IndexValue::Acl { value } => {
             for item in value.as_ref() {
-                batch.ops.push(Operation::acl(
-                    item.account_id,
-                    if set {
-                        item.grants.bitmap.serialize().into()
-                    } else {
-                        None
-                    },
-                ));
+                if set {
+                    batch.acl_grant(item.account_id, item.grants.bitmap.serialize());
+                } else {
+                    batch.acl_revoke(item.account_id);
+                }
             }
         }
         IndexValue::Quota { used } => {
@@ -365,6 +369,18 @@ fn build_index(batch: &mut BatchBuilder, item: IndexValue<'_>, tenant_id: Option
 
             if let Some(tenant_id) = tenant_id {
                 batch.add(DirectoryClass::UsedQuota(tenant_id), value);
+            }
+        }
+        IndexValue::LogChild { prefix } => {
+            if set {
+                batch.log_insert(prefix);
+            } else {
+                batch.log_delete(prefix);
+            }
+        }
+        IndexValue::LogParent { collection, ids } => {
+            for parent_id in ids {
+                batch.log_child_update(collection, parent_id);
             }
         }
     }
@@ -387,19 +403,11 @@ fn merge_index(
             },
         ) => {
             if !old_value.is_empty() {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: old_value.into_owned(),
-                    set: false,
-                });
+                batch.unindex(field, old_value.into_owned());
             }
 
             if !new_value.is_empty() {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: new_value.into_owned(),
-                    set: true,
-                });
+                batch.index(field, new_value.into_owned());
             }
         }
         (
@@ -415,20 +423,12 @@ fn merge_index(
 
             for value in new_value {
                 if !remove_values.remove(&value) {
-                    batch.ops.push(Operation::Index {
-                        field,
-                        key: value.into_owned(),
-                        set: true,
-                    });
+                    batch.index(field, value.into_owned());
                 }
             }
 
             for value in remove_values {
-                batch.ops.push(Operation::Index {
-                    field,
-                    key: value.into_owned(),
-                    set: false,
-                });
+                batch.unindex(field, value.into_owned());
             }
         }
         (
@@ -442,25 +442,13 @@ fn merge_index(
         ) => {
             for old_tag in &old_value {
                 if !new_value.contains(old_tag) {
-                    batch.ops.push(Operation::Bitmap {
-                        class: BitmapClass::Tag {
-                            field,
-                            value: old_tag.clone(),
-                        },
-                        set: false,
-                    });
+                    batch.untag(field, old_tag.clone());
                 }
             }
 
             for new_tag in new_value {
                 if !old_value.contains(&new_tag) {
-                    batch.ops.push(Operation::Bitmap {
-                        class: BitmapClass::Tag {
-                            field,
-                            value: new_tag,
-                        },
-                        set: true,
-                    });
+                    batch.tag(field, new_tag);
                 }
             }
         }
@@ -477,9 +465,7 @@ fn merge_index(
                             .iter()
                             .any(|item| item.account_id == current_item.account_id)
                         {
-                            batch
-                                .ops
-                                .push(Operation::acl(current_item.account_id, None));
+                            batch.acl_revoke(current_item.account_id);
                         }
                     }
 
@@ -495,26 +481,20 @@ fn merge_index(
                             }
                         }
                         if add_item {
-                            batch.ops.push(Operation::acl(
-                                item.account_id,
-                                item.grants.bitmap.serialize().into(),
-                            ));
+                            batch.acl_grant(item.account_id, item.grants.bitmap.serialize());
                         }
                     }
                 }
                 (false, true) => {
                     // Add all ACLs
                     for item in new_acl.as_ref() {
-                        batch.ops.push(Operation::acl(
-                            item.account_id,
-                            item.grants.bitmap.serialize().into(),
-                        ));
+                        batch.acl_grant(item.account_id, item.grants.bitmap.serialize());
                     }
                 }
                 (true, false) => {
                     // Remove all ACLs
                     for item in old_acl.as_ref() {
-                        batch.ops.push(Operation::acl(item.account_id, None));
+                        batch.acl_revoke(item.account_id);
                     }
                 }
                 _ => {}
@@ -528,6 +508,31 @@ fn merge_index(
 
             if let Some(tenant_id) = tenant_id {
                 batch.add(DirectoryClass::UsedQuota(tenant_id), value);
+            }
+        }
+        (
+            IndexValue::LogChild { prefix: old_prefix },
+            IndexValue::LogChild { prefix: new_prefix },
+        ) => {
+            batch.log_delete(old_prefix);
+            batch.log_insert(new_prefix);
+        }
+        (
+            IndexValue::LogParent {
+                collection,
+                ids: old_ids,
+            },
+            IndexValue::LogParent { ids: new_ids, .. },
+        ) => {
+            for parent_id in &old_ids {
+                if !new_ids.contains(parent_id) {
+                    batch.log_child_update(collection, *parent_id);
+                }
+            }
+            for parent_id in new_ids {
+                if !old_ids.contains(&parent_id) {
+                    batch.log_child_update(collection, parent_id);
+                }
             }
         }
         _ => unreachable!(),

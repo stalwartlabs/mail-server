@@ -264,6 +264,7 @@ impl Session<common::listener::stream::NullIo> {
 
 impl SessionData {
     pub fn local(
+        authenticated_as: Arc<AccessToken>,
         mail_from: Option<SessionAddress>,
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,
@@ -284,7 +285,7 @@ impl SessionData {
             rcpt_errors: 0,
             rcpt_oks: 0,
             message,
-            authenticated_as: Some(Arc::new(AccessToken::from_id(0))),
+            authenticated_as: Some(authenticated_as),
             auth_errors: 0,
             priority: 0,
             delivery_by: 0,
@@ -302,7 +303,7 @@ impl SessionData {
 
 impl Default for SessionData {
     fn default() -> Self {
-        Self::local(None, vec![], vec![], 0)
+        Self::local(Arc::new(AccessToken::from_id(0)), None, vec![], vec![], 0)
     }
 }
 

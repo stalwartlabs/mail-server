@@ -20,10 +20,7 @@ use imap_proto::{
     receiver::Request,
 };
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
-use store::{
-    Deserialize, U32_LEN,
-    write::{AlignedBytes, Archive},
-};
+use store::{Deserialize, U32_LEN};
 use store::{
     IndexKeyPrefix, IterateParams, roaring::RoaringBitmap, write::key::DeserializeBigEndian,
 };
@@ -255,11 +252,10 @@ impl<T: SessionStream> SessionData<T> {
                         .caused_by(trc::location!())? as u64,
                     Status::UidValidity => u32::from(
                         self.server
-                            .get_property::<Archive<AlignedBytes>>(
+                            .get_archive(
                                 mailbox.account_id,
                                 Collection::Mailbox,
                                 mailbox.mailbox_id,
-                                &Property::Value,
                             )
                             .await?
                             .ok_or_else(|| {

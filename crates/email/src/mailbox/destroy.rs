@@ -10,14 +10,9 @@ use common::{
 use directory::Permission;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
-    types::{acl::Acl, collection::Collection, id::Id, property::Property},
+    types::{acl::Acl, collection::Collection, property::Property},
 };
-use store::{
-    SerializeInfallible,
-    query::Filter,
-    roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder},
-};
+use store::{SerializeInfallible, query::Filter, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 
 use crate::message::{delete::EmailDeletion, metadata::MessageData};
@@ -29,10 +24,9 @@ pub trait MailboxDestroy: Sync + Send {
         &self,
         account_id: u32,
         document_id: u32,
-        changes: &mut ChangeLogBuilder,
         access_token: &AccessToken,
         remove_emails: bool,
-    ) -> impl Future<Output = trc::Result<Result<bool, SetError>>> + Send;
+    ) -> impl Future<Output = trc::Result<Result<Option<u64>, SetError>>> + Send;
 }
 
 impl MailboxDestroy for Server {
@@ -40,10 +34,9 @@ impl MailboxDestroy for Server {
         &self,
         account_id: u32,
         document_id: u32,
-        changes: &mut ChangeLogBuilder,
         access_token: &AccessToken,
         remove_emails: bool,
-    ) -> trc::Result<Result<bool, SetError>> {
+    ) -> trc::Result<Result<Option<u64>, SetError>> {
         // Internal folders cannot be deleted
         #[cfg(feature = "test_mode")]
         if [INBOX_ID, TRASH_ID].contains(&document_id)
@@ -83,7 +76,10 @@ impl MailboxDestroy for Server {
         }
 
         // Verify that the mailbox is empty
-        let mut did_remove_emails = false;
+        let mut batch = BatchBuilder::new();
+
+        batch.with_account_id(account_id);
+
         if let Some(message_ids) = self
             .get_tag(
                 account_id,
@@ -94,19 +90,14 @@ impl MailboxDestroy for Server {
             .await?
         {
             if remove_emails {
-                // Flag removal for state change notification
-                did_remove_emails = true;
-
                 // If the message is in multiple mailboxes, untag it from the current mailbox,
                 // otherwise delete it.
                 let mut destroy_ids = RoaringBitmap::new();
-                let mut batch = BatchBuilder::new();
 
                 self.get_archives(
                     account_id,
                     Collection::Email,
                     &message_ids,
-                    Property::Value,
                     |message_id, message_data_| {
                         // Remove mailbox from list
                         let prev_message_data = message_data_
@@ -130,7 +121,6 @@ impl MailboxDestroy for Server {
                         let mut new_message_data = prev_message_data
                             .deserialize()
                             .caused_by(trc::location!())?;
-                        let thread_id = new_message_data.thread_id;
 
                         new_message_data
                             .mailboxes
@@ -138,7 +128,6 @@ impl MailboxDestroy for Server {
 
                         // Untag message from mailbox
                         batch
-                            .with_account_id(account_id)
                             .with_collection(Collection::Email)
                             .update_document(message_id)
                             .custom(
@@ -146,35 +135,18 @@ impl MailboxDestroy for Server {
                                     .with_changes(new_message_data)
                                     .with_current(prev_message_data),
                             )
-                            .caused_by(trc::location!())?;
-                        changes
-                            .log_update(Collection::Email, Id::from_parts(thread_id, message_id));
+                            .caused_by(trc::location!())?
+                            .commit_point();
                         Ok(true)
                     },
                 )
                 .await
                 .caused_by(trc::location!())?;
 
-                if !batch.is_empty() {
-                    match self.core.storage.data.write(batch.build()).await {
-                        Ok(_) => {}
-                        Err(err) if err.is_assertion_failure() => {
-                            return Ok(Err(SetError::forbidden().with_description(concat!(
-                                "Another process modified a message in this mailbox ",
-                                "while deleting it, please try again."
-                            ))));
-                        }
-                        Err(err) => {
-                            return Err(err.caused_by(trc::location!()));
-                        }
-                    }
-                }
-
                 // Bulk delete messages
                 if !destroy_ids.is_empty() {
-                    let (mut change, _) = self.emails_tombstone(account_id, destroy_ids).await?;
-                    change.changes.remove(&(Collection::Mailbox as u8));
-                    changes.merge(change);
+                    self.emails_tombstone(account_id, &mut batch, destroy_ids)
+                        .await?;
                 }
             } else {
                 return Ok(Err(SetError::new(SetErrorType::MailboxHasEmail)
@@ -184,12 +156,7 @@ impl MailboxDestroy for Server {
 
         // Obtain mailbox
         if let Some(mailbox_) = self
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::Mailbox,
-                document_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::Mailbox, document_id)
             .await
             .caused_by(trc::location!())?
         {
@@ -210,8 +177,6 @@ impl MailboxDestroy for Server {
                     }
                 }
             }
-
-            let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Mailbox)
@@ -219,21 +184,23 @@ impl MailboxDestroy for Server {
                 .clear(Property::EmailIds)
                 .custom(ObjectIndexBuilder::<_, ()>::new().with_current(mailbox))
                 .caused_by(trc::location!())?;
+        } else {
+            return Ok(Err(SetError::not_found()));
+        };
 
-            match self.core.storage.data.write(batch.build()).await {
-                Ok(_) => {
-                    changes.log_delete(Collection::Mailbox, document_id);
-                    Ok(Ok(did_remove_emails))
-                }
+        if !batch.is_empty() {
+            let change_id = batch.change_id();
+            match self.commit_batch(batch).await {
+                Ok(_) => Ok(Ok(Some(change_id))),
                 Err(err) if err.is_assertion_failure() => Ok(Err(SetError::forbidden()
                     .with_description(concat!(
-                        "Another process modified this mailbox ",
+                        "Another process modified a message in this mailbox ",
                         "while deleting it, please try again."
                     )))),
                 Err(err) => Err(err.caused_by(trc::location!())),
             }
         } else {
-            Ok(Err(SetError::not_found()))
+            Ok(Ok(None))
         }
     }
 }

@@ -1226,7 +1226,7 @@ impl AsRef<Property> for Property {
     }
 }
 
-impl<T> From<Property> for ValueClass<T> {
+impl From<Property> for ValueClass {
     fn from(value: Property) -> Self {
         ValueClass::Property(value.into())
     }

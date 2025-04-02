@@ -47,7 +47,7 @@ impl FdbStore {
 
     pub(crate) async fn get_bitmap(
         &self,
-        mut key: BitmapKey<BitmapClass<u32>>,
+        mut key: BitmapKey<BitmapClass>,
     ) -> trc::Result<Option<RoaringBitmap>> {
         let mut bm = RoaringBitmap::new();
         let begin = key.serialize(WITH_SUBSPACE);
@@ -150,7 +150,7 @@ impl FdbStore {
 
     pub(crate) async fn get_counter(
         &self,
-        key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
+        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> trc::Result<i64> {
         let key = key.into().serialize(WITH_SUBSPACE);
         if let Some(bytes) = self

@@ -113,8 +113,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                     TcpAcceptorResult::Tls(accept) => match accept.await {
                         Ok(stream) => {
                             // Generate sessionId
-                            session.session_id =
-                                session.instance.span_id_gen.generate().unwrap_or_default();
+                            session.session_id = session.instance.span_id_gen.generate();
                             session_id = session.session_id;
 
                             // Send span
@@ -159,8 +158,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                     },
                     TcpAcceptorResult::Plain(stream) => {
                         // Generate sessionId
-                        session.session_id =
-                            session.instance.span_id_gen.generate().unwrap_or_default();
+                        session.session_id = session.instance.span_id_gen.generate();
                         session_id = session.session_id;
 
                         // Send span
@@ -183,7 +181,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                 }
             } else {
                 // Generate sessionId
-                session.session_id = session.instance.span_id_gen.generate().unwrap_or_default();
+                session.session_id = session.instance.span_id_gen.generate();
                 session_id = session.session_id;
 
                 // Send span

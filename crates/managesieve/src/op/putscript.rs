@@ -15,7 +15,7 @@ use sieve::compiler::ErrorType;
 use store::{
     Serialize,
     query::Filter,
-    write::{AlignedBytes, Archive, BatchBuilder, LegacyBincode, log::LogInsert},
+    write::{BatchBuilder, LegacyBincode},
 };
 use trc::AddContext;
 
@@ -105,12 +105,7 @@ impl<T: SessionStream> Session<T> {
             // Obtain script values
             let script_ = self
                 .server
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::SieveScript,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::SieveScript, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or_else(|| {
@@ -152,8 +147,7 @@ impl<T: SessionStream> Session<T> {
                 .caused_by(trc::location!())?;
 
             self.server
-                .store()
-                .write(batch)
+                .commit_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
 
@@ -175,11 +169,16 @@ impl<T: SessionStream> Session<T> {
 
             // Write record
             let mut batch = BatchBuilder::new();
+            let document_id = self
+                .server
+                .store()
+                .assign_document_ids(account_id, Collection::SieveScript, 1)
+                .await
+                .caused_by(trc::location!())?;
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
-                .create_document()
-                .log(LogInsert())
+                .create_document(document_id)
                 .custom(
                     ObjectIndexBuilder::<(), _>::new()
                         .with_changes(
@@ -191,10 +190,8 @@ impl<T: SessionStream> Session<T> {
                 )
                 .caused_by(trc::location!())?;
 
-            let assigned_ids = self
-                .server
-                .store()
-                .write(batch)
+            self.server
+                .commit_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
 
@@ -202,7 +199,7 @@ impl<T: SessionStream> Session<T> {
                 ManageSieve(trc::ManageSieveEvent::CreateScript),
                 SpanId = self.session_id,
                 Id = name,
-                DocumentId = assigned_ids.last_document_id().ok(),
+                DocumentId = document_id,
                 Elapsed = op_start.elapsed()
             );
         }

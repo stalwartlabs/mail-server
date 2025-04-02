@@ -9,10 +9,8 @@ use dav_proto::RequestHeaders;
 use groupware::{file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, property::Property, type_state::DataType,
-};
-use store::write::{AlignedBytes, Archive, BatchBuilder, log::ChangeLogBuilder};
+use jmap_proto::types::{acl::Acl, collection::Collection};
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
@@ -106,23 +104,17 @@ pub(crate) async fn delete_files(
     ids: Vec<u32>,
 ) -> trc::Result<()> {
     // Process deletions
-    let mut changes = ChangeLogBuilder::new();
-
+    let mut batch = BatchBuilder::new();
+    batch
+        .with_account_id(account_id)
+        .with_collection(Collection::FileNode);
     for document_id in ids {
         if let Some(node) = server
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::FileNode,
-                document_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::FileNode, document_id)
             .await?
         {
             // Delete record
-            let mut batch = BatchBuilder::new();
             batch
-                .with_account_id(account_id)
-                .with_collection(Collection::FileNode)
                 .delete_document(document_id)
                 .custom(
                     ObjectIndexBuilder::<_, ()>::new()
@@ -132,25 +124,17 @@ pub(crate) async fn delete_files(
                                 .caused_by(trc::location!())?,
                         ),
                 )
-                .caused_by(trc::location!())?;
-            server
-                .store()
-                .write(batch)
-                .await
-                .caused_by(trc::location!())?;
-            changes.log_delete(Collection::FileNode, document_id);
+                .caused_by(trc::location!())?
+                .commit_point();
         }
     }
 
     // Write changes
-    if !changes.is_empty() {
-        let change_id = server
-            .commit_changes(account_id, changes)
+    if !batch.is_empty() {
+        server
+            .commit_batch(batch)
             .await
             .caused_by(trc::location!())?;
-        server
-            .broadcast_single_state_change(account_id, change_id, DataType::FileNode)
-            .await;
     }
 
     Ok(())

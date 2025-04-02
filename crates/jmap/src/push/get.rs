@@ -85,12 +85,7 @@ impl PushSubscriptionFetch for Server {
                 continue;
             }
             let push_ = if let Some(push) = self
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::PushSubscription,
-                    document_id,
-                    Property::Value,
-                )
+                .get_archive(account_id, Collection::PushSubscription, document_id)
                 .await?
             {
                 push

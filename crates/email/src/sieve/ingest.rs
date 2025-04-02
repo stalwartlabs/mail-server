@@ -25,7 +25,7 @@ use store::{
     ahash::AHashMap,
     dispatch::lookup::KeyValue,
     query::Filter,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, LegacyBincode},
+    write::{Archiver, BatchBuilder, BlobOp, LegacyBincode},
 };
 use trc::{AddContext, SieveEvent};
 use utils::config::utils::ParseValue;
@@ -343,13 +343,10 @@ impl SieveScriptIngest for Server {
                                 {
                                     target_id = document_id;
                                 }
-                            } else if let Ok(Some((document_id, changes))) =
+                            } else if let Ok(Some(document_id)) =
                                 self.mailbox_create_path(account_id, &folder).await
                             {
                                 target_id = document_id;
-                                if let Some(change_id) = changes {
-                                    ingested_message.change_id = change_id;
-                                }
                             }
                         }
 
@@ -613,12 +610,7 @@ impl SieveScriptIngest for Server {
     ) -> trc::Result<CompiledScript> {
         // Obtain script object
         let script_object = self
-            .get_property::<Archive<AlignedBytes>>(
-                account_id,
-                Collection::SieveScript,
-                document_id,
-                Property::Value,
-            )
+            .get_archive(account_id, Collection::SieveScript, document_id)
             .await?
             .ok_or_else(|| {
                 trc::StoreEvent::NotFound
@@ -708,7 +700,7 @@ impl SieveScriptIngest for Server {
                             Vec::new(),
                         );
                     self.store()
-                        .write(batch.build())
+                        .write(batch.build_all())
                         .await
                         .caused_by(trc::location!())?;
 

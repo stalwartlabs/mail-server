@@ -213,9 +213,9 @@ impl ManageReports for Server {
 
                             batch.clear(ValueClass::Report(report_id));
 
-                            if batch.ops.len() > 1000 {
+                            if batch.len() > 1000 {
                                 if let Err(err) =
-                                    server.core.storage.data.write(batch.build()).await
+                                    server.core.storage.data.write(batch.build_all()).await
                                 {
                                     trc::error!(err.caused_by(trc::location!()));
                                 }
@@ -223,8 +223,10 @@ impl ManageReports for Server {
                             }
                         }
 
-                        if !batch.ops.is_empty() {
-                            if let Err(err) = server.core.storage.data.write(batch.build()).await {
+                        if !batch.is_empty() {
+                            if let Err(err) =
+                                server.core.storage.data.write(batch.build_all()).await
+                            {
                                 trc::error!(err.caused_by(trc::location!()));
                             }
                         }
@@ -280,7 +282,7 @@ impl ManageReports for Server {
 
                     let mut batch = BatchBuilder::new();
                     batch.clear(ValueClass::Report(report_id));
-                    self.core.storage.data.write(batch.build()).await?;
+                    self.core.storage.data.write(batch.build_all()).await?;
 
                     Ok(JsonResponse::new(json!({
                             "data": true,

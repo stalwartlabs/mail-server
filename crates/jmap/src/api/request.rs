@@ -105,11 +105,6 @@ impl RequestHandler for Server {
                             ResponseMethod::Set(set_response) => {
                                 // Add created ids
                                 set_response.update_created_ids(&mut response);
-
-                                // Publish state changes
-                                if let Some(state_change) = set_response.state_change.take() {
-                                    self.broadcast_state_change(state_change).await;
-                                }
                             }
                             ResponseMethod::ImportEmail(import_response) => {
                                 // Add created ids

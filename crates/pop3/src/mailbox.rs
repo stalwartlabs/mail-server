@@ -13,9 +13,8 @@ use email::{
 };
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    IndexKey, IterateParams, SerializeInfallible, U32_LEN,
-    ahash::AHashMap,
-    write::{AlignedBytes, Archive, key::DeserializeBigEndian},
+    IndexKey, IterateParams, SerializeInfallible, U32_LEN, ahash::AHashMap,
+    write::key::DeserializeBigEndian,
 };
 use trc::AddContext;
 
@@ -66,12 +65,7 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
         let uid_validity = u32::from(
             self.server
-                .get_property::<Archive<AlignedBytes>>(
-                    account_id,
-                    Collection::Mailbox,
-                    INBOX_ID,
-                    &Property::Value,
-                )
+                .get_archive(account_id, Collection::Mailbox, INBOX_ID)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or_else(|| {
@@ -130,7 +124,6 @@ impl<T: SessionStream> Session<T> {
                 account_id,
                 Collection::Email,
                 &message_ids,
-                Property::Value,
                 |message_id, uid_mailbox| {
                     // Make sure the message is still in Inbox
                     if let Some(item) = uid_mailbox

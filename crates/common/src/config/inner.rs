@@ -15,6 +15,7 @@ use mail_auth::{MX, Parameters, Txt};
 use mail_send::smtp::tls::build_tls_connector;
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::RwLock;
+use store::write::BatchBuilder;
 use utils::{
     cache::{Cache, CacheWithTtl},
     config::Config,
@@ -42,11 +43,15 @@ impl Data {
             subject_names.insert("localhost".to_string());
         }
 
-        // Parse id generator
-        let id_generator = config
+        // Build and test snowflake id generator
+        let node_id = config
             .property::<u64>("cluster.node-id")
-            .map(SnowflakeIdGenerator::with_node_id)
-            .unwrap_or_default();
+            .unwrap_or_else(store::rand::random);
+        let id_generator = SnowflakeIdGenerator::with_node_id(node_id);
+        BatchBuilder::init_id_generator(node_id as u16);
+        if !id_generator.is_valid() {
+            panic!("Invalid system time, panicking to avoid data corruption");
+        }
 
         Data {
             tls_certificates: ArcSwap::from_pointee(certificates),

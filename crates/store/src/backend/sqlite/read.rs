@@ -41,7 +41,7 @@ impl SqliteStore {
 
     pub(crate) async fn get_bitmap(
         &self,
-        mut key: BitmapKey<BitmapClass<u32>>,
+        mut key: BitmapKey<BitmapClass>,
     ) -> trc::Result<Option<RoaringBitmap>> {
         let begin = key.serialize(0);
         key.document_id = u32::MAX;
@@ -147,7 +147,7 @@ impl SqliteStore {
 
     pub(crate) async fn get_counter(
         &self,
-        key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
+        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> trc::Result<i64> {
         let key = key.into();
         let table = char::from(key.subspace());

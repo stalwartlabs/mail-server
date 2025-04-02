@@ -21,10 +21,7 @@ use imap_proto::{
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
 };
-use jmap_proto::types::{
-    acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-    type_state::DataType,
-};
+use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, property::Property};
 use store::{query::Filter, write::BatchBuilder};
 use trc::AddContext;
 
@@ -73,13 +70,20 @@ impl<T: SessionStream> SessionData<T> {
         debug_assert!(!params.path.is_empty());
 
         // Build batch
-        let mut changes = self
-            .server
-            .begin_changes(params.account_id)
-            .imap_ctx(&arguments.tag, trc::location!())?;
-
         let mut parent_id = params.parent_mailbox_id.map(|id| id + 1).unwrap_or(0);
         let mut create_ids = Vec::with_capacity(params.path.len());
+        let mut change_id = 0;
+        let mut next_document_id = self
+            .server
+            .store()
+            .assign_document_ids(
+                params.account_id,
+                Collection::Mailbox,
+                params.path.len() as u64,
+            )
+            .await
+            .caused_by(trc::location!())?;
+        let mut batch = BatchBuilder::new();
         for (pos, &path_item) in params.path.iter().enumerate() {
             let mut mailbox = email::mailbox::Mailbox::new(path_item).with_parent_id(parent_id);
 
@@ -88,44 +92,24 @@ impl<T: SessionStream> SessionData<T> {
                     mailbox.role = mailbox_role;
                 }
             }
-            let mut batch = BatchBuilder::new();
+            let mailbox_id = next_document_id;
+            next_document_id -= 1;
+            change_id = batch.change_id();
             batch
                 .with_account_id(params.account_id)
                 .with_collection(Collection::Mailbox)
-                .create_document()
+                .create_document(mailbox_id)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(mailbox))
-                .imap_ctx(&arguments.tag, trc::location!())?;
-            let mailbox_id = self
-                .server
-                .store()
-                .write_expect_id(batch)
-                .await
-                .imap_ctx(&arguments.tag, trc::location!())?;
-            changes.log_insert(Collection::Mailbox, mailbox_id);
+                .imap_ctx(&arguments.tag, trc::location!())?
+                .commit_point();
             parent_id = mailbox_id + 1;
             create_ids.push(mailbox_id);
         }
 
-        // Write changes
-        let change_id = changes.change_id;
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(params.account_id)
-            .with_collection(Collection::Mailbox)
-            .custom(changes)
-            .imap_ctx(&arguments.tag, trc::location!())?;
         self.server
-            .store()
-            .write(batch)
+            .commit_batch(batch)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
-
-        // Broadcast changes
-        self.server
-            .broadcast_state_change(
-                StateChange::new(params.account_id).with_change(DataType::Mailbox, change_id),
-            )
-            .await;
 
         trc::event!(
             Imap(trc::ImapEvent::CreateMailbox),

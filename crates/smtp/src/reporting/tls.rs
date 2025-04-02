@@ -28,7 +28,7 @@ use reqwest::header::CONTENT_TYPE;
 use std::fmt::Write;
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{BatchBuilder, LegacyBincode, QueueClass, ReportEvent, ValueClass, now},
+    write::{BatchBuilder, LegacyBincode, QueueClass, ReportEvent, ValueClass},
 };
 use trc::{AddContext, OutgoingReportEvent};
 
@@ -75,7 +75,7 @@ impl TlsReporting for Server {
             .map(|e| (e.domain.as_str(), e.seq_id, e.due))
             .unwrap();
 
-        let span_id = self.inner.data.span_id_gen.generate().unwrap_or_else(now);
+        let span_id = self.inner.data.span_id_gen.generate();
 
         trc::event!(
             OutgoingReport(OutgoingReportEvent::TlsAggregate),
@@ -505,7 +505,7 @@ impl TlsReporting for Server {
         }
 
         // Write entry
-        report_event.seq_id = self.inner.data.queue_id_gen.generate().unwrap_or_else(now);
+        report_event.seq_id = self.inner.data.queue_id_gen.generate();
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
             match LegacyBincode::new(event.failure).serialize() {
@@ -520,7 +520,7 @@ impl TlsReporting for Server {
             },
         );
 
-        if let Err(err) = self.core.storage.data.write(builder.build()).await {
+        if let Err(err) = self.core.storage.data.write(builder.build_all()).await {
             trc::error!(
                 err.caused_by(trc::location!())
                     .details("Failed to write TLS report")
@@ -568,7 +568,7 @@ impl TlsReporting for Server {
             batch.clear(ValueClass::Queue(QueueClass::TlsReportHeader(event)));
         }
 
-        if let Err(err) = self.core.storage.data.write(batch.build()).await {
+        if let Err(err) = self.core.storage.data.write(batch.build_all()).await {
             trc::error!(
                 err.caused_by(trc::location!())
                     .details("Failed to delete TLS reports")
