@@ -5,30 +5,29 @@
  */
 
 use calcard::{Entry, Parser};
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{Server, auth::AccessToken};
 use dav_proto::{
     RequestHeaders, Return,
     schema::{property::Rfc1123DateTime, response::CardCondition},
 };
-use groupware::{DavName, IDX_CARD_UID, contact::ContactCard, hierarchy::DavHierarchy};
+use groupware::{DavName, contact::ContactCard, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
-use store::{
-    query::Filter,
-    write::{BatchBuilder, now},
-};
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
     DavError, DavErrorCondition, DavMethod,
     common::{
-        ETag, ExtractETag,
+        ETag,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
     file::DavFileResource,
 };
+
+use super::{assert_is_unique_uid, insert_card, update_card};
 
 pub(crate) trait CardUpdateRequestHandler: Sync + Send {
     fn handle_card_update_request(
@@ -110,7 +109,7 @@ impl CardUpdateRequestHandler for Server {
 
             // Update
             let card_ = self
-                .get_archive(account_id, Collection::FileNode, document_id)
+                .get_archive(account_id, Collection::ContactCard, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -182,23 +181,20 @@ impl CardUpdateRequestHandler for Server {
                 .deserialize::<ContactCard>()
                 .caused_by(trc::location!())?;
             new_card.size = bytes.len() as u32;
-            new_card.modified = now() as i64;
             new_card.card = vcard;
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::ContactCard)
-                .update_document(document_id)
-                .custom(
-                    ObjectIndexBuilder::new()
-                        .with_current(card)
-                        .with_changes(new_card)
-                        .with_tenant_id(access_token),
-                )
-                .caused_by(trc::location!())?;
-            let etag = batch.etag();
+            let etag = update_card(
+                access_token,
+                card,
+                new_card,
+                account_id,
+                document_id,
+                true,
+                &mut batch,
+            )
+            .caused_by(trc::location!())?;
             self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
@@ -249,43 +245,23 @@ impl CardUpdateRequestHandler for Server {
             }
 
             // Validate UID
-            if let Some(uid) = vcard.uid() {
-                let hits = self
-                    .store()
-                    .filter(
-                        account_id,
-                        Collection::ContactCard,
-                        vec![Filter::eq(IDX_CARD_UID, uid.as_bytes().to_vec())],
-                    )
-                    .await
-                    .caused_by(trc::location!())?;
-                if !hits.results.is_empty() {
-                    for path in resources.paths.iter() {
-                        if !path.is_container
-                            && hits.results.contains(path.document_id)
-                            && path.parent_id.unwrap() == parent.document_id
-                        {
-                            return Err(DavError::Condition(DavErrorCondition::new(
-                                StatusCode::PRECONDITION_FAILED,
-                                CardCondition::NoUidConflict(
-                                    headers.format_to_base_uri(&path.name).into(),
-                                ),
-                            )));
-                        }
-                    }
-                }
-            }
+            assert_is_unique_uid(
+                self,
+                &resources,
+                account_id,
+                parent.document_id,
+                vcard.uid(),
+                headers.base_uri().unwrap_or_default(),
+            )
+            .await?;
 
             // Build node
-            let now = now();
             let card = ContactCard {
                 names: vec![DavName {
                     name: name.to_string(),
                     parent_id: parent.document_id,
                 }],
                 card: vcard,
-                created: now as i64,
-                modified: now as i64,
                 size: bytes.len() as u32,
                 ..Default::default()
             };
@@ -297,17 +273,15 @@ impl CardUpdateRequestHandler for Server {
                 .assign_document_ids(account_id, Collection::ContactCard, 1)
                 .await
                 .caused_by(trc::location!())?;
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::ContactCard)
-                .create_document(document_id)
-                .custom(
-                    ObjectIndexBuilder::<(), _>::new()
-                        .with_changes(card)
-                        .with_tenant_id(access_token),
-                )
-                .caused_by(trc::location!())?;
-            let etag = batch.etag();
+            let etag = insert_card(
+                access_token,
+                card,
+                account_id,
+                document_id,
+                true,
+                &mut batch,
+            )
+            .caused_by(trc::location!())?;
             self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))

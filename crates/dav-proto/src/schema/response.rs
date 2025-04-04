@@ -223,7 +223,7 @@ pub enum CardCondition {
     ValidAddressData,
     NoUidConflict(Href),
     MaxResourceSize(u32),
-    AddressBoolCollectionLocationOk,
+    AddressBookCollectionLocationOk,
 }
 
 impl BaseCondition {

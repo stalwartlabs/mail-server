@@ -90,9 +90,17 @@ impl MultiStatus {
         self
     }
 
+    pub fn set_namespace(&mut self, namespace: Namespace) {
+        self.namespace = namespace;
+    }
+
     pub fn with_sync_token(mut self, sync_token: impl Into<String>) -> Self {
         self.sync_token = Some(SyncToken(sync_token.into()));
         self
+    }
+
+    pub fn set_sync_token(&mut self, sync_token: impl Into<String>) {
+        self.sync_token = Some(SyncToken(sync_token.into()));
     }
 }
 

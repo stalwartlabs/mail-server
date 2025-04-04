@@ -60,6 +60,7 @@ impl DavHierarchy for Server {
             files.modseq = change_id;
             let files = Arc::new(files);
             self.inner.cache.dav.insert(resource_id, files.clone());
+
             Ok(files)
         }
     }

@@ -17,6 +17,7 @@ use trc::AddContext;
 
 use crate::{DavError, DavResource};
 
+#[derive(Debug)]
 pub(crate) struct UriResource<A, R> {
     pub collection: Collection,
     pub account_id: A,

@@ -14,7 +14,9 @@ use dav_proto::{
     },
 };
 use directory::{QueryBy, Type, backend::internal::PrincipalField};
-use groupware::{calendar::Calendar, contact::AddressBook, file::FileNode};
+use groupware::{
+    calendar::Calendar, contact::AddressBook, file::FileNode, hierarchy::DavHierarchy,
+};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{
@@ -23,16 +25,25 @@ use jmap_proto::types::{
     value::{AclGrant, ArchivedAclGrant},
 };
 use rkyv::vec::ArchivedVec;
-use store::{ahash::AHashSet, roaring::RoaringBitmap};
+use store::{ahash::AHashSet, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    DavError, DavErrorCondition, DavResource, common::uri::DavUriResource,
-    principal::propfind::PrincipalPropFind,
+    DavError, DavErrorCondition, DavResource, card::update_addressbook,
+    common::uri::DavUriResource, file::update_file_node, principal::propfind::PrincipalPropFind,
 };
 
+use super::ArchivedResource;
+
 pub(crate) trait DavAclHandler: Sync + Send {
+    fn handle_acl_request(
+        &self,
+        access_token: &AccessToken,
+        headers: RequestHeaders<'_>,
+        request: dav_proto::schema::request::Acl,
+    ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
+
     fn handle_acl_prop_set(
         &self,
         access_token: &AccessToken,
@@ -68,11 +79,113 @@ pub(crate) trait DavAclHandler: Sync + Send {
 
     fn resolve_ace(
         &self,
-        unresolved_aces: Vec<UnresolvedAce>,
+        access_token: &AccessToken,
+        account_id: u32,
+        grants: &ArchivedVec<ArchivedAclGrant>,
     ) -> impl Future<Output = trc::Result<Vec<Ace>>> + Send;
 }
 
 impl DavAclHandler for Server {
+    async fn handle_acl_request(
+        &self,
+        access_token: &AccessToken,
+        headers: RequestHeaders<'_>,
+        request: dav_proto::schema::request::Acl,
+    ) -> crate::Result<HttpResponse> {
+        // Validate URI
+        let resource_ = self
+            .validate_uri(access_token, headers.uri)
+            .await?
+            .into_owned_uri()?;
+        let account_id = resource_.account_id;
+        let collection = resource_.collection;
+
+        if !matches!(
+            collection,
+            Collection::AddressBook | Collection::Calendar | Collection::FileNode
+        ) {
+            return Err(DavError::Code(StatusCode::FORBIDDEN));
+        }
+        let resources = self
+            .fetch_dav_resources(account_id, collection)
+            .await
+            .caused_by(trc::location!())?;
+        let resource = resource_
+            .resource
+            .and_then(|r| resources.paths.by_name(r))
+            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+        if !resource.is_container && !matches!(collection, Collection::FileNode) {
+            return Err(DavError::Code(StatusCode::FORBIDDEN));
+        }
+
+        // Fetch node
+        let archive = self
+            .get_archive(account_id, collection, resource.document_id)
+            .await
+            .caused_by(trc::location!())?
+            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+
+        let container =
+            ArchivedResource::from_archive(&archive, collection).caused_by(trc::location!())?;
+
+        // Validate ACL
+        let acls = container.acls().unwrap();
+        if !access_token.is_member(account_id)
+            && !acls.effective_acl(access_token).contains(Acl::Administer)
+        {
+            return Err(DavError::Code(StatusCode::FORBIDDEN));
+        }
+
+        // Validate ACEs
+        let grants = self
+            .validate_and_map_aces(access_token, request, collection)
+            .await?;
+
+        if grants.len() != acls.len() || acls.iter().zip(grants.iter()).any(|(a, b)| a != b) {
+            let mut batch = BatchBuilder::new();
+
+            match container {
+                ArchivedResource::Calendar(calendar) => todo!(),
+                ArchivedResource::AddressBook(book) => {
+                    let mut new_book = book
+                        .deserialize::<AddressBook>()
+                        .caused_by(trc::location!())?;
+                    new_book.acls = grants;
+                    update_addressbook(
+                        access_token,
+                        book,
+                        new_book,
+                        account_id,
+                        resource.document_id,
+                        false,
+                        &mut batch,
+                    )
+                    .caused_by(trc::location!())?;
+                }
+                ArchivedResource::FileNode(node) => {
+                    let mut new_node =
+                        node.deserialize::<FileNode>().caused_by(trc::location!())?;
+                    new_node.acls = grants;
+                    update_file_node(
+                        access_token,
+                        node,
+                        new_node,
+                        account_id,
+                        resource.document_id,
+                        false,
+                        &mut batch,
+                    )
+                    .caused_by(trc::location!())?;
+                }
+                _ => unreachable!(),
+            }
+
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
+        }
+
+        Ok(HttpResponse::new(StatusCode::OK))
+    }
+
     async fn handle_acl_prop_set(
         &self,
         access_token: &AccessToken,
@@ -342,51 +455,16 @@ impl DavAclHandler for Server {
         }
     }
 
-    async fn resolve_ace(&self, unresolved_aces: Vec<UnresolvedAce>) -> trc::Result<Vec<Ace>> {
-        let mut aces = Vec::with_capacity(unresolved_aces.len());
-
-        for ace in unresolved_aces {
-            let grant_account_name = self
-                .directory()
-                .query(QueryBy::Id(ace.account_id), false)
-                .await
-                .caused_by(trc::location!())?
-                .and_then(|mut p| p.take_str(PrincipalField::Name))
-                .unwrap_or_else(|| format!("_{}", ace.account_id));
-
-            aces.push(Ace::new(
-                Principal::Href(Href(format!(
-                    "{}/{}",
-                    DavResource::Principal.base_path(),
-                    grant_account_name,
-                ))),
-                GrantDeny::grant(ace.privileges),
-            ));
-        }
-
-        Ok(aces)
-    }
-}
-
-pub(crate) struct UnresolvedAce {
-    account_id: u32,
-    privileges: Vec<Privilege>,
-}
-
-pub(crate) trait Privileges {
-    fn ace(&self, account_id: u32, grants: &ArchivedVec<ArchivedAclGrant>) -> Vec<UnresolvedAce>;
-
-    fn current_privilege_set(
+    async fn resolve_ace(
         &self,
+        access_token: &AccessToken,
         account_id: u32,
         grants: &ArchivedVec<ArchivedAclGrant>,
-    ) -> Vec<Privilege>;
-}
-
-impl Privileges for AccessToken {
-    fn ace(&self, account_id: u32, grants: &ArchivedVec<ArchivedAclGrant>) -> Vec<UnresolvedAce> {
+    ) -> trc::Result<Vec<Ace>> {
         let mut aces = Vec::with_capacity(grants.len());
-        if self.is_member(account_id) || grants.effective_acl(self).contains(Acl::Administer) {
+        if access_token.is_member(account_id)
+            || grants.effective_acl(access_token).contains(Acl::Administer)
+        {
             for grant in grants.iter() {
                 let grant_account_id = u32::from(grant.account_id);
                 let mut privileges = Vec::with_capacity(4);
@@ -409,15 +487,38 @@ impl Privileges for AccessToken {
                     privileges.push(Privilege::ReadFreeBusy);
                 }
 
-                aces.push(UnresolvedAce {
-                    account_id: grant_account_id,
-                    privileges,
-                });
+                let grant_account_name = self
+                    .directory()
+                    .query(QueryBy::Id(grant_account_id), false)
+                    .await
+                    .caused_by(trc::location!())?
+                    .and_then(|mut p| p.take_str(PrincipalField::Name))
+                    .unwrap_or_else(|| format!("_{grant_account_id}"));
+
+                aces.push(Ace::new(
+                    Principal::Href(Href(format!(
+                        "{}/{}",
+                        DavResource::Principal.base_path(),
+                        grant_account_name,
+                    ))),
+                    GrantDeny::grant(privileges),
+                ));
             }
         }
-        aces
-    }
 
+        Ok(aces)
+    }
+}
+
+pub(crate) trait Privileges {
+    fn current_privilege_set(
+        &self,
+        account_id: u32,
+        grants: &ArchivedVec<ArchivedAclGrant>,
+    ) -> Vec<Privilege>;
+}
+
+impl Privileges for AccessToken {
     fn current_privilege_set(
         &self,
         account_id: u32,

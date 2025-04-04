@@ -15,7 +15,7 @@ use mail_parser::DateTime;
 use crate::schema::{
     property::{
         CalDavProperty, CalDavPropertyName, CalendarData, CardDavProperty, CardDavPropertyName,
-        Comp, DateRange, DavProperty, DavValue, ResourceType, WebDavProperty,
+        Comp, DateRange, DavProperty, DavValue, PrincipalProperty, ResourceType, WebDavProperty,
     },
     request::{DavPropertyValue, DeadProperty, VCardPropertyWithGroup},
     response::List,
@@ -450,16 +450,16 @@ impl DavProperty {
                 Some(DavProperty::WebDav(WebDavProperty::SyncToken))
             }
             (Namespace::Dav, Element::AlternateUriSet) => {
-                Some(DavProperty::WebDav(WebDavProperty::AlternateURISet))
+                Some(DavProperty::Principal(PrincipalProperty::AlternateURISet))
             }
             (Namespace::Dav, Element::PrincipalUrl) => {
-                Some(DavProperty::WebDav(WebDavProperty::PrincipalURL))
+                Some(DavProperty::Principal(PrincipalProperty::PrincipalURL))
             }
             (Namespace::Dav, Element::GroupMemberSet) => {
-                Some(DavProperty::WebDav(WebDavProperty::GroupMemberSet))
+                Some(DavProperty::Principal(PrincipalProperty::GroupMemberSet))
             }
             (Namespace::Dav, Element::GroupMembership) => {
-                Some(DavProperty::WebDav(WebDavProperty::GroupMembership))
+                Some(DavProperty::Principal(PrincipalProperty::GroupMembership))
             }
             (Namespace::Dav, Element::Owner) => Some(DavProperty::WebDav(WebDavProperty::Owner)),
             (Namespace::Dav, Element::Group) => Some(DavProperty::WebDav(WebDavProperty::Group)),
@@ -487,6 +487,12 @@ impl DavProperty {
             }
             (Namespace::CardDav, Element::SupportedCollationSet) => {
                 Some(DavProperty::CardDav(CardDavProperty::SupportedCollationSet))
+            }
+            (Namespace::CardDav, Element::AddressbookHomeSet) => Some(DavProperty::Principal(
+                PrincipalProperty::AddressbookHomeSet,
+            )),
+            (Namespace::CardDav, Element::PrincipalAddress) => {
+                Some(DavProperty::Principal(PrincipalProperty::PrincipalAddress))
             }
             (Namespace::CardDav, Element::AddressData) => Some(DavProperty::CardDav(
                 CardDavProperty::AddressData(Default::default()),

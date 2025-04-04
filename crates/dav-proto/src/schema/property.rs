@@ -24,6 +24,7 @@ pub enum DavProperty {
     WebDav(WebDavProperty),
     CardDav(CardDavProperty),
     CalDav(CalDavProperty),
+    Principal(PrincipalProperty),
     DeadProperty(DeadElementTag),
 }
 
@@ -48,11 +49,6 @@ pub enum WebDavProperty {
     QuotaUsedBytes,
     // Sync properties
     SyncToken,
-    // Principal properties
-    AlternateURISet,
-    PrincipalURL,
-    GroupMemberSet,
-    GroupMembership,
     // ACL properties (all protected)
     Owner,
     Group,
@@ -101,6 +97,18 @@ pub enum CalDavProperty {
     CalendarData(CalendarData),
     TimezoneServiceSet,
     TimezoneId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(test, serde(tag = "type", content = "data"))]
+pub enum PrincipalProperty {
+    AlternateURISet,
+    PrincipalURL,
+    GroupMemberSet,
+    GroupMembership,
+    AddressbookHomeSet,
+    PrincipalAddress,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -153,6 +161,8 @@ pub enum DavValue {
     Acl(List<Ace>),
     AclRestrictions(AclRestrictions),
     DeadProperty(DeadProperty),
+    SupportedAddressData,
+    SupportedCalendarData,
     Null,
 }
 
@@ -264,6 +274,7 @@ impl Rfc1123DateTime {
 
 impl DavProperty {
     pub fn is_all_prop(&self) -> bool {
+        let todo = "add cal, card";
         matches!(
             self,
             DavProperty::WebDav(WebDavProperty::CreationDate)

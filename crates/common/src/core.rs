@@ -529,17 +529,15 @@ impl Server {
 
     pub async fn commit_batch(&self, mut builder: BatchBuilder) -> trc::Result<AssignedIds> {
         let mut assigned_ids = AssignedIds::default();
-        let change_id = builder.last_change_id();
 
         for batch in builder.build() {
             assigned_ids = self.store().write(batch).await?;
         }
 
-        if builder.has_logs() {
-            let change_id = change_id.unwrap();
-            for (account_id, changed_collections) in builder.changed_collections() {
-                let mut state_change = StateChange::new(*account_id);
-                for changed_collection in *changed_collections {
+        if let Some(changes) = builder.changes() {
+            for (account_id, (change_id, changed_collections)) in changes {
+                let mut state_change = StateChange::new(account_id);
+                for changed_collection in changed_collections {
                     if let Ok(data_type) = DataType::try_from(changed_collection) {
                         state_change.set_change(data_type, change_id);
                     }
@@ -547,9 +545,8 @@ impl Server {
                 if state_change.has_changes() {
                     self.broadcast_state_change(state_change).await;
                 }
+                assigned_ids.change_id = change_id.into();
             }
-
-            assigned_ids.change_id = change_id.into();
         }
 
         Ok(assigned_ids)

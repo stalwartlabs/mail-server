@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{Server, auth::AccessToken};
 use dav_proto::{
     RequestHeaders, Return,
     schema::{Namespace, request::MkCol, response::MkColResponse},
@@ -13,7 +13,7 @@ use groupware::{contact::AddressBook, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
-use store::write::{BatchBuilder, now};
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-use super::proppatch::CardPropPatchRequestHandler;
+use super::{insert_addressbook, proppatch::CardPropPatchRequestHandler};
 
 pub(crate) trait CardMkColRequestHandler: Sync + Send {
     fn handle_card_mkcol_request(
@@ -81,11 +81,8 @@ impl CardMkColRequestHandler for Server {
         .await?;
 
         // Build file container
-        let now = now();
         let mut book = AddressBook {
             name: name.to_string(),
-            created: now as i64,
-            modified: now as i64,
             ..Default::default()
         };
 
@@ -112,12 +109,15 @@ impl CardMkColRequestHandler for Server {
             .assign_document_ids(account_id, Collection::AddressBook, 1)
             .await
             .caused_by(trc::location!())?;
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::AddressBook)
-            .create_document(document_id)
-            .custom(ObjectIndexBuilder::<(), _>::new().with_changes(book))
-            .caused_by(trc::location!())?;
+        insert_addressbook(
+            access_token,
+            book,
+            account_id,
+            document_id,
+            false,
+            &mut batch,
+        )
+        .caused_by(trc::location!())?;
         self.commit_batch(batch).await.caused_by(trc::location!())?;
 
         if let Some(prop_stat) = return_prop_stat {

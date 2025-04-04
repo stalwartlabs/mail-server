@@ -7,7 +7,7 @@
 use common::storage::index::{
     IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
 };
-use jmap_proto::types::value::AclGrant;
+use jmap_proto::types::{collection::Collection, value::AclGrant};
 use store::SerializeInfallible;
 
 use crate::{IDX_CARD_UID, IDX_NAME};
@@ -32,6 +32,7 @@ impl IndexableObject for AddressBook {
                     + self.description.as_ref().map_or(0, |n| n.len() as u32)
                     + self.name.len() as u32,
             },
+            IndexValue::LogChild { prefix: None },
         ]
         .into_iter()
     }
@@ -58,6 +59,7 @@ impl IndexableObject for &ArchivedAddressBook {
                     + self.description.as_ref().map_or(0, |n| n.len() as u32)
                     + self.name.len() as u32,
             },
+            IndexValue::LogChild { prefix: None },
         ]
         .into_iter()
     }
@@ -86,6 +88,11 @@ impl IndexableObject for ContactCard {
                     + self.names.iter().map(|n| n.name.len() as u32).sum::<u32>()
                     + self.size,
             },
+            IndexValue::LogChild { prefix: None },
+            IndexValue::LogParent {
+                collection: Collection::AddressBook,
+                ids: self.names.iter().map(|v| v.parent_id).collect::<Vec<_>>(),
+            },
         ]
         .into_iter()
     }
@@ -111,6 +118,15 @@ impl IndexableObject for &ArchivedContactCard {
                     + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
                     + self.names.iter().map(|n| n.name.len() as u32).sum::<u32>()
                     + self.size,
+            },
+            IndexValue::LogChild { prefix: None },
+            IndexValue::LogParent {
+                collection: Collection::AddressBook,
+                ids: self
+                    .names
+                    .iter()
+                    .map(|v| v.parent_id.to_native())
+                    .collect::<Vec<_>>(),
             },
         ]
         .into_iter()

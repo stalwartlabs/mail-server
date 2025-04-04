@@ -8,7 +8,8 @@ use std::borrow::Cow;
 
 use common::{Server, auth::AccessToken};
 use dav_proto::schema::{
-    property::{DavProperty, ReportSet, ResourceType, WebDavProperty},
+    Namespace,
+    property::{DavProperty, PrincipalProperty, ReportSet, ResourceType, WebDavProperty},
     request::{DavPropertyValue, PropFind},
     response::{Href, MultiStatus, PropStat, Response},
 };
@@ -69,7 +70,18 @@ impl PrincipalPropFind for Server {
             PropFind::AllProp(items) => Cow::Owned(all_props(collection, items.as_slice().into())),
             PropFind::Prop(items) => Cow::Borrowed(items),
         };
-        let is_principal = collection == Collection::Principal;
+        let is_principal = match collection {
+            Collection::AddressBook | Collection::ContactCard => {
+                response.set_namespace(Namespace::CardDav);
+                false
+            }
+            Collection::Calendar | Collection::CalendarEvent => {
+                response.set_namespace(Namespace::CalDav);
+                false
+            }
+            Collection::Principal => true,
+            _ => false,
+        };
         let base_path = DavResource::from(collection).base_path();
         let needs_quota = properties.iter().any(|property| {
             matches!(
@@ -116,12 +128,12 @@ impl PrincipalPropFind for Server {
             };
 
             // Fetch quota
-            let (quota_used, quota_available) = if needs_quota {
+            let quota = if needs_quota {
                 self.dav_quota(access_token, account_id)
                     .await
                     .caused_by(trc::location!())?
             } else {
-                (0, 0)
+                Default::default()
             };
 
             for property in properties.as_slice() {
@@ -132,14 +144,14 @@ impl PrincipalPropFind for Server {
                                 .push(DavPropertyValue::new(property.clone(), description.clone()));
                         }
                         WebDavProperty::ResourceType => {
-                            if !is_principal {
-                                fields.push(DavPropertyValue::new(
-                                    property.clone(),
-                                    vec![ResourceType::Collection],
-                                ));
+                            let resource_type = if !is_principal {
+                                ResourceType::Collection
                             } else {
-                                fields.push(DavPropertyValue::empty(property.clone()));
-                            }
+                                ResourceType::Principal
+                            };
+
+                            fields
+                                .push(DavPropertyValue::new(property.clone(), vec![resource_type]));
                         }
                         WebDavProperty::SupportedReportSet => {
                             let reports = if !is_principal {
@@ -164,10 +176,10 @@ impl PrincipalPropFind for Server {
                             ));
                         }
                         WebDavProperty::QuotaAvailableBytes if !is_principal => {
-                            fields.push(DavPropertyValue::new(property.clone(), quota_available));
+                            fields.push(DavPropertyValue::new(property.clone(), quota.available));
                         }
                         WebDavProperty::QuotaUsedBytes if !is_principal => {
-                            fields.push(DavPropertyValue::new(property.clone(), quota_used));
+                            fields.push(DavPropertyValue::new(property.clone(), quota.used));
                         }
                         WebDavProperty::SyncToken if !is_principal => {
                             let id = self
@@ -181,16 +193,7 @@ impl PrincipalPropFind for Server {
                                 Urn::Sync(id).to_string(),
                             ));
                         }
-                        WebDavProperty::AlternateURISet if is_principal => {
-                            fields.push(DavPropertyValue::empty(property.clone()));
-                        }
-                        WebDavProperty::GroupMemberSet if is_principal => {
-                            fields.push(DavPropertyValue::empty(property.clone()));
-                        }
-                        WebDavProperty::GroupMembership if is_principal => {
-                            fields.push(DavPropertyValue::empty(property.clone()));
-                        }
-                        WebDavProperty::Owner | WebDavProperty::PrincipalURL => {
+                        WebDavProperty::Owner => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
                                 vec![Href(format!(
@@ -213,6 +216,48 @@ impl PrincipalPropFind for Server {
                             fields_not_found.push(DavPropertyValue::empty(property.clone()));
                         }
                     },
+                    DavProperty::Principal(principal_property) if is_principal => {
+                        match principal_property {
+                            PrincipalProperty::AlternateURISet => {
+                                fields.push(DavPropertyValue::empty(property.clone()));
+                            }
+                            PrincipalProperty::GroupMemberSet => {
+                                fields.push(DavPropertyValue::empty(property.clone()));
+                            }
+                            PrincipalProperty::GroupMembership => {
+                                fields.push(DavPropertyValue::empty(property.clone()));
+                            }
+                            PrincipalProperty::PrincipalURL => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    vec![Href(format!(
+                                        "{}/{}",
+                                        DavResource::Principal.base_path(),
+                                        percent_encoding::utf8_percent_encode(
+                                            &name,
+                                            NON_ALPHANUMERIC
+                                        ),
+                                    ))],
+                                ));
+                            }
+                            PrincipalProperty::AddressbookHomeSet => {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    vec![Href(format!(
+                                        "{}/{}",
+                                        DavResource::Card.base_path(),
+                                        percent_encoding::utf8_percent_encode(
+                                            &name,
+                                            NON_ALPHANUMERIC
+                                        ),
+                                    ))],
+                                ));
+                            }
+                            PrincipalProperty::PrincipalAddress => {
+                                fields_not_found.push(DavPropertyValue::empty(property.clone()));
+                            }
+                        }
+                    }
                     _ => {
                         fields_not_found.push(DavPropertyValue::empty(property.clone()));
                     }
@@ -270,11 +315,11 @@ fn all_props(collection: Collection, all_props: Option<&[DavProperty]>) -> Vec<D
             DavProperty::WebDav(WebDavProperty::ResourceType),
             DavProperty::WebDav(WebDavProperty::SupportedReportSet),
             DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
-            DavProperty::WebDav(WebDavProperty::AlternateURISet),
-            DavProperty::WebDav(WebDavProperty::PrincipalURL),
-            DavProperty::WebDav(WebDavProperty::GroupMemberSet),
-            DavProperty::WebDav(WebDavProperty::GroupMembership),
             DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
+            DavProperty::Principal(PrincipalProperty::AlternateURISet),
+            DavProperty::Principal(PrincipalProperty::PrincipalURL),
+            DavProperty::Principal(PrincipalProperty::GroupMemberSet),
+            DavProperty::Principal(PrincipalProperty::GroupMembership),
         ]
     } else if let Some(all_props) = all_props {
         let mut props = vec![

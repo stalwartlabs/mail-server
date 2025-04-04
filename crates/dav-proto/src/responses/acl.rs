@@ -53,6 +53,16 @@ impl SupportedPrivilege {
         self.supported_privilege.0.push(supported_privilege);
         self
     }
+
+    pub fn with_opt_supported_privilege(
+        mut self,
+        supported_privilege: Option<SupportedPrivilege>,
+    ) -> Self {
+        if let Some(supported_privilege) = supported_privilege {
+            self.supported_privilege.0.push(supported_privilege);
+        }
+        self
+    }
 }
 
 impl Display for Ace {

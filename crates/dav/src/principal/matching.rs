@@ -6,7 +6,7 @@
 
 use common::{Server, auth::AccessToken};
 use dav_proto::{
-    RequestHeaders, Return,
+    RequestHeaders,
     schema::{
         property::{DavProperty, WebDavProperty},
         request::{PrincipalMatch, PropFind},
@@ -20,8 +20,7 @@ use store::roaring::RoaringBitmap;
 
 use crate::{
     DavError,
-    common::{DavQuery, uri::DavUriResource},
-    file::propfind::HandleFilePropFindRequest,
+    common::{DavQuery, DavQueryResource, propfind::PropFindRequestHandler, uri::DavUriResource},
 };
 
 use super::propfind::PrincipalPropFind;
@@ -47,23 +46,18 @@ impl PrincipalMatching for Server {
             .await
             .and_then(|uri| uri.into_owned_uri())?;
 
-        let todo = "implement cal, card";
-
         match resource.collection {
-            Collection::Calendar => todo!(),
-            Collection::AddressBook => todo!(),
-            Collection::FileNode => {
-                self.handle_file_propfind_request(
+            Collection::AddressBook | Collection::Calendar | Collection::FileNode => {
+                self.handle_dav_query(
                     access_token,
                     DavQuery {
-                        resource,
-                        base_uri: headers.uri,
+                        resource: DavQueryResource::Uri(resource),
+                        base_uri: headers.base_uri().unwrap_or_default(),
                         propfind: PropFind::Prop(request.properties),
-                        from_change_id: None,
                         depth: usize::MAX,
-                        limit: None,
                         ret: headers.ret,
                         depth_no_root: headers.depth_no_root,
+                        ..Default::default()
                     },
                 )
                 .await

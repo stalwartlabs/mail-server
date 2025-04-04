@@ -105,7 +105,7 @@ impl CardDeleteRequestHandler for Server {
             .await?;
 
             // Delete addressbook and cards
-            delete_address_book(
+            delete_address_book_and_cards(
                 self,
                 access_token,
                 account_id,
@@ -172,7 +172,6 @@ impl CardDeleteRequestHandler for Server {
                     .caused_by(trc::location!())?,
                 &mut batch,
             )
-            .await
             .caused_by(trc::location!())?;
         }
 
@@ -182,7 +181,7 @@ impl CardDeleteRequestHandler for Server {
     }
 }
 
-pub(crate) async fn delete_address_book(
+pub(crate) async fn delete_address_book_and_cards(
     server: &Server,
     access_token: &AccessToken,
     account_id: u32,
@@ -207,13 +206,23 @@ pub(crate) async fn delete_address_book(
                     .to_unarchived::<ContactCard>()
                     .caused_by(trc::location!())?,
                 batch,
-            )
-            .await?;
+            )?;
         }
     }
 
+    delete_address_book(access_token, account_id, document_id, book, batch)?;
+
+    Ok(())
+}
+
+pub(crate) fn delete_address_book(
+    access_token: &AccessToken,
+    account_id: u32,
+    document_id: u32,
+    book: Archive<&ArchivedAddressBook>,
+    batch: &mut BatchBuilder,
+) -> trc::Result<()> {
     // Delete addressbook
-    let mut batch = BatchBuilder::new();
     batch
         .with_account_id(account_id)
         .with_collection(Collection::AddressBook)
@@ -223,12 +232,13 @@ pub(crate) async fn delete_address_book(
                 .with_tenant_id(access_token)
                 .with_current(book),
         )
-        .caused_by(trc::location!())?;
+        .caused_by(trc::location!())?
+        .commit_point();
 
     Ok(())
 }
 
-pub(crate) async fn delete_card(
+pub(crate) fn delete_card(
     access_token: &AccessToken,
     account_id: u32,
     document_id: u32,

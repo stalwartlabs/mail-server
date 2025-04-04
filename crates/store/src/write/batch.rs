@@ -10,7 +10,10 @@ use std::sync::{
 };
 
 use utils::{
-    map::bitmap::{Bitmap, ShortId},
+    map::{
+        bitmap::{Bitmap, ShortId},
+        vec_map::VecMap,
+    },
     snowflake::SnowflakeIdGenerator,
 };
 
@@ -32,12 +35,12 @@ impl BatchBuilder {
             current_account_id: None,
             current_collection: None,
             current_document_id: None,
+            changes: Default::default(),
             changed_collections: Default::default(),
             batch_size: 0,
             batch_ops: 0,
             has_assertions: false,
             commit_points: Vec::new(),
-            changelog: Default::default(),
         }
     }
 
@@ -59,9 +62,6 @@ impl BatchBuilder {
             .current_account_id
             .is_none_or(|current_account_id| current_account_id != account_id)
         {
-            if self.current_account_id.is_some() && self.current_change_id.is_some() {
-                self.serialize_changes();
-            }
             self.current_account_id = account_id.into();
             self.ops.push(Operation::AccountId { account_id });
         }
@@ -251,15 +251,14 @@ impl BatchBuilder {
     }
 
     pub fn log_insert(&mut self, prefix: Option<u32>) -> &mut Self {
-        if let (Some(account_id), Some(collection)) =
-            (self.current_account_id, self.current_collection)
-        {
-            self.changed_collections
+        if let (Some(account_id), Some(collection), Some(document_id)) = (
+            self.current_account_id,
+            self.current_collection,
+            self.current_document_id,
+        ) {
+            self.changes
                 .get_mut_or_insert(account_id)
-                .insert(ShortId(collection));
-            if let Some(document_id) = self.current_document_id {
-                self.changelog.log_insert(collection, prefix, document_id);
-            }
+                .log_insert(collection, prefix, document_id);
         }
         if self.current_change_id.is_none() {
             self.generate_change_id();
@@ -269,15 +268,14 @@ impl BatchBuilder {
     }
 
     pub fn log_update(&mut self, prefix: Option<u32>) -> &mut Self {
-        if let (Some(account_id), Some(collection)) =
-            (self.current_account_id, self.current_collection)
-        {
-            self.changed_collections
+        if let (Some(account_id), Some(collection), Some(document_id)) = (
+            self.current_account_id,
+            self.current_collection,
+            self.current_document_id,
+        ) {
+            self.changes
                 .get_mut_or_insert(account_id)
-                .insert(ShortId(collection));
-            if let Some(document_id) = self.current_document_id {
-                self.changelog.log_update(collection, prefix, document_id);
-            }
+                .log_update(collection, prefix, document_id);
         }
         if self.current_change_id.is_none() {
             self.generate_change_id();
@@ -287,15 +285,14 @@ impl BatchBuilder {
     }
 
     pub fn log_delete(&mut self, prefix: Option<u32>) -> &mut Self {
-        if let (Some(account_id), Some(collection)) =
-            (self.current_account_id, self.current_collection)
-        {
-            self.changed_collections
+        if let (Some(account_id), Some(collection), Some(document_id)) = (
+            self.current_account_id,
+            self.current_collection,
+            self.current_document_id,
+        ) {
+            self.changes
                 .get_mut_or_insert(account_id)
-                .insert(ShortId(collection));
-            if let Some(document_id) = self.current_document_id {
-                self.changelog.log_delete(collection, prefix, document_id);
-            }
+                .log_delete(collection, prefix, document_id);
         }
         if self.current_change_id.is_none() {
             self.generate_change_id();
@@ -308,11 +305,10 @@ impl BatchBuilder {
         let collection = collection.into();
 
         if let Some(account_id) = self.current_account_id {
-            self.changed_collections
+            self.changes
                 .get_mut_or_insert(account_id)
-                .insert(ShortId(collection));
+                .log_child_update(collection, None, parent_id);
         }
-        self.changelog.log_child_update(collection, None, parent_id);
         if self.current_change_id.is_none() {
             self.generate_change_id();
             self.batch_ops += 1;
@@ -322,13 +318,21 @@ impl BatchBuilder {
 
     fn serialize_changes(&mut self) {
         if let Some(change_id) = self.current_change_id.take() {
-            if !self.changelog.is_empty() {
-                for (collection, set) in std::mem::take(&mut self.changelog).serialize() {
-                    self.ops.push(Operation::Log {
-                        change_id,
-                        collection,
-                        set,
-                    });
+            if !self.changes.is_empty() {
+                for (account_id, changelog) in std::mem::take(&mut self.changes) {
+                    self.with_account_id(account_id);
+
+                    for (collection, set) in changelog.serialize() {
+                        let cc = self.changed_collections.get_mut_or_insert(account_id);
+                        cc.0 = change_id;
+                        cc.1.insert(ShortId(collection));
+
+                        self.ops.push(Operation::Log {
+                            change_id,
+                            collection,
+                            set,
+                        });
+                    }
                 }
             }
         }
@@ -401,11 +405,15 @@ impl BatchBuilder {
         }
     }
 
-    pub fn changed_collections(&mut self) -> impl Iterator<Item = (&u32, &Bitmap<ShortId>)> {
-        self.changed_collections.iter()
+    pub fn changes(self) -> Option<VecMap<u32, (u64, Bitmap<ShortId>)>> {
+        if self.has_changes() {
+            Some(self.changed_collections)
+        } else {
+            None
+        }
     }
 
-    pub fn has_logs(&self) -> bool {
+    pub fn has_changes(&self) -> bool {
         !self.changed_collections.is_empty()
     }
 

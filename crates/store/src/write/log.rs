@@ -61,10 +61,6 @@ impl ChangeLogBuilder {
             .child_updates
             .insert(build_id(prefix, document_id));
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.changes.is_empty()
-    }
 }
 
 #[inline(always)]

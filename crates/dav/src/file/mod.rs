@@ -5,6 +5,7 @@
  */
 
 use common::{DavResource, DavResources, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use dav_proto::schema::property::{DavProperty, WebDavProperty};
 use groupware::file::{ArchivedFileNode, FileNode};
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
@@ -18,14 +19,76 @@ use crate::{
     },
 };
 
-pub mod acl;
 pub mod copy_move;
 pub mod delete;
 pub mod get;
 pub mod mkcol;
-pub mod propfind;
 pub mod proppatch;
 pub mod update;
+
+pub(crate) static FILE_CONTAINER_PROPS: [DavProperty; 19] = [
+    DavProperty::WebDav(WebDavProperty::CreationDate),
+    DavProperty::WebDav(WebDavProperty::DisplayName),
+    DavProperty::WebDav(WebDavProperty::GetETag),
+    DavProperty::WebDav(WebDavProperty::GetLastModified),
+    DavProperty::WebDav(WebDavProperty::ResourceType),
+    DavProperty::WebDav(WebDavProperty::LockDiscovery),
+    DavProperty::WebDav(WebDavProperty::SupportedLock),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+    DavProperty::WebDav(WebDavProperty::SyncToken),
+    DavProperty::WebDav(WebDavProperty::Owner),
+    DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::Acl),
+    DavProperty::WebDav(WebDavProperty::AclRestrictions),
+    DavProperty::WebDav(WebDavProperty::InheritedAclSet),
+    DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
+    DavProperty::WebDav(WebDavProperty::SupportedReportSet),
+    DavProperty::WebDav(WebDavProperty::QuotaAvailableBytes),
+    DavProperty::WebDav(WebDavProperty::QuotaUsedBytes),
+];
+
+pub(crate) static FILE_ITEM_PROPS: [DavProperty; 19] = [
+    DavProperty::WebDav(WebDavProperty::CreationDate),
+    DavProperty::WebDav(WebDavProperty::DisplayName),
+    DavProperty::WebDav(WebDavProperty::GetETag),
+    DavProperty::WebDav(WebDavProperty::GetLastModified),
+    DavProperty::WebDav(WebDavProperty::ResourceType),
+    DavProperty::WebDav(WebDavProperty::LockDiscovery),
+    DavProperty::WebDav(WebDavProperty::SupportedLock),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+    DavProperty::WebDav(WebDavProperty::SyncToken),
+    DavProperty::WebDav(WebDavProperty::Owner),
+    DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::Acl),
+    DavProperty::WebDav(WebDavProperty::AclRestrictions),
+    DavProperty::WebDav(WebDavProperty::InheritedAclSet),
+    DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
+    DavProperty::WebDav(WebDavProperty::GetContentLanguage),
+    DavProperty::WebDav(WebDavProperty::GetContentLength),
+    DavProperty::WebDav(WebDavProperty::GetContentType),
+];
+
+pub(crate) static FILE_ALL_PROPS: [DavProperty; 17] = [
+    DavProperty::WebDav(WebDavProperty::CreationDate),
+    DavProperty::WebDav(WebDavProperty::DisplayName),
+    DavProperty::WebDav(WebDavProperty::GetETag),
+    DavProperty::WebDav(WebDavProperty::GetLastModified),
+    DavProperty::WebDav(WebDavProperty::ResourceType),
+    DavProperty::WebDav(WebDavProperty::LockDiscovery),
+    DavProperty::WebDav(WebDavProperty::SupportedLock),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+    DavProperty::WebDav(WebDavProperty::SyncToken),
+    DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::AclRestrictions),
+    DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
+    DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
+    DavProperty::WebDav(WebDavProperty::GetContentLanguage),
+    DavProperty::WebDav(WebDavProperty::GetContentLength),
+    DavProperty::WebDav(WebDavProperty::GetContentType),
+    DavProperty::WebDav(WebDavProperty::SupportedReportSet),
+];
 
 pub(crate) trait FromDavResource {
     fn from_dav_resource(item: &DavResource) -> Self;

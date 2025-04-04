@@ -15,8 +15,8 @@ use mail_parser::{
 use crate::schema::{
     property::{
         ActiveLock, CalDavProperty, CardDavProperty, Comp, DavProperty, DavValue, LockDiscovery,
-        LockEntry, Privilege, ReportSet, ResourceType, Rfc1123DateTime, SupportedCollation,
-        SupportedLock, WebDavProperty,
+        LockEntry, PrincipalProperty, Privilege, ReportSet, ResourceType, Rfc1123DateTime,
+        SupportedCollation, SupportedLock, WebDavProperty,
     },
     request::{DavPropertyValue, DeadProperty},
     response::{Ace, AclRestrictions, Href, List, PropResponse, SupportedPrivilege},
@@ -94,6 +94,29 @@ impl Display for DavValue {
             DavValue::Acl(v) => v.fmt(f),
             DavValue::AclRestrictions(v) => v.fmt(f),
             DavValue::DeadProperty(v) => v.fmt(f),
+            DavValue::SupportedAddressData => {
+                write!(
+                    f,
+                    concat!(
+                        "<C:supported-address-data>",
+                        "<C:address-data-type content-type=\"text/vcard\" version=\"4.0\"/>",
+                        "<C:address-data-type content-type=\"text/vcard\" version=\"3.0\"/>",
+                        "<C:address-data-type content-type=\"text/vcard\" version=\"2.0\"/>",
+                        "</C:supported-address-data>"
+                    )
+                )
+            }
+            DavValue::SupportedCalendarData => {
+                write!(
+                    f,
+                    concat!(
+                        "<C:supported-calendar-data>",
+                        "<C:calendar-data-type content-type=\"text/calendar\" version=\"2.0\"/>",
+                        "<C:calendar-data-type content-type=\"text/calendar\" version=\"1.0\"/>",
+                        "</C:supported-calendar-data>"
+                    )
+                )
+            }
             DavValue::Null => Ok(()),
         }
     }
@@ -119,10 +142,6 @@ impl DavProperty {
                     WebDavProperty::QuotaUsedBytes => "D:quota-used-bytes",
                     WebDavProperty::SupportedReportSet => "D:supported-report-set",
                     WebDavProperty::SyncToken => "D:sync-token",
-                    WebDavProperty::AlternateURISet => "D:alternate-URI-set",
-                    WebDavProperty::PrincipalURL => "D:principal-URL",
-                    WebDavProperty::GroupMemberSet => "D:group-member-set",
-                    WebDavProperty::GroupMembership => "D:group-membership",
                     WebDavProperty::Owner => "D:owner",
                     WebDavProperty::Group => "D:group",
                     WebDavProperty::SupportedPrivilegeSet => "D:supported-privilege-set",
@@ -156,6 +175,14 @@ impl DavProperty {
                     CalDavProperty::CalendarData(_) => "C:calendar-data",
                     CalDavProperty::TimezoneServiceSet => "C:timezone-service-set",
                     CalDavProperty::TimezoneId => "C:calendar-timezone-id",
+                },
+                DavProperty::Principal(prop) => match prop {
+                    PrincipalProperty::AlternateURISet => "D:alternate-URI-set",
+                    PrincipalProperty::PrincipalURL => "D:principal-URL",
+                    PrincipalProperty::GroupMemberSet => "D:group-member-set",
+                    PrincipalProperty::GroupMembership => "D:group-membership",
+                    PrincipalProperty::AddressbookHomeSet => "C:addressbook-home-set",
+                    PrincipalProperty::PrincipalAddress => "C:principal-address",
                 },
                 DavProperty::DeadProperty(dead) => {
                     return (dead.name.as_str(), dead.attrs.as_deref())

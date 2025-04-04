@@ -86,6 +86,7 @@ pub const SERIALIZE_OBJ_13_V1: u8 = 12;
 pub const SERIALIZE_OBJ_14_V1: u8 = 13;
 pub const SERIALIZE_OBJ_15_V1: u8 = 14;
 pub const SERIALIZE_OBJ_16_V1: u8 = 15;
+pub const SERIALIZE_OBJ_17_V1: u8 = 16;
 
 pub trait SerializedVersion {
     fn serialize_version() -> u8;

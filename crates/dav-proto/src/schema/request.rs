@@ -15,10 +15,11 @@ use super::{
     Collation, MatchType,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(test, serde(tag = "type", content = "data"))]
 pub enum PropFind {
+    #[default]
     PropName,
     AllProp(Vec<DavProperty>),
     Prop(Vec<DavProperty>),

@@ -22,13 +22,13 @@ use dav_proto::{
 use directory::Permission;
 use http_proto::{HttpRequest, HttpResponse, HttpSessionData, request::fetch_body};
 use hyper::{StatusCode, header};
+use jmap_proto::types::collection::Collection;
 
 use crate::{
     DavError, DavMethod, DavResource,
     card::{
-        acl::CardAclRequestHandler, copy_move::CardCopyMoveRequestHandler,
-        delete::CardDeleteRequestHandler, get::CardGetRequestHandler,
-        mkcol::CardMkColRequestHandler, propfind::CardPropFindRequestHandler,
+        copy_move::CardCopyMoveRequestHandler, delete::CardDeleteRequestHandler,
+        get::CardGetRequestHandler, mkcol::CardMkColRequestHandler,
         proppatch::CardPropPatchRequestHandler, query::CardQueryRequestHandler,
         update::CardUpdateRequestHandler,
     },
@@ -40,9 +40,8 @@ use crate::{
         uri::DavUriResource,
     },
     file::{
-        acl::FileAclRequestHandler, copy_move::FileCopyMoveRequestHandler,
-        delete::FileDeleteRequestHandler, get::FileGetRequestHandler,
-        mkcol::FileMkColRequestHandler, propfind::HandleFilePropFindRequest,
+        copy_move::FileCopyMoveRequestHandler, delete::FileDeleteRequestHandler,
+        get::FileGetRequestHandler, mkcol::FileMkColRequestHandler,
         proppatch::FilePropPatchRequestHandler, update::FileUpdateRequestHandler,
     },
     principal::{matching::PrincipalMatching, propsearch::PrincipalPropSearch},
@@ -258,13 +257,8 @@ impl DavRequestDispatcher for Server {
             DavMethod::ACL => {
                 let request = Acl::parse(&mut Tokenizer::new(&body))?;
                 match resource {
-                    DavResource::Card => {
-                        self.handle_card_acl_request(&access_token, headers, request)
-                            .await
-                    }
-                    DavResource::Cal => todo!(),
-                    DavResource::File => {
-                        self.handle_file_acl_request(&access_token, headers, request)
+                    DavResource::Card | DavResource::Cal | DavResource::File => {
+                        self.handle_acl_request(&access_token, headers, request)
                             .await
                     }
                     DavResource::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
@@ -276,16 +270,13 @@ impl DavRequestDispatcher for Server {
                         .validate_uri(&access_token, headers.uri)
                         .await
                         .and_then(|d| d.into_owned_uri())?;
-                    let request = DavQuery::changes(uri, sync_collection, headers);
                     match resource {
-                        DavResource::Card => {
-                            self.handle_card_propfind_request(&access_token, request)
-                                .await
-                        }
-                        DavResource::Cal => todo!(),
-                        DavResource::File => {
-                            self.handle_file_propfind_request(&access_token, request)
-                                .await
+                        DavResource::Card | DavResource::Cal | DavResource::File => {
+                            self.handle_dav_query(
+                                &access_token,
+                                DavQuery::changes(uri, sync_collection, headers),
+                            )
+                            .await
                         }
                         DavResource::Principal => {
                             Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
@@ -326,8 +317,11 @@ impl DavRequestDispatcher for Server {
                         .await
                 }
                 Report::AddressbookMultiGet(report) => {
-                    self.handle_card_multiget_request(&access_token, headers, report)
-                        .await
+                    self.handle_dav_query(
+                        &access_token,
+                        DavQuery::multiget(report, Collection::AddressBook, headers),
+                    )
+                    .await
                 }
                 Report::CalendarQuery(report) => todo!(),
                 Report::CalendarMultiGet(report) => todo!(),

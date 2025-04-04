@@ -36,6 +36,7 @@ impl IndexableObject for FileNode {
             IndexValue::Acl {
                 value: (&self.acls).into(),
             },
+            IndexValue::LogChild { prefix: None },
         ]);
 
         if let Some(file) = &self.file {
@@ -79,6 +80,7 @@ impl IndexableObject for &ArchivedFileNode {
                     .collect::<Vec<_>>()
                     .into(),
             },
+            IndexValue::LogChild { prefix: None },
         ]);
 
         let size = self.size();

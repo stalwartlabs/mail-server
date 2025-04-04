@@ -135,7 +135,7 @@ impl Display for CardCondition {
             CardCondition::MaxResourceSize(l) => {
                 write!(f, "<C:max-resource-size>{l}</C:max-resource-size>")
             }
-            CardCondition::AddressBoolCollectionLocationOk => {
+            CardCondition::AddressBookCollectionLocationOk => {
                 write!(f, "<C:addressbook-collection-location-ok/>")
             }
         }

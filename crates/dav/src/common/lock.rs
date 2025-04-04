@@ -838,22 +838,22 @@ impl ArchivedLockItem {
 
 impl OwnedUri<'_> {
     pub fn lock_key(&self) -> Vec<u8> {
-        let mut result = Vec::with_capacity(U32_LEN + 2);
-        result.push(KV_LOCK_DAV);
-        result.extend_from_slice(self.account_id.to_be_bytes().as_slice());
-        result.push(u8::from(self.collection));
-        result
+        build_lock_key(self.account_id, self.collection)
     }
 }
 
 impl ResourceState<'_> {
     pub fn lock_key(&self) -> Vec<u8> {
-        let mut result = Vec::with_capacity(U32_LEN + 2);
-        result.push(KV_LOCK_DAV);
-        result.extend_from_slice(self.account_id.to_be_bytes().as_slice());
-        result.push(u8::from(self.collection));
-        result
+        build_lock_key(self.account_id, self.collection)
     }
+}
+
+pub(crate) fn build_lock_key(account_id: u32, collection: Collection) -> Vec<u8> {
+    let mut result = Vec::with_capacity(U32_LEN + 2);
+    result.push(KV_LOCK_DAV);
+    result.extend_from_slice(account_id.to_be_bytes().as_slice());
+    result.push(u8::from(collection));
+    result
 }
 
 impl PartialEq for ResourceState<'_> {
