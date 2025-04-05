@@ -251,7 +251,7 @@ impl CardUpdateRequestHandler for Server {
                 account_id,
                 parent.document_id,
                 vcard.uid(),
-                headers.base_uri().unwrap_or_default(),
+                headers.base_uri.unwrap_or_default(),
             )
             .await?;
 

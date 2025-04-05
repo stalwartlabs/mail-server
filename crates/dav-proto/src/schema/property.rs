@@ -295,6 +295,11 @@ impl DavProperty {
                 | DavProperty::WebDav(WebDavProperty::GetContentType)
                 | DavProperty::WebDav(WebDavProperty::SupportedReportSet)
                 | DavProperty::DeadProperty(_)
+                | DavProperty::CardDav(CardDavProperty::AddressData(_))
+                | DavProperty::CardDav(CardDavProperty::AddressbookDescription)
+                | DavProperty::CardDav(CardDavProperty::SupportedAddressData)
+                | DavProperty::CardDav(CardDavProperty::SupportedCollationSet)
+                | DavProperty::CardDav(CardDavProperty::MaxResourceSize),
         )
     }
 }

@@ -8,7 +8,7 @@
       }
     },
     {
-      "type": "WebDav",
+      "type": "Principal",
       "data": {
         "type": "GroupMembership"
       }

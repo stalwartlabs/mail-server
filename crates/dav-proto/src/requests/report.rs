@@ -275,7 +275,9 @@ impl DavParser for AddressbookQuery {
                         ns: Namespace::CardDav,
                         element: Element::Filter,
                     } if depth == 1 => {
-                        aq.filters.push(Filter::parse(raw)?);
+                        if let Some(filter) = Filter::parse(raw)? {
+                            aq.filters.push(filter);
+                        }
                         depth += 1;
                     }
                     NamedElement {
@@ -292,19 +294,22 @@ impl DavParser for AddressbookQuery {
                         ns: Namespace::CardDav,
                         element: Element::PropFilter,
                     } if depth == 2 => {
-                        let mut filter = Filter::AnyOf;
+                        let mut filter = None;
                         for attribute in raw.attributes::<VCardPropertyWithGroup>() {
                             match attribute? {
                                 Attribute::Name(name) => {
                                     property = Some(name);
                                 }
                                 Attribute::TestAllOf(all_of) => {
-                                    filter = if all_of { Filter::AllOf } else { Filter::AnyOf };
+                                    filter =
+                                        (if all_of { Filter::AllOf } else { Filter::AnyOf }).into();
                                 }
                                 _ => {}
                             }
                         }
-                        aq.filters.push(filter);
+                        if let Some(filter) = filter {
+                            aq.filters.push(filter);
+                        }
                         depth += 1;
                     }
                     NamedElement {
@@ -542,14 +547,14 @@ impl<A, B, C> Filter<A, B, C> {
         }
     }
 
-    fn parse(raw: RawElement<'_>) -> crate::parser::Result<Self> {
+    fn parse(raw: RawElement<'_>) -> crate::parser::Result<Option<Self>> {
         for attribute in raw.attributes::<String>() {
             if let Attribute::TestAllOf(all_of) = attribute? {
-                return Ok(if all_of { Filter::AllOf } else { Filter::AnyOf });
+                return Ok(Some(if all_of { Filter::AllOf } else { Filter::AnyOf }));
             }
         }
 
-        Ok(Filter::AnyOf)
+        Ok(None)
     }
 }
 

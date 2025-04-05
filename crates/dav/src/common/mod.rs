@@ -4,12 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use calcard::{
+    icalendar::{ICalendarComponentType, ICalendarParameterName, ICalendarProperty},
+    vcard::VCardParameterName,
+};
 use dav_proto::{
     Depth, RequestHeaders, Return,
     schema::{
         Namespace,
         property::{ReportSet, ResourceType},
-        request::{ArchivedDeadProperty, MultiGet, PropFind, SyncCollection},
+        request::{
+            AddressbookQuery, ArchivedDeadProperty, CalendarQuery, Filter, MultiGet, PropFind,
+            SyncCollection, Timezone, VCardPropertyWithGroup,
+        },
     },
 };
 use groupware::{
@@ -18,6 +25,7 @@ use groupware::{
     file::{ArchivedFileNode, FileNode},
 };
 use jmap_proto::types::{collection::Collection, property::Property, value::ArchivedAclGrant};
+use propfind::PropFindItem;
 use rkyv::vec::ArchivedVec;
 use store::{
     U32_LEN,
@@ -42,11 +50,31 @@ pub(crate) struct DavQuery<'x> {
     pub depth_no_root: bool,
 }
 
+#[derive(Default)]
 pub(crate) enum DavQueryResource<'x> {
     Uri(OwnedUri<'x>),
     Multiget {
         parent_collection: Collection,
         hrefs: Vec<String>,
+    },
+    Query {
+        filter: DavQueryFilter,
+        parent_collection: Collection,
+        items: Vec<PropFindItem>,
+    },
+    #[default]
+    None,
+}
+
+pub(crate) type AddressbookFilter = Vec<Filter<(), VCardPropertyWithGroup, VCardParameterName>>;
+pub(crate) type CalendarFilter =
+    Vec<Filter<Vec<ICalendarComponentType>, ICalendarProperty, ICalendarParameterName>>;
+
+pub(crate) enum DavQueryFilter {
+    Addressbook(AddressbookFilter),
+    Calendar {
+        filter: CalendarFilter,
+        timezone: Timezone,
     },
 }
 
@@ -108,7 +136,7 @@ impl<'x> DavQuery<'x> {
         Self {
             resource: DavQueryResource::Uri(resource),
             propfind,
-            base_uri: headers.base_uri().unwrap_or_default(),
+            base_uri: headers.base_uri.unwrap_or_default(),
             depth: match headers.depth {
                 Depth::Zero => 0,
                 _ => 1,
@@ -130,11 +158,49 @@ impl<'x> DavQuery<'x> {
                 parent_collection: collection,
             },
             propfind: multiget.properties,
-            base_uri: headers.base_uri().unwrap_or_default(),
-            depth: match headers.depth {
-                Depth::Zero => 0,
-                _ => 1,
+            base_uri: headers.base_uri.unwrap_or_default(),
+            ret: headers.ret,
+            depth_no_root: headers.depth_no_root,
+            ..Default::default()
+        }
+    }
+
+    pub fn addressbook_query(
+        query: AddressbookQuery,
+        items: Vec<PropFindItem>,
+        headers: RequestHeaders<'x>,
+    ) -> Self {
+        Self {
+            resource: DavQueryResource::Query {
+                filter: DavQueryFilter::Addressbook(query.filters),
+                parent_collection: Collection::AddressBook,
+                items,
             },
+            propfind: query.properties,
+            base_uri: headers.base_uri.unwrap_or_default(),
+            limit: query.limit,
+            ret: headers.ret,
+            depth_no_root: headers.depth_no_root,
+            ..Default::default()
+        }
+    }
+
+    pub fn calendar_query(
+        query: CalendarQuery,
+        items: Vec<PropFindItem>,
+        headers: RequestHeaders<'x>,
+    ) -> Self {
+        Self {
+            resource: DavQueryResource::Query {
+                filter: DavQueryFilter::Calendar {
+                    filter: query.filters,
+                    timezone: query.timezone,
+                },
+                parent_collection: Collection::Calendar,
+                items,
+            },
+            propfind: query.properties,
+            base_uri: headers.base_uri.unwrap_or_default(),
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             ..Default::default()
@@ -149,7 +215,7 @@ impl<'x> DavQuery<'x> {
         Self {
             resource: DavQueryResource::Uri(resource),
             propfind: changes.properties,
-            base_uri: headers.base_uri().unwrap_or_default(),
+            base_uri: headers.base_uri.unwrap_or_default(),
             from_change_id: changes
                 .sync_token
                 .as_deref()
@@ -161,6 +227,7 @@ impl<'x> DavQuery<'x> {
             limit: changes.limit,
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
+            ..Default::default()
         }
     }
 
@@ -170,15 +237,6 @@ impl<'x> DavQuery<'x> {
 
     pub fn is_minimal(&self) -> bool {
         self.ret == Return::Minimal
-    }
-}
-
-impl Default for DavQueryResource<'_> {
-    fn default() -> Self {
-        Self::Multiget {
-            parent_collection: Collection::None,
-            hrefs: Vec::new(),
-        }
     }
 }
 

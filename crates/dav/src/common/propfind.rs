@@ -44,14 +44,14 @@ use trc::AddContext;
 
 use crate::{
     DavError, DavErrorCondition,
-    card::{CARD_ALL_PROPS, CARD_CONTAINER_PROPS, CARD_ITEM_PROPS},
+    card::{CARD_ALL_PROPS, CARD_CONTAINER_PROPS, CARD_ITEM_PROPS, query::vcard_query},
     common::{DavQueryResource, uri::DavUriResource},
     file::{FILE_ALL_PROPS, FILE_CONTAINER_PROPS, FILE_ITEM_PROPS},
     principal::{CurrentUserPrincipal, propfind::PrincipalPropFind},
 };
 
 use super::{
-    ArchivedResource, DavCollection, DavQuery, ETag,
+    ArchivedResource, DavCollection, DavQuery, DavQueryFilter, ETag,
     acl::{DavAclHandler, Privileges},
     lock::{LockData, build_lock_key},
     uri::{UriResource, Urn},
@@ -253,15 +253,16 @@ impl PropFindRequestHandler for Server {
     async fn handle_dav_query(
         &self,
         access_token: &AccessToken,
-        query: DavQuery<'_>,
+        mut query: DavQuery<'_>,
     ) -> crate::Result<HttpResponse> {
         let mut response = MultiStatus::new(Vec::with_capacity(16));
         let mut data = PropFindData::new();
         let collection_container;
         let collection_children;
         let mut paths;
+        let mut query_filter = None;
 
-        match &query.resource {
+        match std::mem::take(&mut query.resource) {
             DavQueryResource::Uri(resource) => {
                 let account_id = resource.account_id;
                 collection_container = resource.collection;
@@ -306,13 +307,9 @@ impl PropFindRequestHandler for Server {
                             sync_token.clone().into();
                         sync_token
                     } else {
-                        let id = self
-                            .store()
-                            .get_last_change_id(account_id, collection_children)
+                        data.sync_token(self, account_id, collection_children)
                             .await
                             .caused_by(trc::location!())?
-                            .unwrap_or_default();
-                        Urn::Sync(id).to_string()
                     };
                     response.set_sync_token(sync_token);
 
@@ -338,7 +335,7 @@ impl PropFindRequestHandler for Server {
                                 .as_ref()
                                 .is_none_or(|d| d.contains(item.document_id))
                         })
-                        .map(|item| PropFindItem::new(&query, account_id, item))
+                        .map(|item| PropFindItem::new(query.base_uri, account_id, item))
                         .collect::<Vec<_>>()
                 } else {
                     if !query.depth_no_root || query.from_change_id.is_none() {
@@ -363,7 +360,7 @@ impl PropFindRequestHandler for Server {
                                 .as_ref()
                                 .is_none_or(|d| d.contains(item.document_id))
                         })
-                        .map(|item| PropFindItem::new(&query, account_id, item))
+                        .map(|item| PropFindItem::new(query.base_uri, account_id, item))
                         .collect::<Vec<_>>()
                 };
 
@@ -386,13 +383,13 @@ impl PropFindRequestHandler for Server {
                     u32,
                     (Arc<DavResources>, Arc<Option<RoaringBitmap>>),
                 > = AHashMap::with_capacity(3);
-                collection_container = *parent_collection;
+                collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 response.set_namespace(collection_container.namespace());
 
                 for item in hrefs {
                     let resource = match self
-                        .validate_uri(access_token, item)
+                        .validate_uri(access_token, &item)
                         .await
                         .and_then(|r| r.into_owned_uri())
                     {
@@ -443,7 +440,7 @@ impl PropFindRequestHandler for Server {
                                 .as_ref()
                                 .is_none_or(|docs| docs.contains(resource.document_id))
                             {
-                                paths.push(PropFindItem::new(&query, account_id, resource));
+                                paths.push(PropFindItem::new(query.base_uri, account_id, resource));
                             } else {
                                 response.add_response(
                                     Response::new_status([item], StatusCode::FORBIDDEN)
@@ -465,6 +462,18 @@ impl PropFindRequestHandler for Server {
                     }
                 }
             }
+            DavQueryResource::Query {
+                filter,
+                parent_collection,
+                items,
+            } => {
+                paths = items;
+                query_filter = Some(filter);
+                collection_container = parent_collection;
+                collection_children = collection_container.child_collection().unwrap();
+                response.set_namespace(collection_container.namespace());
+            }
+            DavQueryResource::None => unreachable!(),
         }
 
         if query.depth == usize::MAX && paths.len() > self.core.dav.max_match_results {
@@ -554,9 +563,27 @@ impl PropFindRequestHandler for Server {
             };
             let archive = ArchivedResource::from_archive(&archive_, collection)
                 .caused_by(trc::location!())?;
-            let dead_properties = archive.dead_properties();
+
+            // Filter
+            if let Some(query_filter) = &query_filter {
+                match (query_filter, &archive) {
+                    (DavQueryFilter::Addressbook(filters), ArchivedResource::ContactCard(card)) => {
+                        if !vcard_query(&card.inner.card, filters) {
+                            continue;
+                        }
+                    }
+                    (
+                        DavQueryFilter::Calendar { filter, timezone },
+                        ArchivedResource::CalendarEvent(event),
+                    ) => {
+                        todo!()
+                    }
+                    _ => (),
+                }
+            }
 
             // Fill properties
+            let dead_properties = archive.dead_properties();
             let mut fields = Vec::with_capacity(properties.len());
             let mut fields_not_found = Vec::new();
             for property in &properties {
@@ -958,9 +985,9 @@ impl PropFindRequestHandler for Server {
 }
 
 impl PropFindItem {
-    pub fn new(query: &DavQuery<'_>, account_id: u32, resource: &DavResource) -> Self {
+    pub fn new(base_uri: &str, account_id: u32, resource: &DavResource) -> Self {
         Self {
-            name: query.format_to_base_uri(&resource.name),
+            name: format!("{}{}", base_uri, resource.name),
             account_id,
             document_id: resource.document_id,
             is_container: resource.is_container,

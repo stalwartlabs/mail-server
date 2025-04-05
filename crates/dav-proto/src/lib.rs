@@ -12,6 +12,7 @@ pub mod schema;
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct RequestHeaders<'x> {
     pub uri: &'x str,
+    pub base_uri: Option<&'x str>,
     pub depth: Depth,
     pub timeout: Timeout,
     pub content_type: Option<&'x str>,

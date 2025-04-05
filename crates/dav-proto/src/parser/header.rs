@@ -10,6 +10,7 @@ impl<'x> RequestHeaders<'x> {
     pub fn new(uri: &'x str) -> Self {
         RequestHeaders {
             uri,
+            base_uri: base_uri(uri),
             ..Default::default()
         }
     }
@@ -88,39 +89,8 @@ impl<'x> RequestHeaders<'x> {
         false
     }
 
-    pub fn base_uri(&self) -> Option<&'x str> {
-        // From a path ../dav/collection/account/..
-        // returns ../dav/collection/account without the trailing slash
-
-        let uri = self.uri.as_bytes();
-        let mut found_dav = false;
-        let mut last_idx = 0;
-        let mut sep_count = 0;
-
-        for (idx, ch) in uri.iter().enumerate() {
-            if *ch == b'/' {
-                if !found_dav {
-                    found_dav = uri.get(idx + 1..idx + 5).is_some_and(|s| s == b"dav/");
-                } else if found_dav {
-                    if sep_count == 2 {
-                        break;
-                    }
-                    sep_count += 1;
-                }
-            }
-            last_idx = idx;
-        }
-
-        if sep_count == 2 {
-            uri.get(..last_idx + 1)
-                .map(|uri| std::str::from_utf8(uri).unwrap())
-        } else {
-            None
-        }
-    }
-
     pub fn format_to_base_uri(&self, path: &str) -> String {
-        let base_uri = self.base_uri().unwrap_or_default();
+        let base_uri = self.base_uri.unwrap_or_default();
         format!("{base_uri}/{path}")
     }
 
@@ -292,6 +262,37 @@ impl<'x> RequestHeaders<'x> {
     }
 }
 
+fn base_uri(uri: &str) -> Option<&str> {
+    // From a path ../dav/collection/account/..
+    // returns ../dav/collection/account without the trailing slash
+
+    let uri = uri.as_bytes();
+    let mut found_dav = false;
+    let mut last_idx = 0;
+    let mut sep_count = 0;
+
+    for (idx, ch) in uri.iter().enumerate() {
+        if *ch == b'/' {
+            if !found_dav {
+                found_dav = uri.get(idx + 1..idx + 5).is_some_and(|s| s == b"dav/");
+            } else if found_dav {
+                if sep_count == 2 {
+                    break;
+                }
+                sep_count += 1;
+            }
+        }
+        last_idx = idx;
+    }
+
+    if sep_count == 2 {
+        uri.get(..last_idx + 1)
+            .map(|uri| std::str::from_utf8(uri).unwrap())
+    } else {
+        None
+    }
+}
+
 impl Depth {
     pub fn parse(value: &str) -> Option<Self> {
         hashify::tiny_map!(value.as_bytes(),
@@ -358,7 +359,7 @@ mod tests {
             ("/dav/collection/account/", Some("/dav/collection/account")),
             ("/dav/collection/account", Some("/dav/collection/account")),
         ] {
-            assert_eq!(RequestHeaders::new(uri).base_uri(), expected_base);
+            assert_eq!(RequestHeaders::new(uri).base_uri, expected_base);
         }
     }
 

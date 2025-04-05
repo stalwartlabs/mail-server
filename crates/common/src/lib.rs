@@ -534,6 +534,12 @@ impl DavResources {
         })
     }
 
+    pub fn children(&self, parent_id: u32) -> impl Iterator<Item = &DavResource> {
+        self.paths
+            .iter()
+            .filter(move |item| item.parent_id.is_some_and(|id| id == parent_id))
+    }
+
     pub fn is_ancestor_of(&self, ancestor: u32, descendant: u32) -> bool {
         let ancestor = &self.paths.by_id(ancestor).unwrap().name;
         let descendant = &self.paths.by_id(descendant).unwrap().name;

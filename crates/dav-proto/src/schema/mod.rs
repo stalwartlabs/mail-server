@@ -5,6 +5,8 @@
  */
 
 use std::borrow::Cow;
+
+use request::TextMatch;
 pub mod property;
 pub mod request;
 pub mod response;
@@ -1411,5 +1413,16 @@ impl YesNo {
             "yes" => true,
             "no" => false,
         )
+    }
+}
+
+impl TextMatch {
+    pub fn matches(&self, text: &str) -> bool {
+        (match self.match_type {
+            MatchType::Equals => text == self.value,
+            MatchType::Contains => text.contains(&self.value),
+            MatchType::StartsWith => text.starts_with(&self.value),
+            MatchType::EndsWith => text.ends_with(&self.value),
+        }) ^ self.negate
     }
 }

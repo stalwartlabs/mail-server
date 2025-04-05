@@ -45,34 +45,39 @@
       },
       "value": {
         "ICalendar": {
-          "component_type": "VCalendar",
-          "entries": [
+          "components": [
             {
-              "name": {
-                "type": "Prodid"
-              },
-              "params": [],
-              "values": [
+              "component_type": "VCalendar",
+              "entries": [
                 {
-                  "type": "Text",
-                  "data": "-//Example Corp.//CalDAV Client//EN"
+                  "name": {
+                    "type": "Prodid"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "Text",
+                      "data": "-//Example Corp.//CalDAV Client//EN"
+                    }
+                  ]
+                },
+                {
+                  "name": {
+                    "type": "Version"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "Text",
+                      "data": "2.0"
+                    }
+                  ]
                 }
+              ],
+              "component_ids": [
+                1
               ]
             },
-            {
-              "name": {
-                "type": "Version"
-              },
-              "params": [],
-              "values": [
-                {
-                  "type": "Text",
-                  "data": "2.0"
-                }
-              ]
-            }
-          ],
-          "components": [
             {
               "component_type": "VTimezone",
               "entries": [
@@ -111,244 +116,246 @@
                   ]
                 }
               ],
-              "components": [
+              "component_ids": [
+                2,
+                3
+              ]
+            },
+            {
+              "component_type": "Standard",
+              "entries": [
                 {
-                  "component_type": "Standard",
-                  "entries": [
+                  "name": {
+                    "type": "Dtstart"
+                  },
+                  "params": [],
+                  "values": [
                     {
-                      "name": {
-                        "type": "Dtstart"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "PartialDateTime",
-                          "data": {
-                            "year": 1967,
-                            "month": 10,
-                            "day": 29,
-                            "hour": 2,
-                            "minute": 0,
-                            "second": 0,
-                            "tz_hour": null,
-                            "tz_minute": null,
-                            "tz_minus": false
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "name": {
-                        "type": "Rrule"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "RecurrenceRule",
-                          "data": {
-                            "freq": "Yearly",
-                            "until": null,
-                            "count": null,
-                            "interval": null,
-                            "bysecond": [],
-                            "byminute": [],
-                            "byhour": [],
-                            "byday": [
-                              {
-                                "ordwk": -1,
-                                "weekday": "Sunday"
-                              }
-                            ],
-                            "bymonthday": [],
-                            "byyearday": [],
-                            "byweekno": [],
-                            "bymonth": [
-                              10
-                            ],
-                            "bysetpos": [],
-                            "wkst": null
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "name": {
-                        "type": "Tzoffsetfrom"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "PartialDateTime",
-                          "data": {
-                            "year": null,
-                            "month": null,
-                            "day": null,
-                            "hour": null,
-                            "minute": null,
-                            "second": null,
-                            "tz_hour": 4,
-                            "tz_minute": 0,
-                            "tz_minus": true
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "name": {
-                        "type": "Tzoffsetto"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "PartialDateTime",
-                          "data": {
-                            "year": null,
-                            "month": null,
-                            "day": null,
-                            "hour": null,
-                            "minute": null,
-                            "second": null,
-                            "tz_hour": 5,
-                            "tz_minute": 0,
-                            "tz_minus": true
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "name": {
-                        "type": "Tzname"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "Text",
-                          "data": "Eastern Standard Time (US & Canada)"
-                        }
-                      ]
+                      "type": "PartialDateTime",
+                      "data": {
+                        "year": 1967,
+                        "month": 10,
+                        "day": 29,
+                        "hour": 2,
+                        "minute": 0,
+                        "second": 0,
+                        "tz_hour": null,
+                        "tz_minute": null,
+                        "tz_minus": false
+                      }
                     }
-                  ],
-                  "components": []
+                  ]
                 },
                 {
-                  "component_type": "Daylight",
-                  "entries": [
+                  "name": {
+                    "type": "Rrule"
+                  },
+                  "params": [],
+                  "values": [
                     {
-                      "name": {
-                        "type": "Dtstart"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "PartialDateTime",
-                          "data": {
-                            "year": 1987,
-                            "month": 4,
-                            "day": 5,
-                            "hour": 2,
-                            "minute": 0,
-                            "second": 0,
-                            "tz_hour": null,
-                            "tz_minute": null,
-                            "tz_minus": false
+                      "type": "RecurrenceRule",
+                      "data": {
+                        "freq": "Yearly",
+                        "until": null,
+                        "count": null,
+                        "interval": null,
+                        "bysecond": [],
+                        "byminute": [],
+                        "byhour": [],
+                        "byday": [
+                          {
+                            "ordwk": -1,
+                            "weekday": "Sunday"
                           }
-                        }
-                      ]
-                    },
-                    {
-                      "name": {
-                        "type": "Rrule"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "RecurrenceRule",
-                          "data": {
-                            "freq": "Yearly",
-                            "until": null,
-                            "count": null,
-                            "interval": null,
-                            "bysecond": [],
-                            "byminute": [],
-                            "byhour": [],
-                            "byday": [
-                              {
-                                "ordwk": 1,
-                                "weekday": "Sunday"
-                              }
-                            ],
-                            "bymonthday": [],
-                            "byyearday": [],
-                            "byweekno": [],
-                            "bymonth": [
-                              4
-                            ],
-                            "bysetpos": [],
-                            "wkst": null
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "name": {
-                        "type": "Tzoffsetfrom"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "PartialDateTime",
-                          "data": {
-                            "year": null,
-                            "month": null,
-                            "day": null,
-                            "hour": null,
-                            "minute": null,
-                            "second": null,
-                            "tz_hour": 5,
-                            "tz_minute": 0,
-                            "tz_minus": true
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "name": {
-                        "type": "Tzoffsetto"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "PartialDateTime",
-                          "data": {
-                            "year": null,
-                            "month": null,
-                            "day": null,
-                            "hour": null,
-                            "minute": null,
-                            "second": null,
-                            "tz_hour": 4,
-                            "tz_minute": 0,
-                            "tz_minus": true
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "name": {
-                        "type": "Tzname"
-                      },
-                      "params": [],
-                      "values": [
-                        {
-                          "type": "Text",
-                          "data": "Eastern Daylight Time (US & Canada)"
-                        }
-                      ]
+                        ],
+                        "bymonthday": [],
+                        "byyearday": [],
+                        "byweekno": [],
+                        "bymonth": [
+                          10
+                        ],
+                        "bysetpos": [],
+                        "wkst": null
+                      }
                     }
-                  ],
-                  "components": []
+                  ]
+                },
+                {
+                  "name": {
+                    "type": "Tzoffsetfrom"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "PartialDateTime",
+                      "data": {
+                        "year": null,
+                        "month": null,
+                        "day": null,
+                        "hour": null,
+                        "minute": null,
+                        "second": null,
+                        "tz_hour": 4,
+                        "tz_minute": 0,
+                        "tz_minus": true
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": {
+                    "type": "Tzoffsetto"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "PartialDateTime",
+                      "data": {
+                        "year": null,
+                        "month": null,
+                        "day": null,
+                        "hour": null,
+                        "minute": null,
+                        "second": null,
+                        "tz_hour": 5,
+                        "tz_minute": 0,
+                        "tz_minus": true
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": {
+                    "type": "Tzname"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "Text",
+                      "data": "Eastern Standard Time (US & Canada)"
+                    }
+                  ]
                 }
-              ]
+              ],
+              "component_ids": []
+            },
+            {
+              "component_type": "Daylight",
+              "entries": [
+                {
+                  "name": {
+                    "type": "Dtstart"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "PartialDateTime",
+                      "data": {
+                        "year": 1987,
+                        "month": 4,
+                        "day": 5,
+                        "hour": 2,
+                        "minute": 0,
+                        "second": 0,
+                        "tz_hour": null,
+                        "tz_minute": null,
+                        "tz_minus": false
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": {
+                    "type": "Rrule"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "RecurrenceRule",
+                      "data": {
+                        "freq": "Yearly",
+                        "until": null,
+                        "count": null,
+                        "interval": null,
+                        "bysecond": [],
+                        "byminute": [],
+                        "byhour": [],
+                        "byday": [
+                          {
+                            "ordwk": 1,
+                            "weekday": "Sunday"
+                          }
+                        ],
+                        "bymonthday": [],
+                        "byyearday": [],
+                        "byweekno": [],
+                        "bymonth": [
+                          4
+                        ],
+                        "bysetpos": [],
+                        "wkst": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": {
+                    "type": "Tzoffsetfrom"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "PartialDateTime",
+                      "data": {
+                        "year": null,
+                        "month": null,
+                        "day": null,
+                        "hour": null,
+                        "minute": null,
+                        "second": null,
+                        "tz_hour": 5,
+                        "tz_minute": 0,
+                        "tz_minus": true
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": {
+                    "type": "Tzoffsetto"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "PartialDateTime",
+                      "data": {
+                        "year": null,
+                        "month": null,
+                        "day": null,
+                        "hour": null,
+                        "minute": null,
+                        "second": null,
+                        "tz_hour": 4,
+                        "tz_minute": 0,
+                        "tz_minus": true
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": {
+                    "type": "Tzname"
+                  },
+                  "params": [],
+                  "values": [
+                    {
+                      "type": "Text",
+                      "data": "Eastern Daylight Time (US & Canada)"
+                    }
+                  ]
+                }
+              ],
+              "component_ids": []
             }
           ]
         }

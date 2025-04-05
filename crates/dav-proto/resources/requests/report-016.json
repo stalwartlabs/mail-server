@@ -1,5 +1,5 @@
 {
-  "type": "Addressbook",
+  "type": "AddressbookQuery",
   "properties": {
     "type": "Prop",
     "data": [
@@ -12,9 +12,6 @@
     ]
   },
   "filters": [
-    {
-      "type": "AnyOf"
-    },
     {
       "type": "AnyOf"
     },
