@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap_proto::types::{acl::Acl, collection::Collection, property::Property};
+use jmap_proto::types::{acl::Acl, collection::Collection};
 use store::{ValueKey, query::acl::AclQuery, roaring::RoaringBitmap, write::ValueClass};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -50,46 +50,6 @@ impl Server {
         Ok(document_ids)
     }
 
-    pub async fn shared_items(
-        &self,
-        access_token: &AccessToken,
-        to_account_id: u32,
-        to_container_collection: Collection,
-        to_item_collection: Collection,
-        property: Property,
-        check_acls: impl Into<Bitmap<Acl>>,
-    ) -> trc::Result<RoaringBitmap> {
-        let check_acls = check_acls.into();
-        let shared_containers = self
-            .shared_containers(
-                access_token,
-                to_account_id,
-                to_container_collection,
-                check_acls,
-            )
-            .await?;
-        if shared_containers.is_empty() {
-            return Ok(shared_containers);
-        }
-        let todo = "maybe cache?";
-        let mut shared_items = RoaringBitmap::new();
-        for document_id in shared_containers {
-            if let Some(documents_in_folder) = self
-                .get_tag(
-                    to_account_id,
-                    to_item_collection,
-                    property.clone(),
-                    document_id,
-                )
-                .await?
-            {
-                shared_items |= documents_in_folder;
-            }
-        }
-
-        Ok(shared_items)
-    }
-
     pub async fn owned_or_shared_containers(
         &self,
         access_token: &AccessToken,
@@ -105,34 +65,6 @@ impl Server {
         if !document_ids.is_empty() && !access_token.is_member(account_id) {
             document_ids &= self
                 .shared_containers(access_token, account_id, collection, check_acls)
-                .await?;
-        }
-        Ok(document_ids)
-    }
-
-    pub async fn owned_or_shared_items(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-        container_collection: Collection,
-        item_collection: Collection,
-        property: Property,
-        check_acls: impl Into<Bitmap<Acl>>,
-    ) -> trc::Result<RoaringBitmap> {
-        let mut document_ids = self
-            .get_document_ids(account_id, item_collection)
-            .await?
-            .unwrap_or_default();
-        if !document_ids.is_empty() && !access_token.is_member(account_id) {
-            document_ids &= self
-                .shared_items(
-                    access_token,
-                    account_id,
-                    container_collection,
-                    item_collection,
-                    property,
-                    check_acls,
-                )
                 .await?;
         }
         Ok(document_ids)

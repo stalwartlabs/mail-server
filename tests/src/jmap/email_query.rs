@@ -11,8 +11,9 @@ use crate::{
     store::{deflate_test_resource, query::FIELDS},
 };
 
-use ::email::thread::cache::ThreadCache;
+use ::email::{mailbox::Mailbox, message::cache::MessageCache};
 use ahash::AHashSet;
+use common::{config::jmap::settings::SpecialUse, storage::index::ObjectIndexBuilder};
 use jmap_client::{
     client::Client,
     core::query::{Comparator, Filter},
@@ -47,7 +48,18 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox);
         for mailbox_id in 1545..3010 {
-            batch.create_document(mailbox_id);
+            batch
+                .create_document(mailbox_id)
+                .custom(ObjectIndexBuilder::<(), _>::new().with_changes(Mailbox {
+                    name: format!("Mailbox {mailbox_id}"),
+                    role: SpecialUse::None,
+                    parent_id: 0,
+                    sort_order: None,
+                    uid_validity: 0,
+                    subscribers: vec![],
+                    acls: vec![],
+                }))
+                .unwrap();
         }
         server
             .core
@@ -82,12 +94,12 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         assert_eq!(
             params
                 .server
-                .get_cached_thread_ids(account_id)
+                .get_cached_messages(account_id)
                 .await
                 .unwrap()
-                .threads
+                .items
                 .values()
-                .copied()
+                .map(|m| m.thread_id)
                 .collect::<AHashSet<_>>()
                 .len(),
             MAX_THREADS

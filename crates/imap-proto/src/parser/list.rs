@@ -225,17 +225,17 @@ mod tests {
             (
                 "A682 LIST \"\" *\r\n",
                 list::Arguments::Basic {
-                    tag: "A682".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: "*".to_string(),
+                    tag: "A682".into(),
+                    reference_name: "".into(),
+                    mailbox_name: "*".into(),
                 },
             ),
             (
                 "A02 LIST (SUBSCRIBED) \"\" \"*\"\r\n",
                 list::Arguments::Extended {
-                    tag: "A02".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["*".to_string()],
+                    tag: "A02".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["*".into()],
                     selection_options: vec![SelectionOption::Subscribed],
                     return_options: vec![],
                 },
@@ -243,9 +243,9 @@ mod tests {
             (
                 "A03 LIST () \"\" \"%\" RETURN (CHILDREN)\r\n",
                 list::Arguments::Extended {
-                    tag: "A03".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["%".to_string()],
+                    tag: "A03".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["%".into()],
                     selection_options: vec![],
                     return_options: vec![ReturnOption::Children],
                 },
@@ -253,9 +253,9 @@ mod tests {
             (
                 "A04 LIST (REMOTE) \"\" \"%\" RETURN (CHILDREN)\r\n",
                 list::Arguments::Extended {
-                    tag: "A04".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["%".to_string()],
+                    tag: "A04".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["%".into()],
                     selection_options: vec![SelectionOption::Remote],
                     return_options: vec![ReturnOption::Children],
                 },
@@ -263,9 +263,9 @@ mod tests {
             (
                 "A05 LIST (REMOTE SUBSCRIBED) \"\" \"*\"\r\n",
                 list::Arguments::Extended {
-                    tag: "A05".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["*".to_string()],
+                    tag: "A05".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["*".into()],
                     selection_options: vec![SelectionOption::Remote, SelectionOption::Subscribed],
                     return_options: vec![],
                 },
@@ -273,9 +273,9 @@ mod tests {
             (
                 "A06 LIST (REMOTE) \"\" \"*\" RETURN (SUBSCRIBED)\r\n",
                 list::Arguments::Extended {
-                    tag: "A06".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["*".to_string()],
+                    tag: "A06".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["*".into()],
                     selection_options: vec![SelectionOption::Remote],
                     return_options: vec![ReturnOption::Subscribed],
                 },
@@ -283,9 +283,9 @@ mod tests {
             (
                 "C04 LIST (SUBSCRIBED RECURSIVEMATCH) \"\" \"%\"\r\n",
                 list::Arguments::Extended {
-                    tag: "C04".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["%".to_string()],
+                    tag: "C04".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["%".into()],
                     selection_options: vec![
                         SelectionOption::Subscribed,
                         SelectionOption::RecursiveMatch,
@@ -296,9 +296,9 @@ mod tests {
             (
                 "C04 LIST (SUBSCRIBED RECURSIVEMATCH) \"\" \"%\" RETURN (CHILDREN)\r\n",
                 list::Arguments::Extended {
-                    tag: "C04".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["%".to_string()],
+                    tag: "C04".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["%".into()],
                     selection_options: vec![
                         SelectionOption::Subscribed,
                         SelectionOption::RecursiveMatch,
@@ -309,9 +309,9 @@ mod tests {
             (
                 "a1 LIST \"\" (\"foo\")\r\n",
                 list::Arguments::Extended {
-                    tag: "a1".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["foo".to_string()],
+                    tag: "a1".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["foo".into()],
                     selection_options: vec![],
                     return_options: vec![],
                 },
@@ -319,9 +319,9 @@ mod tests {
             (
                 "a3.1 LIST \"\" (% music/rock)\r\n",
                 list::Arguments::Extended {
-                    tag: "a3.1".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["%".to_string(), "music/rock".to_string()],
+                    tag: "a3.1".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["%".into(), "music/rock".into()],
                     selection_options: vec![],
                     return_options: vec![],
                 },
@@ -329,13 +329,9 @@ mod tests {
             (
                 "BBB LIST \"\" (\"INBOX\" \"Drafts\" \"Sent/%\")\r\n",
                 list::Arguments::Extended {
-                    tag: "BBB".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec![
-                        "INBOX".to_string(),
-                        "Drafts".to_string(),
-                        "Sent/%".to_string(),
-                    ],
+                    tag: "BBB".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["INBOX".into(), "Drafts".into(), "Sent/%".into()],
                     selection_options: vec![],
                     return_options: vec![],
                 },
@@ -343,9 +339,9 @@ mod tests {
             (
                 "A01 LIST \"\" % RETURN (STATUS (MESSAGES UNSEEN))\r\n",
                 list::Arguments::Extended {
-                    tag: "A01".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["%".to_string()],
+                    tag: "A01".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["%".into()],
                     selection_options: vec![],
                     return_options: vec![ReturnOption::Status(vec![
                         Status::Messages,
@@ -359,9 +355,9 @@ mod tests {
                     "% RETURN (CHILDREN STATUS (MESSAGES))\r\n"
                 ),
                 list::Arguments::Extended {
-                    tag: "A02".to_string(),
-                    reference_name: "".to_string(),
-                    mailbox_name: vec!["%".to_string()],
+                    tag: "A02".into(),
+                    reference_name: "".into(),
+                    mailbox_name: vec!["%".into()],
                     selection_options: vec![
                         SelectionOption::Subscribed,
                         SelectionOption::RecursiveMatch,

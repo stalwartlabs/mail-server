@@ -69,15 +69,15 @@ mod tests {
             (
                 "a002 AUTHENTICATE \"EXTERNAL\" {16+}\r\nfred@example.com\r\n",
                 authenticate::Arguments {
-                    tag: "a002".to_string(),
+                    tag: "a002".into(),
                     mechanism: Mechanism::External,
-                    params: vec!["fred@example.com".to_string()],
+                    params: vec!["fred@example.com".into()],
                 },
             ),
             (
                 "A01 AUTHENTICATE PLAIN\r\n",
                 authenticate::Arguments {
-                    tag: "A01".to_string(),
+                    tag: "A01".into(),
                     mechanism: Mechanism::Plain,
                     params: vec![],
                 },

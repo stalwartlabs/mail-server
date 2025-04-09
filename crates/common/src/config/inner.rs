@@ -23,8 +23,8 @@ use utils::{
 };
 
 use crate::{
-    Account, AccountId, Caches, Data, Mailbox, MailboxId, MailboxState, NextMailboxState, Threads,
-    TlsConnectors,
+    CacheSwap, Caches, Data, DavResource, DavResources, MailboxCache, MessageItemCache,
+    MessageStoreCache, MessageUidCache, TlsConnectors,
     auth::{AccessToken, roles::RolePermissions},
     config::smtp::resolver::{Policy, Tlsa},
     listener::blocked::BlockedIps,
@@ -107,34 +107,28 @@ impl Caches {
                 MB_5,
                 std::mem::size_of::<RolePermissions>() as u64,
             ),
-            account: Cache::from_config(
-                config,
-                "account",
-                MB_10,
-                (std::mem::size_of::<AccountId>()
-                    + std::mem::size_of::<Account>()
-                    + (15 * (std::mem::size_of::<Mailbox>() + 60))) as u64,
-            ),
-            mailbox: Cache::from_config(
+            mailboxes: Cache::from_config(
                 config,
                 "mailbox",
                 MB_10,
-                (std::mem::size_of::<MailboxId>()
-                    + std::mem::size_of::<MailboxState>()
-                    + std::mem::size_of::<NextMailboxState>()
-                    + (1024 * std::mem::size_of::<u64>())) as u64,
+                (std::mem::size_of::<u32>()
+                    + std::mem::size_of::<CacheSwap<MessageStoreCache<MailboxCache>>>()
+                    + (15 * (std::mem::size_of::<MailboxCache>() + 60))) as u64,
             ),
-            threads: Cache::from_config(
+            messages: Cache::from_config(
                 config,
-                "thread",
+                "message",
                 MB_10,
-                (std::mem::size_of::<Threads>() + (500 * std::mem::size_of::<u64>())) as u64,
+                (std::mem::size_of::<u32>()
+                    + std::mem::size_of::<CacheSwap<MessageStoreCache<MessageItemCache>>>()
+                    + (1024 * std::mem::size_of::<MessageUidCache>())) as u64,
             ),
             dav: Cache::from_config(
                 config,
                 "dav",
                 MB_10,
-                (std::mem::size_of::<Threads>() + (500 * std::mem::size_of::<u64>())) as u64,
+                (std::mem::size_of::<DavResources>() + (500 * std::mem::size_of::<DavResource>()))
+                    as u64,
             ),
             bayes: CacheWithTtl::from_config(
                 config,

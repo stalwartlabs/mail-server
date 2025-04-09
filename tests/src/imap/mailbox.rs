@@ -367,7 +367,7 @@ fn mailbox_matches_pattern() {
         ),
         ("foobar*test", vec!["foobar/test", "foobar/test/test"]),
     ] {
-        let patterns = vec![pattern.to_string()];
+        let patterns = vec![pattern.into()];
         let mut matched_mailboxes = Vec::new();
         for mailbox in mailboxes {
             if matches_pattern(&patterns, mailbox) {

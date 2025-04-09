@@ -8,6 +8,8 @@ use std::borrow::Cow;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
+use compact_str::CompactString;
+
 use crate::{
     Command,
     protocol::fetch::{self, Attribute, Section},
@@ -192,7 +194,7 @@ impl Request<Command> {
                                                     match token {
                                                         Token::ParenthesisClose => break,
                                                         Token::Argument(value) => {
-                                                            fields.push(String::from_utf8(value).map_err(
+                                                            fields.push(CompactString::from_utf8(value).map_err(
                                                             |_| bad(self.tag.clone(), "Invalid UTF-8 in header field name."),
                                                         )?);
                                                         }
@@ -397,7 +399,7 @@ impl Request<Command> {
                     _ => {
                         return Err(bad(
                             self.tag.clone(),
-                            format!("Unsupported parameter '{}'.", token),
+                            format!("Unsupported parameter '{}'.", token.to_string()),
                         ));
                     }
                 }
@@ -513,7 +515,7 @@ mod tests {
             (
                 "A654 FETCH 2:4 (FLAGS BODY[HEADER.FIELDS (DATE FROM)])\r\n",
                 fetch::Arguments {
-                    tag: "A654".to_string(),
+                    tag: "A654".into(),
                     sequence_set: Sequence::range(2.into(), 4.into()),
                     attributes: vec![
                         Attribute::Flags,
@@ -521,7 +523,7 @@ mod tests {
                             peek: false,
                             sections: vec![Section::HeaderFields {
                                 not: false,
-                                fields: vec!["DATE".to_string(), "FROM".to_string()],
+                                fields: vec!["DATE".into(), "FROM".into()],
                             }],
                             partial: None,
                         },
@@ -533,7 +535,7 @@ mod tests {
             (
                 "A001 FETCH 1 BODY[]\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![Attribute::BodySection {
                         peek: false,
@@ -547,7 +549,7 @@ mod tests {
             (
                 "A001 FETCH 1 (BODY[HEADER])\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![Attribute::BodySection {
                         peek: false,
@@ -561,14 +563,14 @@ mod tests {
             (
                 "A001 FETCH 1 (BODY.PEEK[HEADER.FIELDS (X-MAILER)] PREVIEW(LAZY))\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![
                         Attribute::BodySection {
                             peek: true,
                             sections: vec![Section::HeaderFields {
                                 not: false,
-                                fields: vec!["X-MAILER".to_string()],
+                                fields: vec!["X-MAILER".into()],
                             }],
                             partial: None,
                         },
@@ -581,17 +583,13 @@ mod tests {
             (
                 "A001 FETCH 1 (BODY[HEADER.FIELDS.NOT (FROM TO SUBJECT)])\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![Attribute::BodySection {
                         peek: false,
                         sections: vec![Section::HeaderFields {
                             not: true,
-                            fields: vec![
-                                "FROM".to_string(),
-                                "TO".to_string(),
-                                "SUBJECT".to_string(),
-                            ],
+                            fields: vec!["FROM".into(), "TO".into(), "SUBJECT".into()],
                         }],
                         partial: None,
                     }],
@@ -602,7 +600,7 @@ mod tests {
             (
                 "A001 FETCH 1 (BODY[MIME] BODY[TEXT] PREVIEW)\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![
                         Attribute::BodySection {
@@ -624,7 +622,7 @@ mod tests {
             (
                 "A001 FETCH 1 (BODYSTRUCTURE ENVELOPE FLAGS INTERNALDATE UID)\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![
                         Attribute::BodyStructure,
@@ -640,7 +638,7 @@ mod tests {
             (
                 "A001 FETCH 1 (RFC822 RFC822.HEADER RFC822.SIZE RFC822.TEXT)\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![
                         Attribute::Rfc822,
@@ -666,7 +664,7 @@ mod tests {
                     ")\r\n"
                 ),
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![
                         Attribute::BodySection {
@@ -728,7 +726,7 @@ mod tests {
             (
                 "A001 FETCH 1 ALL\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![
                         Attribute::Flags,
@@ -743,7 +741,7 @@ mod tests {
             (
                 "A001 FETCH 1 FULL\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![
                         Attribute::Flags,
@@ -759,7 +757,7 @@ mod tests {
             (
                 "A001 FETCH 1 FAST\r\n",
                 fetch::Arguments {
-                    tag: "A001".to_string(),
+                    tag: "A001".into(),
                     sequence_set: Sequence::number(1),
                     attributes: vec![
                         Attribute::Flags,
@@ -773,7 +771,7 @@ mod tests {
             (
                 "s100 UID FETCH 1:* (FLAGS MODSEQ) (CHANGEDSINCE 12345 VANISHED)\r\n",
                 fetch::Arguments {
-                    tag: "s100".to_string(),
+                    tag: "s100".into(),
                     sequence_set: Sequence::range(1.into(), None),
                     attributes: vec![Attribute::Flags, Attribute::ModSeq],
                     changed_since: 12345.into(),
@@ -783,7 +781,7 @@ mod tests {
             (
                 "9 UID FETCH 1:* UID (VANISHED CHANGEDSINCE 1)\r\n",
                 fetch::Arguments {
-                    tag: "9".to_string(),
+                    tag: "9".into(),
                     sequence_set: Sequence::range(1.into(), None),
                     attributes: vec![Attribute::Uid],
                     changed_since: 1.into(),

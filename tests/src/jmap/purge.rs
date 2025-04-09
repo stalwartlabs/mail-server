@@ -9,14 +9,14 @@ use common::Server;
 use directory::{QueryBy, backend::internal::manage::ManageDirectory};
 use email::{
     mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
-    message::delete::EmailDeletion,
+    message::{
+        cache::{MessageCache, MessageCacheAccess},
+        delete::EmailDeletion,
+    },
 };
 use imap_proto::ResponseType;
-use jmap_proto::types::{collection::Collection, id::Id, property::Property};
-use store::{
-    IterateParams, LogKey, U32_LEN, U64_LEN,
-    write::{TagValue, key::DeserializeBigEndian},
-};
+use jmap_proto::types::{collection::Collection, id::Id};
+use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
 
 use crate::{
     directory::internal::TestInternalDirectory,
@@ -120,6 +120,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Purge junk/trash messages and old changes
     server.purge_account(account_id).await;
+    let cache = server.get_cached_messages(account_id).await.unwrap();
 
     // Only 4 messages should remain
     assert_eq!(
@@ -131,48 +132,9 @@ pub async fn test(params: &mut JMAPTest) {
             .len(),
         4
     );
-    assert_eq!(
-        server
-            .get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                TagValue::Id(INBOX_ID)
-            )
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        2
-    );
-    assert_eq!(
-        server
-            .get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                TagValue::Id(TRASH_ID)
-            )
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        server
-            .get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                TagValue::Id(JUNK_ID)
-            )
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(cache.in_mailbox(INBOX_ID).count(), 2);
+    assert_eq!(cache.in_mailbox(TRASH_ID).count(), 1);
+    assert_eq!(cache.in_mailbox(JUNK_ID).count(), 1);
 
     // Check IMAP status
     imap.send("LIST \"\" \"*\" RETURN (STATUS (MESSAGES))")

@@ -114,8 +114,8 @@ mod tests {
                 .parse_status(ProtocolVersion::Rev2)
                 .unwrap(),
             status::Arguments {
-                tag: "A042".to_string(),
-                mailbox_name: "blurdybloop".to_string(),
+                tag: "A042".into(),
+                mailbox_name: "blurdybloop".into(),
                 items: vec![status::Status::UidNext, status::Status::Messages],
             }
         );

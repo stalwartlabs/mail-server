@@ -174,9 +174,9 @@ pub enum ResponseType {
 }
 
 impl ResponseCode {
-    pub fn highest_modseq(modseq: Option<u64>) -> Self {
+    pub fn highest_modseq(modseq: u64) -> Self {
         ResponseCode::HighestModseq {
-            modseq: modseq.map(|id| id + 1).unwrap_or(0),
+            modseq: if modseq > 0 { modseq + 1 } else { 0 },
         }
     }
 }

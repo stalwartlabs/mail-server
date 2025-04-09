@@ -134,7 +134,7 @@ mod tests {
                     filter: vec![Filter::Since(760060800)],
                     result_options: Vec::new(),
                     is_esearch: false,
-                    tag: "A282".to_string(),
+                    tag: "A282".into(),
                 },
             ),
             (
@@ -154,7 +154,7 @@ mod tests {
                     filter: vec![Filter::All],
                     result_options: Vec::new(),
                     is_esearch: false,
-                    tag: "A283".to_string(),
+                    tag: "A283".into(),
                 },
             ),
             (
@@ -165,10 +165,10 @@ mod tests {
                         ascending: true,
                     }]
                     .into(),
-                    filter: vec![Filter::Text("not in mailbox".to_string())],
+                    filter: vec![Filter::Text("not in mailbox".into())],
                     result_options: Vec::new(),
                     is_esearch: false,
-                    tag: "A284".to_string(),
+                    tag: "A284".into(),
                 },
             ),
             (
@@ -189,10 +189,10 @@ mod tests {
                         },
                     ]
                     .into(),
-                    filter: vec![Filter::Subject("مرحبا بالعالم".to_string())],
+                    filter: vec![Filter::Subject("مرحبا بالعالم".into())],
                     result_options: Vec::new(),
                     is_esearch: false,
-                    tag: "A284".to_string(),
+                    tag: "A284".into(),
                 },
             ),
             (
@@ -210,7 +210,7 @@ mod tests {
                     filter: vec![Filter::Undeleted, Filter::Unkeyword(Flag::Junk)],
                     result_options: vec![ResultOption::Count],
                     is_esearch: true,
-                    tag: "E01".to_string(),
+                    tag: "E01".into(),
                 },
             ),
         ] {

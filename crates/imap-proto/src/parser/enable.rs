@@ -69,7 +69,7 @@ mod tests {
                 .parse_enable()
                 .unwrap(),
             enable::Arguments {
-                tag: "t2".to_string(),
+                tag: "t2".into(),
                 capabilities: vec![Capability::IMAP4rev2, Capability::CondStore],
             }
         );

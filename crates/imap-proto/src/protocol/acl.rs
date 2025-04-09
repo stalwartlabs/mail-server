@@ -35,6 +35,7 @@
 
 use std::fmt::Display;
 
+use compact_str::CompactString;
 use jmap_proto::types::acl::Acl;
 
 use crate::utf7::utf7_encode;
@@ -71,28 +72,28 @@ pub enum ModRightsOp {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: String,
-    pub mailbox_name: String,
-    pub identifier: Option<String>,
+    pub tag: CompactString,
+    pub mailbox_name: CompactString,
+    pub identifier: Option<CompactString>,
     pub mod_rights: Option<ModRights>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetAclResponse {
-    pub mailbox_name: String,
-    pub permissions: Vec<(String, Vec<Rights>)>,
+    pub mailbox_name: CompactString,
+    pub permissions: Vec<(CompactString, Vec<Rights>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListRightsResponse {
-    pub mailbox_name: String,
-    pub identifier: String,
+    pub mailbox_name: CompactString,
+    pub identifier: CompactString,
     pub permissions: Vec<Vec<Rights>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MyRightsResponse {
-    pub mailbox_name: String,
+    pub mailbox_name: CompactString,
     pub rights: Vec<Rights>,
 }
 
@@ -248,17 +249,19 @@ impl From<Rights> for Acl {
 
 #[cfg(test)]
 mod tests {
+    use compact_str::CompactString;
+
     use crate::protocol::acl::{GetAclResponse, ListRightsResponse, MyRightsResponse, Rights};
 
     #[test]
     fn serialize_acl() {
         assert_eq!(
-            String::from_utf8(
+            CompactString::from_utf8(
                 GetAclResponse {
-                    mailbox_name: "INBOX".to_string(),
+                    mailbox_name: "INBOX".into(),
                     permissions: vec![
                         (
-                            "Fred".to_string(),
+                            "Fred".into(),
                             vec![
                                 Rights::Lookup,
                                 Rights::Read,
@@ -271,7 +274,7 @@ mod tests {
                             ]
                         ),
                         (
-                            "David".to_string(),
+                            "David".into(),
                             vec![
                                 Rights::CreateMailbox,
                                 Rights::DeleteMessages,
@@ -287,10 +290,10 @@ mod tests {
         );
 
         assert_eq!(
-            String::from_utf8(
+            CompactString::from_utf8(
                 ListRightsResponse {
-                    mailbox_name: "Deleted Items".to_string(),
-                    identifier: "Fred".to_string(),
+                    mailbox_name: "Deleted Items".into(),
+                    identifier: "Fred".into(),
                     permissions: vec![
                         vec![Rights::Lookup, Rights::Read],
                         vec![Rights::Administer],
@@ -304,9 +307,9 @@ mod tests {
         );
 
         assert_eq!(
-            String::from_utf8(
+            CompactString::from_utf8(
                 MyRightsResponse {
-                    mailbox_name: "Important".to_string(),
+                    mailbox_name: "Important".into(),
                     rights: vec![Rights::Lookup, Rights::Read, Rights::DeleteMailbox]
                 }
                 .into_bytes(true)

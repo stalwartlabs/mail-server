@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
+use compact_str::CompactString;
 use mail_parser::decoders::charsets::DecoderFnc;
 use mail_parser::decoders::charsets::map::charset_decoder;
 
@@ -373,7 +374,7 @@ pub fn parse_filters(
                                 }
                                 Some(token) => {
                                     return Err(
-                                        format!("Unsupported MODSEQ parameter '{}'.", token).into()
+                                        format!("Unsupported MODSEQ parameter '{}'.", token.to_string()).into()
                                     );
                                 }
                                 None => {
@@ -499,17 +500,16 @@ pub fn parse_filters(
 pub fn decode_argument(
     tokens: &mut Peekable<IntoIter<Token>>,
     decoder: Option<DecoderFnc>,
-) -> super::Result<String> {
+) -> super::Result<CompactString> {
     let argument = tokens
         .next()
         .ok_or_else(|| Cow::from("Expected string."))?
         .unwrap_bytes();
 
     if let Some(decoder) = decoder {
-        Ok(decoder(&argument))
+        Ok(decoder(&argument).into())
     } else {
-        Ok(String::from_utf8(argument.to_vec())
-            .map_err(|_| Cow::from("Invalid UTF-8 argument."))?)
+        Ok(CompactString::from_utf8(argument).map_err(|_| Cow::from("Invalid UTF-8 argument."))?)
     }
 }
 
@@ -553,13 +553,13 @@ mod tests {
                 b"A282 SEARCH RETURN (MIN COUNT) FLAGGED SINCE 1-Feb-1994 NOT FROM \"Smith\"\r\n"
                     .to_vec(),
                 search::Arguments {
-                    tag: "A282".to_string(),
+                    tag: "A282".into(),
                     result_options: vec![ResultOption::Min, ResultOption::Count],
                     filter: vec![
                         Filter::Flagged,
                         Filter::Since(760060800),
                         Filter::Not,
-                        Filter::From("Smith".to_string()),
+                        Filter::From("Smith".into()),
                         Filter::End,
                     ],
                     is_esearch: true,
@@ -569,13 +569,13 @@ mod tests {
             (
                 b"A283 SEARCH RETURN () FLAGGED SINCE 1-Feb-1994 NOT FROM \"Smith\"\r\n".to_vec(),
                 search::Arguments {
-                    tag: "A283".to_string(),
+                    tag: "A283".into(),
                     result_options: vec![],
                     filter: vec![
                         Filter::Flagged,
                         Filter::Since(760060800),
                         Filter::Not,
-                        Filter::From("Smith".to_string()),
+                        Filter::From("Smith".into()),
                         Filter::End,
                     ],
                     is_esearch: true,
@@ -585,7 +585,7 @@ mod tests {
             (
                 b"A301 SEARCH $ SMALLER 4096\r\n".to_vec(),
                 search::Arguments {
-                    tag: "A301".to_string(),
+                    tag: "A301".into(),
                     result_options: vec![],
                     filter: vec![Filter::seq_saved_search(), Filter::Smaller(4096)],
                     is_esearch: true,
@@ -597,7 +597,7 @@ mod tests {
                     .as_bytes()
                     .to_vec(),
                 search::Arguments {
-                    tag: "P283".to_string(),
+                    tag: "P283".into(),
                     result_options: vec![],
                     filter: vec![
                         Filter::Or,
@@ -612,7 +612,7 @@ mod tests {
                             false,
                         ),
                         Filter::End,
-                        Filter::Text("мать".to_string()),
+                        Filter::Text("мать".into()),
                     ],
                     is_esearch: true,
                     sort: None,
@@ -621,7 +621,7 @@ mod tests {
             (
                 b"F282 SEARCH RETURN (SAVE) KEYWORD $Junk\r\n".to_vec(),
                 search::Arguments {
-                    tag: "F282".to_string(),
+                    tag: "F282".into(),
                     result_options: vec![ResultOption::Save],
                     filter: vec![Filter::Keyword(Flag::Junk)],
                     is_esearch: true,
@@ -636,17 +636,17 @@ mod tests {
                 ]
                 .concat(),
                 search::Arguments {
-                    tag: "F282".to_string(),
+                    tag: "F282".into(),
                     result_options: vec![],
                     filter: vec![
                         Filter::Or,
                         Filter::Or,
-                        Filter::From("hello@world.com".to_string()),
-                        Filter::To("test@example.com".to_string()),
+                        Filter::From("hello@world.com".into()),
+                        Filter::To("test@example.com".into()),
                         Filter::End,
                         Filter::Or,
-                        Filter::Bcc("jane@foobar.com".to_string()),
-                        Filter::Cc("john@doe.com".to_string()),
+                        Filter::Bcc("jane@foobar.com".into()),
+                        Filter::Cc("john@doe.com".into()),
                         Filter::End,
                         Filter::End,
                     ],
@@ -662,14 +662,14 @@ mod tests {
                 ]
                 .concat(),
                 search::Arguments {
-                    tag: "abc".to_string(),
+                    tag: "abc".into(),
                     result_options: vec![],
                     filter: vec![
                         Filter::Or,
                         Filter::Smaller(10000),
                         Filter::Or,
-                        Filter::Header("Subject".to_string(), "ravioli festival".to_string()),
-                        Filter::Header("From".to_string(), "dr. ravioli".to_string()),
+                        Filter::Header("Subject".into(), "ravioli festival".into()),
+                        Filter::Header("From".into(), "dr. ravioli".into()),
                         Filter::End,
                         Filter::End,
                     ],
@@ -685,16 +685,16 @@ mod tests {
                 ]
                 .concat(),
                 search::Arguments {
-                    tag: "abc".to_string(),
+                    tag: "abc".into(),
                     result_options: vec![],
                     filter: vec![
                         Filter::Deleted,
                         Filter::Seen,
                         Filter::Answered,
                         Filter::Not,
-                        Filter::From("john".to_string()),
-                        Filter::To("jane".to_string()),
-                        Filter::Bcc("bill".to_string()),
+                        Filter::From("john".into()),
+                        Filter::To("jane".into()),
+                        Filter::Bcc("bill".into()),
                         Filter::End,
                         Filter::Sequence(
                             Sequence::List {
@@ -727,7 +727,7 @@ mod tests {
                 ]
                 .concat(),
                 search::Arguments {
-                    tag: "abc".to_string(),
+                    tag: "abc".into(),
                     result_options: vec![],
                     filter: vec![
                         Filter::seq_range(None, None),
@@ -761,14 +761,14 @@ mod tests {
                 ]
                 .concat(),
                 search::Arguments {
-                    tag: "abc".to_string(),
+                    tag: "abc".into(),
                     result_options: vec![],
                     filter: vec![
                         Filter::Not,
-                        Filter::From("john".to_string()),
+                        Filter::From("john".into()),
                         Filter::Or,
-                        Filter::To("jane".to_string()),
-                        Filter::Cc("bill".to_string()),
+                        Filter::To("jane".into()),
+                        Filter::Cc("bill".into()),
                         Filter::End,
                         Filter::End,
                         Filter::Or,
@@ -783,7 +783,7 @@ mod tests {
                         Filter::End,
                         Filter::End,
                         Filter::End,
-                        Filter::Keyword(Flag::Keyword("tps report".to_string())),
+                        Filter::Keyword(Flag::Keyword("tps report".into())),
                     ],
                     is_esearch: true,
                     sort: None,
@@ -796,9 +796,9 @@ mod tests {
                 ]
                 .concat(),
                 search::Arguments {
-                    tag: "B283".to_string(),
+                    tag: "B283".into(),
                     result_options: vec![ResultOption::Save, ResultOption::Min, ResultOption::Max],
-                    filter: vec![Filter::Text("Привет, мир".to_string())],
+                    filter: vec![Filter::Text("Привет, мир".into())],
                     is_esearch: true,
                     sort: None,
                 },
@@ -806,9 +806,9 @@ mod tests {
             (
                 b"B283 SEARCH CHARSET BIG5 FROM \"\xa7A\xa6n\xa1A\xa5@\xac\xc9\"\r\n".to_vec(),
                 search::Arguments {
-                    tag: "B283".to_string(),
+                    tag: "B283".into(),
                     result_options: vec![],
-                    filter: vec![Filter::From("你好，世界".to_string())],
+                    filter: vec![Filter::From("你好，世界".into())],
                     is_esearch: true,
                     sort: None,
                 },
@@ -816,7 +816,7 @@ mod tests {
             (
                 b"a SEARCH MODSEQ \"/flags/\\draft\" all 620162338\r\n".to_vec(),
                 search::Arguments {
-                    tag: "a".to_string(),
+                    tag: "a".into(),
                     result_options: vec![],
                     filter: vec![Filter::ModSeq((620162338, ModSeqEntry::All(Flag::Draft)))],
                     is_esearch: true,
@@ -826,7 +826,7 @@ mod tests {
             (
                 b"t SEARCH OR NOT MODSEQ 720162338 LARGER 50000\r\n".to_vec(),
                 search::Arguments {
-                    tag: "t".to_string(),
+                    tag: "t".into(),
                     result_options: vec![],
                     filter: vec![
                         Filter::Or,
@@ -843,7 +843,7 @@ mod tests {
             (
                 b"5 UID SEARCH BEFORE 1-Dec-2023\r\n".to_vec(),
                 search::Arguments {
-                    tag: "5".to_string(),
+                    tag: "5".into(),
                     result_options: vec![],
                     filter: vec![Filter::Before(1701388800)],
                     is_esearch: true,

@@ -47,17 +47,17 @@ mod tests {
             (
                 "a001 LOGIN SMITH SESAME\r\n",
                 login::Arguments {
-                    tag: "a001".to_string(),
-                    username: "SMITH".to_string(),
-                    password: "SESAME".to_string(),
+                    tag: "a001".into(),
+                    username: "SMITH".into(),
+                    password: "SESAME".into(),
                 },
             ),
             (
                 "A001 LOGIN {11+}\r\nFRED FOOBAR {7+}\r\nfat man\r\n",
                 login::Arguments {
-                    tag: "A001".to_string(),
-                    username: "FRED FOOBAR".to_string(),
-                    password: "fat man".to_string(),
+                    tag: "A001".into(),
+                    username: "FRED FOOBAR".into(),
+                    password: "fat man".into(),
                 },
             ),
         ] {

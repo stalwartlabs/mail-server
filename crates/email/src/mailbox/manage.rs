@@ -6,72 +6,30 @@
 
 use std::future::Future;
 
+use super::{cache::MessageMailboxCache, *};
 use common::{Server, config::jmap::settings::SpecialUse, storage::index::ObjectIndexBuilder};
-use jmap_proto::types::{collection::Collection, keyword::Keyword, property::Property};
-use store::{
-    SerializeInfallible,
-    ahash::{AHashMap, AHashSet},
-    query::Filter,
-    roaring::RoaringBitmap,
-    write::BatchBuilder,
-};
+use jmap_proto::types::collection::Collection;
+use store::write::BatchBuilder;
 use trc::AddContext;
 
-use crate::thread::cache::ThreadCache;
-
-use super::*;
-
 pub trait MailboxFnc: Sync + Send {
-    fn mailbox_get_or_create(
+    fn create_system_folders(
         &self,
         account_id: u32,
-    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
+    ) -> impl Future<Output = trc::Result<()>> + Send;
 
     fn mailbox_create_path(
         &self,
         account_id: u32,
         path: &str,
     ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
-
-    fn mailbox_count_threads(
-        &self,
-        account_id: u32,
-        document_ids: Option<RoaringBitmap>,
-    ) -> impl Future<Output = trc::Result<usize>> + Send;
-
-    fn mailbox_unread_tags(
-        &self,
-        account_id: u32,
-        document_id: u32,
-        message_ids: &Option<RoaringBitmap>,
-    ) -> impl Future<Output = trc::Result<Option<RoaringBitmap>>> + Send;
-
-    fn mailbox_get_by_name(
-        &self,
-        account_id: u32,
-        path: &str,
-    ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
-
-    fn mailbox_get_by_role(
-        &self,
-        account_id: u32,
-        role: SpecialUse,
-    ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
 }
 
 impl MailboxFnc for Server {
-    async fn mailbox_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
-        let mut mailbox_ids = self
-            .get_document_ids(account_id, Collection::Mailbox)
-            .await?
-            .unwrap_or_default();
-        if !mailbox_ids.is_empty() {
-            return Ok(mailbox_ids);
-        }
-
+    async fn create_system_folders(&self, account_id: u32) -> trc::Result<()> {
         #[cfg(feature = "test_mode")]
-        if mailbox_ids.is_empty() && account_id == 0 {
-            return Ok(mailbox_ids);
+        if account_id == 0 {
+            return Ok(());
         }
 
         let mut batch = BatchBuilder::new();
@@ -104,7 +62,6 @@ impl MailboxFnc for Server {
                 .create_document(document_id)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(object))
                 .caused_by(trc::location!())?;
-            mailbox_ids.insert(document_id);
         }
         self.store()
             .assign_document_ids(account_id, Collection::Mailbox, (ARCHIVE_ID + 1) as u64)
@@ -118,24 +75,14 @@ impl MailboxFnc for Server {
             .await
             .caused_by(trc::location!())?;
 
-        Ok(mailbox_ids)
+        Ok(())
     }
 
     async fn mailbox_create_path(&self, account_id: u32, path: &str) -> trc::Result<Option<u32>> {
         let folders = self
-            .fetch_folders::<Mailbox>(account_id, Collection::Mailbox)
+            .get_cached_mailboxes(account_id)
             .await
-            .caused_by(trc::location!())?
-            .format(|f| {
-                f.name = if f.document_id == INBOX_ID {
-                    "inbox".to_string()
-                } else {
-                    f.name.to_lowercase()
-                };
-            })
-            .into_iterator()
-            .map(|e| (e.name, e.document_id))
-            .collect::<AHashMap<String, u32>>();
+            .caused_by(trc::location!())?;
 
         let mut next_parent_id = 0;
         let mut create_paths = Vec::with_capacity(2);
@@ -154,7 +101,11 @@ impl MailboxFnc for Server {
                     }
                 }
 
-                if let Some(document_id) = folders.get(&found_path) {
+                if let Some((document_id, _)) = folders
+                    .items
+                    .iter()
+                    .find(|(_, item)| item.path == found_path)
+                {
                     next_parent_id = *document_id + 1;
                 } else {
                     create_paths.push(name.to_string());
@@ -198,107 +149,5 @@ impl MailboxFnc for Server {
         }
 
         Ok(Some(next_parent_id - 1))
-    }
-
-    async fn mailbox_count_threads(
-        &self,
-        account_id: u32,
-        document_ids: Option<RoaringBitmap>,
-    ) -> trc::Result<usize> {
-        if let Some(document_ids) = document_ids {
-            let thread_ids = self
-                .get_cached_thread_ids(account_id)
-                .await
-                .caused_by(trc::location!())?
-                .threads
-                .iter()
-                .filter_map(|(document_id, thread_id)| {
-                    if document_ids.contains(*document_id) {
-                        Some(*thread_id)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<AHashSet<_>>();
-            Ok(thread_ids.len())
-        } else {
-            Ok(0)
-        }
-    }
-
-    async fn mailbox_unread_tags(
-        &self,
-        account_id: u32,
-        document_id: u32,
-        message_ids: &Option<RoaringBitmap>,
-    ) -> trc::Result<Option<RoaringBitmap>> {
-        if let (Some(message_ids), Some(mailbox_message_ids)) = (
-            message_ids,
-            self.get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                document_id,
-            )
-            .await?,
-        ) {
-            if let Some(mut seen) = self
-                .get_tag(
-                    account_id,
-                    Collection::Email,
-                    Property::Keywords,
-                    Keyword::Seen,
-                )
-                .await?
-            {
-                seen ^= message_ids;
-                seen &= &mailbox_message_ids;
-                if !seen.is_empty() {
-                    Ok(Some(seen))
-                } else {
-                    Ok(None)
-                }
-            } else {
-                Ok(mailbox_message_ids.into())
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn mailbox_get_by_name(&self, account_id: u32, path: &str) -> trc::Result<Option<u32>> {
-        self.fetch_folders::<Mailbox>(account_id, Collection::Mailbox)
-            .await
-            .map(|folders| {
-                folders
-                    .format(|f| {
-                        if f.document_id == INBOX_ID {
-                            f.name = "INBOX".to_string();
-                        }
-                    })
-                    .into_iterator()
-                    .find(|e| e.name.eq_ignore_ascii_case(path))
-                    .map(|e| e.document_id)
-            })
-    }
-
-    async fn mailbox_get_by_role(
-        &self,
-        account_id: u32,
-        role: SpecialUse,
-    ) -> trc::Result<Option<u32>> {
-        if let Some(role) = role.as_str() {
-            self.store()
-                .filter(
-                    account_id,
-                    Collection::Mailbox,
-                    vec![Filter::eq(Property::Role, role.serialize())],
-                )
-                .await
-                .caused_by(trc::location!())
-                .map(|r| r.results.min())
-        } else {
-            Ok(None)
-        }
     }
 }

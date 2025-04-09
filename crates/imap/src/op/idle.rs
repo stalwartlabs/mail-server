@@ -156,7 +156,7 @@ impl<T: SessionStream> SessionData<T> {
             // List added mailboxes
             for mailbox_name in changes.added {
                 ListItem {
-                    mailbox_name: mailbox_name.to_string(),
+                    mailbox_name,
                     attributes: vec![],
                     tags: vec![],
                 }
@@ -206,7 +206,7 @@ impl<T: SessionStream> SessionData<T> {
                     .changes(
                         mailbox.id.account_id,
                         Collection::Email,
-                        modseq.map(Query::Since).unwrap_or(Query::All),
+                        Query::Since(modseq),
                     )
                     .await
                     .caused_by(trc::location!())?;
@@ -229,7 +229,7 @@ impl<T: SessionStream> SessionData<T> {
                     return self
                         .fetch(
                             fetch::Arguments {
-                                tag: String::new(),
+                                tag: "".into(),
                                 sequence_set: Sequence::List {
                                     items: changed_ids
                                         .into_iter()

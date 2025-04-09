@@ -161,8 +161,8 @@ mod tests {
             (
                 "A003 APPEND saved-messages (\\Seen) {1+}\r\na\r\n",
                 append::Arguments {
-                    tag: "A003".to_string(),
-                    mailbox_name: "saved-messages".to_string(),
+                    tag: "A003".into(),
+                    mailbox_name: "saved-messages".into(),
                     messages: vec![Message {
                         message: vec![b'a'],
                         flags: vec![Flag::Seen],
@@ -173,8 +173,8 @@ mod tests {
             (
                 "A003 APPEND \"hello world\" (\\Seen \\Draft $MDNSent) {1+}\r\na\r\n",
                 append::Arguments {
-                    tag: "A003".to_string(),
-                    mailbox_name: "hello world".to_string(),
+                    tag: "A003".into(),
+                    mailbox_name: "hello world".into(),
                     messages: vec![Message {
                         message: vec![b'a'],
                         flags: vec![Flag::Seen, Flag::Draft, Flag::MDNSent],
@@ -185,8 +185,8 @@ mod tests {
             (
                 "A003 APPEND \"hi\" ($Junk) \"7-Feb-1994 22:43:04 -0800\" {1+}\r\na\r\n",
                 append::Arguments {
-                    tag: "A003".to_string(),
-                    mailbox_name: "hi".to_string(),
+                    tag: "A003".into(),
+                    mailbox_name: "hi".into(),
                     messages: vec![Message {
                         message: vec![b'a'],
                         flags: vec![Flag::Junk],
@@ -197,8 +197,8 @@ mod tests {
             (
                 "A003 APPEND \"hi\" \"20-Nov-2022 23:59:59 +0300\" {1+}\r\na\r\n",
                 append::Arguments {
-                    tag: "A003".to_string(),
-                    mailbox_name: "hi".to_string(),
+                    tag: "A003".into(),
+                    mailbox_name: "hi".into(),
                     messages: vec![Message {
                         message: vec![b'a'],
                         flags: vec![],
@@ -209,8 +209,8 @@ mod tests {
             (
                 "A003 APPEND \"hi\" \"20-Nov-2022 23:59:59 +0300\" ~{1+}\r\na\r\n",
                 append::Arguments {
-                    tag: "A003".to_string(),
-                    mailbox_name: "hi".to_string(),
+                    tag: "A003".into(),
+                    mailbox_name: "hi".into(),
                     messages: vec![Message {
                         message: vec![b'a'],
                         flags: vec![],
@@ -221,8 +221,8 @@ mod tests {
             (
                 "42 APPEND \"Drafts\" (\\Draft) UTF8 (~{5+}\r\nhello)\r\n",
                 append::Arguments {
-                    tag: "42".to_string(),
-                    mailbox_name: "Drafts".to_string(),
+                    tag: "42".into(),
+                    mailbox_name: "Drafts".into(),
                     messages: vec![Message {
                         message: vec![b'h', b'e', b'l', b'l', b'o'],
                         flags: vec![Flag::Draft],
@@ -233,8 +233,8 @@ mod tests {
             (
                 "42 APPEND \"Drafts\" (\\Draft) \"20-Nov-2022 23:59:59 +0300\" UTF8 (~{5+}\r\nhello)\r\n",
                 append::Arguments {
-                    tag: "42".to_string(),
-                    mailbox_name: "Drafts".to_string(),
+                    tag: "42".into(),
+                    mailbox_name: "Drafts".into(),
                     messages: vec![Message {
                         message: vec![b'h', b'e', b'l', b'l', b'o'],
                         flags: vec![Flag::Draft],
@@ -282,8 +282,8 @@ mod tests {
                     assert_eq!(
                         request.parse_append(ProtocolVersion::Rev1).unwrap(),
                         append::Arguments {
-                            tag: "A003".to_string(),
-                            mailbox_name: "saved-messages".to_string(),
+                            tag: "A003".into(),
+                            mailbox_name: "saved-messages".into(),
                             messages: vec![
                                 Message {
                                     message: concat!(

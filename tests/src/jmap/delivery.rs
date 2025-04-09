@@ -6,8 +6,11 @@
 
 use std::time::Duration;
 
-use email::mailbox::{INBOX_ID, JUNK_ID};
-use jmap_proto::types::{collection::Collection, id::Id, property::Property};
+use email::{
+    mailbox::{INBOX_ID, JUNK_ID},
+    message::cache::{MessageCache, MessageCacheAccess},
+};
+use jmap_proto::types::{collection::Collection, id::Id};
 
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
@@ -98,6 +101,8 @@ pub async fn test(params: &mut JMAPTest) {
     let john_id = Id::from_bytes(account_id_1.as_bytes())
         .unwrap()
         .document_id();
+    let john_cache = server.get_cached_messages(john_id).await.unwrap();
+
     assert_eq!(
         server
             .get_document_ids(john_id, Collection::Email)
@@ -107,23 +112,8 @@ pub async fn test(params: &mut JMAPTest) {
             .len(),
         1
     );
-    assert_eq!(
-        server
-            .get_tag(john_id, Collection::Email, Property::MailboxIds, INBOX_ID)
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        server
-            .get_tag(john_id, Collection::Email, Property::MailboxIds, JUNK_ID)
-            .await
-            .unwrap()
-            .map_or(0, |bm| bm.len()),
-        0
-    );
+    assert_eq!(john_cache.in_mailbox(INBOX_ID).count(), 1);
+    assert_eq!(john_cache.in_mailbox(JUNK_ID).count(), 0);
 
     // Delivering to individuals' aliases
     lmtp.ingest(
@@ -151,24 +141,8 @@ pub async fn test(params: &mut JMAPTest) {
             .len(),
         2
     );
-    assert_eq!(
-        server
-            .get_tag(john_id, Collection::Email, Property::MailboxIds, INBOX_ID)
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        server
-            .get_tag(john_id, Collection::Email, Property::MailboxIds, JUNK_ID)
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(john_cache.in_mailbox(INBOX_ID).count(), 1);
+    assert_eq!(john_cache.in_mailbox(JUNK_ID).count(), 1);
 
     // EXPN and VRFY
     lmtp.expn("members@example.com", 2)

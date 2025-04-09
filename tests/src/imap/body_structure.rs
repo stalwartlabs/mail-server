@@ -196,11 +196,11 @@ fn imap_test_body_structure() {
         for sections in [
             vec![Section::HeaderFields {
                 not: false,
-                fields: vec!["From".to_string(), "To".to_string()],
+                fields: vec!["From".into(), "To".into()],
             }],
             vec![Section::HeaderFields {
                 not: true,
-                fields: vec!["Subject".to_string(), "Cc".to_string()],
+                fields: vec!["Subject".into(), "Cc".into()],
             }],
         ] {
             DataItem::BodySection {

@@ -5,21 +5,23 @@
  */
 
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
-use email::mailbox::manage::MailboxFnc;
+use email::{
+    mailbox::cache::MessageMailboxCache,
+    message::cache::{MessageCache, MessageCacheAccess},
+};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
         acl::Acl,
         collection::Collection,
+        keyword::Keyword,
         property::Property,
         value::{Object, Value},
     },
 };
-use trc::AddContext;
-
-use crate::changes::state::StateManager;
-
 use std::future::Future;
+use store::ahash::AHashSet;
+use trc::AddContext;
 
 pub trait MailboxGet: Sync + Send {
     fn mailbox_get(
@@ -50,39 +52,33 @@ impl MailboxGet for Server {
             Property::MyRights,
         ]);
         let account_id = request.account_id.document_id();
-        let mut mailbox_ids = self.mailbox_get_or_create(account_id).await?;
-        if access_token.is_shared(account_id) {
-            mailbox_ids &= self
-                .shared_containers(access_token, account_id, Collection::Mailbox, Acl::Read)
-                .await?;
-        }
-        let message_ids = self.get_document_ids(account_id, Collection::Email).await?;
+        let mailbox_cache = self.get_cached_mailboxes(account_id).await?;
+        let message_cache = self.get_cached_messages(account_id).await?;
+        let shared_ids = if access_token.is_shared(account_id) {
+            self.shared_containers(access_token, account_id, Collection::Mailbox, Acl::Read)
+                .await?
+                .into()
+        } else {
+            None
+        };
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            mailbox_ids
-                .iter()
+            mailbox_cache
+                .items
+                .keys()
+                .filter(|id| shared_ids.as_ref().is_none_or(|ids| ids.contains(**id)))
+                .copied()
                 .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
                 .collect::<Vec<_>>()
         };
-        let fetch_properties = properties.iter().any(|p| {
-            matches!(
-                p,
-                Property::Name
-                    | Property::ParentId
-                    | Property::Role
-                    | Property::SortOrder
-                    | Property::Acl
-                    | Property::MyRights
-            )
-        });
+        let fetch_properties = properties
+            .iter()
+            .any(|p| matches!(p, Property::SortOrder | Property::Acl | Property::MyRights));
         let mut response = GetResponse {
             account_id: request.account_id.into(),
-            state: self
-                .get_state(account_id, Collection::Mailbox)
-                .await?
-                .into(),
+            state: Some(mailbox_cache.change_id.into()),
             list: Vec::with_capacity(ids.len()),
             not_found: vec![],
         };
@@ -90,10 +86,17 @@ impl MailboxGet for Server {
         for id in ids {
             // Obtain the mailbox object
             let document_id = id.document_id();
-            if !mailbox_ids.contains(document_id) {
+            let cached_mailbox = if let Some(mailbox) =
+                mailbox_cache.items.get(&document_id).filter(|_| {
+                    shared_ids
+                        .as_ref()
+                        .is_none_or(|ids| ids.contains(document_id))
+                }) {
+                mailbox
+            } else {
                 response.not_found.push(id.into());
                 continue;
-            }
+            };
 
             let archived_mailbox_ = if fetch_properties {
                 match self
@@ -124,9 +127,9 @@ impl MailboxGet for Server {
             for property in &properties {
                 let value = match property {
                     Property::Id => Value::Id(id),
-                    Property::Name => Value::Text(archived_mailbox.unwrap().name.to_string()),
+                    Property::Name => Value::Text(cached_mailbox.name.to_string()),
                     Property::Role => {
-                        if let Some(role) = archived_mailbox.unwrap().role.as_str() {
+                        if let Some(role) = cached_mailbox.role.as_str() {
                             Value::Text(role.to_string())
                         } else {
                             Value::Null
@@ -134,50 +137,33 @@ impl MailboxGet for Server {
                     }
                     Property::SortOrder => Value::from(&archived_mailbox.unwrap().sort_order),
                     Property::ParentId => {
-                        let parent_id = archived_mailbox.as_ref().unwrap().parent_id;
-                        if parent_id > 0 {
-                            Value::Id((u32::from(parent_id) - 1).into())
+                        if let Some(parent_id) = cached_mailbox.parent_id {
+                            Value::Id((parent_id).into())
                         } else {
                             Value::Null
                         }
                     }
-                    Property::TotalEmails => Value::UnsignedInt(
-                        self.get_tag(
-                            account_id,
-                            Collection::Email,
-                            Property::MailboxIds,
-                            document_id,
-                        )
-                        .await?
-                        .map(|v| v.len())
-                        .unwrap_or(0),
-                    ),
+                    Property::TotalEmails => {
+                        Value::UnsignedInt(message_cache.in_mailbox(document_id).count() as u64)
+                    }
                     Property::UnreadEmails => Value::UnsignedInt(
-                        self.mailbox_unread_tags(account_id, document_id, &message_ids)
-                            .await?
-                            .map(|v| v.len())
-                            .unwrap_or(0),
+                        message_cache
+                            .in_mailbox_without_keyword(document_id, &Keyword::Seen)
+                            .count() as u64,
                     ),
                     Property::TotalThreads => Value::UnsignedInt(
-                        self.mailbox_count_threads(
-                            account_id,
-                            self.get_tag(
-                                account_id,
-                                Collection::Email,
-                                Property::MailboxIds,
-                                document_id,
-                            )
-                            .await?,
-                        )
-                        .await? as u64,
+                        message_cache
+                            .in_mailbox(document_id)
+                            .map(|(_, m)| m.thread_id)
+                            .collect::<AHashSet<_>>()
+                            .len() as u64,
                     ),
                     Property::UnreadThreads => Value::UnsignedInt(
-                        self.mailbox_count_threads(
-                            account_id,
-                            self.mailbox_unread_tags(account_id, document_id, &message_ids)
-                                .await?,
-                        )
-                        .await? as u64,
+                        message_cache
+                            .in_mailbox_without_keyword(document_id, &Keyword::Seen)
+                            .map(|(_, m)| m.thread_id)
+                            .collect::<AHashSet<_>>()
+                            .len() as u64,
                     ),
                     Property::MyRights => {
                         if access_token.is_shared(account_id) {
@@ -216,18 +202,11 @@ impl MailboxGet for Server {
                                 .into()
                         }
                     }
-                    Property::IsSubscribed => {
-                        if archived_mailbox
-                            .unwrap()
+                    Property::IsSubscribed => Value::Bool(
+                        cached_mailbox
                             .subscribers
-                            .iter()
-                            .any(|s| u32::from(s) == access_token.primary_id())
-                        {
-                            Value::Bool(true)
-                        } else {
-                            Value::Bool(false)
-                        }
-                    }
+                            .contains(&access_token.primary_id()),
+                    ),
                     Property::Acl => {
                         self.acl_get(&archived_mailbox.unwrap().acls, access_token, account_id)
                             .await

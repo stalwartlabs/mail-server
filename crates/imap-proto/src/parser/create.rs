@@ -102,32 +102,32 @@ mod tests {
             (
                 "A142 CREATE 12345\r\n",
                 create::Arguments {
-                    tag: "A142".to_string(),
-                    mailbox_name: "12345".to_string(),
+                    tag: "A142".into(),
+                    mailbox_name: "12345".into(),
                     mailbox_role: None,
                 },
             ),
             (
                 "A142 CREATE \"my funky mailbox\"\r\n",
                 create::Arguments {
-                    tag: "A142".to_string(),
-                    mailbox_name: "my funky mailbox".to_string(),
+                    tag: "A142".into(),
+                    mailbox_name: "my funky mailbox".into(),
                     mailbox_role: None,
                 },
             ),
             (
                 "t1 CREATE \"Important Messages\" (USE (\\Important))\r\n",
                 create::Arguments {
-                    tag: "t1".to_string(),
-                    mailbox_name: "Important Messages".to_string(),
+                    tag: "t1".into(),
+                    mailbox_name: "Important Messages".into(),
                     mailbox_role: Some(Attribute::Important),
                 },
             ),
             (
                 "A142 CREATE \"Test-ąęć-Test\"\r\n",
                 create::Arguments {
-                    tag: "A142".to_string(),
-                    mailbox_name: "Test-ąęć-Test".to_string(),
+                    tag: "A142".into(),
+                    mailbox_name: "Test-ąęć-Test".into(),
                     mailbox_role: None,
                 },
             ),

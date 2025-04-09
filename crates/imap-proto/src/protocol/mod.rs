@@ -8,6 +8,7 @@ use std::{cmp::Ordering, fmt::Display};
 
 use ahash::AHashSet;
 use chrono::{DateTime, Utc};
+use compact_str::CompactString;
 use jmap_proto::types::keyword::{ArchivedKeyword, Keyword};
 
 use crate::{Command, ResponseCode, ResponseType, StatusResponse};
@@ -239,7 +240,7 @@ pub enum Flag {
     Deleted,
     Forwarded,
     MDNSent,
-    Keyword(String),
+    Keyword(CompactString),
 }
 
 impl Flag {
@@ -297,7 +298,7 @@ impl From<&ArchivedKeyword> for Flag {
             ArchivedKeyword::Deleted => Flag::Deleted,
             ArchivedKeyword::Forwarded => Flag::Forwarded,
             ArchivedKeyword::MdnSent => Flag::MDNSent,
-            ArchivedKeyword::Other(value) => Flag::Keyword(value.to_string()),
+            ArchivedKeyword::Other(value) => Flag::Keyword(value.as_str().into()),
         }
     }
 }

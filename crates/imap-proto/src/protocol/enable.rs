@@ -4,11 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
+
 use super::{ImapResponse, capability::Capability};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: String,
+    pub tag: CompactString,
     pub capabilities: Vec<Capability>,
 }
 

@@ -52,7 +52,7 @@ impl Request<Command> {
                     _ => {
                         return Err(bad(
                             self.tag.to_string(),
-                            format!("Unsupported parameter '{}'.", token),
+                            format!("Unsupported parameter '{}'.", token.to_string()),
                         ));
                     }
                 }
@@ -154,7 +154,7 @@ mod tests {
                     is_silent: false,
                     operation: Operation::Add,
                     keywords: vec![Flag::Deleted],
-                    tag: "A003".to_string(),
+                    tag: "A003".into(),
                     unchanged_since: None,
                 },
             ),
@@ -168,7 +168,7 @@ mod tests {
                     is_silent: true,
                     operation: Operation::Clear,
                     keywords: vec![Flag::Phishing, Flag::Junk],
-                    tag: "A004".to_string(),
+                    tag: "A004".into(),
                     unchanged_since: None,
                 },
             ),
@@ -185,7 +185,7 @@ mod tests {
                     is_silent: true,
                     operation: Operation::Add,
                     keywords: vec![Flag::Deleted],
-                    tag: "d105".to_string(),
+                    tag: "d105".into(),
                     unchanged_since: Some(320162338),
                 },
             ),

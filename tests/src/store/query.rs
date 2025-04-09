@@ -327,10 +327,7 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
         (
             vec![
                 Filter::contains(fields_u8["artist"], "kunst, mauro"),
-                Filter::is_in_bitmap(
-                    fields_u8["artistRole"],
-                    Keyword::Other("artist".to_string()),
-                ),
+                Filter::is_in_bitmap(fields_u8["artistRole"], Keyword::Other("artist".into())),
                 Filter::Or,
                 Filter::eq(fields_u8["year"], 1969u32.serialize()),
                 Filter::eq(fields_u8["year"], 1971u32.serialize()),

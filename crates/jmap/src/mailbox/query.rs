@@ -4,22 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken, storage::folder::TopologyBuilder};
-use email::mailbox::manage::MailboxFnc;
+use common::{Server, auth::AccessToken, config::jmap::settings::SpecialUse};
+use email::mailbox::cache::MessageMailboxCache;
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::mailbox::QueryArguments,
     types::{acl::Acl, collection::Collection, property::Property},
 };
 use store::{
-    SerializeInfallible,
-    ahash::{AHashMap, AHashSet},
+    ahash::AHashSet,
     query::{self, sort::Pagination},
     roaring::RoaringBitmap,
 };
 
 use crate::{JmapMethods, UpdateResults};
-use std::future::Future;
+use std::{collections::BTreeMap, future::Future};
 
 pub trait MailboxQuery: Sync + Send {
     fn mailbox_query(
@@ -39,17 +38,21 @@ impl MailboxQuery for Server {
         let sort_as_tree = request.arguments.sort_as_tree.unwrap_or(false);
         let filter_as_tree = request.arguments.filter_as_tree.unwrap_or(false);
         let mut filters = Vec::with_capacity(request.filter.len());
-        let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
+        let mailboxes = self.get_cached_mailboxes(account_id).await?;
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
-                Filter::ParentId(parent_id) => filters.push(query::Filter::eq(
-                    Property::ParentId,
-                    parent_id
-                        .map(|id| id.document_id() + 1)
-                        .unwrap_or(0)
-                        .serialize(),
-                )),
+                Filter::ParentId(parent_id) => {
+                    let parent_id = parent_id.map(|id| id.document_id());
+                    filters.push(query::Filter::is_in_set(
+                        mailboxes
+                            .items
+                            .iter()
+                            .filter(|(_, mailbox)| mailbox.parent_id == parent_id)
+                            .map(|(id, _)| id)
+                            .collect::<RoaringBitmap>(),
+                    ));
+                }
                 Filter::Name(name) => {
                     #[cfg(feature = "test_mode")]
                     {
@@ -58,14 +61,37 @@ impl MailboxQuery for Server {
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }
                     }
-                    filters.push(query::Filter::contains(Property::Name, &name));
+                    filters.push(query::Filter::is_in_set(
+                        mailboxes
+                            .items
+                            .iter()
+                            .filter(|(_, mailbox)| mailbox.name.contains(&name))
+                            .map(|(id, _)| id)
+                            .collect::<RoaringBitmap>(),
+                    ));
                 }
                 Filter::Role(role) => {
                     if let Some(role) = role {
-                        filters.push(query::Filter::eq(Property::Role, role.into_bytes()));
+                        filters.push(query::Filter::is_in_set(
+                            mailboxes
+                                .items
+                                .iter()
+                                .filter(|(_, mailbox)| {
+                                    mailbox.role.as_str().is_some_and(|r| r == role)
+                                })
+                                .map(|(id, _)| id)
+                                .collect::<RoaringBitmap>(),
+                        ));
                     } else {
                         filters.push(query::Filter::Not);
-                        filters.push(query::Filter::is_in_bitmap(Property::Role, ()));
+                        filters.push(query::Filter::is_in_set(
+                            mailboxes
+                                .items
+                                .iter()
+                                .filter(|(_, mailbox)| matches!(mailbox.role, SpecialUse::None))
+                                .map(|(id, _)| id)
+                                .collect::<RoaringBitmap>(),
+                        ));
                         filters.push(query::Filter::End);
                     }
                 }
@@ -73,7 +99,14 @@ impl MailboxQuery for Server {
                     if !has_role {
                         filters.push(query::Filter::Not);
                     }
-                    filters.push(query::Filter::is_in_bitmap(Property::Role, ()));
+                    filters.push(query::Filter::is_in_set(
+                        mailboxes
+                            .items
+                            .iter()
+                            .filter(|(_, mailbox)| matches!(mailbox.role, SpecialUse::None))
+                            .map(|(id, _)| id)
+                            .collect::<RoaringBitmap>(),
+                    ));
                     if !has_role {
                         filters.push(query::Filter::End);
                     }
@@ -82,9 +115,15 @@ impl MailboxQuery for Server {
                     if !is_subscribed {
                         filters.push(query::Filter::Not);
                     }
-                    filters.push(query::Filter::eq(
-                        Property::IsSubscribed,
-                        access_token.primary_id.serialize(),
+                    filters.push(query::Filter::is_in_set(
+                        mailboxes
+                            .items
+                            .iter()
+                            .filter(|(_, mailbox)| {
+                                mailbox.subscribers.contains(&access_token.primary_id)
+                            })
+                            .map(|(id, _)| id)
+                            .collect::<RoaringBitmap>(),
                     ));
                     if !is_subscribed {
                         filters.push(query::Filter::End);
@@ -113,64 +152,42 @@ impl MailboxQuery for Server {
         }
         let (mut response, mut paginate) = self.build_query_response(&result_set, &request).await?;
 
-        // Build mailbox tree
-        let mut topology;
-        if (filter_as_tree || sort_as_tree)
-            && (paginate.is_some()
-                || (response.total.is_some_and(|total| total > 0) && filter_as_tree))
-        {
-            topology = FolderTopology::with_capacity(mailbox_ids.len() as usize);
-            self.fetch_folder_topology::<FolderTopology>(
-                account_id,
-                Collection::Mailbox,
-                &mut topology,
-            )
-            .await?;
+        // Filter as tree
+        if filter_as_tree {
+            let mut filtered_ids = RoaringBitmap::new();
 
-            if filter_as_tree {
-                let mut filtered_ids = RoaringBitmap::new();
-
-                for document_id in &result_set.results {
-                    let mut keep = false;
-                    let mut jmap_id = document_id + 1;
-
-                    for _ in 0..self.core.jmap.mailbox_max_depth {
-                        if let Some(&parent_id) = topology.hierarchy.get(&jmap_id) {
-                            if parent_id == 0 {
-                                keep = true;
-                                break;
-                            } else if !result_set.results.contains(parent_id - 1) {
-                                break;
+            for document_id in &result_set.results {
+                let mut check_id = document_id;
+                for _ in 0..self.core.jmap.mailbox_max_depth {
+                    if let Some(mailbox) = mailboxes.items.get(&check_id) {
+                        if let Some(parent_id) = mailbox.parent_id {
+                            if result_set.results.contains(parent_id) {
+                                check_id = parent_id;
                             } else {
-                                jmap_id = parent_id;
+                                break;
                             }
                         } else {
-                            break;
+                            filtered_ids.insert(document_id);
                         }
                     }
-
-                    if keep {
-                        filtered_ids.push(document_id);
-                    }
-                }
-                if filtered_ids.len() != result_set.results.len() {
-                    let total = filtered_ids.len() as usize;
-                    if response.total.is_some() {
-                        response.total = Some(total);
-                    }
-                    if let Some(paginate) = &mut paginate {
-                        if paginate.limit > total {
-                            paginate.limit = total;
-                        }
-                    }
-                    result_set.results = filtered_ids;
                 }
             }
-        } else {
-            topology = FolderTopology::with_capacity(0);
+            if filtered_ids.len() != result_set.results.len() {
+                let total = filtered_ids.len() as usize;
+                if response.total.is_some() {
+                    response.total = Some(total);
+                }
+                if let Some(paginate) = &mut paginate {
+                    if paginate.limit > total {
+                        paginate.limit = total;
+                    }
+                }
+                result_set.results = filtered_ids;
+            }
         }
 
         if let Some(mut paginate) = paginate {
+            let todo = "sort from cache";
             // Parse sort criteria
             let mut comparators = Vec::with_capacity(request.sort.as_ref().map_or(1, |s| s.len()));
             for comparator in request
@@ -203,39 +220,23 @@ impl MailboxQuery for Server {
                 response = self
                     .sort(result_set, comparators, dummy_paginate, response)
                     .await?;
+                let sorted_tree = mailboxes
+                    .items
+                    .iter()
+                    .map(|(id, mailbox)| (mailbox.path.as_str(), *id))
+                    .collect::<BTreeMap<_, _>>();
+                let ids = response
+                    .ids
+                    .iter()
+                    .map(|id| id.document_id())
+                    .collect::<AHashSet<_>>();
 
-                let mut stack = Vec::new();
-                let mut jmap_id = 0;
-
-                'outer: for _ in 0..(response.ids.len() * 10 * self.core.jmap.mailbox_max_depth) {
-                    let (mut children, mut it) =
-                        if let Some(children) = topology.tree.remove(&jmap_id) {
-                            (children, response.ids.iter())
-                        } else if let Some(prev) = stack.pop() {
-                            prev
-                        } else {
-                            break;
-                        };
-
-                    while let Some(&id) = it.next() {
-                        let next_id = id.document_id() + 1;
-                        if children.remove(&next_id) {
-                            jmap_id = next_id;
-                            if !paginate.add(0, id.document_id()) {
-                                break 'outer;
-                            } else {
-                                stack.push((children, it));
-                                continue 'outer;
-                            }
-                        }
-                    }
-
-                    if !children.is_empty() {
-                        jmap_id = *children.iter().next().unwrap();
-                        children.remove(&jmap_id);
-                        stack.push((children, it));
+                for (_, document_id) in sorted_tree {
+                    if ids.contains(&document_id) && !paginate.add(0, document_id) {
+                        break;
                     }
                 }
+
                 response.update_results(paginate.build())?;
             } else {
                 response = self
@@ -245,29 +246,5 @@ impl MailboxQuery for Server {
         }
 
         Ok(response)
-    }
-}
-
-struct FolderTopology {
-    hierarchy: AHashMap<u32, u32>,
-    tree: AHashMap<u32, AHashSet<u32>>,
-}
-
-impl FolderTopology {
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            hierarchy: AHashMap::with_capacity(capacity),
-            tree: AHashMap::with_capacity(capacity),
-        }
-    }
-}
-
-impl TopologyBuilder for FolderTopology {
-    fn insert(&mut self, document_id: u32, parent_id: u32) {
-        self.hierarchy.insert(document_id + 1, parent_id);
-        self.tree
-            .entry(parent_id)
-            .or_default()
-            .insert(document_id + 1);
     }
 }

@@ -7,7 +7,8 @@
 use std::ops::Range;
 
 use common::{Server, auth::AccessToken};
-use jmap_proto::types::{acl::Acl, blob::BlobId, collection::Collection, property::Property};
+use email::message::cache::MessageCache;
+use jmap_proto::types::{acl::Acl, blob::BlobId, collection::Collection};
 use std::future::Future;
 use store::BlobClass;
 use trc::AddContext;
@@ -60,14 +61,7 @@ impl BlobDownload for Server {
                 } => {
                     if Collection::from(*collection) == Collection::Email {
                         match self
-                            .shared_items(
-                                access_token,
-                                *account_id,
-                                Collection::Mailbox,
-                                Collection::Email,
-                                Property::MailboxIds,
-                                Acl::ReadItems,
-                            )
+                            .shared_messages(access_token, *account_id, Acl::ReadItems)
                             .await
                         {
                             Ok(shared_messages) if shared_messages.contains(*document_id) => (),
@@ -133,14 +127,7 @@ impl BlobDownload for Server {
                     if Collection::from(*collection) == Collection::Email {
                         access_token.is_member(*account_id)
                             || self
-                                .shared_items(
-                                    access_token,
-                                    *account_id,
-                                    Collection::Mailbox,
-                                    Collection::Email,
-                                    Property::MailboxIds,
-                                    Acl::ReadItems,
-                                )
+                                .shared_messages(access_token, *account_id, Acl::ReadItems)
                                 .await?
                                 .contains(*document_id)
                     } else {

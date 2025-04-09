@@ -6,10 +6,13 @@
 
 use std::collections::BTreeMap;
 
-use common::listener::SessionStream;
+use common::{config::jmap::settings::SpecialUse, listener::SessionStream};
 use email::{
-    mailbox::{INBOX_ID, manage::MailboxFnc},
-    message::metadata::MessageData,
+    mailbox::{
+        INBOX_ID,
+        cache::{MailboxCacheAccess, MessageMailboxCache},
+    },
+    message::cache::MessageCache,
 };
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
@@ -38,49 +41,29 @@ pub struct Message {
 
 impl<T: SessionStream> Session<T> {
     pub async fn fetch_mailbox(&self, account_id: u32) -> trc::Result<Mailbox> {
-        // Obtain message ids
-        let message_ids = self
+        // Obtain UID validity
+        let message_cache = self
             .server
-            .get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                INBOX_ID,
-            )
+            .get_cached_messages(account_id)
             .await
-            .caused_by(trc::location!())?
-            .unwrap_or_default();
+            .caused_by(trc::location!())?;
 
-        if message_ids.is_empty() {
+        if message_cache.items.is_empty() {
             return Ok(Mailbox::default());
         }
 
-        let mut message_map = BTreeMap::new();
-        let mut message_sizes = AHashMap::new();
-
-        // Obtain UID validity
-        self.server
-            .mailbox_get_or_create(account_id)
+        let mailbox_cache = self
+            .server
+            .get_cached_mailboxes(account_id)
             .await
             .caused_by(trc::location!())?;
-        let uid_validity = u32::from(
-            self.server
-                .get_archive(account_id, Collection::Mailbox, INBOX_ID)
-                .await
-                .caused_by(trc::location!())?
-                .ok_or_else(|| {
-                    trc::StoreEvent::UnexpectedError
-                        .caused_by(trc::location!())
-                        .details("Failed to obtain UID validity")
-                        .account_id(account_id)
-                        .document_id(INBOX_ID)
-                })?
-                .unarchive::<email::mailbox::Mailbox>()
-                .caused_by(trc::location!())?
-                .uid_validity,
-        );
+        let uid_validity = mailbox_cache
+            .by_role(&SpecialUse::Inbox)
+            .map(|x| x.1.uid_validity)
+            .unwrap_or_default();
 
         // Obtain message sizes
+        let mut message_sizes = AHashMap::new();
         self.server
             .core
             .storage
@@ -90,14 +73,14 @@ impl<T: SessionStream> Session<T> {
                     IndexKey {
                         account_id,
                         collection: Collection::Email.into(),
-                        document_id: message_ids.min().unwrap(),
+                        document_id: 0,
                         field: Property::Size.into(),
                         key: 0u32.serialize(),
                     },
                     IndexKey {
                         account_id,
                         collection: Collection::Email.into(),
-                        document_id: message_ids.max().unwrap(),
+                        document_id: u32::MAX,
                         field: Property::Size.into(),
                         key: u32::MAX.serialize(),
                     },
@@ -105,7 +88,7 @@ impl<T: SessionStream> Session<T> {
                 .no_values(),
                 |key, _| {
                     let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
-                    if message_ids.contains(document_id) {
+                    if mailbox_cache.items.contains_key(&document_id) {
                         message_sizes.insert(
                             document_id,
                             key.deserialize_be_u32(key.len() - (U32_LEN * 2))?,
@@ -119,28 +102,16 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
 
         // Sort by UID
-        self.server
-            .get_archives(
-                account_id,
-                Collection::Email,
-                &message_ids,
-                |message_id, uid_mailbox| {
-                    // Make sure the message is still in Inbox
-                    if let Some(item) = uid_mailbox
-                        .unarchive::<MessageData>()
-                        .caused_by(trc::location!())?
-                        .mailboxes
-                        .iter()
-                        .find(|item| item.mailbox_id == INBOX_ID)
-                    {
-                        debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
-                        message_map.insert(u32::from(item.uid), message_id);
-                    }
-                    Ok(true)
-                },
-            )
-            .await
-            .caused_by(trc::location!())?;
+        let message_map = message_cache
+            .items
+            .iter()
+            .filter_map(|(document_id, m)| {
+                m.mailboxes
+                    .iter()
+                    .find(|m| m.mailbox_id == INBOX_ID)
+                    .map(|m| (m.uid, *document_id))
+            })
+            .collect::<BTreeMap<u32, u32>>();
 
         // Create mailbox
         let mut mailbox = Mailbox {

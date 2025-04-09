@@ -15,7 +15,11 @@ use jmap_proto::{
 use store::{SerializeInfallible, query::Filter, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 
-use crate::message::{delete::EmailDeletion, metadata::MessageData};
+use crate::message::{
+    cache::{MessageCache, MessageCacheAccess},
+    delete::EmailDeletion,
+    metadata::MessageData,
+};
 
 use super::*;
 
@@ -80,18 +84,18 @@ impl MailboxDestroy for Server {
 
         batch.with_account_id(account_id);
 
-        if let Some(message_ids) = self
-            .get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                document_id,
-            )
-            .await?
-        {
-            if remove_emails {
-                // If the message is in multiple mailboxes, untag it from the current mailbox,
-                // otherwise delete it.
+        if remove_emails {
+            // If the message is in multiple mailboxes, untag it from the current mailbox,
+            // otherwise delete it.
+            let message_ids = RoaringBitmap::from_iter(
+                self.get_cached_messages(account_id)
+                    .await
+                    .caused_by(trc::location!())?
+                    .in_mailbox(document_id)
+                    .map(|(id, _)| id),
+            );
+
+            if !message_ids.is_empty() {
                 let mut destroy_ids = RoaringBitmap::new();
 
                 self.get_archives(
@@ -148,10 +152,10 @@ impl MailboxDestroy for Server {
                     self.emails_tombstone(account_id, &mut batch, destroy_ids)
                         .await?;
                 }
-            } else {
-                return Ok(Err(SetError::new(SetErrorType::MailboxHasEmail)
-                    .with_description("Mailbox is not empty.")));
             }
+        } else {
+            return Ok(Err(SetError::new(SetErrorType::MailboxHasEmail)
+                .with_description("Mailbox is not empty.")));
         }
 
         // Obtain mailbox

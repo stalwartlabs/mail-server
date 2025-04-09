@@ -8,8 +8,9 @@ use std::{borrow::Cow, collections::HashMap};
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use email::{
-    mailbox::{UidMailbox, manage::MailboxFnc},
+    mailbox::UidMailbox,
     message::{
+        cache::MessageCache,
         delete::EmailDeletion,
         ingest::{EmailIngest, IngestEmail, IngestSource},
         metadata::MessageData,
@@ -71,7 +72,7 @@ impl EmailSet for Server {
         let can_train_spam = self.email_bayes_can_train(access_token);
 
         // Obtain mailboxIds
-        let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
+        let mailbox_ids = self.get_cached_messages(account_id).await?;
         let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_message_ids) =
             if access_token.is_shared(account_id) {
                 (
@@ -91,16 +92,9 @@ impl EmailSet for Server {
                     )
                     .await?
                     .into(),
-                    self.shared_items(
-                        access_token,
-                        account_id,
-                        Collection::Mailbox,
-                        Collection::Email,
-                        Property::MailboxIds,
-                        Acl::ModifyItems,
-                    )
-                    .await?
-                    .into(),
+                    self.shared_messages(access_token, account_id, Acl::ModifyItems)
+                        .await?
+                        .into(),
                 )
             } else {
                 (None, None, None)
@@ -674,7 +668,7 @@ impl EmailSet for Server {
 
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
-                if !mailbox_ids.contains(*mailbox_id) {
+                if !mailbox_ids.items.contains_key(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
@@ -890,7 +884,7 @@ impl EmailSet for Server {
 
                 // Make sure all new mailboxIds are valid
                 for mailbox_id in new_data.added_mailboxes(data.inner) {
-                    if mailbox_ids.contains(mailbox_id.mailbox_id) {
+                    if mailbox_ids.items.contains_key(&mailbox_id.mailbox_id) {
                         // Verify permissions on shared accounts
                         if !matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(mailbox_id.mailbox_id))
                         {
@@ -1003,16 +997,9 @@ impl EmailSet for Server {
                 .await?
                 .unwrap_or_default();
             let can_destroy_message_ids = if access_token.is_shared(account_id) {
-                self.shared_items(
-                    access_token,
-                    account_id,
-                    Collection::Mailbox,
-                    Collection::Email,
-                    Property::MailboxIds,
-                    Acl::RemoveItems,
-                )
-                .await?
-                .into()
+                self.shared_messages(access_token, account_id, Acl::RemoveItems)
+                    .await?
+                    .into()
             } else {
                 None
             };

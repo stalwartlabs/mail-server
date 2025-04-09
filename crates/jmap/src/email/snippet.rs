@@ -5,9 +5,12 @@
  */
 
 use common::{Server, auth::AccessToken};
-use email::message::metadata::{
-    ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
-    MessageMetadata,
+use email::message::{
+    cache::MessageCache,
+    metadata::{
+        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
+        MessageMetadata,
+    },
 };
 use jmap_proto::{
     method::{
@@ -87,14 +90,7 @@ impl EmailSearchSnippet for Server {
         }
         let account_id = request.account_id.document_id();
         let document_ids = self
-            .owned_or_shared_items(
-                access_token,
-                account_id,
-                Collection::Mailbox,
-                Collection::Email,
-                Property::MailboxIds,
-                Acl::ReadItems,
-            )
+            .owned_or_shared_messages(access_token, account_id, Acl::ReadItems)
             .await?;
         let email_ids = request.email_ids.unwrap();
         let mut response = GetSearchSnippetResponse {

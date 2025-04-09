@@ -47,15 +47,15 @@ mod tests {
             (
                 "A142 DELETE INBOX\r\n",
                 delete::Arguments {
-                    mailbox_name: "INBOX".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "INBOX".into(),
+                    tag: "A142".into(),
                 },
             ),
             (
                 "A142 DELETE \"my funky mailbox\"\r\n",
                 delete::Arguments {
-                    mailbox_name: "my funky mailbox".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "my funky mailbox".into(),
+                    tag: "A142".into(),
                 },
             ),
         ] {

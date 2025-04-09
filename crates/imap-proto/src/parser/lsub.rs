@@ -58,9 +58,9 @@ mod tests {
             (
                 "A002 LSUB \"#news.\" \"comp.mail.*\"\r\n",
                 list::Arguments::Extended {
-                    tag: "A002".to_string(),
-                    reference_name: "#news.".to_string(),
-                    mailbox_name: vec!["comp.mail.*".to_string()],
+                    tag: "A002".into(),
+                    reference_name: "#news.".into(),
+                    mailbox_name: vec!["comp.mail.*".into()],
                     selection_options: vec![SelectionOption::Subscribed],
                     return_options: vec![],
                 },
@@ -68,9 +68,9 @@ mod tests {
             (
                 "A002 LSUB \"#news.\" \"comp.%\"\r\n",
                 list::Arguments::Extended {
-                    tag: "A002".to_string(),
-                    reference_name: "#news.".to_string(),
-                    mailbox_name: vec!["comp.%".to_string()],
+                    tag: "A002".into(),
+                    reference_name: "#news.".into(),
+                    mailbox_name: vec!["comp.%".into()],
                     selection_options: vec![SelectionOption::Subscribed],
                     return_options: vec![],
                 },

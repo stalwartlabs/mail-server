@@ -18,15 +18,15 @@ use store::{
     dispatch::DocumentSet,
     roaring::RoaringBitmap,
     write::{
-        AlignedBytes, Archive, AssignedIds, BatchBuilder, BitmapClass, BlobOp, DirectoryClass,
-        QueueClass, TagValue, ValueClass, key::DeserializeBigEndian, now,
+        AlignedBytes, Archive, AssignedIds, BatchBuilder, BlobOp, DirectoryClass, QueueClass,
+        ValueClass, key::DeserializeBigEndian, now,
     },
 };
 use trc::AddContext;
 use utils::BlobHash;
 
 use crate::{
-    ImapId, Inner, MailboxState, Server,
+    Inner, Server,
     auth::{AccessToken, ResourceToken, TenantInfo},
     config::smtp::{
         auth::{ArcSealer, DkimSigner, LazySignature, ResolvedSignature, build_signature},
@@ -468,35 +468,6 @@ impl Server {
             })
     }
 
-    pub async fn get_tag(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        property: impl AsRef<Property> + Sync + Send,
-        value: impl Into<TagValue> + Sync + Send,
-    ) -> trc::Result<Option<RoaringBitmap>> {
-        let property = property.as_ref();
-        self.core
-            .storage
-            .data
-            .get_bitmap(BitmapKey {
-                account_id,
-                collection: collection.into(),
-                class: BitmapClass::Tag {
-                    field: property.into(),
-                    value: value.into(),
-                },
-                document_id: 0,
-            })
-            .await
-            .add_context(|err| {
-                err.caused_by(trc::location!())
-                    .account_id(account_id)
-                    .collection(collection)
-                    .id(property.to_string())
-            })
-    }
-
     #[inline(always)]
     pub fn notify_task_queue(&self) {
         self.inner.ipc.index_tx.notify_one();
@@ -703,23 +674,6 @@ impl BuildServer for Arc<Inner> {
         Server {
             inner: self.clone(),
             core: self.shared_core.load_full(),
-        }
-    }
-}
-
-impl MailboxState {
-    pub fn map_result_id(&self, document_id: u32, is_uid: bool) -> Option<(u32, ImapId)> {
-        if let Some(imap_id) = self.id_to_imap.get(&document_id) {
-            Some((if is_uid { imap_id.uid } else { imap_id.seqnum }, *imap_id))
-        } else if is_uid {
-            self.next_state.as_ref().and_then(|s| {
-                s.next_state
-                    .id_to_imap
-                    .get(&document_id)
-                    .map(|imap_id| (imap_id.uid, *imap_id))
-            })
-        } else {
-            None
         }
     }
 }

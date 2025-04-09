@@ -143,9 +143,9 @@ mod tests {
             (
                 "A003 Setacl INBOX/Drafts Byron lrswikda\r\n",
                 acl::Arguments {
-                    tag: "A003".to_string(),
-                    mailbox_name: "INBOX/Drafts".to_string(),
-                    identifier: "Byron".to_string().into(),
+                    tag: "A003".into(),
+                    mailbox_name: "INBOX/Drafts".into(),
+                    identifier: Some("Byron".into()),
                     mod_rights: ModRights {
                         op: ModRightsOp::Replace,
                         rights: vec![
@@ -165,9 +165,9 @@ mod tests {
             (
                 "A002 SETACL INBOX/Drafts Chris +cda\r\n",
                 acl::Arguments {
-                    tag: "A002".to_string(),
-                    mailbox_name: "INBOX/Drafts".to_string(),
-                    identifier: "Chris".to_string().into(),
+                    tag: "A002".into(),
+                    mailbox_name: "INBOX/Drafts".into(),
+                    identifier: Some("Chris".into()),
                     mod_rights: ModRights {
                         op: ModRightsOp::Add,
                         rights: vec![
@@ -182,9 +182,9 @@ mod tests {
             (
                 "A036 SETACL INBOX/Drafts John -lrswicda\r\n",
                 acl::Arguments {
-                    tag: "A036".to_string(),
-                    mailbox_name: "INBOX/Drafts".to_string(),
-                    identifier: "John".to_string().into(),
+                    tag: "A036".into(),
+                    mailbox_name: "INBOX/Drafts".into(),
+                    identifier: Some("John".into()),
                     mod_rights: ModRights {
                         op: ModRightsOp::Remove,
                         rights: vec![
@@ -204,8 +204,8 @@ mod tests {
             (
                 "A001 GETACL INBOX/Drafts\r\n",
                 acl::Arguments {
-                    tag: "A001".to_string(),
-                    mailbox_name: "INBOX/Drafts".to_string(),
+                    tag: "A001".into(),
+                    mailbox_name: "INBOX/Drafts".into(),
                     identifier: None,
                     mod_rights: None,
                 },

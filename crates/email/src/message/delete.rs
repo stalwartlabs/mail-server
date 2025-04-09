@@ -19,7 +19,10 @@ use utils::BlobHash;
 use std::future::Future;
 use store::rand::prelude::SliceRandom;
 
-use crate::{mailbox::*, message::metadata::MessageMetadata};
+use crate::{
+    mailbox::*,
+    message::{cache::MessageCache, metadata::MessageMetadata},
+};
 
 use super::metadata::MessageData;
 
@@ -171,51 +174,27 @@ impl EmailDeletion for Server {
     }
 
     async fn emails_auto_expunge(&self, account_id: u32, period: Duration) -> trc::Result<()> {
-        let deletion_candidates = self
-            .get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                TagValue::Id(TRASH_ID),
-            )
-            .await?
-            .unwrap_or_default()
-            | self
-                .get_tag(
-                    account_id,
-                    Collection::Email,
-                    Property::MailboxIds,
-                    TagValue::Id(JUNK_ID),
-                )
-                .await?
-                .unwrap_or_default();
-
-        if deletion_candidates.is_empty() {
-            return Ok(());
-        }
         let reference_cid = self.inner.data.jmap_id_gen.past_id(period).ok_or_else(|| {
             trc::StoreEvent::UnexpectedError
                 .into_err()
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "Failed to generate reference cid.")
         })?;
-
-        // Find messages to destroy
-        let mut destroy_ids = RoaringBitmap::new();
-        self.get_archives(
-            account_id,
-            Collection::Email,
-            &deletion_candidates,
-            |document_id, data| {
-                if data.unarchive::<MessageData>()?.change_id < reference_cid {
-                    destroy_ids.insert(document_id);
-                }
-
-                Ok(true)
-            },
-        )
-        .await?;
-
+        let destroy_ids = RoaringBitmap::from_iter(
+            self.get_cached_messages(account_id)
+                .await
+                .caused_by(trc::location!())?
+                .items
+                .iter()
+                .filter(|(_, item)| {
+                    item.change_id < reference_cid
+                        && item
+                            .mailboxes
+                            .iter()
+                            .any(|id| id.mailbox_id == TRASH_ID || id.mailbox_id == JUNK_ID)
+                })
+                .map(|(id, _)| id),
+        );
         if destroy_ids.is_empty() {
             return Ok(());
         }

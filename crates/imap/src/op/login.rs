@@ -16,8 +16,8 @@ impl<T: SessionStream> Session<T> {
 
         self.authenticate(
             Credentials::Plain {
-                username: arguments.username,
-                secret: arguments.password,
+                username: arguments.username.to_string(),
+                secret: arguments.password.to_string(),
             },
             arguments.tag,
         )

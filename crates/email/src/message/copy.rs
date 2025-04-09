@@ -19,9 +19,10 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{mailbox::UidMailbox, thread::cache::ThreadCache};
+use crate::mailbox::UidMailbox;
 
 use super::{
+    cache::MessageCache,
     index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue},
     ingest::{EmailIngest, IngestedEmail, ThreadResult},
     metadata::{HeaderName, HeaderValue, MessageData, MessageMetadata},
@@ -141,7 +142,7 @@ impl EmailCopy for Server {
             ThreadResult::Id(thread_id) => (false, thread_id),
             ThreadResult::Create => (
                 true,
-                self.get_cached_thread_ids(account_id)
+                self.get_cached_messages(account_id)
                     .await
                     .caused_by(trc::location!())?
                     .assign_thread_id(subject.as_bytes(), message_id.as_bytes()),

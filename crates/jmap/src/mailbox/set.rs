@@ -9,7 +9,7 @@ use common::{
     storage::index::ObjectIndexBuilder,
 };
 
-use email::mailbox::{Mailbox, destroy::MailboxDestroy, manage::MailboxFnc};
+use email::mailbox::{Mailbox, cache::MessageMailboxCache, destroy::MailboxDestroy};
 use jmap_proto::{
     error::set::SetError,
     method::set::{SetRequest, SetResponse},
@@ -80,7 +80,9 @@ impl MailboxSet for Server {
             response: self
                 .prepare_set_response(&request, Collection::Mailbox)
                 .await?,
-            mailbox_ids: self.mailbox_get_or_create(account_id).await?,
+            mailbox_ids: RoaringBitmap::from_iter(
+                self.get_cached_mailboxes(account_id).await?.items.keys(),
+            ),
             will_destroy: request.unwrap_destroy(),
         };
         let mut change_id = None;

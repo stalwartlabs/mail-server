@@ -1038,6 +1038,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "castaway"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0abae9be0aaf9ea96a3b1b8b1b55c602ca751eba1b1500220cea4ecbafe7c0d5"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "cbc"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1244,6 +1253,7 @@ dependencies = [
  "bincode",
  "biscuit",
  "chrono",
+ "compact_str",
  "decancer",
  "directory",
  "dns-update",
@@ -1294,6 +1304,7 @@ dependencies = [
  "sieve-rs",
  "smtp-proto",
  "store",
+ "tinyvec",
  "tokio",
  "tokio-rustls 0.26.2",
  "trc",
@@ -1303,6 +1314,22 @@ dependencies = [
  "x509-parser 0.16.0",
  "xxhash-rust",
  "zip",
+]
+
+[[package]]
+name = "compact_str"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fdb1325a1cece981e8a296ab8f0f9b63ae357bd0784a9faaf548cc7b480707a"
+dependencies = [
+ "castaway",
+ "cfg-if",
+ "itoa",
+ "rkyv 0.8.10",
+ "rustversion",
+ "ryu",
+ "serde",
+ "static_assertions",
 ]
 
 [[package]]
@@ -2128,6 +2155,7 @@ dependencies = [
  "bincode",
  "cbc",
  "common",
+ "compact_str",
  "directory",
  "hashify",
  "jmap_proto",
@@ -3466,6 +3494,7 @@ version = "0.11.8"
 dependencies = [
  "ahash 0.8.11",
  "common",
+ "compact_str",
  "directory",
  "email",
  "imap_proto",
@@ -3492,6 +3521,7 @@ version = "0.11.8"
 dependencies = [
  "ahash 0.8.11",
  "chrono",
+ "compact_str",
  "hashify",
  "jmap_proto",
  "mail-parser",
@@ -3796,6 +3826,7 @@ name = "jmap_proto"
 version = "0.11.8"
 dependencies = [
  "ahash 0.8.11",
+ "compact_str",
  "fast-float",
  "hashify",
  "mail-parser",
@@ -4206,6 +4237,7 @@ dependencies = [
  "ahash 0.8.11",
  "bincode",
  "common",
+ "compact_str",
  "directory",
  "email",
  "imap",
@@ -7341,9 +7373,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.8.1"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "022db8904dfa342efe721985167e9fcd16c29b226db4397ed752a761cfce81e8"
+checksum = "09b3661f17e86524eccd4371ab0429194e0d7c008abb45f7a7495b1719463c71"
 dependencies = [
  "tinyvec_macros",
 ]
@@ -7640,6 +7672,7 @@ dependencies = [
  "ahash 0.8.11",
  "base64 0.22.1",
  "bincode",
+ "compact_str",
  "event_macro",
  "mail-auth",
  "mail-parser",

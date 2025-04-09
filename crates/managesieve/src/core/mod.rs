@@ -14,6 +14,7 @@ use common::{
     auth::AccessToken,
     listener::{ServerInstance, limiter::InFlight},
 };
+use compact_str::CompactString;
 use imap_proto::receiver::{CommandParser, Receiver};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -131,7 +132,7 @@ pub enum ResponseCode {
     Active,
     NonExistent,
     AlreadyExists,
-    Tag(String),
+    Tag(CompactString),
     Warnings,
 }
 

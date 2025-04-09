@@ -23,7 +23,7 @@ mod tests {
             (
                 vec!["Authenticate \"DIGEST-MD5\"\r\n"],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::Authenticate,
                     tokens: vec![Token::Argument(b"DIGEST-MD5".to_vec())],
                 }],
@@ -34,7 +34,7 @@ mod tests {
                     "cnNwYXV0aD1lYTQwZjYwMzM1YzQyN2I1NTI3Yjg0ZGJhYmNkZmZmZA==\r\n",
                 ],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::Authenticate,
                     tokens: vec![
                         Token::Argument(b"GSSAPI".to_vec()),
@@ -47,7 +47,7 @@ mod tests {
             (
                 vec!["Authenticate \"PLAIN\" \"QJIrweAPyo6Q1T9xu\"\r\n"],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::Authenticate,
                     tokens: vec![
                         Token::Argument(b"PLAIN".to_vec()),
@@ -58,7 +58,7 @@ mod tests {
             (
                 vec!["StartTls\r\n"],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::StartTls,
                     tokens: vec![],
                 }],
@@ -66,7 +66,7 @@ mod tests {
             (
                 vec!["HAVESPACE \"myscript\" 999999\r\n"],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::HaveSpace,
                     tokens: vec![
                         Token::Argument(b"myscript".to_vec()),
@@ -81,7 +81,7 @@ mod tests {
                     "InvalidSieveCommand\r\n\r\n",
                 ],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::PutScript,
                     tokens: vec![
                         Token::Argument(b"foo".to_vec()),
@@ -92,7 +92,7 @@ mod tests {
             (
                 vec!["Listscripts\r\n"],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::ListScripts,
                     tokens: vec![],
                 }],
@@ -100,7 +100,7 @@ mod tests {
             (
                 vec!["Setactive \"baz\"\r\n"],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::SetActive,
                     tokens: vec![Token::Argument(b"baz".to_vec())],
                 }],
@@ -108,7 +108,7 @@ mod tests {
             (
                 vec!["Renamescript \"foo\" \"bar\"\r\n"],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::RenameScript,
                     tokens: vec![
                         Token::Argument(b"foo".to_vec()),
@@ -119,7 +119,7 @@ mod tests {
             (
                 vec!["NOOP \"STARTTLS-SYNC-42\"\r\n"],
                 vec![Request {
-                    tag: "".to_string(),
+                    tag: "".into(),
                     command: Command::Noop,
                     tokens: vec![Token::Argument(b"STARTTLS-SYNC-42".to_vec())],
                 }],

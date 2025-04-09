@@ -11,6 +11,7 @@ use crate::{
     spawn_op,
 };
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
+use compact_str::CompactString;
 use directory::Permission;
 use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
 use jmap_proto::types::collection::Collection;
@@ -49,8 +50,8 @@ impl<T: SessionStream> Session<T> {
 impl<T: SessionStream> SessionData<T> {
     pub async fn subscribe_folder(
         &self,
-        tag: String,
-        mailbox_name: String,
+        tag: CompactString,
+        mailbox_name: CompactString,
         subscribe: bool,
         op_start: Instant,
     ) -> trc::Result<StatusResponse> {
@@ -130,7 +131,6 @@ impl<T: SessionStream> SessionData<T> {
                         .with_changes(new_mailbox),
                 )
                 .imap_ctx(&tag, trc::location!())?;
-            let change_id = batch.change_id();
             self.server
                 .commit_batch(batch)
                 .await
@@ -139,7 +139,6 @@ impl<T: SessionStream> SessionData<T> {
             // Update mailbox cache
             for account in self.mailboxes.lock().iter_mut() {
                 if account.account_id == account_id {
-                    account.state_mailbox = change_id.into();
                     if let Some(mailbox) = account.mailbox_state.get_mut(&mailbox_id) {
                         mailbox.is_subscribed = subscribe;
                     }

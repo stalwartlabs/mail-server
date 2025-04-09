@@ -47,15 +47,15 @@ mod tests {
             (
                 "A142 SUBSCRIBE #news.comp.mail.mime\r\n",
                 subscribe::Arguments {
-                    mailbox_name: "#news.comp.mail.mime".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "#news.comp.mail.mime".into(),
+                    tag: "A142".into(),
                 },
             ),
             (
                 "A142 SUBSCRIBE \"#news.comp.mail.mime\"\r\n",
                 subscribe::Arguments {
-                    mailbox_name: "#news.comp.mail.mime".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "#news.comp.mail.mime".into(),
+                    tag: "A142".into(),
                 },
             ),
         ] {

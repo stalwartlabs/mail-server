@@ -8,7 +8,11 @@ use std::{sync::Arc, time::Instant};
 
 use ahash::AHashMap;
 use directory::Permission;
-use email::message::{delete::EmailDeletion, metadata::MessageData};
+use email::message::{
+    cache::{MessageCache, MessageCacheAccess},
+    delete::EmailDeletion,
+    metadata::MessageData,
+};
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     parser::parse_sequence_set,
@@ -16,9 +20,9 @@ use imap_proto::{
 };
 use trc::AddContext;
 
-use crate::core::{SavedSearch, SelectedMailbox, Session, SessionData};
-use common::{ImapId, listener::SessionStream, storage::index::ObjectIndexBuilder};
-use jmap_proto::types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property};
+use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
+use jmap_proto::types::{acl::Acl, collection::Collection, keyword::Keyword};
 use store::{roaring::RoaringBitmap, write::BatchBuilder};
 
 use super::{ImapContext, ToModSeq};
@@ -111,28 +115,14 @@ impl<T: SessionStream> SessionData<T> {
     ) -> trc::Result<()> {
         // Obtain message ids
         let account_id = mailbox.id.account_id;
-        let mut deleted_ids = self
-            .server
-            .get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                mailbox.id.mailbox_id,
-            )
-            .await
-            .caused_by(trc::location!())?
-            .unwrap_or_default()
-            & self
-                .server
-                .get_tag(
-                    account_id,
-                    Collection::Email,
-                    Property::Keywords,
-                    Keyword::Deleted,
-                )
+        let mut deleted_ids = RoaringBitmap::from_iter(
+            self.server
+                .get_cached_messages(account_id)
                 .await
                 .caused_by(trc::location!())?
-                .unwrap_or_default();
+                .in_mailbox_with_keyword(mailbox.id.mailbox_id, &Keyword::Deleted)
+                .map(|(id, _)| id),
+        );
 
         // Filter by sequence
         if let Some(sequence) = &sequence {

@@ -6,7 +6,10 @@
 
 use common::{Server, auth::AccessToken};
 
-use email::{mailbox::manage::MailboxFnc, message::copy::EmailCopy};
+use email::{
+    mailbox::cache::MessageMailboxCache,
+    message::{cache::MessageCache, copy::EmailCopy},
+};
 use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::SetError,
@@ -74,16 +77,9 @@ impl JmapEmailCopy for Server {
         };
 
         let from_message_ids = self
-            .owned_or_shared_items(
-                access_token,
-                from_account_id,
-                Collection::Mailbox,
-                Collection::Email,
-                Property::MailboxIds,
-                Acl::ReadItems,
-            )
+            .owned_or_shared_messages(access_token, from_account_id, Acl::ReadItems)
             .await?;
-        let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
+        let mailbox_ids = self.get_cached_mailboxes(account_id).await?;
         let can_add_mailbox_ids = if access_token.is_shared(account_id) {
             self.shared_containers(access_token, account_id, Collection::Mailbox, Acl::AddItems)
                 .await?
@@ -193,7 +189,7 @@ impl JmapEmailCopy for Server {
 
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
-                if !mailbox_ids.contains(*mailbox_id) {
+                if !mailbox_ids.items.contains_key(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()

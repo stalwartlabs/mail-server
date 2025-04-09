@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::BTreeMap, time::Instant};
+use std::time::Instant;
 
 use crate::{
     core::{Session, SessionData},
@@ -169,63 +169,10 @@ impl<T: SessionStream> SessionData<T> {
                     .with_changes(new_mailbox),
             )
             .imap_ctx(&arguments.tag, trc::location!())?;
-        let change_id = batch.change_id();
         self.server
             .commit_batch(batch)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
-
-        let mut mailboxes = if !create_ids.is_empty() {
-            self.add_created_mailboxes(&mut params, change_id, create_ids)
-                .add_context(|err| err.id(arguments.tag.clone()))?
-        } else {
-            self.mailboxes.lock()
-        };
-
-        // Rename mailbox cache
-        for account in mailboxes.iter_mut() {
-            if account.account_id == params.account_id {
-                // Update state
-                account.state_mailbox = change_id.into();
-
-                // Update parents
-                if arguments.mailbox_name.contains('/') {
-                    let mut parent_path = arguments.mailbox_name.split('/').collect::<Vec<_>>();
-                    parent_path.pop();
-                    let parent_path = parent_path.join("/");
-                    if let Some(old_parent_id) = account.mailbox_names.get(&parent_path) {
-                        if let Some(old_parent) = account.mailbox_state.get_mut(old_parent_id) {
-                            let prefix = format!("{}/", parent_path);
-                            old_parent.has_children = account.mailbox_names.keys().any(|name| {
-                                name != &arguments.mailbox_name && name.starts_with(&prefix)
-                            });
-                        }
-                    }
-                }
-                if let Some(parent_mailbox) = params
-                    .parent_mailbox_id
-                    .and_then(|id| account.mailbox_state.get_mut(&id))
-                {
-                    parent_mailbox.has_children = true;
-                }
-
-                let prefix = format!("{}/", arguments.mailbox_name);
-                let mut new_mailbox_names = BTreeMap::new();
-                for (mailbox_name, mailbox_id) in std::mem::take(&mut account.mailbox_names) {
-                    if mailbox_name != arguments.mailbox_name {
-                        if let Some(child_name) = mailbox_name.strip_prefix(&prefix) {
-                            new_mailbox_names
-                                .insert(format!("{}/{}", params.full_path, child_name), mailbox_id);
-                        } else {
-                            new_mailbox_names.insert(mailbox_name, mailbox_id);
-                        }
-                    }
-                }
-                new_mailbox_names.insert(params.full_path, mailbox_id);
-                account.mailbox_names = new_mailbox_names.into_iter().collect();
-                break;
-            }
-        }
 
         trc::event!(
             Imap(trc::ImapEvent::RenameMailbox),

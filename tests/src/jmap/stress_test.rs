@@ -9,15 +9,21 @@ use std::{sync::Arc, time::Duration};
 use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
 use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
-use email::message::metadata::MessageData;
+use email::message::{
+    cache::{MessageCache, MessageCacheAccess},
+    metadata::MessageData,
+};
 use futures::future::join_all;
 use jmap_client::{
     client::Client,
     core::set::{SetErrorType, SetObject},
     mailbox::{self, Mailbox, Role},
 };
-use jmap_proto::types::{collection::Collection, id::Id, property::Property};
-use store::rand::{self, Rng};
+use jmap_proto::types::{collection::Collection, id::Id};
+use store::{
+    rand::{self, Rng},
+    roaring::RoaringBitmap,
+};
 
 use super::assert_is_empty;
 
@@ -211,16 +217,14 @@ async fn email_tests(server: Server, client: Arc<Client>) {
 
         for mailbox in mailboxes.iter() {
             let mailbox_id = Id::from_bytes(mailbox.as_bytes()).unwrap().document_id();
-            let email_ids_in_mailbox = server
-                .get_tag(
-                    TEST_USER_ID,
-                    Collection::Email,
-                    Property::MailboxIds,
-                    mailbox_id,
-                )
-                .await
-                .unwrap()
-                .unwrap_or_default();
+            let email_ids_in_mailbox = RoaringBitmap::from_iter(
+                server
+                    .get_cached_messages(TEST_USER_ID)
+                    .await
+                    .unwrap()
+                    .in_mailbox(mailbox_id)
+                    .map(|(id, _)| id),
+            );
             let mut email_ids_check = email_ids_in_mailbox.clone();
             email_ids_check &= &email_ids;
             assert_eq!(email_ids_in_mailbox, email_ids_check);

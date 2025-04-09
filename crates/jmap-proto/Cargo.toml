@@ -15,6 +15,7 @@ ahash = { version = "0.8.2", features = ["serde"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
 hashify = "0.2"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
+compact_str = { version = "0.9.0", features = ["rkyv", "serde"] }
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

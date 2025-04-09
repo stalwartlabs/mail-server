@@ -28,6 +28,7 @@ pub mod thread;
 use std::{borrow::Cow, str::FromStr};
 
 use chrono::{DateTime, NaiveDate};
+use compact_str::CompactString;
 
 use crate::{
     Command,
@@ -111,7 +112,7 @@ impl Flag {
             if let Some(flag) = flag {
                 Ok(flag)
             } else {
-                String::from_utf8(value)
+                CompactString::from_utf8(value)
                     .map_err(|_| Cow::from("Invalid UTF-8."))
                     .map(Flag::Keyword)
             }
@@ -136,9 +137,9 @@ impl Flag {
                 "$forwarded" => Flag::Forwarded,
                 "$mdnsent" => Flag::MDNSent,
             )
-            .unwrap_or_else(|| Flag::Keyword(value))
+            .unwrap_or_else(|| Flag::Keyword(value.into()))
         } else {
-            let mut keyword = String::with_capacity(value.len());
+            let mut keyword = CompactString::with_capacity(value.len());
             for c in value.chars() {
                 if c.is_ascii_alphanumeric() {
                     keyword.push(c);

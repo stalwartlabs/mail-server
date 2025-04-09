@@ -11,6 +11,7 @@ use crate::{
     spawn_op,
 };
 use common::listener::SessionStream;
+use compact_str::CompactString;
 use directory::Permission;
 use imap_proto::{
     Command, StatusResponse,
@@ -57,7 +58,7 @@ impl<T: SessionStream> Session<T> {
                             is_rev2: self.version.is_rev2(),
                             is_lsub,
                             list_items: vec![ListItem {
-                                mailbox_name: String::new(),
+                                mailbox_name: "".into(),
                                 attributes: vec![Attribute::NoSelect],
                                 tags: vec![],
                             }],
@@ -162,7 +163,7 @@ impl<T: SessionStream> SessionData<T> {
         // Append reference name
         if !patterns.is_empty() && !reference_name.is_empty() {
             patterns.iter_mut().for_each(|item| {
-                *item = format!("{}{}", reference_name, item);
+                *item = format!("{}{}", reference_name, item).into();
             })
         }
 
@@ -177,7 +178,7 @@ impl<T: SessionStream> SessionData<T> {
                         && matches_pattern(&patterns, &self.server.core.jmap.shared_folder)
                     {
                         list_items.push(ListItem {
-                            mailbox_name: self.server.core.jmap.shared_folder.clone(),
+                            mailbox_name: self.server.core.jmap.shared_folder.as_str().into(),
                             attributes: if include_children {
                                 vec![Attribute::HasChildren, Attribute::NoSelect]
                             } else {
@@ -269,7 +270,7 @@ impl<T: SessionStream> SessionData<T> {
         if let Some(include_status) = include_status {
             for list_item in &list_items {
                 match self
-                    .status(list_item.mailbox_name.to_string(), include_status)
+                    .status(list_item.mailbox_name.clone(), include_status)
                     .await
                     .imap_ctx(&tag, trc::location!())
                 {
@@ -320,7 +321,7 @@ impl<T: SessionStream> SessionData<T> {
 }
 
 #[allow(clippy::while_let_on_iterator)]
-pub fn matches_pattern(patterns: &[String], mailbox_name: &str) -> bool {
+pub fn matches_pattern(patterns: &[CompactString], mailbox_name: &str) -> bool {
     if patterns.is_empty() {
         return true;
     }

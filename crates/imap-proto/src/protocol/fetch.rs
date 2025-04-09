@@ -6,6 +6,7 @@
 
 use std::borrow::Cow;
 
+use compact_str::CompactString;
 use mail_parser::DateTime;
 
 use super::{
@@ -15,7 +16,7 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: String,
+    pub tag: CompactString,
     pub sequence_set: Sequence,
     pub attributes: Vec<Attribute>,
     pub changed_since: Option<u64>,
@@ -68,9 +69,14 @@ pub enum Attribute {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Section {
-    Part { num: u32 },
+    Part {
+        num: u32,
+    },
     Header,
-    HeaderFields { not: bool, fields: Vec<String> },
+    HeaderFields {
+        not: bool,
+        fields: Vec<CompactString>,
+    },
     Text,
     Mime,
 }
@@ -128,10 +134,10 @@ pub enum DataItem<'x> {
         modseq: u64,
     },
     EmailId {
-        email_id: String,
+        email_id: CompactString,
     },
     ThreadId {
-        thread_id: String,
+        thread_id: CompactString,
     },
 }
 
@@ -916,6 +922,7 @@ impl ImapResponse for Response<'_> {
 #[cfg(test)]
 mod tests {
 
+    use compact_str::CompactString;
     use mail_parser::DateTime;
 
     use crate::protocol::{Flag, ImapResponse};
@@ -1363,7 +1370,7 @@ mod tests {
 
             item.serialize(&mut buf);
 
-            assert_eq!(String::from_utf8(buf).unwrap(), expected_response);
+            assert_eq!(CompactString::from_utf8(buf).unwrap(), expected_response);
         }
     }
 

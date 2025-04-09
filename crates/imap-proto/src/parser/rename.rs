@@ -58,17 +58,17 @@ mod tests {
             (
                 "A142 RENAME \"my funky mailbox\" Private\r\n",
                 rename::Arguments {
-                    mailbox_name: "my funky mailbox".to_string(),
-                    new_mailbox_name: "Private".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "my funky mailbox".into(),
+                    new_mailbox_name: "Private".into(),
+                    tag: "A142".into(),
                 },
             ),
             (
                 "A142 RENAME {1+}\r\na {1+}\r\nb\r\n",
                 rename::Arguments {
-                    mailbox_name: "a".to_string(),
-                    new_mailbox_name: "b".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "a".into(),
+                    new_mailbox_name: "b".into(),
+                    tag: "A142".into(),
                 },
             ),
         ] {

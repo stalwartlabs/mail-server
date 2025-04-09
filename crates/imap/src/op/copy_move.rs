@@ -19,10 +19,10 @@ use imap_proto::{
 };
 
 use crate::{
-    core::{SelectedMailbox, Session, SessionData},
+    core::{MailboxId, SelectedMailbox, Session, SessionData},
     spawn_op,
 };
-use common::{MailboxId, listener::SessionStream, storage::index::ObjectIndexBuilder};
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use jmap_proto::{
     error::set::SetErrorType,
     types::{acl::Acl, collection::Collection, state::StateChange, type_state::DataType},
@@ -396,9 +396,10 @@ impl<T: SessionStream> SessionData<T> {
 
         // Prepare response
         let uid_validity = self
-            .get_uid_validity(&dest_mailbox)
-            .await
-            .imap_ctx(&arguments.tag, trc::location!())?;
+            .mailbox_state(&dest_mailbox)
+            .map(|m| m.uid_validity as u32)
+            .unwrap_or_default();
+
         let mut src_uids = Vec::with_capacity(copied_ids.len());
         let mut dest_uids = Vec::with_capacity(copied_ids.len());
         for (src_uid, dest_uid) in copied_ids {

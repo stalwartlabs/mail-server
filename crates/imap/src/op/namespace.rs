@@ -30,7 +30,7 @@ impl<T: SessionStream> Session<T> {
                 .serialize(
                     Response {
                         shared_prefix: if self.state.session_data().mailboxes.lock().len() > 1 {
-                            self.server.core.jmap.shared_folder.clone().into()
+                            Some(self.server.core.jmap.shared_folder.as_str().into())
                         } else {
                             None
                         },

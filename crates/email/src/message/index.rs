@@ -592,7 +592,7 @@ impl IndexableObject for MessageData {
                     .iter()
                     .map(|k| match k.id() {
                         Ok(id) => TagValue::Id(id),
-                        Err(string) => TagValue::Text(string.into_bytes()),
+                        Err(string) => TagValue::Text(string.as_bytes().to_vec()),
                     })
                     .collect(),
             },
@@ -634,7 +634,7 @@ impl IndexableObject for &ArchivedMessageData {
                     .iter()
                     .map(|k| match k.id() {
                         Ok(id) => TagValue::Id(id),
-                        Err(string) => TagValue::Text(string.into_bytes()),
+                        Err(string) => TagValue::Text(string.as_bytes().to_vec()),
                     })
                     .collect(),
             },

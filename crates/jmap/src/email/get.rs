@@ -6,12 +6,12 @@
 
 use common::{Server, auth::AccessToken};
 
-use email::{
-    message::metadata::{
+use email::message::{
+    cache::MessageCache,
+    metadata::{
         ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageData,
         MessageMetadata,
     },
-    thread::cache::ThreadCache,
 };
 use jmap_proto::{
     method::get::{GetRequest, GetResponse},
@@ -103,25 +103,18 @@ impl EmailGet for Server {
 
         let account_id = request.account_id.document_id();
         let message_ids = self
-            .owned_or_shared_items(
-                access_token,
-                account_id,
-                Collection::Mailbox,
-                Collection::Email,
-                Property::MailboxIds,
-                Acl::ReadItems,
-            )
+            .owned_or_shared_messages(access_token, account_id, Acl::ReadItems)
             .await?;
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            self.get_cached_thread_ids(account_id)
+            self.get_cached_messages(account_id)
                 .await
                 .caused_by(trc::location!())?
-                .threads
+                .items
                 .iter()
                 .take(self.core.jmap.get_max_objects)
-                .map(|(document_id, thread_id)| Id::from_parts(*thread_id, *document_id))
+                .map(|(document_id, item)| Id::from_parts(item.thread_id, *document_id))
                 .collect()
         };
         let mut response = GetResponse {

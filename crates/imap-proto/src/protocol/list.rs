@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
+
 use crate::utf7::utf7_encode;
 
 use super::{
@@ -14,14 +16,14 @@ use super::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Arguments {
     Basic {
-        tag: String,
-        reference_name: String,
-        mailbox_name: String,
+        tag: CompactString,
+        reference_name: CompactString,
+        mailbox_name: CompactString,
     },
     Extended {
-        tag: String,
-        reference_name: String,
-        mailbox_name: Vec<String>,
+        tag: CompactString,
+        reference_name: CompactString,
+        mailbox_name: Vec<CompactString>,
         selection_options: Vec<SelectionOption>,
         return_options: Vec<ReturnOption>,
     },
@@ -80,12 +82,12 @@ pub enum ChildInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tag {
     ChildInfo(Vec<ChildInfo>),
-    OldName(String),
+    OldName(CompactString),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListItem {
-    pub mailbox_name: String,
+    pub mailbox_name: CompactString,
     pub attributes: Vec<Attribute>,
     pub tags: Vec<Tag>,
 }
@@ -106,7 +108,7 @@ impl Arguments {
         }
     }
 
-    pub fn unwrap_tag(self) -> String {
+    pub fn unwrap_tag(self) -> CompactString {
         match self {
             Arguments::Basic { tag, .. } => tag,
             Arguments::Extended { tag, .. } => tag,
@@ -194,7 +196,7 @@ impl Tag {
 }
 
 impl ListItem {
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<CompactString>) -> Self {
         ListItem {
             mailbox_name: name.into(),
             attributes: Vec::new(),
@@ -275,6 +277,8 @@ impl ImapResponse for Response {
 
 #[cfg(test)]
 mod tests {
+    use compact_str::CompactString;
+
     use crate::protocol::{
         ImapResponse,
         status::{Status, StatusItem, StatusItemType},
@@ -287,7 +291,7 @@ mod tests {
         for (response, expected_v2, expected_v1) in [
             (
                 super::ListItem {
-                    mailbox_name: "".to_string(),
+                    mailbox_name: "".into(),
                     attributes: vec![],
                     tags: vec![],
                 },
@@ -296,7 +300,7 @@ mod tests {
             ),
             (
                 super::ListItem {
-                    mailbox_name: "中國書店".to_string(),
+                    mailbox_name: "中國書店".into(),
                     attributes: vec![Attribute::NoInferiors, Attribute::Drafts],
                     tags: vec![],
                 },
@@ -308,7 +312,7 @@ mod tests {
             ),
             (
                 super::ListItem {
-                    mailbox_name: "☺".to_string(),
+                    mailbox_name: "☺".into(),
                     attributes: vec![Attribute::Subscribed, Attribute::Remote],
                     tags: vec![Tag::ChildInfo(vec![ChildInfo::Subscribed])],
                 },
@@ -323,7 +327,7 @@ mod tests {
             ),
             (
                 super::ListItem {
-                    mailbox_name: "foo".to_string(),
+                    mailbox_name: "foo".into(),
                     attributes: vec![Attribute::HasNoChildren],
                     tags: vec![Tag::ChildInfo(vec![ChildInfo::Subscribed])],
                 },
@@ -337,8 +341,8 @@ mod tests {
             response.serialize(&mut buf_1, false, false);
             response.serialize(&mut buf_2, true, false);
 
-            let response_v1 = String::from_utf8(buf_1).unwrap();
-            let response_v2 = String::from_utf8(buf_2).unwrap();
+            let response_v1 = CompactString::from_utf8(buf_1).unwrap();
+            let response_v2 = CompactString::from_utf8(buf_2).unwrap();
 
             assert_eq!(response_v2, expected_v2);
             assert_eq!(response_v1, expected_v1);
@@ -350,23 +354,23 @@ mod tests {
         let mut response = super::Response {
             list_items: vec![
                 ListItem {
-                    mailbox_name: "INBOX".to_string(),
+                    mailbox_name: "INBOX".into(),
                     attributes: vec![Attribute::Subscribed],
                     tags: vec![],
                 },
                 ListItem {
-                    mailbox_name: "foo".to_string(),
+                    mailbox_name: "foo".into(),
                     attributes: vec![],
                     tags: vec![Tag::ChildInfo(vec![ChildInfo::Subscribed])],
                 },
             ],
             status_items: vec![
                 StatusItem {
-                    mailbox_name: "INBOX".to_string(),
+                    mailbox_name: "INBOX".into(),
                     items: vec![(Status::Messages, StatusItemType::Number(17))],
                 },
                 StatusItem {
-                    mailbox_name: "foo".to_string(),
+                    mailbox_name: "foo".into(),
                     items: vec![
                         (Status::Messages, StatusItemType::Number(30)),
                         (Status::Unseen, StatusItemType::Number(29)),
@@ -387,11 +391,11 @@ mod tests {
             "* LSUB () \"/\" \"foo\" (\"CHILDINFO\" (\"SUBSCRIBED\"))\r\n",
         );
 
-        let response_v2 = String::from_utf8(response.clone().serialize()).unwrap();
+        let response_v2 = CompactString::from_utf8(response.clone().serialize()).unwrap();
         response.is_rev2 = false;
         response.is_lsub = true;
         response.status_items.clear();
-        let response_v1 = String::from_utf8(response.serialize()).unwrap();
+        let response_v1 = CompactString::from_utf8(response.serialize()).unwrap();
 
         assert_eq!(response_v2, expected_v2);
         assert_eq!(response_v1, expected_v1);

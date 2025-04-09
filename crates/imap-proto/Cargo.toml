@@ -12,6 +12,7 @@ ahash = { version = "0.8" }
 chrono = { version = "0.4"}
 trc = { path = "../trc" }
 hashify = { version = "0.2" }
+compact_str = "0.9.0"
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

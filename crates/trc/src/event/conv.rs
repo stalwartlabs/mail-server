@@ -6,6 +6,7 @@
 
 use std::{borrow::Cow, fmt::Debug, str::FromStr, time::Duration};
 
+use compact_str::CompactString;
 use mail_auth::common::verify::VerifySignature;
 
 use crate::*;
@@ -25,6 +26,12 @@ impl From<&'static str> for Value {
 impl From<String> for Value {
     fn from(value: String) -> Self {
         Self::String(value)
+    }
+}
+
+impl From<CompactString> for Value {
+    fn from(value: CompactString) -> Self {
+        Self::String(value.to_string())
     }
 }
 

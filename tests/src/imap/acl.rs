@@ -50,10 +50,10 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     imap_jane
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_contains("Shared Folders/support@example.com/Inbox");
+        .assert_contains("Shared Folders/support@example.com/INBOX");
 
     imap_jane
-        .send("SELECT \"Shared Folders/support@example.com/Inbox\"")
+        .send("SELECT \"Shared Folders/support@example.com/INBOX\"")
         .await;
     imap_jane.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap_jane.send("FETCH 1 (PREVIEW)").await;
@@ -89,7 +89,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
         .await
         .assert_equals("* LIST (\\NoSelect) \"/\" \"Shared Folders\"")
         .assert_equals("* LIST (\\NoSelect) \"/\" \"Shared Folders/jane.smith@example.com\"")
-        .assert_equals("* LIST () \"/\" \"Shared Folders/jane.smith@example.com/Inbox\"");
+        .assert_equals("* LIST () \"/\" \"Shared Folders/jane.smith@example.com/INBOX\"");
 
     // Grant access to Bill and check ACLs
     imap_jane.send("GETACL INBOX").await;
@@ -114,7 +114,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     imap_bill
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_contains("Shared Folders/jane.smith@example.com/Inbox");
+        .assert_contains("Shared Folders/jane.smith@example.com/INBOX");
 
     // Namespace should now return the Shared Folders namespace
     imap_john.send("NAMESPACE").await;
@@ -125,17 +125,17 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
 
     // List John's right on Jane's Inbox
     imap_john
-        .send("MYRIGHTS \"Shared Folders/jane.smith@example.com/Inbox\"")
+        .send("MYRIGHTS \"Shared Folders/jane.smith@example.com/INBOX\"")
         .await;
     imap_john
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_equals("* MYRIGHTS \"Shared Folders/jane.smith@example.com/Inbox\" rl");
+        .assert_equals("* MYRIGHTS \"Shared Folders/jane.smith@example.com/INBOX\" rl");
 
     // John should not be able to append messages
     assert_append_message(
         imap_john,
-        "Shared Folders/jane.smith@example.com/Inbox",
+        "Shared Folders/jane.smith@example.com/INBOX",
         "From: john\n\ncontents",
         ResponseType::No,
     )
@@ -146,15 +146,15 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     imap_jane.send("SETACL INBOX jdoe@example.com +i").await;
     imap_jane.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap_john
-        .send("MYRIGHTS \"Shared Folders/jane.smith@example.com/Inbox\"")
+        .send("MYRIGHTS \"Shared Folders/jane.smith@example.com/INBOX\"")
         .await;
     imap_john
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_equals("* MYRIGHTS \"Shared Folders/jane.smith@example.com/Inbox\" rli");
+        .assert_equals("* MYRIGHTS \"Shared Folders/jane.smith@example.com/INBOX\" rli");
     assert_append_message(
         imap_john,
-        "Shared Folders/jane.smith@example.com/Inbox",
+        "Shared Folders/jane.smith@example.com/INBOX",
         "From: john\n\ncontents",
         ResponseType::Ok,
     )
@@ -162,7 +162,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
 
     // Only Bill should be allowed to delete messages on Jane's Inbox
     for imap in [&mut imap_john, &mut imap_bill] {
-        imap.send("SELECT \"Shared Folders/jane.smith@example.com/Inbox\"")
+        imap.send("SELECT \"Shared Folders/jane.smith@example.com/INBOX\"")
             .await;
         imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     }
@@ -191,7 +191,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
         .assert_count("contents", 0);
 
     imap_bill
-        .send("STATUS \"Shared Folders/jane.smith@example.com/Inbox\" (MESSAGES)")
+        .send("STATUS \"Shared Folders/jane.smith@example.com/INBOX\" (MESSAGES)")
         .await;
     imap_bill
         .assert_read(Type::Tagged, ResponseType::Ok)
@@ -214,7 +214,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     // Copy from John's Inbox to Jane's Inbox
     imap_john
         .send(&format!(
-            "UID COPY {} \"Shared Folders/jane.smith@example.com/Inbox\"",
+            "UID COPY {} \"Shared Folders/jane.smith@example.com/INBOX\"",
             uid
         ))
         .await;

@@ -63,8 +63,8 @@ mod tests {
         let (command, arguments) = (
             "A142 GETQUOTAROOT INBOX\r\n",
             quota::Arguments {
-                name: "INBOX".to_string(),
-                tag: "A142".to_string(),
+                name: "INBOX".into(),
+                tag: "A142".into(),
             },
         );
         assert_eq!(
@@ -79,8 +79,8 @@ mod tests {
         let (command, arguments) = (
             "A142 GETQUOTA \"my funky mailbox\"\r\n",
             quota::Arguments {
-                name: "my funky mailbox".to_string(),
-                tag: "A142".to_string(),
+                name: "my funky mailbox".into(),
+                tag: "A142".into(),
             },
         );
         assert_eq!(

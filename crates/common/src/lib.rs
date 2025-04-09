@@ -17,10 +17,11 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use auth::{AccessToken, oauth::config::OAuthConfig, roles::RolePermissions};
+use compact_str::CompactString;
 use config::{
     dav::DavConfig,
     imap::ImapConfig,
-    jmap::settings::JmapConfig,
+    jmap::settings::{JmapConfig, SpecialUse},
     network::Network,
     scripts::Scripting,
     smtp::{
@@ -32,9 +33,8 @@ use config::{
     telemetry::Metrics,
 };
 
-use imap_proto::protocol::list::Attribute;
-use indexmap::IndexMap;
 use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
+use jmap_proto::types::keyword::Keyword;
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 
 use mail_auth::{MX, Txt};
@@ -43,6 +43,7 @@ use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
 use store::roaring::RoaringBitmap;
+use tinyvec::TinyVec;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
 use utils::{
@@ -144,9 +145,8 @@ pub struct Caches {
     pub http_auth: Cache<String, HttpAuthCache>,
     pub permissions: Cache<u32, Arc<RolePermissions>>,
 
-    pub account: Cache<AccountId, Arc<Account>>,
-    pub mailbox: Cache<MailboxId, Arc<MailboxState>>,
-    pub threads: Cache<u32, Arc<Threads>>,
+    pub messages: Cache<u32, CacheSwap<MessageStoreCache<MessageItemCache>>>,
+    pub mailboxes: Cache<u32, CacheSwap<MessageStoreCache<MailboxCache>>>,
     pub dav: Cache<DavResourceId, Arc<DavResources>>,
 
     pub bayes: CacheWithTtl<TokenHash, Weights>,
@@ -159,6 +159,41 @@ pub struct Caches {
     pub dns_tlsa: CacheWithTtl<String, Arc<Tlsa>>,
     pub dbs_mta_sts: CacheWithTtl<String, Arc<Policy>>,
     pub dns_rbl: CacheWithTtl<String, Option<Arc<IpResolver>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheSwap<T>(pub Arc<ArcSwap<T>>);
+
+#[derive(Debug, Clone)]
+pub struct MessageStoreCache<T> {
+    pub change_id: u64,
+    pub items: AHashMap<u32, T>,
+    pub update_lock: Arc<Semaphore>,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageItemCache {
+    pub mailboxes: TinyVec<[MessageUidCache; 2]>,
+    pub keywords: TinyVec<[Keyword; 2]>,
+    pub thread_id: u32,
+    pub change_id: u64,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MessageUidCache {
+    pub mailbox_id: u32,
+    pub uid: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct MailboxCache {
+    pub name: CompactString,
+    pub path: CompactString,
+    pub role: SpecialUse,
+    pub parent_id: Option<u32>,
+    pub subscribers: TinyVec<[u32; 4]>,
+    pub uid_validity: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -179,74 +214,6 @@ pub struct Ipc {
 pub struct TlsConnectors {
     pub pki_verify: TlsConnector,
     pub dummy_verify: TlsConnector,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct AccountId {
-    pub account_id: u32,
-    pub primary_id: u32,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct MailboxId {
-    pub account_id: u32,
-    pub mailbox_id: u32,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Account {
-    pub account_id: u32,
-    pub prefix: Option<String>,
-    pub mailbox_names: IndexMap<String, u32>,
-    pub mailbox_state: AHashMap<u32, Mailbox>,
-    pub state_email: Option<u64>,
-    pub state_mailbox: Option<u64>,
-    pub obj_size: u64,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Mailbox {
-    pub has_children: bool,
-    pub is_subscribed: bool,
-    pub special_use: Option<Attribute>,
-    pub total_messages: Option<u64>,
-    pub total_unseen: Option<u64>,
-    pub total_deleted: Option<u64>,
-    pub total_deleted_storage: Option<u64>,
-    pub uid_validity: Option<u64>,
-    pub uid_next: Option<u64>,
-    pub size: Option<u64>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct MailboxState {
-    pub uid_next: u32,
-    pub uid_validity: u32,
-    pub uid_max: u32,
-    pub id_to_imap: AHashMap<u32, ImapId>,
-    pub uid_to_id: AHashMap<u32, u32>,
-    pub total_messages: usize,
-    pub modseq: Option<u64>,
-    pub next_state: Option<Box<NextMailboxState>>,
-    pub obj_size: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct NextMailboxState {
-    pub next_state: MailboxState,
-    pub deletions: Vec<ImapId>,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ImapId {
-    pub uid: u32,
-    pub seqnum: u32,
-}
-
-#[derive(Debug, Default)]
-pub struct Threads {
-    pub threads: AHashMap<u32, u32>,
-    pub modseq: Option<u64>,
 }
 
 pub struct NameWrapper(pub String);
@@ -291,39 +258,21 @@ pub struct Core {
     pub enterprise: Option<enterprise::Enterprise>,
 }
 
-impl CacheItemWeight for AccountId {
-    fn weight(&self) -> u64 {
-        std::mem::size_of::<AccountId>() as u64
-    }
-}
-
-impl CacheItemWeight for MailboxId {
-    fn weight(&self) -> u64 {
-        std::mem::size_of::<MailboxId>() as u64
-    }
-}
-
 impl CacheItemWeight for DavResourceId {
     fn weight(&self) -> u64 {
         std::mem::size_of::<DavResourceId>() as u64
     }
 }
 
-impl CacheItemWeight for Threads {
+impl<T: CacheItemWeight> CacheItemWeight for CacheSwap<T> {
     fn weight(&self) -> u64 {
-        ((self.threads.len() + 2) * std::mem::size_of::<Threads>()) as u64
+        std::mem::size_of::<CacheSwap<T>>() as u64 + self.0.load().weight()
     }
 }
 
-impl CacheItemWeight for MailboxState {
+impl<T> CacheItemWeight for MessageStoreCache<T> {
     fn weight(&self) -> u64 {
-        self.obj_size
-    }
-}
-
-impl CacheItemWeight for Account {
-    fn weight(&self) -> u64 {
-        self.obj_size
+        self.size
     }
 }
 
@@ -336,20 +285,6 @@ impl CacheItemWeight for HttpAuthCache {
 impl CacheItemWeight for DavResources {
     fn weight(&self) -> u64 {
         self.size
-    }
-}
-
-impl MailboxState {
-    pub fn calculate_weight(&self) -> u64 {
-        std::mem::size_of::<MailboxState>() as u64
-            + (self.id_to_imap.len() * std::mem::size_of::<ImapId>() + std::mem::size_of::<u32>())
-                as u64
-            + (self.uid_to_id.len() * std::mem::size_of::<u64>()) as u64
-            + self.next_state.as_ref().map_or(0, |n| {
-                std::mem::size_of::<NextMailboxState>() as u64
-                    + (n.deletions.len() * std::mem::size_of::<ImapId>()) as u64
-                    + n.next_state.calculate_weight()
-            })
     }
 }
 
@@ -451,9 +386,8 @@ impl Default for Caches {
             access_tokens: Cache::new(1024, 10 * 1024 * 1024),
             http_auth: Cache::new(1024, 10 * 1024 * 1024),
             permissions: Cache::new(1024, 10 * 1024 * 1024),
-            account: Cache::new(1024, 10 * 1024 * 1024),
-            mailbox: Cache::new(1024, 10 * 1024 * 1024),
-            threads: Cache::new(1024, 10 * 1024 * 1024),
+            mailboxes: Cache::new(1024, 10 * 1024 * 1024),
+            messages: Cache::new(1024, 25 * 1024 * 1024),
             dav: Cache::new(1024, 10 * 1024 * 1024),
             bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_rbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
@@ -579,25 +513,25 @@ impl std::borrow::Borrow<u32> for DavResource {
     }
 }
 
-impl Threads {
+impl MessageStoreCache<MessageItemCache> {
     pub fn assign_thread_id(&self, thread_name: &[u8], message_id: &[u8]) -> u32 {
         let mut bytes = Vec::with_capacity(thread_name.len() + message_id.len());
         bytes.extend_from_slice(thread_name);
         bytes.extend_from_slice(message_id);
         let mut hash = store::gxhash::gxhash32(&bytes, 791120);
 
-        if self.threads.is_empty() {
+        if self.items.is_empty() {
             return hash;
         }
 
         // Naive pass, assume hash is unique
         let mut threads_ids = RoaringBitmap::new();
         let mut is_unique_hash = true;
-        for &thread_id in self.threads.keys() {
-            if is_unique_hash && thread_id != hash {
+        for item in self.items.values() {
+            if is_unique_hash && item.thread_id != hash {
                 is_unique_hash = false;
             }
-            threads_ids.insert(thread_id);
+            threads_ids.insert(item.thread_id);
         }
 
         if is_unique_hash {
@@ -610,5 +544,19 @@ impl Threads {
                 }
             }
         }
+    }
+}
+
+impl<T> CacheSwap<T> {
+    pub fn new(value: Arc<T>) -> Self {
+        Self(Arc::new(ArcSwap::new(value)))
+    }
+
+    pub fn load_full(&self) -> Arc<T> {
+        self.0.load_full()
+    }
+
+    pub fn update(&self, value: Arc<T>) {
+        self.0.store(value);
     }
 }

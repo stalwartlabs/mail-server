@@ -87,15 +87,15 @@ mod tests {
                 thread::Arguments {
                     algorithm: Algorithm::OrderedSubject,
                     filter: vec![Filter::Since(952214400)],
-                    tag: "A283".to_string(),
+                    tag: "A283".into(),
                 },
             ),
             (
                 b"A284 THREAD REFERENCES US-ASCII TEXT \"gewp\"\r\n".to_vec(),
                 thread::Arguments {
                     algorithm: Algorithm::References,
-                    filter: vec![Filter::Text("gewp".to_string())],
-                    tag: "A284".to_string(),
+                    filter: vec![Filter::Text("gewp".into())],
+                    tag: "A284".into(),
                 },
             ),
         ] {

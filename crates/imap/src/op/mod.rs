@@ -51,9 +51,9 @@ impl FromModSeq for Query {
     }
 }
 
-impl ToModSeq for Option<u64> {
+impl ToModSeq for u64 {
     fn to_modseq(&self) -> u64 {
-        self.map(|modseq| modseq + 1).unwrap_or(0)
+        if *self > 0 { *self + 1 } else { 0 }
     }
 }
 

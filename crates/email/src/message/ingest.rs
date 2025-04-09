@@ -45,14 +45,15 @@ use trc::{AddContext, MessageIngestEvent};
 use crate::{
     mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
     message::{
+        cache::MessageCache,
         crypto::EncryptionParams,
         index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
         metadata::MessageData,
     },
-    thread::cache::ThreadCache,
 };
 
 use super::{
+    cache::MessageCacheAccess,
     crypto::{EncryptMessage, EncryptMessageError},
     index::{MAX_SORT_FIELD_LENGTH, TrimTextValue},
 };
@@ -334,7 +335,7 @@ impl EmailIngest for Server {
                 ThreadResult::Id(thread_id) => thread_id,
                 ThreadResult::Create => {
                     log_thread_create = true;
-                    self.get_cached_thread_ids(account_id)
+                    self.get_cached_messages(account_id)
                         .await
                         .caused_by(trc::location!())?
                         .assign_thread_id(
@@ -722,39 +723,32 @@ impl EmailIngest for Server {
                 return Ok(ThreadResult::Create);
             }
 
+            // Fetch cached messages
+            let cache = self
+                .get_cached_messages(account_id)
+                .await
+                .caused_by(trc::location!())?;
+
             // Skip duplicate messages
-            if !found_message_id.is_empty() {
-                if let Some(ids) = self
-                    .get_tag(
-                        account_id,
-                        Collection::Email,
-                        Property::MailboxIds,
-                        skip_duplicate.unwrap().1,
-                    )
-                    .await
-                    .caused_by(trc::location!())?
-                {
-                    if found_message_id.iter().any(|id| ids.contains(*id)) {
-                        return Ok(ThreadResult::Skip);
-                    }
-                }
+            if !found_message_id.is_empty()
+                && cache
+                    .in_mailbox(skip_duplicate.unwrap().1)
+                    .any(|(id, _)| found_message_id.contains(id))
+            {
+                return Ok(ThreadResult::Skip);
             }
 
             // Find the most common threadId
             let mut thread_counts = AHashMap::<u32, u32>::with_capacity(16);
             let mut thread_id = u32::MAX;
             let mut thread_count = 0;
-            let thread_cache = self
-                .get_cached_thread_ids(account_id)
-                .await
-                .caused_by(trc::location!())?;
-            for (document_id, thread_id_) in thread_cache.threads.iter() {
+            for (document_id, item) in &cache.items {
                 if results.contains(*document_id) {
-                    let tc = thread_counts.entry(*thread_id_).or_default();
+                    let tc = thread_counts.entry(item.thread_id).or_default();
                     *tc += 1;
                     if *tc > thread_count {
                         thread_count = *tc;
-                        thread_id = *thread_id_;
+                        thread_id = item.thread_id;
                     }
                 }
             }
@@ -779,8 +773,8 @@ impl EmailIngest for Server {
             // Move messages to the new threadId
             batch.with_collection(Collection::Email);
 
-            for (&document_id, &old_thread_id) in &thread_cache.threads {
-                if thread_id == old_thread_id || !thread_counts.contains_key(&old_thread_id) {
+            for (&document_id, item) in &cache.items {
+                if thread_id == item.thread_id || !thread_counts.contains_key(&item.thread_id) {
                     continue;
                 }
                 if let Some(data_) = self
@@ -791,7 +785,7 @@ impl EmailIngest for Server {
                     let data = data_
                         .to_unarchived::<MessageData>()
                         .caused_by(trc::location!())?;
-                    if data.inner.thread_id != old_thread_id {
+                    if data.inner.thread_id != item.thread_id {
                         continue;
                     }
                     let mut new_data = data.deserialize().caused_by(trc::location!())?;

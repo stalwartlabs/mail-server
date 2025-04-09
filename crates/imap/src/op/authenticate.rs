@@ -11,6 +11,7 @@ use common::{
     },
     listener::{SessionStream, limiter::LimiterResult},
 };
+use compact_str::CompactString;
 use directory::Permission;
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
@@ -73,7 +74,7 @@ impl<T: SessionStream> Session<T> {
     pub async fn authenticate(
         &mut self,
         credentials: Credentials<String>,
-        tag: String,
+        tag: CompactString,
     ) -> trc::Result<()> {
         // Authenticate
         let access_token = self

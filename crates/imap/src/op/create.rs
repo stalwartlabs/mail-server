@@ -12,9 +12,9 @@ use crate::{
     spawn_op,
 };
 use common::{
-    Account, Mailbox, config::jmap::settings::SpecialUse, listener::SessionStream,
-    storage::index::ObjectIndexBuilder,
+    config::jmap::settings::SpecialUse, listener::SessionStream, storage::index::ObjectIndexBuilder,
 };
+use compact_str::CompactString;
 use directory::Permission;
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
@@ -63,7 +63,7 @@ impl<T: SessionStream> SessionData<T> {
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Validate mailbox name
-        let mut params = self
+        let params = self
             .validate_mailbox_create(&arguments.mailbox_name, arguments.mailbox_role)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
@@ -72,7 +72,6 @@ impl<T: SessionStream> SessionData<T> {
         // Build batch
         let mut parent_id = params.parent_mailbox_id.map(|id| id + 1).unwrap_or(0);
         let mut create_ids = Vec::with_capacity(params.path.len());
-        let mut change_id = 0;
         let mut next_document_id = self
             .server
             .store()
@@ -94,7 +93,6 @@ impl<T: SessionStream> SessionData<T> {
             }
             let mailbox_id = next_document_id;
             next_document_id -= 1;
-            change_id = batch.change_id();
             batch
                 .with_account_id(params.account_id)
                 .with_collection(Collection::Mailbox)
@@ -123,105 +121,12 @@ impl<T: SessionStream> SessionData<T> {
             Elapsed = op_start.elapsed()
         );
 
-        // Add created mailboxes to session
-        std::mem::drop(
-            self.add_created_mailboxes(&mut params, change_id, create_ids)
-                .imap_ctx(&arguments.tag, trc::location!())?,
-        );
-
         // Build response
         Ok(StatusResponse::ok("Mailbox created.")
             .with_code(ResponseCode::MailboxId {
                 mailbox_id: Id::from_parts(params.account_id, parent_id - 1).to_string(),
             })
             .with_tag(arguments.tag))
-    }
-
-    pub fn add_created_mailboxes(
-        &self,
-        params: &mut CreateParams<'_>,
-        new_state: u64,
-        mailbox_ids: Vec<u32>,
-    ) -> trc::Result<parking_lot::MutexGuard<'_, Vec<Account>>> {
-        // Lock mailboxes
-        let mut mailboxes = self.mailboxes.lock();
-        let account = if let Some(account) = mailboxes
-            .iter_mut()
-            .find(|account| account.account_id == params.account_id)
-        {
-            account
-        } else {
-            return Err(trc::ImapEvent::Error
-                .into_err()
-                .details("Account no longer available.")
-                .caused_by(trc::location!()));
-        };
-
-        // Update state
-        account.state_mailbox = new_state.into();
-
-        // Add mailboxes
-        let mut mailbox_name = if let Some(parent_mailbox_name) = params.parent_mailbox_name.take()
-        {
-            if let Some(parent_mailbox) = account
-                .mailbox_state
-                .get_mut(params.parent_mailbox_id.as_ref().unwrap())
-            {
-                parent_mailbox.has_children = true;
-            }
-            parent_mailbox_name
-        } else if let Some(account_prefix) = account.prefix.as_ref() {
-            account_prefix.to_string()
-        } else {
-            "".to_string()
-        };
-
-        for (pos, (mailbox_id, path_item)) in
-            mailbox_ids.into_iter().zip(params.path.iter()).enumerate()
-        {
-            mailbox_name = if !mailbox_name.is_empty() {
-                format!("{}/{}", mailbox_name, path_item)
-            } else {
-                path_item.to_string()
-            };
-
-            let effective_id = self
-                .server
-                .core
-                .jmap
-                .default_folders
-                .iter()
-                .find(|f| f.aliases.iter().any(|a| a == &mailbox_name))
-                .and_then(|f| account.mailbox_names.get(&f.name))
-                .copied()
-                .unwrap_or(mailbox_id);
-
-            account
-                .mailbox_names
-                .insert(mailbox_name.clone(), effective_id);
-
-            account.mailbox_state.insert(
-                mailbox_id,
-                Mailbox {
-                    has_children: pos < params.path.len() - 1 || params.is_rename,
-                    is_subscribed: false,
-                    total_messages: 0.into(),
-                    total_unseen: 0.into(),
-                    total_deleted: 0.into(),
-                    total_deleted_storage: 0.into(),
-                    uid_validity: None,
-                    uid_next: None,
-                    size: 0.into(),
-                    special_use: if pos == params.path.len() - 1 {
-                        params.special_use
-                    } else {
-                        None
-                    },
-                },
-            );
-        }
-
-        Ok(mailboxes)
     }
 
     pub async fn validate_mailbox_create<'x>(
@@ -271,7 +176,7 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Validate special folders
-        let full_path = path.join("/");
+        let full_path: CompactString = path.join("/").into();
         let mut parent_mailbox_id = None;
         let mut parent_mailbox_name = None;
         let (account_id, path) = {
@@ -284,7 +189,11 @@ impl<T: SessionStream> SessionData<T> {
                         .details("Mailboxes under root shared folders are not allowed.")
                         .code(ResponseCode::Cannot));
                 }
-                let prefix = Some(format!("{}/{}", path.remove(0), path.remove(0)));
+                let prefix = Some(CompactString::from(format!(
+                    "{}/{}",
+                    path.remove(0),
+                    path.remove(0)
+                )));
 
                 // Locate account
                 if let Some(account) = mailboxes
@@ -322,7 +231,7 @@ impl<T: SessionStream> SessionData<T> {
                 if path.len() > 1 {
                     let mut create_path = Vec::with_capacity(path.len());
                     while !path.is_empty() {
-                        let mailbox_name = path.join("/");
+                        let mailbox_name: CompactString = path.join("/").into();
                         if let Some(&mailbox_id) = account.mailbox_names.get(&mailbox_name) {
                             parent_mailbox_id = mailbox_id.into();
                             parent_mailbox_name = mailbox_name.into();
@@ -403,9 +312,9 @@ impl<T: SessionStream> SessionData<T> {
 pub struct CreateParams<'x> {
     pub account_id: u32,
     pub path: Vec<&'x str>,
-    pub full_path: String,
+    pub full_path: CompactString,
     pub parent_mailbox_id: Option<u32>,
-    pub parent_mailbox_name: Option<String>,
+    pub parent_mailbox_name: Option<CompactString>,
     pub special_use: Option<Attribute>,
     pub is_rename: bool,
 }

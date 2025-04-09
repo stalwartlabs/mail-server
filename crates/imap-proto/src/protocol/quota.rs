@@ -4,16 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
+
 use super::{ImapResponse, capability::QuotaResourceName, quoted_string};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: String,
-    pub name: String,
+    pub tag: CompactString,
+    pub name: CompactString,
 }
 
 pub struct QuotaItem {
-    pub name: String,
+    pub name: CompactString,
     pub resources: Vec<QuotaResource>,
 }
 
@@ -24,7 +26,7 @@ pub struct QuotaResource {
 }
 
 pub struct Response {
-    pub quota_root_items: Vec<String>,
+    pub quota_root_items: Vec<CompactString>,
     pub quota_items: Vec<QuotaItem>,
 }
 
@@ -88,7 +90,7 @@ mod tests {
         for (response, expected) in [
             (
                 super::Response {
-                    quota_root_items: vec!["INBOX".to_string(), "#test".to_string()],
+                    quota_root_items: vec!["INBOX".into(), "#test".into()],
                     quota_items: vec![],
                 },
                 "* QUOTAROOT \"INBOX\" \"#test\"\r\n",
@@ -97,7 +99,7 @@ mod tests {
                 super::Response {
                     quota_root_items: vec![],
                     quota_items: vec![QuotaItem {
-                        name: "INBOX".to_string(),
+                        name: "INBOX".into(),
                         resources: vec![QuotaResource {
                             resource: QuotaResourceName::Storage,
                             total: 1073741824,
@@ -109,9 +111,9 @@ mod tests {
             ),
             (
                 super::Response {
-                    quota_root_items: vec!["my mailbox".to_string(), "".to_string()],
+                    quota_root_items: vec!["my mailbox".into(), "".into()],
                     quota_items: vec![QuotaItem {
-                        name: "INBOX".to_string(),
+                        name: "INBOX".into(),
                         resources: vec![
                             QuotaResource {
                                 resource: QuotaResourceName::Storage,

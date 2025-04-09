@@ -152,14 +152,17 @@ impl Request<Command> {
                             _ => {
                                 return Err(bad(
                                     self.tag,
-                                    format!("Unexpected value '{}'.", token),
+                                    format!("Unexpected value '{}'.", token.to_string()),
                                 ));
                             }
                         }
                     }
                 }
                 Some(token) => {
-                    return Err(bad(self.tag, format!("Unexpected value '{}'.", token)));
+                    return Err(bad(
+                        self.tag,
+                        format!("Unexpected value '{}'.", token.to_string()),
+                    ));
                 }
                 None => (),
             }
@@ -194,8 +197,8 @@ mod tests {
             (
                 "A142 SELECT INBOX\r\n",
                 select::Arguments {
-                    mailbox_name: "INBOX".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "INBOX".into(),
+                    tag: "A142".into(),
                     condstore: false,
                     qresync: None,
                 },
@@ -203,8 +206,8 @@ mod tests {
             (
                 "A142 SELECT \"my funky mailbox\"\r\n",
                 select::Arguments {
-                    mailbox_name: "my funky mailbox".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "my funky mailbox".into(),
+                    tag: "A142".into(),
                     condstore: false,
                     qresync: None,
                 },
@@ -212,8 +215,8 @@ mod tests {
             (
                 "A142 SELECT INBOX (CONDSTORE)\r\n",
                 select::Arguments {
-                    mailbox_name: "INBOX".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "INBOX".into(),
+                    tag: "A142".into(),
                     condstore: true,
                     qresync: None,
                 },
@@ -221,8 +224,8 @@ mod tests {
             (
                 "A142 SELECT INBOX (QRESYNC (3857529045 20010715194032001 1:198))\r\n",
                 select::Arguments {
-                    mailbox_name: "INBOX".to_string(),
-                    tag: "A142".to_string(),
+                    mailbox_name: "INBOX".into(),
+                    tag: "A142".into(),
                     condstore: false,
                     qresync: QResync {
                         uid_validity: 3857529045,
@@ -242,8 +245,8 @@ mod tests {
                     "41:211,214:541) CONDSTORE)\r\n"
                 ),
                 select::Arguments {
-                    mailbox_name: "INBOX".to_string(),
-                    tag: "A03".to_string(),
+                    mailbox_name: "INBOX".into(),
+                    tag: "A03".into(),
                     condstore: true,
                     qresync: QResync {
                         uid_validity: 67890007,
@@ -273,8 +276,8 @@ mod tests {
                     "29994,29997)))\r\n"
                 ),
                 select::Arguments {
-                    mailbox_name: "INBOX".to_string(),
-                    tag: "B04".to_string(),
+                    mailbox_name: "INBOX".into(),
+                    tag: "B04".into(),
                     condstore: false,
                     qresync: QResync {
                         uid_validity: 67890007,
@@ -320,8 +323,8 @@ mod tests {
             (
                 "A12 SELECT \"INBOX\" (QRESYNC (1693237464 16582))\r\n",
                 select::Arguments {
-                    mailbox_name: "INBOX".to_string(),
-                    tag: "A12".to_string(),
+                    mailbox_name: "INBOX".into(),
+                    tag: "A12".into(),
                     condstore: false,
                     qresync: QResync {
                         uid_validity: 1693237464,

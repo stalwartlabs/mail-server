@@ -7,7 +7,7 @@
 use std::{sync::Arc, time::Instant};
 
 use common::{
-    MailboxId, auth::AccessToken, listener::SessionStream, sharing::EffectiveAcl,
+    auth::AccessToken, listener::SessionStream, sharing::EffectiveAcl,
     storage::index::ObjectIndexBuilder,
 };
 use directory::{
@@ -28,7 +28,7 @@ use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    core::{Session, SessionData, State},
+    core::{MailboxId, Session, SessionData, State},
     op::ImapContext,
     spawn_op,
 };
@@ -104,7 +104,7 @@ impl<T: SessionStream> Session<T> {
                         }
                     }
 
-                    permissions.push((account_name, rights));
+                    permissions.push((account_name.into(), rights));
                 }
             }
 

@@ -5,7 +5,7 @@
  */
 
 use common::Server;
-use email::thread::cache::ThreadCache;
+use email::message::cache::MessageCache;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{collection::Collection, id::Id, property::Property, value::Object},
@@ -34,14 +34,14 @@ impl ThreadGet for Server {
     ) -> trc::Result<GetResponse> {
         let account_id = request.account_id.document_id();
         let mut thread_map: AHashMap<u32, RoaringBitmap> = AHashMap::with_capacity(32);
-        for (document_id, thread_id) in &self
-            .get_cached_thread_ids(account_id)
+        for (document_id, item) in &self
+            .get_cached_messages(account_id)
             .await
             .caused_by(trc::location!())?
-            .threads
+            .items
         {
             thread_map
-                .entry(*thread_id)
+                .entry(item.thread_id)
                 .or_default()
                 .insert(*document_id);
         }

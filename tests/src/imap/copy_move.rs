@@ -18,7 +18,7 @@ pub async fn test(_imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap_check
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_contains("\"INBOX\" (UIDNEXT 11 MESSAGES 10 UNSEEN 10 SIZE 12193 RECENT 0)");
+        .assert_contains("\"INBOX\" (UIDNEXT 11 MESSAGES 10 UNSEEN 10 RECENT 0 SIZE 12193)");
 
     // Select INBOX
     imap_check.send("SELECT INBOX").await;

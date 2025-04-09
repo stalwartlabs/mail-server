@@ -64,8 +64,8 @@ mod tests {
                     start: 2.into(),
                     end: 4.into(),
                 },
-                mailbox_name: "MEETING".to_string(),
-                tag: "A003".to_string(),
+                mailbox_name: "MEETING".into(),
+                tag: "A003".into(),
             }
         );
         assert_eq!(
@@ -79,8 +79,8 @@ mod tests {
                     start: 2.into(),
                     end: 4.into(),
                 },
-                mailbox_name: "You & Me".to_string(),
-                tag: "A003".to_string(),
+                mailbox_name: "You & Me".into(),
+                tag: "A003".into(),
             }
         );
     }
