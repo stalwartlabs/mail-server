@@ -7,8 +7,11 @@
 use common::{Server, auth::AccessToken};
 
 use email::{
-    mailbox::cache::MessageMailboxCache,
-    message::{cache::MessageCache, copy::EmailCopy},
+    mailbox::cache::{MailboxCacheAccess, MessageMailboxCache},
+    message::{
+        cache::{MessageCache, MessageCacheAccess},
+        copy::EmailCopy,
+    },
 };
 use http_proto::HttpSessionData;
 use jmap_proto::{
@@ -32,6 +35,7 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
+use trc::AddContext;
 
 use crate::changes::state::StateManager;
 use std::future::Future;
@@ -76,13 +80,28 @@ impl JmapEmailCopy for Server {
             state_change: None,
         };
 
-        let from_message_ids = self
-            .owned_or_shared_messages(access_token, from_account_id, Acl::ReadItems)
-            .await?;
-        let mailbox_ids = self.get_cached_mailboxes(account_id).await?;
+        let from_cached_messages = self
+            .get_cached_messages(from_account_id)
+            .await
+            .caused_by(trc::location!())?;
+        let from_message_ids = if access_token.is_member(from_account_id) {
+            from_cached_messages.document_ids()
+        } else {
+            let from_cached_mailboxes = self
+                .get_cached_mailboxes(from_account_id)
+                .await
+                .caused_by(trc::location!())?;
+            from_cached_messages.shared_messages(
+                access_token,
+                &from_cached_mailboxes,
+                Acl::ReadItems,
+            )
+        };
+
+        let cached_mailboxes = self.get_cached_mailboxes(account_id).await?;
         let can_add_mailbox_ids = if access_token.is_shared(account_id) {
-            self.shared_containers(access_token, account_id, Collection::Mailbox, Acl::AddItems)
-                .await?
+            cached_mailboxes
+                .shared_mailboxes(access_token, Acl::AddItems)
                 .into()
         } else {
             None
@@ -189,7 +208,7 @@ impl JmapEmailCopy for Server {
 
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
-                if !mailbox_ids.items.contains_key(mailbox_id) {
+                if !cached_mailboxes.items.contains_key(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()

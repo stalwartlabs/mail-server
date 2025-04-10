@@ -131,6 +131,7 @@ pub async fn test(params: &mut JMAPTest) {
         ),
     )
     .await;
+    let john_cache = server.get_cached_messages(john_id).await.unwrap();
 
     assert_eq!(
         server

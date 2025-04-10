@@ -4,48 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{
-    config::jmap::settings::{ArchivedSpecialUse, SpecialUse},
-    storage::{
-        folder::FolderHierarchy,
-        index::{IndexValue, IndexableAndSerializableObject, IndexableObject},
-    },
+use common::storage::{
+    folder::FolderHierarchy,
+    index::{IndexValue, IndexableAndSerializableObject, IndexableObject},
 };
-use jmap_proto::types::{property::Property, value::AclGrant};
+use jmap_proto::types::value::AclGrant;
 
 use super::{ArchivedMailbox, Mailbox};
 
 impl IndexableObject for Mailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Index {
-                field: Property::Name.into(),
-                value: self.name.to_lowercase().into(),
-            },
-            IndexValue::Index {
-                field: Property::Role.into(),
-                value: self.role.as_str().into(),
-            },
-            IndexValue::Tag {
-                field: Property::Role.into(),
-                value: if !matches!(self.role, SpecialUse::None) {
-                    vec![().into()]
-                } else {
-                    vec![]
-                },
-            },
-            IndexValue::Index {
-                field: Property::ParentId.into(),
-                value: self.parent_id.into(),
-            },
-            IndexValue::Index {
-                field: Property::SortOrder.into(),
-                value: self.sort_order.into(),
-            },
-            IndexValue::IndexList {
-                field: Property::IsSubscribed.into(),
-                value: self.subscribers.iter().map(Into::into).collect::<Vec<_>>(),
-            },
             IndexValue::LogChild { prefix: None },
             IndexValue::Acl {
                 value: (&self.acls).into(),
@@ -58,34 +27,6 @@ impl IndexableObject for Mailbox {
 impl IndexableObject for &ArchivedMailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Index {
-                field: Property::Name.into(),
-                value: self.name.to_lowercase().into(),
-            },
-            IndexValue::Index {
-                field: Property::Role.into(),
-                value: self.role.as_str().into(),
-            },
-            IndexValue::Tag {
-                field: Property::Role.into(),
-                value: if !matches!(self.role, ArchivedSpecialUse::None) {
-                    vec![().into()]
-                } else {
-                    vec![]
-                },
-            },
-            IndexValue::Index {
-                field: Property::ParentId.into(),
-                value: self.parent_id.into(),
-            },
-            IndexValue::Index {
-                field: Property::SortOrder.into(),
-                value: self.sort_order.into(),
-            },
-            IndexValue::IndexList {
-                field: Property::IsSubscribed.into(),
-                value: self.subscribers.iter().map(Into::into).collect::<Vec<_>>(),
-            },
             IndexValue::LogChild { prefix: None },
             IndexValue::Acl {
                 value: self

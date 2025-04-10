@@ -16,7 +16,7 @@ use store::{
     Serialize, SerializeInfallible,
     backend::MAX_TOKEN_LENGTH,
     fts::{Field, index::FtsDocument},
-    write::{Archiver, BatchBuilder, BlobOp, DirectoryClass, TagValue},
+    write::{Archiver, BatchBuilder, BlobOp, DirectoryClass},
 };
 use trc::AddContext;
 use utils::BlobHash;
@@ -577,29 +577,6 @@ impl IndexMessage for BatchBuilder {
 impl IndexableObject for MessageData {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Tag {
-                field: Property::MailboxIds.into(),
-                value: self
-                    .mailboxes
-                    .iter()
-                    .map(|m| TagValue::Id(m.mailbox_id))
-                    .collect(),
-            },
-            IndexValue::Tag {
-                field: Property::Keywords.into(),
-                value: self
-                    .keywords
-                    .iter()
-                    .map(|k| match k.id() {
-                        Ok(id) => TagValue::Id(id),
-                        Err(string) => TagValue::Text(string.as_bytes().to_vec()),
-                    })
-                    .collect(),
-            },
-            IndexValue::Tag {
-                field: Property::ThreadId.into(),
-                value: vec![TagValue::Id(self.thread_id)],
-            },
             IndexValue::LogChild {
                 prefix: self.thread_id.into(),
             },
@@ -619,29 +596,6 @@ impl IndexableObject for MessageData {
 impl IndexableObject for &ArchivedMessageData {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Tag {
-                field: Property::MailboxIds.into(),
-                value: self
-                    .mailboxes
-                    .iter()
-                    .map(|m| TagValue::Id(u32::from(m.mailbox_id)))
-                    .collect(),
-            },
-            IndexValue::Tag {
-                field: Property::Keywords.into(),
-                value: self
-                    .keywords
-                    .iter()
-                    .map(|k| match k.id() {
-                        Ok(id) => TagValue::Id(id),
-                        Err(string) => TagValue::Text(string.as_bytes().to_vec()),
-                    })
-                    .collect(),
-            },
-            IndexValue::Tag {
-                field: Property::ThreadId.into(),
-                value: vec![TagValue::Id(u32::from(self.thread_id))],
-            },
             IndexValue::LogChild {
                 prefix: self.thread_id.to_native().into(),
             },

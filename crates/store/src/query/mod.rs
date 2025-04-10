@@ -50,6 +50,7 @@ pub enum Filter {
 pub enum Comparator {
     Field { field: u8, ascending: bool },
     DocumentSet { set: RoaringBitmap, ascending: bool },
+    SortedList { list: Vec<u32>, ascending: bool },
 }
 
 #[derive(Debug)]
@@ -174,6 +175,10 @@ impl Comparator {
 
     pub fn set(set: RoaringBitmap, ascending: bool) -> Self {
         Self::DocumentSet { set, ascending }
+    }
+
+    pub fn sorted_list(list: Vec<u32>, ascending: bool) -> Self {
+        Self::SortedList { list, ascending }
     }
 
     pub fn ascending(field: impl Into<u8>) -> Self {

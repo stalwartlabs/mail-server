@@ -104,7 +104,7 @@ impl MailboxFnc for Server {
                 if let Some((document_id, _)) = folders
                     .items
                     .iter()
-                    .find(|(_, item)| item.path == found_path)
+                    .find(|(_, item)| item.path.to_lowercase() == found_path)
                 {
                     next_parent_id = *document_id + 1;
                 } else {

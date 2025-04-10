@@ -13,7 +13,7 @@ use jmap_proto::{
     types::{
         acl::Acl,
         property::Property,
-        value::{AclGrant, ArchivedAclGrant, MaybePatchValue, Value},
+        value::{AclGrant, MaybePatchValue, Value},
     },
 };
 use utils::map::bitmap::Bitmap;
@@ -80,14 +80,13 @@ impl Server {
 
     pub async fn acl_get(
         &self,
-        value: &[ArchivedAclGrant],
+        value: &[AclGrant],
         access_token: &AccessToken,
         account_id: u32,
     ) -> Value {
         if access_token.is_member(account_id)
             || value.iter().any(|item| {
-                access_token.is_member(item.account_id.into())
-                    && Bitmap::from(&item.grants).contains(Acl::Administer)
+                access_token.is_member(item.account_id) && item.grants.contains(Acl::Administer)
             })
         {
             let mut acl_obj = jmap_proto::types::value::Object::with_capacity(value.len() / 2);
@@ -96,13 +95,13 @@ impl Server {
                     .core
                     .storage
                     .directory
-                    .query(QueryBy::Id(item.account_id.into()), false)
+                    .query(QueryBy::Id(item.account_id), false)
                     .await
                     .unwrap_or_default()
                 {
                     acl_obj.append(
                         Property::_T(principal.take_str(PrincipalField::Name).unwrap_or_default()),
-                        Bitmap::from(&item.grants)
+                        item.grants
                             .map(|acl_item| Value::Text(acl_item.to_string()))
                             .collect::<Vec<_>>(),
                     );

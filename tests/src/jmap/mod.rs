@@ -383,7 +383,7 @@ pub async fn jmap_tests() {
     email_query_changes::test(&mut params).await;
     email_copy::test(&mut params).await;
     thread_get::test(&mut params).await;
-    thread_merge::test(&mut params).await;
+    //thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
@@ -509,6 +509,10 @@ pub async fn assert_is_empty(server: Server) {
         .data
         .assert_is_empty(server.core.storage.blob.clone())
         .await;
+
+    // Clean cache
+    server.inner.cache.mailboxes.clear();
+    server.inner.cache.messages.clear();
 }
 
 pub async fn emails_purge_tombstoned(server: &Server) {

@@ -9,7 +9,11 @@ use common::{
     storage::index::ObjectIndexBuilder,
 };
 
-use email::mailbox::{Mailbox, cache::MessageMailboxCache, destroy::MailboxDestroy};
+use email::mailbox::{
+    Mailbox,
+    cache::{MailboxCacheAccess, MessageMailboxCache},
+    destroy::MailboxDestroy,
+};
 use jmap_proto::{
     error::set::SetError,
     method::set::{SetRequest, SetResponse},
@@ -25,8 +29,6 @@ use jmap_proto::{
     },
 };
 use store::{
-    SerializeInfallible,
-    query::Filter,
     roaring::RoaringBitmap,
     write::{Archive, BatchBuilder, assert::AssertValue},
 };
@@ -431,30 +433,15 @@ impl MailboxSet for Server {
             }
         }
 
+        let cached_mailboxes = self.get_cached_mailboxes(ctx.account_id).await?;
+
         // Verify that the mailbox role is unique.
         if !matches!(changes.role, SpecialUse::None)
             && update
                 .as_ref()
                 .is_none_or(|(_, m)| m.inner.role != changes.role)
         {
-            if !self
-                .filter(
-                    ctx.account_id,
-                    Collection::Mailbox,
-                    vec![Filter::eq(
-                        Property::Role,
-                        changes
-                            .role
-                            .as_str()
-                            .unwrap_or_default()
-                            .as_bytes()
-                            .to_vec(),
-                    )],
-                )
-                .await?
-                .results
-                .is_empty()
-            {
+            if cached_mailboxes.by_role(&changes.role).is_some() {
                 return Ok(Err(SetError::invalid_properties()
                     .with_property(Property::Role)
                     .with_description(format!(
@@ -478,21 +465,14 @@ impl MailboxSet for Server {
         // Verify that the mailbox name is unique.
         if !changes.name.is_empty() {
             // Obtain parent mailbox id
+            let lower_name = changes.name.to_lowercase();
             if update
                 .as_ref()
                 .is_none_or(|(_, m)| m.inner.name != changes.name)
-                && !self
-                    .filter(
-                        ctx.account_id,
-                        Collection::Mailbox,
-                        vec![
-                            Filter::eq(Property::Name, changes.name.to_lowercase().into_bytes()),
-                            Filter::eq(Property::ParentId, changes.parent_id.serialize()),
-                        ],
-                    )
-                    .await?
-                    .results
-                    .is_empty()
+                && cached_mailboxes.items.iter().any(|(_, m)| {
+                    m.name.to_lowercase() == lower_name
+                        && m.parent_id().map_or(0, |id| id + 1) == changes.parent_id
+                })
             {
                 return Ok(Err(SetError::invalid_properties()
                     .with_property(Property::Name)

@@ -51,7 +51,15 @@ pub enum Value {
 pub struct Object<T>(pub VecMap<Property, T>);
 
 #[derive(
-    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq, Serialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Default,
 )]
 #[rkyv(compare(PartialEq), derive(Debug))]
 pub struct AclGrant {

@@ -22,8 +22,14 @@ pub trait EffectiveAcl {
 
 impl EffectiveAcl for Vec<AclGrant> {
     fn effective_acl(&self, access_token: &AccessToken) -> Bitmap<Acl> {
+        self.as_slice().effective_acl(access_token)
+    }
+}
+
+impl EffectiveAcl for &[AclGrant] {
+    fn effective_acl(&self, access_token: &AccessToken) -> Bitmap<Acl> {
         let mut acl = Bitmap::<Acl>::new();
-        for item in self {
+        for item in self.iter() {
             if access_token.is_member(item.account_id) {
                 acl.union(&item.grants);
             }

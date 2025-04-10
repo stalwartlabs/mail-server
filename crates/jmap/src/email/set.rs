@@ -8,9 +8,12 @@ use std::{borrow::Cow, collections::HashMap};
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use email::{
-    mailbox::UidMailbox,
+    mailbox::{
+        UidMailbox,
+        cache::{MailboxCacheAccess, MessageMailboxCache},
+    },
     message::{
-        cache::MessageCache,
+        cache::{MessageCache, MessageCacheAccess},
         delete::EmailDeletion,
         ingest::{EmailIngest, IngestEmail, IngestSource},
         metadata::MessageData,
@@ -72,28 +75,19 @@ impl EmailSet for Server {
         let can_train_spam = self.email_bayes_can_train(access_token);
 
         // Obtain mailboxIds
-        let mailbox_ids = self.get_cached_messages(account_id).await?;
+        let cached_mailboxes = self.get_cached_mailboxes(account_id).await?;
+        let cached_messages = self.get_cached_messages(account_id).await?;
         let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_message_ids) =
             if access_token.is_shared(account_id) {
                 (
-                    self.shared_containers(
-                        access_token,
-                        account_id,
-                        Collection::Mailbox,
-                        Acl::AddItems,
-                    )
-                    .await?
-                    .into(),
-                    self.shared_containers(
-                        access_token,
-                        account_id,
-                        Collection::Mailbox,
-                        Acl::RemoveItems,
-                    )
-                    .await?
-                    .into(),
-                    self.shared_messages(access_token, account_id, Acl::ModifyItems)
-                        .await?
+                    cached_mailboxes
+                        .shared_mailboxes(access_token, Acl::AddItems)
+                        .into(),
+                    cached_mailboxes
+                        .shared_mailboxes(access_token, Acl::RemoveItems)
+                        .into(),
+                    cached_messages
+                        .shared_messages(access_token, &cached_mailboxes, Acl::ModifyItems)
                         .into(),
                 )
             } else {
@@ -668,7 +662,7 @@ impl EmailSet for Server {
 
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
-                if !mailbox_ids.items.contains_key(mailbox_id) {
+                if !cached_mailboxes.items.contains_key(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
@@ -884,7 +878,7 @@ impl EmailSet for Server {
 
                 // Make sure all new mailboxIds are valid
                 for mailbox_id in new_data.added_mailboxes(data.inner) {
-                    if mailbox_ids.items.contains_key(&mailbox_id.mailbox_id) {
+                    if cached_mailboxes.items.contains_key(&mailbox_id.mailbox_id) {
                         // Verify permissions on shared accounts
                         if !matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(mailbox_id.mailbox_id))
                         {
@@ -992,13 +986,10 @@ impl EmailSet for Server {
 
         // Process deletions
         if !will_destroy.is_empty() {
-            let email_ids = self
-                .get_document_ids(account_id, Collection::Email)
-                .await?
-                .unwrap_or_default();
+            let email_ids = cached_messages.document_ids();
             let can_destroy_message_ids = if access_token.is_shared(account_id) {
-                self.shared_messages(access_token, account_id, Acl::RemoveItems)
-                    .await?
+                cached_messages
+                    .shared_messages(access_token, &cached_mailboxes, Acl::RemoveItems)
                     .into()
             } else {
                 None

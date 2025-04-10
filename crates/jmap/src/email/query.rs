@@ -5,7 +5,10 @@
  */
 
 use common::{MessageItemCache, MessageStoreCache, Server, auth::AccessToken};
-use email::message::cache::{MessageCache, MessageCacheAccess};
+use email::{
+    mailbox::cache::MessageMailboxCache,
+    message::cache::{MessageCache, MessageCacheAccess},
+};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
@@ -21,6 +24,7 @@ use store::{
     query::{self},
     roaring::RoaringBitmap,
 };
+use trc::AddContext;
 
 use crate::JmapMethods;
 
@@ -40,7 +44,10 @@ impl EmailQuery for Server {
     ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
-        let cache = self.get_cached_messages(account_id).await?;
+        let cached_messages = self
+            .get_cached_messages(account_id)
+            .await
+            .caused_by(trc::location!())?;
 
         for cond_group in std::mem::take(&mut request.filter).into_filter_group() {
             match cond_group {
@@ -182,7 +189,9 @@ impl EmailQuery for Server {
                     match cond {
                         Filter::InMailbox(mailbox) => {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                                cache.in_mailbox(mailbox.document_id()).map(|(id, _)| *id),
+                                cached_messages
+                                    .in_mailbox(mailbox.document_id())
+                                    .map(|(id, _)| *id),
                             )))
                         }
                         Filter::InMailboxOtherThan(mailboxes) => {
@@ -190,7 +199,9 @@ impl EmailQuery for Server {
                             filters.push(query::Filter::Or);
                             for mailbox in mailboxes {
                                 filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                                    cache.in_mailbox(mailbox.document_id()).map(|(id, _)| *id),
+                                    cached_messages
+                                        .in_mailbox(mailbox.document_id())
+                                        .map(|(id, _)| *id),
                                 )));
                             }
                             filters.push(query::Filter::End);
@@ -208,28 +219,38 @@ impl EmailQuery for Server {
                         Filter::MaxSize(size) => {
                             filters.push(query::Filter::lt(Property::Size, size.serialize()))
                         }
-                        Filter::AllInThreadHaveKeyword(keyword) => filters.push(
-                            query::Filter::is_in_set(thread_keywords(&cache, keyword, true)),
-                        ),
-                        Filter::SomeInThreadHaveKeyword(keyword) => filters.push(
-                            query::Filter::is_in_set(thread_keywords(&cache, keyword, false)),
-                        ),
+                        Filter::AllInThreadHaveKeyword(keyword) => {
+                            filters.push(query::Filter::is_in_set(thread_keywords(
+                                &cached_messages,
+                                keyword,
+                                true,
+                            )))
+                        }
+                        Filter::SomeInThreadHaveKeyword(keyword) => {
+                            filters.push(query::Filter::is_in_set(thread_keywords(
+                                &cached_messages,
+                                keyword,
+                                false,
+                            )))
+                        }
                         Filter::NoneInThreadHaveKeyword(keyword) => {
                             filters.push(query::Filter::Not);
                             filters.push(query::Filter::is_in_set(thread_keywords(
-                                &cache, keyword, false,
+                                &cached_messages,
+                                keyword,
+                                false,
                             )));
                             filters.push(query::Filter::End);
                         }
                         Filter::HasKeyword(keyword) => {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                                cache.with_keyword(&keyword).map(|(id, _)| *id),
+                                cached_messages.with_keyword(&keyword).map(|(id, _)| *id),
                             )));
                         }
                         Filter::NotKeyword(keyword) => {
                             filters.push(query::Filter::Not);
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                                cache.with_keyword(&keyword).map(|(id, _)| *id),
+                                cached_messages.with_keyword(&keyword).map(|(id, _)| *id),
                             )));
                             filters.push(query::Filter::End);
                         }
@@ -259,7 +280,9 @@ impl EmailQuery for Server {
                         }
                         Filter::InThread(id) => {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                                cache.in_thread(id.document_id()).map(|(id, _)| *id),
+                                cached_messages
+                                    .in_thread(id.document_id())
+                                    .map(|(id, _)| *id),
                             )))
                         }
                         Filter::And | Filter::Or | Filter::Not | Filter::Close => {
@@ -278,10 +301,15 @@ impl EmailQuery for Server {
 
         let mut result_set = self.filter(account_id, Collection::Email, filters).await?;
         if access_token.is_shared(account_id) {
-            result_set.apply_mask(
-                self.shared_messages(access_token, account_id, Acl::ReadItems)
-                    .await?,
-            );
+            let cached_mailboxes = self
+                .get_cached_mailboxes(account_id)
+                .await
+                .caused_by(trc::location!())?;
+            result_set.apply_mask(cached_messages.shared_messages(
+                access_token,
+                &cached_mailboxes,
+                Acl::ReadItems,
+            ));
         }
         let (response, paginate) = self.build_query_response(&result_set, &request).await?;
 
@@ -314,18 +342,26 @@ impl EmailQuery for Server {
                     }
                     SortProperty::HasKeyword => query::Comparator::set(
                         RoaringBitmap::from_iter(
-                            cache
+                            cached_messages
                                 .with_keyword(&comparator.keyword.unwrap_or(Keyword::Seen))
                                 .map(|(id, _)| *id),
                         ),
                         comparator.is_ascending,
                     ),
                     SortProperty::AllInThreadHaveKeyword => query::Comparator::set(
-                        thread_keywords(&cache, comparator.keyword.unwrap_or(Keyword::Seen), true),
+                        thread_keywords(
+                            &cached_messages,
+                            comparator.keyword.unwrap_or(Keyword::Seen),
+                            true,
+                        ),
                         comparator.is_ascending,
                     ),
                     SortProperty::SomeInThreadHaveKeyword => query::Comparator::set(
-                        thread_keywords(&cache, comparator.keyword.unwrap_or(Keyword::Seen), false),
+                        thread_keywords(
+                            &cached_messages,
+                            comparator.keyword.unwrap_or(Keyword::Seen),
+                            false,
+                        ),
                         comparator.is_ascending,
                     ),
                     // Non-standard

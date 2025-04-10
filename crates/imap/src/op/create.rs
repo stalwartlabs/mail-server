@@ -16,13 +16,14 @@ use common::{
 };
 use compact_str::CompactString;
 use directory::Permission;
+use email::mailbox::cache::{MailboxCacheAccess, MessageMailboxCache};
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
 };
-use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, property::Property};
-use store::{query::Filter, write::BatchBuilder};
+use jmap_proto::types::{acl::Acl, collection::Collection, id::Id};
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 impl<T: SessionStream> Session<T> {
@@ -280,23 +281,21 @@ impl<T: SessionStream> SessionData<T> {
             parent_mailbox_name,
             special_use: if let Some(mailbox_role) = mailbox_role {
                 // Make sure role is unique
-                let role_name = attr_to_role(mailbox_role).as_str().unwrap_or_default();
-                if !self
+                let special_use = attr_to_role(mailbox_role);
+                if self
                     .server
-                    .store()
-                    .filter(
-                        account_id,
-                        Collection::Mailbox,
-                        vec![Filter::eq(Property::Role, role_name.as_bytes().to_vec())],
-                    )
+                    .get_cached_mailboxes(account_id)
                     .await
                     .caused_by(trc::location!())?
-                    .results
-                    .is_empty()
+                    .by_role(&special_use)
+                    .is_some()
                 {
                     return Err(trc::ImapEvent::Error
                         .into_err()
-                        .details(format!("A mailbox with role '{role_name}' already exists.",))
+                        .details(format!(
+                            "A mailbox with role '{}' already exists.",
+                            special_use.as_str().unwrap_or_default()
+                        ))
                         .code(ResponseCode::UseAttr));
                 }
                 Some(mailbox_role)

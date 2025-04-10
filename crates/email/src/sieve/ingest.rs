@@ -100,7 +100,7 @@ impl SieveScriptIngest for Server {
 
         // Obtain mailboxIds
         let account_id = access_token.primary_id;
-        let mailbox_cache = self
+        let mut mailbox_cache = self
             .get_cached_mailboxes(account_id)
             .await
             .caused_by(trc::location!())?;
@@ -204,7 +204,7 @@ impl SieveScriptIngest for Server {
                                 match mailbox {
                                     Mailbox::Name(name) => {
                                         if !matches!(
-                                            mailbox_cache.by_name(&name),
+                                            mailbox_cache.by_path(&name),
                                             Some((document_id, _)) if special_use_ids.is_empty() ||
                                             special_use_ids.contains(document_id)
                                         ) {
@@ -234,7 +234,7 @@ impl SieveScriptIngest for Server {
                                 {
                                     let role = SpecialUse::parse_value(&role);
                                     if role.is_err()
-                                        || mailbox_cache.by_role(&role.unwrap()).is_some()
+                                        || mailbox_cache.by_role(&role.unwrap()).is_none()
                                     {
                                         result = false;
                                         break;
@@ -333,12 +333,18 @@ impl SieveScriptIngest for Server {
                         // Find mailbox by name
                         if target_id == u32::MAX {
                             if !create {
-                                if let Some((document_id, _)) = mailbox_cache.by_name(&folder) {
+                                if let Some((document_id, _)) = mailbox_cache.by_path(&folder) {
                                     target_id = *document_id;
                                 }
-                            } else if let Ok(Some(document_id)) =
-                                self.mailbox_create_path(account_id, &folder).await
+                            } else if let Some(document_id) = self
+                                .mailbox_create_path(account_id, &folder)
+                                .await
+                                .caused_by(trc::location!())?
                             {
+                                mailbox_cache = self
+                                    .get_cached_mailboxes(account_id)
+                                    .await
+                                    .caused_by(trc::location!())?;
                                 target_id = document_id;
                             }
                         }

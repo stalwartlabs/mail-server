@@ -7,7 +7,10 @@
 use std::ops::Range;
 
 use common::{Server, auth::AccessToken};
-use email::message::cache::MessageCache;
+use email::{
+    mailbox::cache::MessageMailboxCache,
+    message::cache::{MessageCache, MessageCacheAccess},
+};
 use jmap_proto::types::{acl::Acl, blob::BlobId, collection::Collection};
 use std::future::Future;
 use store::BlobClass;
@@ -60,12 +63,21 @@ impl BlobDownload for Server {
                     document_id,
                 } => {
                     if Collection::from(*collection) == Collection::Email {
-                        match self
-                            .shared_messages(access_token, *account_id, Acl::ReadItems)
+                        if !self
+                            .get_cached_messages(*account_id)
                             .await
+                            .caused_by(trc::location!())?
+                            .shared_messages(
+                                access_token,
+                                self.get_cached_mailboxes(*account_id)
+                                    .await
+                                    .caused_by(trc::location!())?
+                                    .as_ref(),
+                                Acl::ReadItems,
+                            )
+                            .contains(*document_id)
                         {
-                            Ok(shared_messages) if shared_messages.contains(*document_id) => (),
-                            _ => return Ok(None),
+                            return Ok(None);
                         }
                     } else {
                         match self
@@ -127,8 +139,17 @@ impl BlobDownload for Server {
                     if Collection::from(*collection) == Collection::Email {
                         access_token.is_member(*account_id)
                             || self
-                                .shared_messages(access_token, *account_id, Acl::ReadItems)
-                                .await?
+                                .get_cached_messages(*account_id)
+                                .await
+                                .caused_by(trc::location!())?
+                                .shared_messages(
+                                    access_token,
+                                    self.get_cached_mailboxes(*account_id)
+                                        .await
+                                        .caused_by(trc::location!())?
+                                        .as_ref(),
+                                    Acl::ReadItems,
+                                )
                                 .contains(*document_id)
                     } else {
                         access_token.is_member(*account_id)

@@ -13,6 +13,7 @@ use crate::{IndexKeyPrefix, IterateParams, Store, U32_LEN, write::key::Deseriali
 
 use super::{Comparator, ResultSet, SortedResultSet};
 
+#[derive(Debug)]
 pub struct Pagination<'x> {
     requested_position: i32,
     position: i32,
@@ -95,6 +96,25 @@ impl Store {
                         for document_id in set {
                             if !paginate.add(0, document_id) {
                                 break 'outer;
+                            }
+                        }
+                    }
+                }
+                Comparator::SortedList { list, ascending } => {
+                    if ascending {
+                        for document_id in list {
+                            if result_set.results.contains(document_id)
+                                && !paginate.add(0, document_id)
+                            {
+                                break;
+                            }
+                        }
+                    } else {
+                        for document_id in list.into_iter().rev() {
+                            if result_set.results.contains(document_id)
+                                && !paginate.add(0, document_id)
+                            {
+                                break;
                             }
                         }
                     }
@@ -192,6 +212,23 @@ impl Store {
                         for (document_ids, idx) in sets {
                             for document_id in document_ids {
                                 sorted_ids.entry(document_id).or_insert([0u32; 4])[pos] = idx;
+                            }
+                        }
+                    }
+                    Comparator::SortedList { list, ascending } => {
+                        if ascending {
+                            for (idx, document_id) in list.into_iter().enumerate() {
+                                if result_set.results.contains(document_id) {
+                                    sorted_ids.entry(document_id).or_insert([0u32; 4])[pos] =
+                                        idx as u32;
+                                }
+                            }
+                        } else {
+                            for (idx, document_id) in list.into_iter().rev().enumerate() {
+                                if result_set.results.contains(document_id) {
+                                    sorted_ids.entry(document_id).or_insert([0u32; 4])[pos] =
+                                        idx as u32;
+                                }
                             }
                         }
                     }

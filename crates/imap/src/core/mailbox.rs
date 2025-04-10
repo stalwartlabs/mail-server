@@ -16,7 +16,10 @@ use common::{
 use compact_str::CompactString;
 use directory::{QueryBy, backend::internal::PrincipalField};
 use email::{
-    mailbox::{INBOX_ID, cache::MessageMailboxCache},
+    mailbox::{
+        INBOX_ID,
+        cache::{MailboxCacheAccess, MessageMailboxCache},
+    },
     message::cache::{MessageCache, MessageCacheAccess},
 };
 use imap_proto::protocol::list::Attribute;
@@ -114,10 +117,8 @@ impl<T: SessionStream> SessionData<T> {
         {
             None
         } else {
-            self.server
-                .shared_containers(access_token, account_id, Collection::Mailbox, Acl::Read)
-                .await
-                .caused_by(trc::location!())?
+            cached_mailboxes
+                .shared_mailboxes(access_token, Acl::Read)
                 .into()
         };
 
@@ -179,11 +180,10 @@ impl<T: SessionStream> SessionData<T> {
             account.mailbox_state.insert(
                 mailbox_id,
                 Mailbox {
-                    has_children: cached_mailboxes.items.values().any(|child| {
-                        child
-                            .parent_id
-                            .is_some_and(|parent_id| parent_id == mailbox_id)
-                    }),
+                    has_children: cached_mailboxes
+                        .items
+                        .values()
+                        .any(|child| child.parent_id == mailbox_id),
                     is_subscribed: mailbox.subscribers.contains(&access_token.primary_id()),
                     special_use: match mailbox.role {
                         SpecialUse::Trash => Some(Attribute::Trash),

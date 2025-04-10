@@ -12,7 +12,7 @@ use jmap_proto::{
     error::set::{SetError, SetErrorType},
     types::{acl::Acl, collection::Collection, property::Property},
 };
-use store::{SerializeInfallible, query::Filter, roaring::RoaringBitmap, write::BatchBuilder};
+use store::{roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 
 use crate::message::{
@@ -21,7 +21,7 @@ use crate::message::{
     metadata::MessageData,
 };
 
-use super::*;
+use super::{cache::MessageMailboxCache, *};
 
 pub trait MailboxDestroy: Sync + Send {
     fn mailbox_destroy(
@@ -61,19 +61,12 @@ impl MailboxDestroy for Server {
         }
 
         // Verify that this mailbox does not have sub-mailboxes
-        if !self
-            .store()
-            .filter(
-                account_id,
-                Collection::Mailbox,
-                vec![Filter::eq(
-                    Property::ParentId,
-                    (document_id + 1).serialize(),
-                )],
-            )
+        if self
+            .get_cached_mailboxes(account_id)
             .await?
-            .results
-            .is_empty()
+            .items
+            .iter()
+            .any(|(_, m)| m.parent_id == document_id)
         {
             return Ok(Err(SetError::new(SetErrorType::MailboxHasChild)
                 .with_description("Mailbox has at least one children.")));
@@ -84,18 +77,19 @@ impl MailboxDestroy for Server {
 
         batch.with_account_id(account_id);
 
-        if remove_emails {
-            // If the message is in multiple mailboxes, untag it from the current mailbox,
-            // otherwise delete it.
-            let message_ids = RoaringBitmap::from_iter(
-                self.get_cached_messages(account_id)
-                    .await
-                    .caused_by(trc::location!())?
-                    .in_mailbox(document_id)
-                    .map(|(id, _)| id),
-            );
+        let message_ids = RoaringBitmap::from_iter(
+            self.get_cached_messages(account_id)
+                .await
+                .caused_by(trc::location!())?
+                .in_mailbox(document_id)
+                .map(|(id, _)| id),
+        );
 
-            if !message_ids.is_empty() {
+        if !message_ids.is_empty() {
+            if remove_emails {
+                // If the message is in multiple mailboxes, untag it from the current mailbox,
+                // otherwise delete it.
+
                 let mut destroy_ids = RoaringBitmap::new();
 
                 self.get_archives(
@@ -152,10 +146,10 @@ impl MailboxDestroy for Server {
                     self.emails_tombstone(account_id, &mut batch, destroy_ids)
                         .await?;
                 }
+            } else {
+                return Ok(Err(SetError::new(SetErrorType::MailboxHasEmail)
+                    .with_description("Mailbox is not empty.")));
             }
-        } else {
-            return Ok(Err(SetError::new(SetErrorType::MailboxHasEmail)
-                .with_description("Mailbox is not empty.")));
         }
 
         // Obtain mailbox

@@ -5,20 +5,22 @@
  */
 
 use common::{Server, auth::AccessToken, config::jmap::settings::SpecialUse};
-use email::mailbox::cache::MessageMailboxCache;
+use email::mailbox::cache::{MailboxCacheAccess, MessageMailboxCache};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::mailbox::QueryArguments,
-    types::{acl::Acl, collection::Collection, property::Property},
+    types::{acl::Acl, collection::Collection},
 };
 use store::{
-    ahash::AHashSet,
-    query::{self, sort::Pagination},
+    query::{self},
     roaring::RoaringBitmap,
 };
 
-use crate::{JmapMethods, UpdateResults};
-use std::{collections::BTreeMap, future::Future};
+use crate::JmapMethods;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+};
 
 pub trait MailboxQuery: Sync + Send {
     fn mailbox_query(
@@ -43,7 +45,7 @@ impl MailboxQuery for Server {
         for cond in std::mem::take(&mut request.filter) {
             match cond {
                 Filter::ParentId(parent_id) => {
-                    let parent_id = parent_id.map(|id| id.document_id());
+                    let parent_id = parent_id.map(|id| id.document_id()).unwrap_or(u32::MAX);
                     filters.push(query::Filter::is_in_set(
                         mailboxes
                             .items
@@ -61,11 +63,12 @@ impl MailboxQuery for Server {
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }
                     }
+                    let name = name.to_lowercase();
                     filters.push(query::Filter::is_in_set(
                         mailboxes
                             .items
                             .iter()
-                            .filter(|(_, mailbox)| mailbox.name.contains(&name))
+                            .filter(|(_, mailbox)| mailbox.name.to_lowercase().contains(&name))
                             .map(|(id, _)| id)
                             .collect::<RoaringBitmap>(),
                     ));
@@ -103,7 +106,7 @@ impl MailboxQuery for Server {
                         mailboxes
                             .items
                             .iter()
-                            .filter(|(_, mailbox)| matches!(mailbox.role, SpecialUse::None))
+                            .filter(|(_, mailbox)| !matches!(mailbox.role, SpecialUse::None))
                             .map(|(id, _)| id)
                             .collect::<RoaringBitmap>(),
                     ));
@@ -145,10 +148,7 @@ impl MailboxQuery for Server {
             .filter(account_id, Collection::Mailbox, filters)
             .await?;
         if access_token.is_shared(account_id) {
-            result_set.apply_mask(
-                self.shared_containers(access_token, account_id, Collection::Mailbox, Acl::Read)
-                    .await?,
-            );
+            result_set.apply_mask(mailboxes.shared_mailboxes(access_token, Acl::Read));
         }
         let (mut response, mut paginate) = self.build_query_response(&result_set, &request).await?;
 
@@ -160,7 +160,7 @@ impl MailboxQuery for Server {
                 let mut check_id = document_id;
                 for _ in 0..self.core.jmap.mailbox_max_depth {
                     if let Some(mailbox) = mailboxes.items.get(&check_id) {
-                        if let Some(parent_id) = mailbox.parent_id {
+                        if let Some(parent_id) = mailbox.parent_id() {
                             if result_set.results.contains(parent_id) {
                                 check_id = parent_id;
                             } else {
@@ -186,24 +186,69 @@ impl MailboxQuery for Server {
             }
         }
 
-        if let Some(mut paginate) = paginate {
-            let todo = "sort from cache";
-            // Parse sort criteria
+        if let Some(paginate) = paginate {
             let mut comparators = Vec::with_capacity(request.sort.as_ref().map_or(1, |s| s.len()));
+
+            // Sort as tree
+            if sort_as_tree {
+                let sorted_list = mailboxes
+                    .items
+                    .iter()
+                    .map(|(id, mailbox)| (mailbox.path.as_str(), *id))
+                    .collect::<BTreeMap<_, _>>();
+                comparators.push(query::Comparator::sorted_list(
+                    sorted_list.into_values().collect(),
+                    true,
+                ));
+            }
+
+            // Parse sort criteria
             for comparator in request
                 .sort
-                .and_then(|s| if !s.is_empty() { s.into() } else { None })
+                .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| vec![Comparator::ascending(SortProperty::ParentId)])
             {
                 comparators.push(match comparator.property {
                     SortProperty::Name => {
-                        query::Comparator::field(Property::Name, comparator.is_ascending)
+                        let sorted_list = mailboxes
+                            .items
+                            .iter()
+                            .map(|(id, mailbox)| (mailbox.name.as_str(), *id))
+                            .collect::<BTreeSet<_>>();
+
+                        query::Comparator::sorted_list(
+                            sorted_list.into_iter().map(|v| v.1).collect(),
+                            comparator.is_ascending,
+                        )
                     }
                     SortProperty::SortOrder => {
-                        query::Comparator::field(Property::SortOrder, comparator.is_ascending)
+                        let sorted_list = mailboxes
+                            .items
+                            .iter()
+                            .map(|(id, mailbox)| (mailbox.sort_order, *id))
+                            .collect::<BTreeSet<_>>();
+
+                        query::Comparator::sorted_list(
+                            sorted_list.into_iter().map(|v| v.1).collect(),
+                            comparator.is_ascending,
+                        )
                     }
                     SortProperty::ParentId => {
-                        query::Comparator::field(Property::ParentId, comparator.is_ascending)
+                        let sorted_list = mailboxes
+                            .items
+                            .iter()
+                            .map(|(id, mailbox)| {
+                                (
+                                    mailbox.parent_id().map(|id| id + 1).unwrap_or_default(),
+                                    *id,
+                                )
+                            })
+                            .collect::<BTreeSet<_>>();
+
+                        query::Comparator::sorted_list(
+                            sorted_list.into_iter().map(|v| v.1).collect(),
+                            comparator.is_ascending,
+                        )
                     }
 
                     other => {
@@ -214,35 +259,9 @@ impl MailboxQuery for Server {
                 });
             }
 
-            // Sort as tree
-            if sort_as_tree {
-                let dummy_paginate = Pagination::new(result_set.results.len() as usize, 0, None, 0);
-                response = self
-                    .sort(result_set, comparators, dummy_paginate, response)
-                    .await?;
-                let sorted_tree = mailboxes
-                    .items
-                    .iter()
-                    .map(|(id, mailbox)| (mailbox.path.as_str(), *id))
-                    .collect::<BTreeMap<_, _>>();
-                let ids = response
-                    .ids
-                    .iter()
-                    .map(|id| id.document_id())
-                    .collect::<AHashSet<_>>();
-
-                for (_, document_id) in sorted_tree {
-                    if ids.contains(&document_id) && !paginate.add(0, document_id) {
-                        break;
-                    }
-                }
-
-                response.update_results(paginate.build())?;
-            } else {
-                response = self
-                    .sort(result_set, comparators, paginate, response)
-                    .await?;
-            }
+            response = self
+                .sort(result_set, comparators, paginate, response)
+                .await?;
         }
 
         Ok(response)

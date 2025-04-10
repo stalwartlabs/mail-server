@@ -7,7 +7,8 @@
 use std::sync::Arc;
 
 use common::{
-    CacheSwap, MessageItemCache, MessageStoreCache, MessageUidCache, Server, auth::AccessToken,
+    CacheSwap, MailboxCache, MessageItemCache, MessageStoreCache, MessageUidCache, Server,
+    auth::AccessToken, sharing::EffectiveAcl,
 };
 use jmap_proto::types::{acl::Acl, collection::Collection, keyword::Keyword};
 use std::future::Future;
@@ -27,20 +28,6 @@ pub trait MessageCache: Sync + Send {
         &self,
         account_id: u32,
     ) -> impl Future<Output = trc::Result<Arc<MessageStoreCache<MessageItemCache>>>> + Send;
-
-    fn shared_messages(
-        &self,
-        access_token: &AccessToken,
-        to_account_id: u32,
-        check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
-    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
-
-    fn owned_or_shared_messages(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-        check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
-    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
 }
 
 impl MessageCache for Server {
@@ -153,50 +140,6 @@ impl MessageCache for Server {
 
         Ok(cache)
     }
-
-    async fn shared_messages(
-        &self,
-        access_token: &AccessToken,
-        to_account_id: u32,
-        check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
-    ) -> trc::Result<RoaringBitmap> {
-        let check_acls = check_acls.into();
-        let shared_containers = self
-            .shared_containers(access_token, to_account_id, Collection::Mailbox, check_acls)
-            .await?;
-        if shared_containers.is_empty() {
-            return Ok(shared_containers);
-        }
-        let mut shared_messages = RoaringBitmap::new();
-        for document_id in shared_containers {
-            shared_messages.extend(
-                self.get_cached_messages(to_account_id)
-                    .await?
-                    .in_mailbox(document_id)
-                    .map(|(id, _)| *id),
-            );
-        }
-
-        Ok(shared_messages)
-    }
-
-    async fn owned_or_shared_messages(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-        check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
-    ) -> trc::Result<RoaringBitmap> {
-        let mut document_ids = self
-            .get_document_ids(account_id, Collection::Email)
-            .await?
-            .unwrap_or_default();
-        if !document_ids.is_empty() && !access_token.is_member(account_id) {
-            document_ids &= self
-                .shared_messages(access_token, account_id, check_acls)
-                .await?;
-        }
-        Ok(document_ids)
-    }
 }
 
 async fn full_cache_build(
@@ -279,6 +222,15 @@ pub trait MessageCacheAccess {
         mailbox_id: u32,
         keyword: &Keyword,
     ) -> impl Iterator<Item = (&u32, &MessageItemCache)>;
+
+    fn document_ids(&self) -> RoaringBitmap;
+
+    fn shared_messages(
+        &self,
+        access_token: &AccessToken,
+        mailboxes: &MessageStoreCache<MailboxCache>,
+        check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
+    ) -> RoaringBitmap;
 }
 
 impl MessageCacheAccess for MessageStoreCache<MessageItemCache> {
@@ -318,5 +270,30 @@ impl MessageCacheAccess for MessageStoreCache<MessageItemCache> {
         self.items.iter().filter(move |(_, m)| {
             m.mailboxes.iter().any(|m| m.mailbox_id == mailbox_id) && !m.keywords.contains(keyword)
         })
+    }
+
+    fn shared_messages(
+        &self,
+        access_token: &AccessToken,
+        mailboxes: &MessageStoreCache<MailboxCache>,
+        check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
+    ) -> RoaringBitmap {
+        let check_acls = check_acls.into();
+        let mut shared_messages = RoaringBitmap::new();
+        for (mailbox_id, mailbox) in &mailboxes.items {
+            if mailbox
+                .acls
+                .as_slice()
+                .effective_acl(access_token)
+                .contains_all(check_acls)
+            {
+                shared_messages.extend(self.in_mailbox(*mailbox_id).map(|(id, _)| *id));
+            }
+        }
+        shared_messages
+    }
+
+    fn document_ids(&self) -> RoaringBitmap {
+        RoaringBitmap::from_iter(self.items.keys())
     }
 }

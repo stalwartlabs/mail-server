@@ -6,11 +6,14 @@
 
 use common::{Server, auth::AccessToken};
 
-use email::message::{
-    cache::MessageCache,
-    metadata::{
-        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageData,
-        MessageMetadata,
+use email::{
+    mailbox::cache::MessageMailboxCache,
+    message::{
+        cache::{MessageCache, MessageCacheAccess},
+        metadata::{
+            ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageData,
+            MessageMetadata,
+        },
     },
 };
 use jmap_proto::{
@@ -102,15 +105,24 @@ impl EmailGet for Server {
         let max_body_value_bytes = request.arguments.max_body_value_bytes.unwrap_or(0);
 
         let account_id = request.account_id.document_id();
-        let message_ids = self
-            .owned_or_shared_messages(access_token, account_id, Acl::ReadItems)
-            .await?;
+        let cached_messages = self
+            .get_cached_messages(account_id)
+            .await
+            .caused_by(trc::location!())?;
+        let message_ids = if access_token.is_member(account_id) {
+            cached_messages.document_ids()
+        } else {
+            let cached_mailboxes = self
+                .get_cached_mailboxes(account_id)
+                .await
+                .caused_by(trc::location!())?;
+            cached_messages.shared_messages(access_token, &cached_mailboxes, Acl::ReadItems)
+        };
+
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            self.get_cached_messages(account_id)
-                .await
-                .caused_by(trc::location!())?
+            cached_messages
                 .items
                 .iter()
                 .take(self.core.jmap.get_max_objects)

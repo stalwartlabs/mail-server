@@ -5,11 +5,14 @@
  */
 
 use common::{Server, auth::AccessToken};
-use email::message::{
-    cache::MessageCache,
-    metadata::{
-        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
-        MessageMetadata,
+use email::{
+    mailbox::cache::MessageMailboxCache,
+    message::{
+        cache::{MessageCache, MessageCacheAccess},
+        metadata::{
+            ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
+            MessageMetadata,
+        },
     },
 };
 use jmap_proto::{
@@ -89,9 +92,20 @@ impl EmailSearchSnippet for Server {
             }
         }
         let account_id = request.account_id.document_id();
-        let document_ids = self
-            .owned_or_shared_messages(access_token, account_id, Acl::ReadItems)
-            .await?;
+        let cached_messages = self
+            .get_cached_messages(account_id)
+            .await
+            .caused_by(trc::location!())?;
+        let document_ids = if access_token.is_member(account_id) {
+            cached_messages.document_ids()
+        } else {
+            let cached_mailboxes = self
+                .get_cached_mailboxes(account_id)
+                .await
+                .caused_by(trc::location!())?;
+            cached_messages.shared_messages(access_token, &cached_mailboxes, Acl::ReadItems)
+        };
+
         let email_ids = request.email_ids.unwrap();
         let mut response = GetSearchSnippetResponse {
             account_id: request.account_id,

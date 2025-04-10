@@ -6,14 +6,13 @@
 
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use email::{
-    mailbox::cache::MessageMailboxCache,
+    mailbox::cache::{MailboxCacheAccess, MessageMailboxCache},
     message::cache::{MessageCache, MessageCacheAccess},
 };
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
         acl::Acl,
-        collection::Collection,
         keyword::Keyword,
         property::Property,
         value::{Object, Value},
@@ -21,7 +20,6 @@ use jmap_proto::{
 };
 use std::future::Future;
 use store::ahash::AHashSet;
-use trc::AddContext;
 
 pub trait MailboxGet: Sync + Send {
     fn mailbox_get(
@@ -55,8 +53,8 @@ impl MailboxGet for Server {
         let mailbox_cache = self.get_cached_mailboxes(account_id).await?;
         let message_cache = self.get_cached_messages(account_id).await?;
         let shared_ids = if access_token.is_shared(account_id) {
-            self.shared_containers(access_token, account_id, Collection::Mailbox, Acl::Read)
-                .await?
+            mailbox_cache
+                .shared_mailboxes(access_token, Acl::Read)
                 .into()
         } else {
             None
@@ -73,9 +71,6 @@ impl MailboxGet for Server {
                 .map(Into::into)
                 .collect::<Vec<_>>()
         };
-        let fetch_properties = properties
-            .iter()
-            .any(|p| matches!(p, Property::SortOrder | Property::Acl | Property::MyRights));
         let mut response = GetResponse {
             account_id: request.account_id.into(),
             state: Some(mailbox_cache.change_id.into()),
@@ -98,30 +93,6 @@ impl MailboxGet for Server {
                 continue;
             };
 
-            let archived_mailbox_ = if fetch_properties {
-                match self
-                    .get_archive(account_id, Collection::Mailbox, document_id)
-                    .await?
-                {
-                    Some(values) => values,
-                    None => {
-                        response.not_found.push(id.into());
-                        continue;
-                    }
-                }
-                .into()
-            } else {
-                None
-            };
-            let archived_mailbox = if let Some(archived_mailbox) = &archived_mailbox_ {
-                archived_mailbox
-                    .unarchive::<email::mailbox::Mailbox>()
-                    .caused_by(trc::location!())?
-                    .into()
-            } else {
-                None
-            };
-
             let mut mailbox = Object::with_capacity(properties.len());
 
             for property in &properties {
@@ -135,9 +106,9 @@ impl MailboxGet for Server {
                             Value::Null
                         }
                     }
-                    Property::SortOrder => Value::from(&archived_mailbox.unwrap().sort_order),
+                    Property::SortOrder => Value::from(cached_mailbox.sort_order()),
                     Property::ParentId => {
-                        if let Some(parent_id) = cached_mailbox.parent_id {
+                        if let Some(parent_id) = cached_mailbox.parent_id() {
                             Value::Id((parent_id).into())
                         } else {
                             Value::Null
@@ -167,7 +138,7 @@ impl MailboxGet for Server {
                     ),
                     Property::MyRights => {
                         if access_token.is_shared(account_id) {
-                            let acl = archived_mailbox.unwrap().acls.effective_acl(access_token);
+                            let acl = cached_mailbox.acls.as_slice().effective_acl(access_token);
                             Object::with_capacity(9)
                                 .with_property(Property::MayReadItems, acl.contains(Acl::ReadItems))
                                 .with_property(Property::MayAddItems, acl.contains(Acl::AddItems))
@@ -208,7 +179,7 @@ impl MailboxGet for Server {
                             .contains(&access_token.primary_id()),
                     ),
                     Property::Acl => {
-                        self.acl_get(&archived_mailbox.unwrap().acls, access_token, account_id)
+                        self.acl_get(&cached_mailbox.acls, access_token, account_id)
                             .await
                     }
 

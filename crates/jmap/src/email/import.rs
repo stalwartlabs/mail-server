@@ -6,7 +6,7 @@
 
 use common::{Server, auth::AccessToken};
 use email::{
-    mailbox::cache::MessageMailboxCache,
+    mailbox::cache::{MailboxCacheAccess, MessageMailboxCache},
     message::ingest::{EmailIngest, IngestEmail, IngestSource},
 };
 use http_proto::HttpSessionData;
@@ -51,10 +51,10 @@ impl EmailImport for Server {
             .assert_state(account_id, Collection::Email, &request.if_in_state)
             .await?;
 
-        let valid_mailbox_ids = self.get_cached_mailboxes(account_id).await?;
+        let cached_mailboxes = self.get_cached_mailboxes(account_id).await?;
         let can_add_mailbox_ids = if access_token.is_shared(account_id) {
-            self.shared_containers(access_token, account_id, Collection::Mailbox, Acl::AddItems)
-                .await?
+            cached_mailboxes
+                .shared_mailboxes(access_token, Acl::AddItems)
                 .into()
         } else {
             None
@@ -91,7 +91,7 @@ impl EmailImport for Server {
                 continue;
             }
             for mailbox_id in &mailbox_ids {
-                if !valid_mailbox_ids.items.contains_key(mailbox_id) {
+                if !cached_mailboxes.items.contains_key(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()

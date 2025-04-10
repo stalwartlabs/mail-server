@@ -7,18 +7,20 @@
 use std::sync::Arc;
 
 use common::{
-    CacheSwap, MailboxCache, MessageStoreCache, Server, config::jmap::settings::SpecialUse,
+    CacheSwap, MailboxCache, MessageStoreCache, Server, auth::AccessToken,
+    config::jmap::settings::SpecialUse, sharing::EffectiveAcl,
 };
 use compact_str::CompactString;
-use jmap_proto::types::collection::Collection;
+use jmap_proto::types::{acl::Acl, collection::Collection, value::AclGrant};
 use std::future::Future;
 use store::{
     ahash::AHashMap,
     query::log::{Change, Query},
+    roaring::RoaringBitmap,
 };
 use tokio::sync::Semaphore;
 use trc::AddContext;
-use utils::topological::TopologicalSort;
+use utils::{map::bitmap::Bitmap, topological::TopologicalSort};
 
 use super::{ArchivedMailbox, Mailbox, manage::MailboxFnc};
 
@@ -194,12 +196,25 @@ fn insert_item(
         path: "".into(),
         role: (&mailbox.role).into(),
         parent_id: if parent_id > 0 {
-            Some(parent_id - 1)
+            parent_id - 1
         } else {
-            None
+            u32::MAX
         },
+        sort_order: mailbox
+            .sort_order
+            .as_ref()
+            .map(|s| s.to_native())
+            .unwrap_or(u32::MAX),
         subscribers: mailbox.subscribers.iter().map(|s| s.to_native()).collect(),
         uid_validity: mailbox.uid_validity.to_native(),
+        acls: mailbox
+            .acls
+            .iter()
+            .map(|acl| AclGrant {
+                account_id: acl.account_id.to_native(),
+                grants: Bitmap::from(&acl.grants),
+            })
+            .collect(),
     };
 
     cache.items.insert(document_id, item);
@@ -211,13 +226,16 @@ fn build_tree(cache: &mut MessageStoreCache<MailboxCache>) {
 
     for (idx, (&document_id, mailbox)) in cache.items.iter_mut().enumerate() {
         topological_sort.insert(
-            mailbox.parent_id.map(|id| id + 1).unwrap_or(0),
+            if mailbox.parent_id == u32::MAX {
+                0
+            } else {
+                mailbox.parent_id + 1
+            },
             document_id + 1,
         );
         mailbox.path = if matches!(mailbox.role, SpecialUse::Inbox) {
             "INBOX".into()
-        } else if mailbox.parent_id.is_none() && mailbox.name.as_str().eq_ignore_ascii_case("inbox")
-        {
+        } else if mailbox.is_root() && mailbox.name.as_str().eq_ignore_ascii_case("inbox") {
             format!("INBOX {}", idx + 1).into()
         } else {
             mailbox.name.clone()
@@ -235,7 +253,11 @@ fn build_tree(cache: &mut MessageStoreCache<MailboxCache>) {
             if let Some((path, parent_path)) = cache
                 .items
                 .get(&folder_id)
-                .and_then(|folder| folder.parent_id.map(|parent_id| (&folder.path, parent_id)))
+                .and_then(|folder| {
+                    folder
+                        .parent_id()
+                        .map(|parent_id| (&folder.path, parent_id))
+                })
                 .and_then(|(path, parent_id)| {
                     cache
                         .items
@@ -258,6 +280,11 @@ pub trait MailboxCacheAccess {
     fn by_name(&self, name: &str) -> Option<(&u32, &MailboxCache)>;
     fn by_path(&self, name: &str) -> Option<(&u32, &MailboxCache)>;
     fn by_role(&self, role: &SpecialUse) -> Option<(&u32, &MailboxCache)>;
+    fn shared_mailboxes(
+        &self,
+        access_token: &AccessToken,
+        check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
+    ) -> RoaringBitmap;
 }
 
 impl MailboxCacheAccess for MessageStoreCache<MailboxCache> {
@@ -275,5 +302,25 @@ impl MailboxCacheAccess for MessageStoreCache<MailboxCache> {
 
     fn by_role(&self, role: &SpecialUse) -> Option<(&u32, &MailboxCache)> {
         self.items.iter().find(|(_, m)| &m.role == role)
+    }
+
+    fn shared_mailboxes(
+        &self,
+        access_token: &AccessToken,
+        check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
+    ) -> RoaringBitmap {
+        let check_acls = check_acls.into();
+
+        RoaringBitmap::from_iter(
+            self.items
+                .iter()
+                .filter(|(_, m)| {
+                    m.acls
+                        .as_slice()
+                        .effective_acl(access_token)
+                        .contains_all(check_acls)
+                })
+                .map(|(id, _)| *id),
+        )
     }
 }

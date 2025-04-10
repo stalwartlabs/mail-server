@@ -34,7 +34,7 @@ use config::{
 };
 
 use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
-use jmap_proto::types::keyword::Keyword;
+use jmap_proto::types::{keyword::Keyword, value::AclGrant};
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 
 use mail_auth::{MX, Txt};
@@ -191,9 +191,11 @@ pub struct MailboxCache {
     pub name: CompactString,
     pub path: CompactString,
     pub role: SpecialUse,
-    pub parent_id: Option<u32>,
+    pub parent_id: u32,
+    pub sort_order: u32,
     pub subscribers: TinyVec<[u32; 4]>,
     pub uid_validity: u32,
+    pub acls: TinyVec<[AclGrant; 2]>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -558,5 +560,27 @@ impl<T> CacheSwap<T> {
 
     pub fn update(&self, value: Arc<T>) {
         self.0.store(value);
+    }
+}
+
+impl MailboxCache {
+    pub fn parent_id(&self) -> Option<u32> {
+        if self.parent_id != u32::MAX {
+            Some(self.parent_id)
+        } else {
+            None
+        }
+    }
+
+    pub fn sort_order(&self) -> Option<u32> {
+        if self.sort_order != u32::MAX {
+            Some(self.sort_order)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_root(&self) -> bool {
+        self.parent_id == u32::MAX
     }
 }
