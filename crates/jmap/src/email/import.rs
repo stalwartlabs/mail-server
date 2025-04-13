@@ -13,14 +13,7 @@ use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::import::{ImportEmailRequest, ImportEmailResponse},
-    types::{
-        acl::Acl,
-        collection::Collection,
-        id::Id,
-        property::Property,
-        state::{State, StateChange},
-        type_state::DataType,
-    },
+    types::{acl::Acl, collection::Collection, id::Id, property::Property, state::State},
 };
 use mail_parser::MessageParser;
 use utils::map::vec_map::VecMap;
@@ -69,7 +62,6 @@ impl EmailImport for Server {
             old_state: old_state.into(),
             created: VecMap::with_capacity(request.emails.len()),
             not_created: VecMap::new(),
-            state_change: None,
         };
         let can_train_spam = self.email_bayes_can_train(access_token);
 
@@ -91,7 +83,7 @@ impl EmailImport for Server {
                 continue;
             }
             for mailbox_id in &mailbox_ids {
-                if !cached_mailboxes.items.contains_key(mailbox_id) {
+                if !cached_mailboxes.has_id(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
@@ -174,13 +166,6 @@ impl EmailImport for Server {
         // Update state
         if !response.created.is_empty() {
             response.new_state = self.get_state(account_id, Collection::Email).await?;
-            if let State::Exact(change_id) = &response.new_state {
-                response.state_change = StateChange::new(account_id)
-                    .with_change(DataType::Email, *change_id)
-                    .with_change(DataType::Mailbox, *change_id)
-                    .with_change(DataType::Thread, *change_id)
-                    .into()
-            }
         }
 
         Ok(response)

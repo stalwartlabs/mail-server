@@ -9,7 +9,7 @@ use std::ops::Range;
 use common::{Server, auth::AccessToken};
 use email::{
     mailbox::cache::MessageMailboxCache,
-    message::cache::{MessageCache, MessageCacheAccess},
+    message::cache::{MessageCacheFetch, MessageCacheAccess},
 };
 use jmap_proto::types::{acl::Acl, blob::BlobId, collection::Collection};
 use std::future::Future;

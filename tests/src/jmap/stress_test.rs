@@ -10,7 +10,7 @@ use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
 use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
 use email::message::{
-    cache::{MessageCache, MessageCacheAccess},
+    cache::{MessageCacheAccess, MessageCacheFetch},
     metadata::MessageData,
 };
 use futures::future::join_all;
@@ -223,7 +223,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                     .await
                     .unwrap()
                     .in_mailbox(mailbox_id)
-                    .map(|(id, _)| id),
+                    .map(|m| m.document_id),
             );
             let mut email_ids_check = email_ids_in_mailbox.clone();
             email_ids_check &= &email_ids;

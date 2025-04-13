@@ -189,9 +189,8 @@ impl SieveScriptIngest for Server {
                                 } else {
                                     let mut mailbox_id = u32::MAX;
                                     if let Ok(role) = SpecialUse::parse_value(&role) {
-                                        if let Some((mailbox_id_, _)) = mailbox_cache.by_role(&role)
-                                        {
-                                            mailbox_id = *mailbox_id_;
+                                        if let Some(m) = mailbox_cache.by_role(&role) {
+                                            mailbox_id = m.document_id;
                                         }
                                     }
 
@@ -205,8 +204,8 @@ impl SieveScriptIngest for Server {
                                     Mailbox::Name(name) => {
                                         if !matches!(
                                             mailbox_cache.by_path(&name),
-                                            Some((document_id, _)) if special_use_ids.is_empty() ||
-                                            special_use_ids.contains(document_id)
+                                            Some(item) if special_use_ids.is_empty() ||
+                                            special_use_ids.contains(&item.document_id)
                                         ) {
                                             result = false;
                                             break;
@@ -214,7 +213,7 @@ impl SieveScriptIngest for Server {
                                     }
                                     Mailbox::Id(id) => {
                                         if !matches!(Id::from_bytes(id.as_bytes()), Some(id) if
-                                                            mailbox_cache.items.contains_key(&id.document_id()) &&
+                                                            mailbox_cache.has_id(&id.document_id()) &&
                                                             (special_use_ids.is_empty() ||
                                                             special_use_ids.contains(&id.document_id())))
                                         {
@@ -310,7 +309,7 @@ impl SieveScriptIngest for Server {
                             mailbox_id.and_then(|m| Id::from_bytes(m.as_bytes()))
                         {
                             let mailbox_id = mailbox_id.document_id();
-                            if mailbox_cache.items.contains_key(&mailbox_id) {
+                            if mailbox_cache.has_id(&mailbox_id) {
                                 target_id = mailbox_id;
                             }
                         }
@@ -323,8 +322,8 @@ impl SieveScriptIngest for Server {
                                 } else if special_use.eq_ignore_ascii_case("trash") {
                                     target_id = TRASH_ID;
                                 } else if let Ok(role) = SpecialUse::parse_value(&special_use) {
-                                    if let Some((mailbox_id_, _)) = mailbox_cache.by_role(&role) {
-                                        target_id = *mailbox_id_;
+                                    if let Some(item) = mailbox_cache.by_role(&role) {
+                                        target_id = item.document_id;
                                     }
                                 }
                             }
@@ -333,8 +332,8 @@ impl SieveScriptIngest for Server {
                         // Find mailbox by name
                         if target_id == u32::MAX {
                             if !create {
-                                if let Some((document_id, _)) = mailbox_cache.by_path(&folder) {
-                                    target_id = *document_id;
+                                if let Some(m) = mailbox_cache.by_path(&folder) {
+                                    target_id = m.document_id;
                                 }
                             } else if let Some(document_id) = self
                                 .mailbox_create_path(account_id, &folder)

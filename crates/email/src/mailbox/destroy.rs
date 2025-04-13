@@ -16,7 +16,7 @@ use store::{roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 
 use crate::message::{
-    cache::{MessageCache, MessageCacheAccess},
+    cache::{MessageCacheAccess, MessageCacheFetch},
     delete::EmailDeletion,
     metadata::MessageData,
 };
@@ -66,7 +66,7 @@ impl MailboxDestroy for Server {
             .await?
             .items
             .iter()
-            .any(|(_, m)| m.parent_id == document_id)
+            .any(|item| item.parent_id == document_id)
         {
             return Ok(Err(SetError::new(SetErrorType::MailboxHasChild)
                 .with_description("Mailbox has at least one children.")));
@@ -82,7 +82,7 @@ impl MailboxDestroy for Server {
                 .await
                 .caused_by(trc::location!())?
                 .in_mailbox(document_id)
-                .map(|(id, _)| id),
+                .map(|m| m.document_id),
         );
 
         if !message_ids.is_empty() {

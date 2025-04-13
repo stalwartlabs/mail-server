@@ -581,11 +581,11 @@ impl IndexableObject for MessageData {
                 prefix: self.thread_id.into(),
             },
             IndexValue::LogParent {
-                collection: Collection::Thread,
+                collection: Collection::Thread.into(),
                 ids: vec![self.thread_id],
             },
             IndexValue::LogParent {
-                collection: Collection::Mailbox,
+                collection: Collection::Mailbox.as_child_update(),
                 ids: self.mailboxes.iter().map(|m| m.mailbox_id).collect(),
             },
         ]
@@ -600,11 +600,11 @@ impl IndexableObject for &ArchivedMessageData {
                 prefix: self.thread_id.to_native().into(),
             },
             IndexValue::LogParent {
-                collection: Collection::Thread,
+                collection: Collection::Thread.into(),
                 ids: vec![self.thread_id.to_native()],
             },
             IndexValue::LogParent {
-                collection: Collection::Mailbox,
+                collection: Collection::Mailbox.as_child_update(),
                 ids: self
                     .mailboxes
                     .iter()

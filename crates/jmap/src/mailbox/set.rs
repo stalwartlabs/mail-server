@@ -83,7 +83,7 @@ impl MailboxSet for Server {
                 .prepare_set_response(&request, Collection::Mailbox)
                 .await?,
             mailbox_ids: RoaringBitmap::from_iter(
-                self.get_cached_mailboxes(account_id).await?.items.keys(),
+                self.get_cached_mailboxes(account_id).await?.index.keys(),
             ),
             will_destroy: request.unwrap_destroy(),
         };
@@ -469,7 +469,7 @@ impl MailboxSet for Server {
             if update
                 .as_ref()
                 .is_none_or(|(_, m)| m.inner.name != changes.name)
-                && cached_mailboxes.items.iter().any(|(_, m)| {
+                && cached_mailboxes.items.iter().any(|m| {
                     m.name.to_lowercase() == lower_name
                         && m.parent_id().map_or(0, |id| id + 1) == changes.parent_id
                 })

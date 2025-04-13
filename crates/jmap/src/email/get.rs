@@ -9,10 +9,9 @@ use common::{Server, auth::AccessToken};
 use email::{
     mailbox::cache::MessageMailboxCache,
     message::{
-        cache::{MessageCache, MessageCacheAccess},
+        cache::{MessageCacheAccess, MessageCacheFetch},
         metadata::{
-            ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageData,
-            MessageMetadata,
+            ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageMetadata,
         },
     },
 };
@@ -126,7 +125,7 @@ impl EmailGet for Server {
                 .items
                 .iter()
                 .take(self.core.jmap.get_max_objects)
-                .map(|(document_id, item)| Id::from_parts(item.thread_id, *document_id))
+                .map(|item| Id::from_parts(item.thread_id, item.document_id))
                 .collect()
         };
         let mut response = GetResponse {
@@ -178,19 +177,13 @@ impl EmailGet for Server {
                 .caused_by(trc::location!())?;
 
             // Obtain message data
-            let data_ = match self
-                .get_archive(account_id, Collection::Email, id.document_id())
-                .await?
-            {
+            let data = match cached_messages.by_id(&id.document_id()) {
                 Some(data) => data,
                 None => {
                     response.not_found.push(id.into());
                     continue;
                 }
             };
-            let data = data_
-                .unarchive::<MessageData>()
-                .caused_by(trc::location!())?;
 
             // Retrieve raw message if needed
             let blob_hash = BlobHash::from(&metadata.blob_hash);
@@ -243,17 +236,14 @@ impl EmailGet for Server {
                         let mut obj = Object::with_capacity(data.mailboxes.len());
                         for id in data.mailboxes.iter() {
                             debug_assert!(id.uid != 0);
-                            obj.append(
-                                Property::_T(Id::from(u32::from(id.mailbox_id)).to_string()),
-                                true,
-                            );
+                            obj.append(Property::_T(Id::from(id.mailbox_id).to_string()), true);
                         }
 
                         email.append(property.clone(), Value::Object(obj));
                     }
                     Property::Keywords => {
-                        let mut obj = Object::with_capacity(data.keywords.len());
-                        for keyword in data.keywords.iter() {
+                        let mut obj = Object::with_capacity(2);
+                        for keyword in cached_messages.expand_keywords(data) {
                             obj.append(Property::_T(keyword.to_string()), true);
                         }
                         email.append(property.clone(), Value::Object(obj));

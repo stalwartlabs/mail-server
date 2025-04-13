@@ -8,7 +8,7 @@ use common::{Server, auth::AccessToken};
 use email::{
     mailbox::cache::MessageMailboxCache,
     message::{
-        cache::{MessageCache, MessageCacheAccess},
+        cache::{MessageCacheFetch, MessageCacheAccess},
         metadata::{
             ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
             MessageMetadata,

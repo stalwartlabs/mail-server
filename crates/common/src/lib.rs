@@ -34,7 +34,7 @@ use config::{
 };
 
 use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
-use jmap_proto::types::{keyword::Keyword, value::AclGrant};
+use jmap_proto::types::value::AclGrant;
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 
 use mail_auth::{MX, Txt};
@@ -145,8 +145,8 @@ pub struct Caches {
     pub http_auth: Cache<String, HttpAuthCache>,
     pub permissions: Cache<u32, Arc<RolePermissions>>,
 
-    pub messages: Cache<u32, CacheSwap<MessageStoreCache<MessageItemCache>>>,
-    pub mailboxes: Cache<u32, CacheSwap<MessageStoreCache<MailboxCache>>>,
+    pub messages: Cache<u32, CacheSwap<MessageStoreCache>>,
+    pub mailboxes: Cache<u32, CacheSwap<MailboxStoreCache>>,
     pub dav: Cache<DavResourceId, Arc<DavResources>>,
 
     pub bayes: CacheWithTtl<TokenHash, Weights>,
@@ -165,17 +165,29 @@ pub struct Caches {
 pub struct CacheSwap<T>(pub Arc<ArcSwap<T>>);
 
 #[derive(Debug, Clone)]
-pub struct MessageStoreCache<T> {
+pub struct MailboxStoreCache {
     pub change_id: u64,
-    pub items: AHashMap<u32, T>,
+    pub index: AHashMap<u32, u32>,
+    pub items: Vec<MailboxCache>,
     pub update_lock: Arc<Semaphore>,
     pub size: u64,
 }
 
 #[derive(Debug, Clone)]
-pub struct MessageItemCache {
+pub struct MessageStoreCache {
+    pub change_id: u64,
+    pub items: Vec<MessageCache>,
+    pub index: AHashMap<u32, u32>,
+    pub keywords: Vec<CompactString>,
+    pub update_lock: Arc<Semaphore>,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageCache {
+    pub document_id: u32,
     pub mailboxes: TinyVec<[MessageUidCache; 2]>,
-    pub keywords: TinyVec<[Keyword; 2]>,
+    pub keywords: u128,
     pub thread_id: u32,
     pub change_id: u64,
 }
@@ -188,6 +200,7 @@ pub struct MessageUidCache {
 
 #[derive(Debug, Clone)]
 pub struct MailboxCache {
+    pub document_id: u32,
     pub name: CompactString,
     pub path: CompactString,
     pub role: SpecialUse,
@@ -272,7 +285,13 @@ impl<T: CacheItemWeight> CacheItemWeight for CacheSwap<T> {
     }
 }
 
-impl<T> CacheItemWeight for MessageStoreCache<T> {
+impl CacheItemWeight for MessageStoreCache {
+    fn weight(&self) -> u64 {
+        self.size
+    }
+}
+
+impl CacheItemWeight for MailboxStoreCache {
     fn weight(&self) -> u64 {
         self.size
     }
@@ -515,7 +534,7 @@ impl std::borrow::Borrow<u32> for DavResource {
     }
 }
 
-impl MessageStoreCache<MessageItemCache> {
+impl MessageStoreCache {
     pub fn assign_thread_id(&self, thread_name: &[u8], message_id: &[u8]) -> u32 {
         let mut bytes = Vec::with_capacity(thread_name.len() + message_id.len());
         bytes.extend_from_slice(thread_name);
@@ -529,7 +548,7 @@ impl MessageStoreCache<MessageItemCache> {
         // Naive pass, assume hash is unique
         let mut threads_ids = RoaringBitmap::new();
         let mut is_unique_hash = true;
-        for item in self.items.values() {
+        for item in self.items.iter() {
             if is_unique_hash && item.thread_id != hash {
                 is_unique_hash = false;
             }

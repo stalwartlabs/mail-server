@@ -23,7 +23,7 @@ use utils::{
 };
 
 use crate::{
-    CacheSwap, Caches, Data, DavResource, DavResources, MailboxCache, MessageItemCache,
+    CacheSwap, Caches, Data, DavResource, DavResources, MailboxCache, MailboxStoreCache,
     MessageStoreCache, MessageUidCache, TlsConnectors,
     auth::{AccessToken, roles::RolePermissions},
     config::smtp::resolver::{Policy, Tlsa},
@@ -112,7 +112,7 @@ impl Caches {
                 "mailbox",
                 MB_10,
                 (std::mem::size_of::<u32>()
-                    + std::mem::size_of::<CacheSwap<MessageStoreCache<MailboxCache>>>()
+                    + std::mem::size_of::<CacheSwap<MailboxStoreCache>>()
                     + (15 * (std::mem::size_of::<MailboxCache>() + 60))) as u64,
             ),
             messages: Cache::from_config(
@@ -120,7 +120,7 @@ impl Caches {
                 "message",
                 MB_10,
                 (std::mem::size_of::<u32>()
-                    + std::mem::size_of::<CacheSwap<MessageStoreCache<MessageItemCache>>>()
+                    + std::mem::size_of::<CacheSwap<MessageStoreCache>>()
                     + (1024 * std::mem::size_of::<MessageUidCache>())) as u64,
             ),
             dav: Cache::from_config(

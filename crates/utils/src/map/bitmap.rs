@@ -22,6 +22,7 @@ use std::ops::Deref;
     Hash,
 )]
 #[rkyv(compare(PartialEq), derive(Debug))]
+#[repr(transparent)]
 pub struct Bitmap<T: BitmapItem> {
     pub bitmap: u64,
     #[serde(skip)]

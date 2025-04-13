@@ -7,14 +7,14 @@
 use std::sync::Arc;
 
 use common::{
-    CacheSwap, MailboxCache, MessageStoreCache, Server, auth::AccessToken,
+    CacheSwap, MailboxCache, MailboxStoreCache, Server, auth::AccessToken,
     config::jmap::settings::SpecialUse, sharing::EffectiveAcl,
 };
 use compact_str::CompactString;
 use jmap_proto::types::{acl::Acl, collection::Collection, value::AclGrant};
 use std::future::Future;
 use store::{
-    ahash::AHashMap,
+    ahash::{AHashMap, AHashSet},
     query::log::{Change, Query},
     roaring::RoaringBitmap,
 };
@@ -28,14 +28,11 @@ pub trait MessageMailboxCache: Sync + Send {
     fn get_cached_mailboxes(
         &self,
         account_id: u32,
-    ) -> impl Future<Output = trc::Result<Arc<MessageStoreCache<MailboxCache>>>> + Send;
+    ) -> impl Future<Output = trc::Result<Arc<MailboxStoreCache>>> + Send;
 }
 
 impl MessageMailboxCache for Server {
-    async fn get_cached_mailboxes(
-        &self,
-        account_id: u32,
-    ) -> trc::Result<Arc<MessageStoreCache<MailboxCache>>> {
+    async fn get_cached_mailboxes(&self, account_id: u32) -> trc::Result<Arc<MailboxStoreCache>> {
         let cache_ = match self
             .inner
             .cache
@@ -98,9 +95,14 @@ impl MessageMailboxCache for Server {
             return Ok(cache);
         }
 
-        let mut has_changes = false;
-        let mut cache = cache.as_ref().clone();
-        cache.change_id = changes.to_change_id;
+        let mut changed_ids = AHashSet::with_capacity(changes.changes.len());
+        let mut new_cache = MailboxStoreCache {
+            items: Vec::with_capacity(cache.items.len()),
+            index: AHashMap::with_capacity(cache.items.len()),
+            size: 0,
+            change_id: changes.to_change_id,
+            update_lock: cache.update_lock.clone(),
+        };
 
         for change in changes.changes {
             match change {
@@ -111,24 +113,30 @@ impl MessageMailboxCache for Server {
                         .await
                         .caused_by(trc::location!())?
                     {
-                        insert_item(&mut cache, document_id, archive.unarchive::<Mailbox>()?);
-                        has_changes = true;
+                        insert_item(&mut new_cache, document_id, archive.unarchive::<Mailbox>()?);
+                        changed_ids.insert(document_id);
                     }
                 }
                 Change::Delete(id) => {
-                    if cache.items.remove(&(id as u32)).is_some() {
-                        has_changes = true;
-                    }
+                    changed_ids.insert(id as u32);
                 }
-                Change::ChildUpdate(_) => {}
             }
         }
 
-        if has_changes {
-            build_tree(&mut cache);
+        for item in cache.items.iter() {
+            if !changed_ids.contains(&item.document_id) {
+                new_cache.insert(item.clone());
+            }
         }
 
-        let cache = Arc::new(cache);
+        build_tree(&mut new_cache);
+
+        if cache.items.len() > new_cache.items.len() {
+            new_cache.items.shrink_to_fit();
+            new_cache.index.shrink_to_fit();
+        }
+
+        let cache = Arc::new(new_cache);
         cache_.update(cache.clone());
 
         Ok(cache)
@@ -139,10 +147,11 @@ async fn full_cache_build(
     server: &Server,
     account_id: u32,
     update_lock: Arc<Semaphore>,
-) -> trc::Result<Arc<MessageStoreCache<MailboxCache>>> {
+) -> trc::Result<Arc<MailboxStoreCache>> {
     // Build cache
-    let mut cache = MessageStoreCache {
-        items: AHashMap::with_capacity(16),
+    let mut cache = MailboxStoreCache {
+        items: Default::default(),
+        index: Default::default(),
         size: 0,
         change_id: 0,
         update_lock,
@@ -185,13 +194,10 @@ async fn full_cache_build(
     Ok(Arc::new(cache))
 }
 
-fn insert_item(
-    cache: &mut MessageStoreCache<MailboxCache>,
-    document_id: u32,
-    mailbox: &ArchivedMailbox,
-) {
+fn insert_item(cache: &mut MailboxStoreCache, document_id: u32, mailbox: &ArchivedMailbox) {
     let parent_id = mailbox.parent_id.to_native();
     let item = MailboxCache {
+        document_id,
         name: mailbox.name.as_str().into(),
         path: "".into(),
         role: (&mailbox.role).into(),
@@ -217,21 +223,21 @@ fn insert_item(
             .collect(),
     };
 
-    cache.items.insert(document_id, item);
+    cache.insert(item);
 }
 
-fn build_tree(cache: &mut MessageStoreCache<MailboxCache>) {
+fn build_tree(cache: &mut MailboxStoreCache) {
     cache.size = 0;
     let mut topological_sort = TopologicalSort::with_capacity(cache.items.len());
 
-    for (idx, (&document_id, mailbox)) in cache.items.iter_mut().enumerate() {
+    for (idx, mailbox) in cache.items.iter_mut().enumerate() {
         topological_sort.insert(
             if mailbox.parent_id == u32::MAX {
                 0
             } else {
                 mailbox.parent_id + 1
             },
-            document_id + 1,
+            mailbox.document_id + 1,
         );
         mailbox.path = if matches!(mailbox.role, SpecialUse::Inbox) {
             "INBOX".into()
@@ -241,35 +247,28 @@ fn build_tree(cache: &mut MessageStoreCache<MailboxCache>) {
             mailbox.name.clone()
         };
 
-        cache.size += (std::mem::size_of::<MailboxCache>()
-            + std::mem::size_of::<u32>()
-            + mailbox.name.len()
-            + mailbox.path.len()) as u64;
+        cache.size += item_size(mailbox);
     }
 
     for folder_id in topological_sort.into_iterator() {
         if folder_id != 0 {
             let folder_id = folder_id - 1;
             if let Some((path, parent_path)) = cache
-                .items
-                .get(&folder_id)
+                .by_id(&folder_id)
                 .and_then(|folder| {
                     folder
                         .parent_id()
                         .map(|parent_id| (&folder.path, parent_id))
                 })
                 .and_then(|(path, parent_id)| {
-                    cache
-                        .items
-                        .get(&parent_id)
-                        .map(|folder| (path, &folder.path))
+                    cache.by_id(&parent_id).map(|folder| (path, &folder.path))
                 })
             {
                 let mut new_path = CompactString::with_capacity(parent_path.len() + path.len() + 1);
                 new_path.push_str(parent_path.as_str());
                 new_path.push('/');
                 new_path.push_str(path.as_str());
-                let folder = cache.items.get_mut(&folder_id).unwrap();
+                let folder = cache.by_id_mut(&folder_id).unwrap();
                 folder.path = new_path;
             }
         }
@@ -277,31 +276,35 @@ fn build_tree(cache: &mut MessageStoreCache<MailboxCache>) {
 }
 
 pub trait MailboxCacheAccess {
-    fn by_name(&self, name: &str) -> Option<(&u32, &MailboxCache)>;
-    fn by_path(&self, name: &str) -> Option<(&u32, &MailboxCache)>;
-    fn by_role(&self, role: &SpecialUse) -> Option<(&u32, &MailboxCache)>;
+    fn by_id(&self, id: &u32) -> Option<&MailboxCache>;
+    fn by_id_mut(&mut self, id: &u32) -> Option<&mut MailboxCache>;
+    fn insert(&mut self, item: MailboxCache);
+    fn by_name(&self, name: &str) -> Option<&MailboxCache>;
+    fn by_path(&self, name: &str) -> Option<&MailboxCache>;
+    fn by_role(&self, role: &SpecialUse) -> Option<&MailboxCache>;
     fn shared_mailboxes(
         &self,
         access_token: &AccessToken,
         check_acls: impl Into<Bitmap<Acl>> + Sync + Send,
     ) -> RoaringBitmap;
+    fn has_id(&self, id: &u32) -> bool;
 }
 
-impl MailboxCacheAccess for MessageStoreCache<MailboxCache> {
-    fn by_name(&self, name: &str) -> Option<(&u32, &MailboxCache)> {
+impl MailboxCacheAccess for MailboxStoreCache {
+    fn by_name(&self, name: &str) -> Option<&MailboxCache> {
         self.items
             .iter()
-            .find(|(_, m)| m.name.eq_ignore_ascii_case(name))
+            .find(|m| m.name.eq_ignore_ascii_case(name))
     }
 
-    fn by_path(&self, path: &str) -> Option<(&u32, &MailboxCache)> {
+    fn by_path(&self, path: &str) -> Option<&MailboxCache> {
         self.items
             .iter()
-            .find(|(_, m)| m.path.eq_ignore_ascii_case(path))
+            .find(|m| m.path.eq_ignore_ascii_case(path))
     }
 
-    fn by_role(&self, role: &SpecialUse) -> Option<(&u32, &MailboxCache)> {
-        self.items.iter().find(|(_, m)| &m.role == role)
+    fn by_role(&self, role: &SpecialUse) -> Option<&MailboxCache> {
+        self.items.iter().find(|m| &m.role == role)
     }
 
     fn shared_mailboxes(
@@ -314,13 +317,55 @@ impl MailboxCacheAccess for MessageStoreCache<MailboxCache> {
         RoaringBitmap::from_iter(
             self.items
                 .iter()
-                .filter(|(_, m)| {
+                .filter(|m| {
                     m.acls
                         .as_slice()
                         .effective_acl(access_token)
                         .contains_all(check_acls)
                 })
-                .map(|(id, _)| *id),
+                .map(|m| m.document_id),
         )
     }
+
+    fn by_id(&self, id: &u32) -> Option<&MailboxCache> {
+        self.index
+            .get(id)
+            .and_then(|idx| self.items.get(*idx as usize))
+    }
+
+    fn by_id_mut(&mut self, id: &u32) -> Option<&mut MailboxCache> {
+        self.index
+            .get(id)
+            .and_then(|idx| self.items.get_mut(*idx as usize))
+    }
+
+    fn insert(&mut self, item: MailboxCache) {
+        let id = item.document_id;
+        if let Some(idx) = self.index.get(&id) {
+            self.items[*idx as usize] = item;
+        } else {
+            let idx = self.items.len() as u32;
+            self.items.push(item);
+            self.index.insert(id, idx);
+        }
+    }
+
+    fn has_id(&self, id: &u32) -> bool {
+        self.index.contains_key(id)
+    }
+}
+
+#[inline(always)]
+fn item_size(item: &MailboxCache) -> u64 {
+    (std::mem::size_of::<MailboxCache>()
+        + (if item.name.len() > std::mem::size_of::<String>() {
+            item.name.len()
+        } else {
+            0
+        })
+        + (if item.path.len() > std::mem::size_of::<String>() {
+            item.path.len()
+        } else {
+            0
+        })) as u64
 }

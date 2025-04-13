@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{MessageItemCache, MessageStoreCache, Server, auth::AccessToken};
+use common::{MessageStoreCache, Server, auth::AccessToken};
 use email::{
     mailbox::cache::MessageMailboxCache,
-    message::cache::{MessageCache, MessageCacheAccess},
+    message::cache::{MessageCacheAccess, MessageCacheFetch},
 };
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
@@ -191,7 +191,7 @@ impl EmailQuery for Server {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
                                 cached_messages
                                     .in_mailbox(mailbox.document_id())
-                                    .map(|(id, _)| *id),
+                                    .map(|item| item.document_id),
                             )))
                         }
                         Filter::InMailboxOtherThan(mailboxes) => {
@@ -201,7 +201,7 @@ impl EmailQuery for Server {
                                 filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
                                     cached_messages
                                         .in_mailbox(mailbox.document_id())
-                                        .map(|(id, _)| *id),
+                                        .map(|item| item.document_id),
                                 )));
                             }
                             filters.push(query::Filter::End);
@@ -244,13 +244,17 @@ impl EmailQuery for Server {
                         }
                         Filter::HasKeyword(keyword) => {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                                cached_messages.with_keyword(&keyword).map(|(id, _)| *id),
+                                cached_messages
+                                    .with_keyword(&keyword)
+                                    .map(|item| item.document_id),
                             )));
                         }
                         Filter::NotKeyword(keyword) => {
                             filters.push(query::Filter::Not);
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                                cached_messages.with_keyword(&keyword).map(|(id, _)| *id),
+                                cached_messages
+                                    .with_keyword(&keyword)
+                                    .map(|item| item.document_id),
                             )));
                             filters.push(query::Filter::End);
                         }
@@ -282,7 +286,7 @@ impl EmailQuery for Server {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
                                 cached_messages
                                     .in_thread(id.document_id())
-                                    .map(|(id, _)| *id),
+                                    .map(|item| item.document_id),
                             )))
                         }
                         Filter::And | Filter::Or | Filter::Not | Filter::Close => {
@@ -344,7 +348,7 @@ impl EmailQuery for Server {
                         RoaringBitmap::from_iter(
                             cached_messages
                                 .with_keyword(&comparator.keyword.unwrap_or(Keyword::Seen))
-                                .map(|(id, _)| *id),
+                                .map(|item| item.document_id),
                         ),
                         comparator.is_ascending,
                     ),
@@ -387,7 +391,7 @@ impl EmailQuery for Server {
                         &cache
                             .items
                             .iter()
-                            .map(|(id, item)| (*id, item.thread_id))
+                            .map(|item| (item.document_id, item.thread_id))
                             .collect(),
                     )
                     .with_prefix_unique(request.arguments.collapse_threads.unwrap_or(false)),
@@ -400,12 +404,9 @@ impl EmailQuery for Server {
     }
 }
 
-fn thread_keywords(
-    cache: &MessageStoreCache<MessageItemCache>,
-    keyword: Keyword,
-    match_all: bool,
-) -> RoaringBitmap {
-    let keyword_doc_ids = RoaringBitmap::from_iter(cache.with_keyword(&keyword).map(|(id, _)| *id));
+fn thread_keywords(cache: &MessageStoreCache, keyword: Keyword, match_all: bool) -> RoaringBitmap {
+    let keyword_doc_ids =
+        RoaringBitmap::from_iter(cache.with_keyword(&keyword).map(|item| item.document_id));
     if keyword_doc_ids.is_empty() {
         return keyword_doc_ids;
     }
@@ -414,14 +415,15 @@ fn thread_keywords(
 
     let mut thread_map: AHashMap<u32, RoaringBitmap> = AHashMap::new();
 
-    for (&document_id, item) in &cache.items {
+    for item in &cache.items {
         thread_map
             .entry(item.thread_id)
             .or_default()
-            .insert(document_id);
+            .insert(item.document_id);
     }
 
-    for (&keyword_doc_id, item) in &cache.items {
+    for item in &cache.items {
+        let keyword_doc_id = item.document_id;
         if !keyword_doc_ids.contains(keyword_doc_id)
             || matched_ids.contains(keyword_doc_id)
             || not_matched_ids.contains(keyword_doc_id)

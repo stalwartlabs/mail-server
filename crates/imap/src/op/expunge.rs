@@ -9,7 +9,7 @@ use std::{sync::Arc, time::Instant};
 use ahash::AHashMap;
 use directory::Permission;
 use email::message::{
-    cache::{MessageCache, MessageCacheAccess},
+    cache::{MessageCacheFetch, MessageCacheAccess},
     delete::EmailDeletion,
     metadata::MessageData,
 };
@@ -121,7 +121,7 @@ impl<T: SessionStream> SessionData<T> {
                 .await
                 .caused_by(trc::location!())?
                 .in_mailbox_with_keyword(mailbox.id.mailbox_id, &Keyword::Deleted)
-                .map(|(id, _)| id),
+                .map(|m| m.document_id),
         );
 
         // Filter by sequence

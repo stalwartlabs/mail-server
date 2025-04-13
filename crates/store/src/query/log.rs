@@ -13,7 +13,6 @@ use crate::{IterateParams, LogKey, Store, U64_LEN, write::key::DeserializeBigEnd
 pub enum Change {
     Insert(u64),
     Update(u64),
-    ChildUpdate(u64),
     Delete(u64),
 }
 
@@ -24,7 +23,7 @@ pub struct Changes {
     pub to_change_id: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Query {
     All,
     Since(u64),
@@ -144,7 +143,6 @@ impl Changes {
         let mut bytes_it = bytes.iter();
         let total_inserts: usize = bytes_it.next_leb128()?;
         let total_updates: usize = bytes_it.next_leb128()?;
-        let total_child_updates: usize = bytes_it.next_leb128()?;
         let total_deletes: usize = bytes_it.next_leb128()?;
 
         if total_inserts > 0 {
@@ -153,10 +151,9 @@ impl Changes {
             }
         }
 
-        if total_updates > 0 || total_child_updates > 0 {
-            'update_outer: for change_pos in 0..(total_updates + total_child_updates) {
+        if total_updates > 0 {
+            'update_outer: for _ in 0..total_updates {
                 let id = bytes_it.next_leb128()?;
-                let mut is_child_update = change_pos >= total_updates;
 
                 for (idx, change) in self.changes.iter().enumerate() {
                     match change {
@@ -166,12 +163,6 @@ impl Changes {
                         }
                         Change::Update(update_id) if *update_id == id => {
                             // Move update to the front
-                            is_child_update = false;
-                            self.changes.remove(idx);
-                            break;
-                        }
-                        Change::ChildUpdate(update_id) if *update_id == id => {
-                            // Move update to the front
                             self.changes.remove(idx);
                             break;
                         }
@@ -179,11 +170,7 @@ impl Changes {
                     }
                 }
 
-                self.changes.push(if !is_child_update {
-                    Change::Update(id)
-                } else {
-                    Change::ChildUpdate(id)
-                });
+                self.changes.push(Change::Update(id));
             }
         }
 
@@ -197,9 +184,7 @@ impl Changes {
                             self.changes.remove(idx);
                             continue 'delete_outer;
                         }
-                        Change::Update(update_id) | Change::ChildUpdate(update_id)
-                            if *update_id == id =>
-                        {
+                        Change::Update(update_id) if *update_id == id => {
                             self.changes.remove(idx);
                             break 'delete_inner;
                         }
@@ -220,7 +205,6 @@ impl Change {
         match self {
             Change::Insert(id) => *id,
             Change::Update(id) => *id,
-            Change::ChildUpdate(id) => *id,
             Change::Delete(id) => *id,
         }
     }
@@ -229,7 +213,6 @@ impl Change {
         match self {
             Change::Insert(id) => id,
             Change::Update(id) => id,
-            Change::ChildUpdate(id) => id,
             Change::Delete(id) => id,
         }
     }

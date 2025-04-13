@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use email::{
     mailbox::{INBOX_ID, JUNK_ID},
-    message::cache::{MessageCache, MessageCacheAccess},
+    message::cache::{MessageCacheAccess, MessageCacheFetch},
 };
 use jmap_proto::types::{collection::Collection, id::Id};
 

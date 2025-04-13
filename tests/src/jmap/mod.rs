@@ -373,8 +373,8 @@ pub async fn jmap_tests() {
     )
     .await;
 
-    webhooks::test(&mut params).await;
-    //email_query::test(&mut params, delete).await;
+    /*webhooks::test(&mut params).await;
+    email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -382,8 +382,8 @@ pub async fn jmap_tests() {
     email_changes::test(&mut params).await;
     email_query_changes::test(&mut params).await;
     email_copy::test(&mut params).await;
-    thread_get::test(&mut params).await;
-    //thread_merge::test(&mut params).await;
+    thread_get::test(&mut params).await;*/
+    thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;

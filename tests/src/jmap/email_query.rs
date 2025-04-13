@@ -11,7 +11,7 @@ use crate::{
     store::{deflate_test_resource, query::FIELDS},
 };
 
-use ::email::{mailbox::Mailbox, message::cache::MessageCache};
+use ::email::{mailbox::Mailbox, message::cache::MessageCacheFetch};
 use ahash::AHashSet;
 use common::{config::jmap::settings::SpecialUse, storage::index::ObjectIndexBuilder};
 use jmap_client::{
@@ -19,12 +19,12 @@ use jmap_client::{
     core::query::{Comparator, Filter},
     email,
 };
-use jmap_proto::types::{collection::Collection, id::Id, property::Property};
+use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{DateTime, HeaderName};
 
 use store::{
     ahash::AHashMap,
-    write::{BatchBuilder, ValueClass, now},
+    write::{BatchBuilder, now},
 };
 
 use super::JMAPTest;
@@ -73,24 +73,6 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         println!("Inserting JMAP Mail query test messages...");
         create(client).await;
 
-        // Remove mailboxes
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::Mailbox);
-        for mailbox_id in 1545..3010 {
-            batch
-                .delete_document(mailbox_id)
-                .clear(ValueClass::Property(Property::EmailIds.into()));
-        }
-        server
-            .core
-            .storage
-            .data
-            .write(batch.build_all())
-            .await
-            .unwrap();
-
         assert_eq!(
             params
                 .server
@@ -98,7 +80,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
                 .await
                 .unwrap()
                 .items
-                .values()
+                .iter()
                 .map(|m| m.thread_id)
                 .collect::<AHashSet<_>>()
                 .len(),
@@ -797,6 +779,27 @@ pub async fn create(client: &mut Client) {
 
         total_messages += 1;
 
+        let mut keywords = Vec::new();
+        for keyword in [
+            values_str["medium"].to_string(),
+            values_str["artistRole"].to_string(),
+            values_str["accession_number"][0..1].to_string(),
+            format!(
+                "N{}",
+                &values_str["accession_number"][values_str["accession_number"].len() - 1..]
+            ),
+        ] {
+            if keyword == "attributed to"
+                || keyword == "T"
+                || keyword == "N0"
+                || keyword == "N"
+                || keyword == "artist"
+                || keyword == "Bronze"
+            {
+                keywords.push(keyword);
+            }
+        }
+
         client
             .email_import(
                 format!(
@@ -821,15 +824,7 @@ pub async fn create(client: &mut Client) {
                     Id::new(values_int["year"] as u64).to_string(),
                     Id::new((values_int["acquisitionYear"] + 1000) as u64).to_string(),
                 ],
-                [
-                    values_str["medium"].to_string(),
-                    values_str["artistRole"].to_string(),
-                    values_str["accession_number"][0..1].to_string(),
-                    format!(
-                        "N{}",
-                        &values_str["accession_number"][values_str["accession_number"].len() - 1..]
-                    ),
-                ]
+                keywords
                 .into(),
                 Some(values_int["year"] as i64),
             )

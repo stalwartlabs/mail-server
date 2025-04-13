@@ -255,6 +255,24 @@ impl Keyword {
             Keyword::Other(string) => Err(string),
         }
     }
+
+    pub fn try_from_id(id: usize) -> Result<Self, usize> {
+        match id {
+            SEEN => Ok(Keyword::Seen),
+            DRAFT => Ok(Keyword::Draft),
+            FLAGGED => Ok(Keyword::Flagged),
+            ANSWERED => Ok(Keyword::Answered),
+            RECENT => Ok(Keyword::Recent),
+            IMPORTANT => Ok(Keyword::Important),
+            PHISHING => Ok(Keyword::Phishing),
+            JUNK => Ok(Keyword::Junk),
+            NOTJUNK => Ok(Keyword::NotJunk),
+            DELETED => Ok(Keyword::Deleted),
+            FORWARDED => Ok(Keyword::Forwarded),
+            MDN_SENT => Ok(Keyword::MdnSent),
+            _ => Err(id),
+        }
+    }
 }
 
 impl ArchivedKeyword {

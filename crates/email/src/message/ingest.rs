@@ -45,7 +45,7 @@ use trc::{AddContext, MessageIngestEvent};
 use crate::{
     mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
     message::{
-        cache::MessageCache,
+        cache::MessageCacheFetch,
         crypto::EncryptionParams,
         index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
         metadata::MessageData,
@@ -733,7 +733,7 @@ impl EmailIngest for Server {
             if !found_message_id.is_empty()
                 && cache
                     .in_mailbox(skip_duplicate.unwrap().1)
-                    .any(|(id, _)| found_message_id.contains(id))
+                    .any(|m| found_message_id.contains(&m.document_id))
             {
                 return Ok(ThreadResult::Skip);
             }
@@ -742,8 +742,8 @@ impl EmailIngest for Server {
             let mut thread_counts = AHashMap::<u32, u32>::with_capacity(16);
             let mut thread_id = u32::MAX;
             let mut thread_count = 0;
-            for (document_id, item) in &cache.items {
-                if results.contains(*document_id) {
+            for item in &cache.items {
+                if results.contains(item.document_id) {
                     let tc = thread_counts.entry(item.thread_id).or_default();
                     *tc += 1;
                     if *tc > thread_count {
@@ -773,12 +773,12 @@ impl EmailIngest for Server {
             // Move messages to the new threadId
             batch.with_collection(Collection::Email);
 
-            for (&document_id, item) in &cache.items {
+            for item in &cache.items {
                 if thread_id == item.thread_id || !thread_counts.contains_key(&item.thread_id) {
                     continue;
                 }
                 if let Some(data_) = self
-                    .get_archive(account_id, Collection::Email, document_id)
+                    .get_archive(account_id, Collection::Email, item.document_id)
                     .await
                     .caused_by(trc::location!())?
                 {
@@ -791,7 +791,7 @@ impl EmailIngest for Server {
                     let mut new_data = data.deserialize().caused_by(trc::location!())?;
                     new_data.thread_id = thread_id;
                     batch
-                        .update_document(document_id)
+                        .update_document(item.document_id)
                         .custom(
                             ObjectIndexBuilder::new()
                                 .with_current(data)

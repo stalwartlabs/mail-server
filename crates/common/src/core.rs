@@ -531,11 +531,18 @@ impl Server {
         })?;
 
         for collection in [
-            Collection::Email,
-            Collection::Mailbox,
-            Collection::Thread,
-            Collection::Identity,
-            Collection::EmailSubmission,
+            Collection::Email.into(),
+            Collection::Mailbox.into(),
+            Collection::Mailbox.as_child_update(),
+            Collection::Thread.into(),
+            Collection::Identity.into(),
+            Collection::EmailSubmission.into(),
+            Collection::SieveScript.into(),
+            Collection::FileNode.into(),
+            Collection::AddressBook.into(),
+            Collection::ContactCard.into(),
+            Collection::Calendar.into(),
+            Collection::CalendarEvent.into(),
         ] {
             self.core
                 .storage
@@ -543,12 +550,12 @@ impl Server {
                 .delete_range(
                     LogKey {
                         account_id,
-                        collection: collection.into(),
+                        collection,
                         change_id: 0,
                     },
                     LogKey {
                         account_id,
-                        collection: collection.into(),
+                        collection,
                         change_id: reference_cid,
                     },
                 )

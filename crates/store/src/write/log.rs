@@ -19,7 +19,6 @@ pub struct Changes {
     pub inserts: AHashSet<u64>,
     pub updates: AHashSet<u64>,
     pub deletes: AHashSet<u64>,
-    pub child_updates: AHashSet<u64>,
 }
 
 impl ChangeLogBuilder {
@@ -48,18 +47,6 @@ impl ChangeLogBuilder {
         let id = build_id(prefix, document_id);
         changes.updates.remove(&id);
         changes.deletes.insert(id);
-    }
-
-    pub fn log_child_update(
-        &mut self,
-        collection: impl Into<u8>,
-        prefix: Option<u32>,
-        document_id: u32,
-    ) {
-        self.changes
-            .get_mut_or_insert(collection.into())
-            .child_updates
-            .insert(build_id(prefix, document_id));
     }
 }
 
@@ -95,17 +82,6 @@ impl Changes {
         }
     }
 
-    pub fn child_update<T, I>(id: T) -> Self
-    where
-        T: IntoIterator<Item = I>,
-        I: Into<u64>,
-    {
-        Changes {
-            child_updates: id.into_iter().map(Into::into).collect(),
-            ..Default::default()
-        }
-    }
-
     pub fn delete<T, I>(id: T) -> Self
     where
         T: IntoIterator<Item = I>,
@@ -121,25 +97,15 @@ impl Changes {
 impl SerializeInfallible for Changes {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(
-            1 + (self.inserts.len()
-                + self.updates.len()
-                + self.child_updates.len()
-                + self.deletes.len()
-                + 4)
+            1 + (self.inserts.len() + self.updates.len() + self.deletes.len() + 4)
                 * std::mem::size_of::<usize>(),
         );
 
         buf.push_leb128(self.inserts.len());
         buf.push_leb128(self.updates.len());
-        buf.push_leb128(self.child_updates.len());
         buf.push_leb128(self.deletes.len());
 
-        for list in [
-            &self.inserts,
-            &self.updates,
-            &self.child_updates,
-            &self.deletes,
-        ] {
+        for list in [&self.inserts, &self.updates, &self.deletes] {
             for id in list {
                 buf.push_leb128(*id);
             }

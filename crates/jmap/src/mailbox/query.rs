@@ -50,8 +50,8 @@ impl MailboxQuery for Server {
                         mailboxes
                             .items
                             .iter()
-                            .filter(|(_, mailbox)| mailbox.parent_id == parent_id)
-                            .map(|(id, _)| id)
+                            .filter(|mailbox| mailbox.parent_id == parent_id)
+                            .map(|m| m.document_id)
                             .collect::<RoaringBitmap>(),
                     ));
                 }
@@ -68,8 +68,8 @@ impl MailboxQuery for Server {
                         mailboxes
                             .items
                             .iter()
-                            .filter(|(_, mailbox)| mailbox.name.to_lowercase().contains(&name))
-                            .map(|(id, _)| id)
+                            .filter(|mailbox| mailbox.name.to_lowercase().contains(&name))
+                            .map(|m| m.document_id)
                             .collect::<RoaringBitmap>(),
                     ));
                 }
@@ -79,10 +79,8 @@ impl MailboxQuery for Server {
                             mailboxes
                                 .items
                                 .iter()
-                                .filter(|(_, mailbox)| {
-                                    mailbox.role.as_str().is_some_and(|r| r == role)
-                                })
-                                .map(|(id, _)| id)
+                                .filter(|mailbox| mailbox.role.as_str().is_some_and(|r| r == role))
+                                .map(|m| m.document_id)
                                 .collect::<RoaringBitmap>(),
                         ));
                     } else {
@@ -91,8 +89,8 @@ impl MailboxQuery for Server {
                             mailboxes
                                 .items
                                 .iter()
-                                .filter(|(_, mailbox)| matches!(mailbox.role, SpecialUse::None))
-                                .map(|(id, _)| id)
+                                .filter(|mailbox| matches!(mailbox.role, SpecialUse::None))
+                                .map(|m| m.document_id)
                                 .collect::<RoaringBitmap>(),
                         ));
                         filters.push(query::Filter::End);
@@ -106,8 +104,8 @@ impl MailboxQuery for Server {
                         mailboxes
                             .items
                             .iter()
-                            .filter(|(_, mailbox)| !matches!(mailbox.role, SpecialUse::None))
-                            .map(|(id, _)| id)
+                            .filter(|mailbox| !matches!(mailbox.role, SpecialUse::None))
+                            .map(|m| m.document_id)
                             .collect::<RoaringBitmap>(),
                     ));
                     if !has_role {
@@ -122,10 +120,10 @@ impl MailboxQuery for Server {
                         mailboxes
                             .items
                             .iter()
-                            .filter(|(_, mailbox)| {
+                            .filter(|mailbox| {
                                 mailbox.subscribers.contains(&access_token.primary_id)
                             })
-                            .map(|(id, _)| id)
+                            .map(|m| m.document_id)
                             .collect::<RoaringBitmap>(),
                     ));
                     if !is_subscribed {
@@ -159,7 +157,7 @@ impl MailboxQuery for Server {
             for document_id in &result_set.results {
                 let mut check_id = document_id;
                 for _ in 0..self.core.jmap.mailbox_max_depth {
-                    if let Some(mailbox) = mailboxes.items.get(&check_id) {
+                    if let Some(mailbox) = mailboxes.by_id(&check_id) {
                         if let Some(parent_id) = mailbox.parent_id() {
                             if result_set.results.contains(parent_id) {
                                 check_id = parent_id;
@@ -194,7 +192,7 @@ impl MailboxQuery for Server {
                 let sorted_list = mailboxes
                     .items
                     .iter()
-                    .map(|(id, mailbox)| (mailbox.path.as_str(), *id))
+                    .map(|mailbox| (mailbox.path.as_str(), mailbox.document_id))
                     .collect::<BTreeMap<_, _>>();
                 comparators.push(query::Comparator::sorted_list(
                     sorted_list.into_values().collect(),
@@ -213,7 +211,7 @@ impl MailboxQuery for Server {
                         let sorted_list = mailboxes
                             .items
                             .iter()
-                            .map(|(id, mailbox)| (mailbox.name.as_str(), *id))
+                            .map(|mailbox| (mailbox.name.as_str(), mailbox.document_id))
                             .collect::<BTreeSet<_>>();
 
                         query::Comparator::sorted_list(
@@ -225,7 +223,7 @@ impl MailboxQuery for Server {
                         let sorted_list = mailboxes
                             .items
                             .iter()
-                            .map(|(id, mailbox)| (mailbox.sort_order, *id))
+                            .map(|mailbox| (mailbox.sort_order, mailbox.document_id))
                             .collect::<BTreeSet<_>>();
 
                         query::Comparator::sorted_list(
@@ -237,10 +235,10 @@ impl MailboxQuery for Server {
                         let sorted_list = mailboxes
                             .items
                             .iter()
-                            .map(|(id, mailbox)| {
+                            .map(|mailbox| {
                                 (
                                     mailbox.parent_id().map(|id| id + 1).unwrap_or_default(),
-                                    *id,
+                                    mailbox.document_id,
                                 )
                             })
                             .collect::<BTreeSet<_>>();

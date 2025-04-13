@@ -176,9 +176,10 @@ impl TryFrom<ShortId> for DataType {
     type Error = ();
 
     fn try_from(value: ShortId) -> Result<Self, Self::Error> {
+        const MAILBOX_CHANGE: u8 = u8::MAX - 1;
         match value.0 {
             0 => Ok(DataType::Email),
-            1 => Ok(DataType::Mailbox),
+            1 | MAILBOX_CHANGE => Ok(DataType::Mailbox),
             2 => Ok(DataType::Thread),
             3 => Ok(DataType::Identity),
             4 => Ok(DataType::EmailSubmission),
@@ -186,10 +187,9 @@ impl TryFrom<ShortId> for DataType {
             6 => Ok(DataType::PushSubscription),
             8 => Ok(DataType::Calendar),
             9 => Ok(DataType::CalendarEvent),
-            10 => Ok(DataType::CalendarEventNotification),
-            11 => Ok(DataType::AddressBook),
-            12 => Ok(DataType::ContactCard),
-            13 => Ok(DataType::FileNode),
+            10 => Ok(DataType::AddressBook),
+            11 => Ok(DataType::ContactCard),
+            12 => Ok(DataType::FileNode),
             _ => Err(()),
         }
     }

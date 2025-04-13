@@ -10,7 +10,7 @@ use directory::{QueryBy, backend::internal::manage::ManageDirectory};
 use email::{
     mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
     message::{
-        cache::{MessageCache, MessageCacheAccess},
+        cache::{MessageCacheAccess, MessageCacheFetch},
         delete::EmailDeletion,
     },
 };

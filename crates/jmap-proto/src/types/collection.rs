@@ -26,12 +26,11 @@ pub enum Collection {
     Principal = 7,
     Calendar = 8,
     CalendarEvent = 9,
-    CalendarEventNotification = 10,
-    AddressBook = 11,
-    ContactCard = 12,
-    FileNode = 13,
+    AddressBook = 10,
+    ContactCard = 11,
+    FileNode = 12,
     #[default]
-    None = 14,
+    None = 13,
 }
 
 impl Collection {
@@ -79,10 +78,9 @@ impl From<u8> for Collection {
             7 => Collection::Principal,
             8 => Collection::Calendar,
             9 => Collection::CalendarEvent,
-            10 => Collection::CalendarEventNotification,
-            11 => Collection::AddressBook,
-            12 => Collection::ContactCard,
-            13 => Collection::FileNode,
+            10 => Collection::AddressBook,
+            11 => Collection::ContactCard,
+            12 => Collection::FileNode,
             _ => Collection::None,
         }
     }
@@ -101,10 +99,9 @@ impl From<u64> for Collection {
             7 => Collection::Principal,
             8 => Collection::Calendar,
             9 => Collection::CalendarEvent,
-            10 => Collection::CalendarEventNotification,
-            11 => Collection::AddressBook,
-            12 => Collection::ContactCard,
-            13 => Collection::FileNode,
+            10 => Collection::AddressBook,
+            11 => Collection::ContactCard,
+            12 => Collection::FileNode,
             _ => Collection::None,
         }
     }
@@ -158,12 +155,15 @@ impl Collection {
             Collection::Principal => "principal",
             Collection::Calendar => "calendar",
             Collection::CalendarEvent => "calendarEvent",
-            Collection::CalendarEventNotification => "calendarEventNotification",
             Collection::AddressBook => "addressBook",
             Collection::ContactCard => "contactCard",
             Collection::FileNode => "fileNode",
             Collection::None => "",
         }
+    }
+
+    pub fn as_child_update(&self) -> u8 {
+        u8::MAX - u8::from(*self)
     }
 }
 
@@ -182,7 +182,6 @@ impl FromStr for Collection {
             "principal" => Collection::Principal,
             "calendar" => Collection::Calendar,
             "calendarEvent" => Collection::CalendarEvent,
-            "calendarEventNotification" => Collection::CalendarEventNotification,
             "addressBook" => Collection::AddressBook,
             "contactCard" => Collection::ContactCard,
             "fileNode" => Collection::FileNode,

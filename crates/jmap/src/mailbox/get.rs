@@ -7,7 +7,7 @@
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use email::{
     mailbox::cache::{MailboxCacheAccess, MessageMailboxCache},
-    message::cache::{MessageCache, MessageCacheAccess},
+    message::cache::{MessageCacheAccess, MessageCacheFetch},
 };
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
@@ -63,7 +63,7 @@ impl MailboxGet for Server {
             ids
         } else {
             mailbox_cache
-                .items
+                .index
                 .keys()
                 .filter(|id| shared_ids.as_ref().is_none_or(|ids| ids.contains(**id)))
                 .copied()
@@ -82,7 +82,7 @@ impl MailboxGet for Server {
             // Obtain the mailbox object
             let document_id = id.document_id();
             let cached_mailbox = if let Some(mailbox) =
-                mailbox_cache.items.get(&document_id).filter(|_| {
+                mailbox_cache.by_id(&document_id).filter(|_| {
                     shared_ids
                         .as_ref()
                         .is_none_or(|ids| ids.contains(document_id))
@@ -125,14 +125,14 @@ impl MailboxGet for Server {
                     Property::TotalThreads => Value::UnsignedInt(
                         message_cache
                             .in_mailbox(document_id)
-                            .map(|(_, m)| m.thread_id)
+                            .map(|m| m.thread_id)
                             .collect::<AHashSet<_>>()
                             .len() as u64,
                     ),
                     Property::UnreadThreads => Value::UnsignedInt(
                         message_cache
                             .in_mailbox_without_keyword(document_id, &Keyword::Seen)
-                            .map(|(_, m)| m.thread_id)
+                            .map(|m| m.thread_id)
                             .collect::<AHashSet<_>>()
                             .len() as u64,
                     ),

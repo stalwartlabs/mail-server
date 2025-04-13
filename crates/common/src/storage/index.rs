@@ -5,7 +5,7 @@
  */
 
 use ahash::AHashSet;
-use jmap_proto::types::{collection::Collection, property::Property, value::AclGrant};
+use jmap_proto::types::{property::Property, value::AclGrant};
 use rkyv::{
     option::ArchivedOption,
     primitive::{ArchivedU32, ArchivedU64},
@@ -44,7 +44,7 @@ pub enum IndexValue<'x> {
         prefix: Option<u32>,
     },
     LogParent {
-        collection: Collection,
+        collection: u8,
         ids: Vec<u32>,
     },
     Acl {
@@ -380,7 +380,7 @@ fn build_index(batch: &mut BatchBuilder, item: IndexValue<'_>, tenant_id: Option
         }
         IndexValue::LogParent { collection, ids } => {
             for parent_id in ids {
-                batch.log_child_update(collection, parent_id);
+                batch.log_parent_update(collection, parent_id);
             }
         }
     }
@@ -526,12 +526,12 @@ fn merge_index(
         ) => {
             for parent_id in &old_ids {
                 if !new_ids.contains(parent_id) {
-                    batch.log_child_update(collection, *parent_id);
+                    batch.log_parent_update(collection, *parent_id);
                 }
             }
             for parent_id in new_ids {
                 if !old_ids.contains(&parent_id) {
-                    batch.log_child_update(collection, parent_id);
+                    batch.log_parent_update(collection, parent_id);
                 }
             }
         }

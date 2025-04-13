@@ -20,7 +20,7 @@ use crate::{
         id::Id,
         keyword::Keyword,
         property::Property,
-        state::{State, StateChange},
+        state::State,
         value::{Object, SetValueMap, Value},
     },
 };
@@ -59,9 +59,6 @@ pub struct ImportEmailResponse {
     #[serde(rename = "notCreated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
     pub not_created: VecMap<String, SetError>,
-
-    #[serde(skip)]
-    pub state_change: Option<StateChange>,
 }
 
 impl JsonObjectParser for ImportEmailRequest {

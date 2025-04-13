@@ -124,10 +124,7 @@ impl<T: SessionStream> SessionData<T> {
 
             // Add all IDs that changed in this mailbox
             for change in changelog.changes {
-                let (Change::Insert(id)
-                | Change::Update(id)
-                | Change::ChildUpdate(id)
-                | Change::Delete(id)) = change;
+                let (Change::Insert(id) | Change::Update(id) | Change::Delete(id)) = change;
                 let id = (id & u32::MAX as u64) as u32;
                 if let Some(imap_id) = ids.remove(&id) {
                     if is_uid {
@@ -348,7 +345,7 @@ impl<T: SessionStream> SessionData<T> {
         // Log mailbox changes
         if !changed_mailboxes.is_empty() {
             for parent_id in changed_mailboxes {
-                batch.log_child_update(Collection::Mailbox, parent_id);
+                batch.log_parent_update(Collection::Mailbox.as_child_update(), parent_id);
             }
         }
 

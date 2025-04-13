@@ -6,7 +6,7 @@
 
 use ahash::AHashMap;
 use common::listener::SessionStream;
-use email::message::cache::MessageCache;
+use email::message::cache::MessageCacheFetch;
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
 use std::collections::BTreeMap;
@@ -39,10 +39,10 @@ impl<T: SessionStream> SessionData<T> {
         let uid_map = cached_messages
             .items
             .iter()
-            .filter_map(|(document_id, item)| {
+            .filter_map(|item| {
                 item.mailboxes.iter().find_map(|m| {
                     if m.mailbox_id == mailbox.mailbox_id {
-                        Some((m.uid, *document_id))
+                        Some((m.uid, item.document_id))
                     } else {
                         None
                     }

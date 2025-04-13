@@ -22,7 +22,7 @@ use trc::AddContext;
 use crate::mailbox::UidMailbox;
 
 use super::{
-    cache::MessageCache,
+    cache::MessageCacheFetch,
     index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue},
     ingest::{EmailIngest, IngestedEmail, ThreadResult},
     metadata::{HeaderName, HeaderValue, MessageData, MessageMetadata},

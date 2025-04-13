@@ -13,7 +13,7 @@ use crate::{
 use ahash::AHashMap;
 use common::listener::SessionStream;
 use directory::Permission;
-use email::message::cache::MessageCache;
+use email::message::cache::MessageCacheFetch;
 use imap_proto::{
     Command, StatusResponse,
     protocol::{
@@ -89,9 +89,9 @@ impl<T: SessionStream> SessionData<T> {
         // Group messages by thread
         let mut threads: AHashMap<u32, Vec<u32>> = AHashMap::new();
         let state = mailbox.state.lock();
-        for (document_id, item) in &cache.items {
-            if result_set.results.contains(*document_id) {
-                if let Some((imap_id, _)) = state.map_result_id(*document_id, is_uid) {
+        for item in &cache.items {
+            if result_set.results.contains(item.document_id) {
+                if let Some((imap_id, _)) = state.map_result_id(item.document_id, is_uid) {
                     threads.entry(item.thread_id).or_default().push(imap_id);
                 }
             }

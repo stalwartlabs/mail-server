@@ -20,7 +20,7 @@ use email::{
         INBOX_ID,
         cache::{MailboxCacheAccess, MessageMailboxCache},
     },
-    message::cache::{MessageCache, MessageCacheAccess},
+    message::cache::{MessageCacheAccess, MessageCacheFetch},
 };
 use imap_proto::protocol::list::Attribute;
 use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, keyword::Keyword};
@@ -124,13 +124,13 @@ impl<T: SessionStream> SessionData<T> {
 
         // Build special uses
         let mut special_uses = AHashMap::new();
-        for (&mailbox_id, mailbox) in &cached_mailboxes.items {
+        for mailbox in &cached_mailboxes.items {
             if shared_mailbox_ids
                 .as_ref()
-                .is_none_or(|ids| ids.contains(mailbox_id))
+                .is_none_or(|ids| ids.contains(mailbox.document_id))
                 && !matches!(mailbox.role, SpecialUse::None)
             {
-                special_uses.insert(mailbox.role, mailbox_id);
+                special_uses.insert(mailbox.role, mailbox.document_id);
             }
         }
 
@@ -146,10 +146,10 @@ impl<T: SessionStream> SessionData<T> {
             },
         };
 
-        for (&mailbox_id, mailbox) in &cached_mailboxes.items {
+        for mailbox in &cached_mailboxes.items {
             if shared_mailbox_ids
                 .as_ref()
-                .is_some_and(|ids| !ids.contains(mailbox_id))
+                .is_some_and(|ids| !ids.contains(mailbox.document_id))
             {
                 continue;
             }
@@ -173,17 +173,17 @@ impl<T: SessionStream> SessionData<T> {
                 .find(|f| f.name == mailbox_name || f.aliases.iter().any(|a| a == mailbox_name))
                 .and_then(|f| special_uses.get(&f.special_use))
                 .copied()
-                .unwrap_or(mailbox_id);
+                .unwrap_or(mailbox.document_id);
             account
                 .mailbox_names
                 .insert(mailbox_name, effective_mailbox_id);
             account.mailbox_state.insert(
-                mailbox_id,
+                mailbox.document_id,
                 Mailbox {
                     has_children: cached_mailboxes
                         .items
-                        .values()
-                        .any(|child| child.parent_id == mailbox_id),
+                        .iter()
+                        .any(|child| child.parent_id == mailbox.document_id),
                     is_subscribed: mailbox.subscribers.contains(&access_token.primary_id()),
                     special_use: match mailbox.role {
                         SpecialUse::Trash => Some(Attribute::Trash),
@@ -194,18 +194,18 @@ impl<T: SessionStream> SessionData<T> {
                         SpecialUse::Important => Some(Attribute::Important),
                         _ => None,
                     },
-                    total_messages: cached_messages.in_mailbox(mailbox_id).count() as u64,
+                    total_messages: cached_messages.in_mailbox(mailbox.document_id).count() as u64,
                     total_unseen: cached_messages
-                        .in_mailbox_without_keyword(mailbox_id, &Keyword::Seen)
+                        .in_mailbox_without_keyword(mailbox.document_id, &Keyword::Seen)
                         .count() as u64,
                     total_deleted: cached_messages
-                        .in_mailbox_with_keyword(mailbox_id, &Keyword::Deleted)
+                        .in_mailbox_with_keyword(mailbox.document_id, &Keyword::Deleted)
                         .count() as u64,
                     uid_validity: mailbox.uid_validity as u64,
                     uid_next: self
                         .get_uid_next(&MailboxId {
                             account_id,
-                            mailbox_id,
+                            mailbox_id: mailbox.document_id,
                         })
                         .await
                         .caused_by(trc::location!())? as u64,

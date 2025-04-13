@@ -14,7 +14,7 @@ use ahash::AHashMap;
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::message::{
-    cache::MessageCache,
+    cache::{MessageCacheAccess, MessageCacheFetch},
     metadata::{
         ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
         ArchivedMessageMetadata, ArchivedMessageMetadataContents, ArchivedMetadataPartType,
@@ -35,11 +35,7 @@ use imap_proto::{
     receiver::Request,
 };
 use jmap_proto::types::{
-    acl::Acl,
-    collection::Collection,
-    id::Id,
-    keyword::{ArchivedKeyword, Keyword},
-    property::Property,
+    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
 };
 use store::{
     query::log::{Change, Query},
@@ -171,7 +167,7 @@ impl<T: SessionStream> SessionData<T> {
 
             for change in changelog.changes {
                 match change {
-                    Change::Insert(id) | Change::Update(id) | Change::ChildUpdate(id) => {
+                    Change::Insert(id) | Change::Update(id) => {
                         let id = (id & u32::MAX as u64) as u32;
                         if let Some(uid) = ids.get(&id) {
                             changed_ids.insert(id, *uid);
@@ -318,7 +314,7 @@ impl<T: SessionStream> SessionData<T> {
                     )
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
-                message_cache.items.get(&id),
+                message_cache.by_id(&id),
             ) {
                 (email, data)
             } else {
@@ -369,8 +365,7 @@ impl<T: SessionStream> SessionData<T> {
 
             // Build response
             let mut items = Vec::with_capacity(arguments.attributes.len());
-            let set_seen_flag =
-                set_seen_flags && !data.keywords.iter().any(|k| k == &ArchivedKeyword::Seen);
+            let set_seen_flag = set_seen_flags && !message_cache.has_keyword(data, &Keyword::Seen);
 
             for attribute in &arguments.attributes {
                 match attribute {
@@ -380,10 +375,8 @@ impl<T: SessionStream> SessionData<T> {
                         });
                     }
                     Attribute::Flags => {
-                        let mut flags = data
-                            .keywords
-                            .iter()
-                            .cloned()
+                        let mut flags = message_cache
+                            .expand_keywords(data)
                             .map(Flag::from)
                             .collect::<Vec<_>>();
                         if set_seen_flag {
@@ -517,10 +510,8 @@ impl<T: SessionStream> SessionData<T> {
 
             // Add flags to the response if the message was unseen
             if set_seen_flag && !arguments.attributes.contains(&Attribute::Flags) {
-                let mut flags = data
-                    .keywords
-                    .iter()
-                    .cloned()
+                let mut flags = message_cache
+                    .expand_keywords(data)
                     .map(Flag::from)
                     .collect::<Vec<_>>();
                 flags.push(Flag::Seen);

@@ -109,17 +109,6 @@ impl RequestHandler for Server {
                             ResponseMethod::ImportEmail(import_response) => {
                                 // Add created ids
                                 import_response.update_created_ids(&mut response);
-
-                                // Publish state changes
-                                if let Some(state_change) = import_response.state_change.take() {
-                                    self.broadcast_state_change(state_change).await;
-                                }
-                            }
-                            ResponseMethod::Copy(copy_response) => {
-                                // Publish state changes
-                                if let Some(state_change) = copy_response.state_change.take() {
-                                    self.broadcast_state_change(state_change).await;
-                                }
                             }
                             ResponseMethod::UploadBlob(upload_response) => {
                                 // Add created blobIds

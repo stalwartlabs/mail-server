@@ -21,7 +21,7 @@ use store::rand::prelude::SliceRandom;
 
 use crate::{
     mailbox::*,
-    message::{cache::MessageCache, metadata::MessageMetadata},
+    message::{cache::MessageCacheFetch, metadata::MessageMetadata},
 };
 
 use super::metadata::MessageData;
@@ -186,14 +186,14 @@ impl EmailDeletion for Server {
                 .caused_by(trc::location!())?
                 .items
                 .iter()
-                .filter(|(_, item)| {
+                .filter(|item| {
                     item.change_id < reference_cid
                         && item
                             .mailboxes
                             .iter()
                             .any(|id| id.mailbox_id == TRASH_ID || id.mailbox_id == JUNK_ID)
                 })
-                .map(|(id, _)| id),
+                .map(|item| item.document_id),
         );
         if destroy_ids.is_empty() {
             return Ok(());

@@ -101,12 +101,12 @@ impl MailboxFnc for Server {
                     }
                 }
 
-                if let Some((document_id, _)) = folders
+                if let Some(item) = folders
                     .items
                     .iter()
-                    .find(|(_, item)| item.path.to_lowercase() == found_path)
+                    .find(|item| item.path.to_lowercase() == found_path)
                 {
-                    next_parent_id = *document_id + 1;
+                    next_parent_id = item.document_id + 1;
                 } else {
                     create_paths.push(name.to_string());
                     create_paths.extend(path.map(|v| v.to_string()));

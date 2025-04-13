@@ -148,7 +148,7 @@ pub async fn test(params: &mut JMAPTest) {
                     batch.update_document(id as u32).log_delete(None);
                 }
                 LogAction::UpdateChild(id) => {
-                    batch.log_child_update(Collection::Email, id as u32);
+                    batch.log_parent_update(Collection::Email, id as u32);
                 }
                 LogAction::Move(old_id, new_id) => {
                     batch

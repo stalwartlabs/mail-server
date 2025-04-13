@@ -8,7 +8,7 @@ use std::{sync::Arc, time::Instant};
 
 use common::listener::SessionStream;
 use directory::Permission;
-use email::message::cache::{MessageCache, MessageCacheAccess};
+use email::message::cache::{MessageCacheAccess, MessageCacheFetch};
 use imap_proto::{
     Command, StatusResponse,
     protocol::{
@@ -266,8 +266,11 @@ impl<T: SessionStream> SessionData<T> {
             .get_cached_messages(mailbox.id.account_id)
             .await
             .caused_by(trc::location!())?;
-        let message_ids =
-            RoaringBitmap::from_iter(cache.in_mailbox(mailbox.id.mailbox_id).map(|(id, _)| id));
+        let message_ids = RoaringBitmap::from_iter(
+            cache
+                .in_mailbox(mailbox.id.mailbox_id)
+                .map(|m| m.document_id),
+        );
 
         filters.push(query::Filter::is_in_set(message_ids.clone()));
 
@@ -452,7 +455,9 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     search::Filter::Answered => {
                         filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Answered).map(|(id, _)| id),
+                            cache
+                                .with_keyword(&Keyword::Answered)
+                                .map(|m| m.document_id),
                         )));
                     }
                     search::Filter::Before(date) => {
@@ -463,24 +468,24 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     search::Filter::Deleted => {
                         filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Deleted).map(|(id, _)| id),
+                            cache.with_keyword(&Keyword::Deleted).map(|m| m.document_id),
                         )));
                     }
                     search::Filter::Draft => {
                         filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Draft).map(|(id, _)| id),
+                            cache.with_keyword(&Keyword::Draft).map(|m| m.document_id),
                         )));
                     }
                     search::Filter::Flagged => {
                         filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Flagged).map(|(id, _)| id),
+                            cache.with_keyword(&Keyword::Flagged).map(|m| m.document_id),
                         )));
                     }
                     search::Filter::Keyword(keyword) => {
                         filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
                             cache
                                 .with_keyword(&Keyword::from(keyword))
-                                .map(|(id, _)| id),
+                                .map(|m| m.document_id),
                         )));
                     }
                     search::Filter::Larger(size) => {
@@ -500,7 +505,7 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     search::Filter::Seen => {
                         filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Seen).map(|(id, _)| id),
+                            cache.with_keyword(&Keyword::Seen).map(|m| m.document_id),
                         )));
                     }
                     search::Filter::SentBefore(date) => {
@@ -537,48 +542,44 @@ impl<T: SessionStream> SessionData<T> {
                         filters.push(query::Filter::lt(Property::Size, size.serialize()));
                     }
                     search::Filter::Unanswered => {
-                        filters.push(query::Filter::Not);
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Answered).map(|(id, _)| id),
-                        )));
-                        filters.push(query::Filter::End);
-                    }
-                    search::Filter::Undeleted => {
-                        filters.push(query::Filter::Not);
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Deleted).map(|(id, _)| id),
-                        )));
-                        filters.push(query::Filter::End);
-                    }
-                    search::Filter::Undraft => {
-                        filters.push(query::Filter::Not);
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Draft).map(|(id, _)| id),
-                        )));
-                        filters.push(query::Filter::End);
-                    }
-                    search::Filter::Unflagged => {
-                        filters.push(query::Filter::Not);
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Flagged).map(|(id, _)| id),
-                        )));
-                        filters.push(query::Filter::End);
-                    }
-                    search::Filter::Unkeyword(keyword) => {
-                        filters.push(query::Filter::Not);
                         filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
                             cache
-                                .with_keyword(&Keyword::from(keyword))
-                                .map(|(id, _)| id),
+                                .without_keyword(&Keyword::Answered)
+                                .map(|m| m.document_id),
                         )));
-                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Undeleted => {
+                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                            cache
+                                .without_keyword(&Keyword::Deleted)
+                                .map(|m| m.document_id),
+                        )));
+                    }
+                    search::Filter::Undraft => {
+                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                            cache
+                                .without_keyword(&Keyword::Draft)
+                                .map(|m| m.document_id),
+                        )));
+                    }
+                    search::Filter::Unflagged => {
+                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                            cache
+                                .without_keyword(&Keyword::Flagged)
+                                .map(|m| m.document_id),
+                        )));
+                    }
+                    search::Filter::Unkeyword(keyword) => {
+                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                            cache
+                                .without_keyword(&Keyword::from(keyword))
+                                .map(|m| m.document_id),
+                        )));
                     }
                     search::Filter::Unseen => {
-                        filters.push(query::Filter::Not);
                         filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                            cache.with_keyword(&Keyword::Seen).map(|(id, _)| id),
+                            cache.without_keyword(&Keyword::Seen).map(|m| m.document_id),
                         )));
-                        filters.push(query::Filter::End);
                     }
                     search::Filter::And => {
                         filters.push(query::Filter::And);
@@ -658,7 +659,7 @@ impl<T: SessionStream> SessionData<T> {
                     search::Filter::ThreadId(id) => {
                         if let Some(id) = Id::from_bytes(id.as_bytes()) {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
-                                cache.in_thread(id.document_id()).map(|(id, _)| id),
+                                cache.in_thread(id.document_id()).map(|m| m.document_id),
                             )));
                         } else {
                             return Err(trc::ImapEvent::Error

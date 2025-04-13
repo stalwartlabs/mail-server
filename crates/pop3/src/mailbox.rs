@@ -12,7 +12,7 @@ use email::{
         INBOX_ID,
         cache::{MailboxCacheAccess, MessageMailboxCache},
     },
-    message::cache::MessageCache,
+    message::cache::MessageCacheFetch,
 };
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
@@ -59,7 +59,7 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
         let uid_validity = mailbox_cache
             .by_role(&SpecialUse::Inbox)
-            .map(|x| x.1.uid_validity)
+            .map(|x| x.uid_validity)
             .unwrap_or_default();
 
         // Obtain message sizes
@@ -88,7 +88,7 @@ impl<T: SessionStream> Session<T> {
                 .no_values(),
                 |key, _| {
                     let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
-                    if mailbox_cache.items.contains_key(&document_id) {
+                    if mailbox_cache.has_id(&document_id) {
                         message_sizes.insert(
                             document_id,
                             key.deserialize_be_u32(key.len() - (U32_LEN * 2))?,
@@ -105,11 +105,12 @@ impl<T: SessionStream> Session<T> {
         let message_map = message_cache
             .items
             .iter()
-            .filter_map(|(document_id, m)| {
-                m.mailboxes
+            .filter_map(|message| {
+                message
+                    .mailboxes
                     .iter()
                     .find(|m| m.mailbox_id == INBOX_ID)
-                    .map(|m| (m.uid, *document_id))
+                    .map(|m| (m.uid, message.document_id))
             })
             .collect::<BTreeMap<u32, u32>>();
 

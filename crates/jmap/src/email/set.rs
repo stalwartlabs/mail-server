@@ -13,7 +13,7 @@ use email::{
         cache::{MailboxCacheAccess, MessageMailboxCache},
     },
     message::{
-        cache::{MessageCache, MessageCacheAccess},
+        cache::{MessageCacheAccess, MessageCacheFetch},
         delete::EmailDeletion,
         ingest::{EmailIngest, IngestEmail, IngestSource},
         metadata::MessageData,
@@ -662,7 +662,7 @@ impl EmailSet for Server {
 
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
-                if !cached_mailboxes.items.contains_key(mailbox_id) {
+                if !cached_mailboxes.has_id(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
@@ -878,7 +878,7 @@ impl EmailSet for Server {
 
                 // Make sure all new mailboxIds are valid
                 for mailbox_id in new_data.added_mailboxes(data.inner) {
-                    if cached_mailboxes.items.contains_key(&mailbox_id.mailbox_id) {
+                    if cached_mailboxes.has_id(&mailbox_id.mailbox_id) {
                         // Verify permissions on shared accounts
                         if !matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(mailbox_id.mailbox_id))
                         {
@@ -958,7 +958,7 @@ impl EmailSet for Server {
         if !batch.is_empty() {
             // Log mailbox changes
             for parent_id in changed_mailboxes {
-                batch.log_child_update(Collection::Mailbox, parent_id);
+                batch.log_parent_update(Collection::Mailbox.as_child_update(), parent_id);
             }
 
             match self.commit_batch(batch).await {

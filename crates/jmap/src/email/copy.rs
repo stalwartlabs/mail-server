@@ -9,7 +9,7 @@ use common::{Server, auth::AccessToken};
 use email::{
     mailbox::cache::{MailboxCacheAccess, MessageMailboxCache},
     message::{
-        cache::{MessageCache, MessageCacheAccess},
+        cache::{MessageCacheAccess, MessageCacheFetch},
         copy::EmailCopy,
     },
 };
@@ -30,8 +30,6 @@ use jmap_proto::{
         acl::Acl,
         collection::Collection,
         property::Property,
-        state::{State, StateChange},
-        type_state::DataType,
         value::{MaybePatchValue, Value},
     },
 };
@@ -77,7 +75,6 @@ impl JmapEmailCopy for Server {
             old_state,
             created: VecMap::with_capacity(request.create.len()),
             not_created: VecMap::new(),
-            state_change: None,
         };
 
         let from_cached_messages = self
@@ -208,7 +205,7 @@ impl JmapEmailCopy for Server {
 
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
-                if !cached_mailboxes.items.contains_key(mailbox_id) {
+                if !cached_mailboxes.has_id(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
@@ -257,13 +254,6 @@ impl JmapEmailCopy for Server {
         // Update state
         if !response.created.is_empty() {
             response.new_state = self.get_state(account_id, Collection::Email).await?;
-            if let State::Exact(change_id) = &response.new_state {
-                response.state_change = StateChange::new(account_id)
-                    .with_change(DataType::Email, *change_id)
-                    .with_change(DataType::Mailbox, *change_id)
-                    .with_change(DataType::Thread, *change_id)
-                    .into()
-            }
         }
 
         // Destroy ids

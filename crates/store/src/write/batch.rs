@@ -301,13 +301,13 @@ impl BatchBuilder {
         self
     }
 
-    pub fn log_child_update(&mut self, collection: impl Into<u8>, parent_id: u32) -> &mut Self {
+    pub fn log_parent_update(&mut self, collection: impl Into<u8>, parent_id: u32) -> &mut Self {
         let collection = collection.into();
 
         if let Some(account_id) = self.current_account_id {
             self.changes
                 .get_mut_or_insert(account_id)
-                .log_child_update(collection, None, parent_id);
+                .log_update(collection, None, parent_id);
         }
         if self.current_change_id.is_none() {
             self.generate_change_id();
@@ -325,7 +325,11 @@ impl BatchBuilder {
                     for (collection, set) in changelog.serialize() {
                         let cc = self.changed_collections.get_mut_or_insert(account_id);
                         cc.0 = change_id;
-                        cc.1.insert(ShortId(collection));
+                        if collection < 64 {
+                            cc.1.insert(ShortId(collection));
+                        } else {
+                            cc.1.insert(ShortId(u8::MAX - collection));
+                        }
 
                         self.ops.push(Operation::Log {
                             change_id,

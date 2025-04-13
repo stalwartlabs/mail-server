@@ -14,7 +14,7 @@ use crate::{
 use common::listener::SessionStream;
 use compact_str::CompactString;
 use directory::Permission;
-use email::message::cache::{MessageCache, MessageCacheAccess};
+use email::message::cache::{MessageCacheAccess, MessageCacheFetch};
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     parser::PushUnique,
@@ -232,7 +232,7 @@ impl<T: SessionStream> SessionData<T> {
                             &RoaringBitmap::from_iter(
                                 cache
                                     .in_mailbox_with_keyword(mailbox.mailbox_id, &Keyword::Deleted)
-                                    .map(|x| x.0),
+                                    .map(|x| x.document_id),
                             ),
                         )
                         .await
@@ -241,7 +241,7 @@ impl<T: SessionStream> SessionData<T> {
                         .calculate_mailbox_size(
                             mailbox.account_id,
                             &RoaringBitmap::from_iter(
-                                cache.in_mailbox(mailbox.mailbox_id).map(|x| x.0),
+                                cache.in_mailbox(mailbox.mailbox_id).map(|x| x.document_id),
                             ),
                         )
                         .await
