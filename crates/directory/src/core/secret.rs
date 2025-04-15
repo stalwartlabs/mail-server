@@ -19,7 +19,6 @@ use tokio::sync::oneshot;
 use totp_rs::TOTP;
 
 use crate::Principal;
-use crate::backend::internal::PrincipalField;
 use crate::backend::internal::SpecialSecrets;
 
 impl Principal {
@@ -31,7 +30,7 @@ impl Principal {
         let mut is_authenticated = false;
         let mut is_app_authenticated = false;
 
-        for secret in self.iter_str(PrincipalField::Secrets) {
+        for secret in self.secrets.iter() {
             if secret.is_otp_auth() {
                 if !is_totp_verified && !is_totp_token_missing {
                     is_totp_required = true;
@@ -96,7 +95,7 @@ impl Principal {
         } else {
             if is_totp_verified {
                 // TOTP URL appeared after password hash in secrets list
-                for secret in self.iter_str(PrincipalField::Secrets) {
+                for secret in &self.secrets {
                     if secret.is_password() && verify_secret_hash(secret, code).await? {
                         return Ok(true);
                     }

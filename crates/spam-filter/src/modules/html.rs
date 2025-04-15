@@ -4,23 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
 use mail_parser::decoders::html::add_html_token;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum HtmlToken {
     StartTag {
         name: u64,
-        attributes: Vec<(u64, Option<String>)>,
+        attributes: Vec<(u64, Option<CompactString>)>,
         is_self_closing: bool,
     },
     EndTag {
         name: u64,
     },
     Comment {
-        text: String,
+        text: CompactString,
     },
     Text {
-        text: String,
+        text: CompactString,
     },
 }
 
@@ -78,7 +79,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
     let mut token_start = 0;
     let mut token_end = 0;
 
-    let mut text = String::new();
+    let mut text = String::with_capacity(16);
 
     while let Some((mut pos, &ch)) = iter.next() {
         match ch {
@@ -94,8 +95,9 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                 }
                 if !text.is_empty() {
                     tags.push(HtmlToken::Text {
-                        text: std::mem::take(&mut text),
+                        text: text.as_str().into(),
                     });
+                    text.clear();
                 }
 
                 while matches!(iter.peek(), Some(&(_, &ch)) if ch.is_ascii_whitespace()) {
@@ -129,7 +131,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                         last_ch = ch;
                     }
                     tags.push(HtmlToken::Comment {
-                        text: String::from_utf8(comment).unwrap_or_default(),
+                        text: CompactString::from_utf8(comment).unwrap_or_default(),
                     });
                 } else {
                     let mut is_end_tag = false;
@@ -155,7 +157,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                     let mut shift = 0;
 
                     let mut tag = 0;
-                    let mut attributes = vec![];
+                    let mut attributes: Vec<(u64, Option<CompactString>)> = vec![];
 
                     'outer: while let Some((_, &ch)) = iter.next() {
                         match ch {
@@ -201,8 +203,8 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                                     match ch {
                                         b'>' if !in_quote => {
                                             if !value.is_empty() {
-                                                let value =
-                                                    String::from_utf8(value).unwrap_or_default();
+                                                let value = CompactString::from_utf8(value)
+                                                    .unwrap_or_default();
                                                 if let Some((_, v)) = attributes.last_mut() {
                                                     *v = value.into();
                                                 } else {
@@ -230,7 +232,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                                 }
 
                                 if !value.is_empty() {
-                                    let value = String::from_utf8(value).unwrap_or_default();
+                                    let value = CompactString::from_utf8(value).unwrap_or_default();
                                     if let Some((_, v)) = attributes.last_mut() {
                                         *v = value.into();
                                     } else {
@@ -320,7 +322,9 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
         );
     }
     if !text.is_empty() {
-        tags.push(HtmlToken::Text { text });
+        tags.push(HtmlToken::Text {
+            text: text.as_str().into(),
+        });
     }
 
     tags
@@ -336,7 +340,7 @@ mod tests {
         assert_eq!(
             tokens,
             vec![HtmlToken::Text {
-                text: "Hello, world!".to_string()
+                text: "Hello, world!".into()
             }]
         );
     }
@@ -369,7 +373,7 @@ mod tests {
         assert_eq!(
             tokens,
             vec![HtmlToken::Comment {
-                text: "!-- This is a comment --".to_string()
+                text: "!-- This is a comment --".into()
             }]
         );
     }
@@ -387,7 +391,7 @@ mod tests {
                     is_self_closing: false
                 },
                 HtmlToken::Text {
-                    text: "Hello,".to_string()
+                    text: "Hello,".into()
                 },
                 HtmlToken::StartTag {
                     name: 1851879539,
@@ -395,12 +399,10 @@ mod tests {
                     is_self_closing: false
                 },
                 HtmlToken::Text {
-                    text: " \" world \"".to_string()
+                    text: " \" world \"".into()
                 },
                 HtmlToken::EndTag { name: 1851879539 },
-                HtmlToken::Text {
-                    text: " !".to_string()
-                },
+                HtmlToken::Text { text: " !".into() },
                 HtmlToken::EndTag { name: 7760228 }
             ]
         );
@@ -416,8 +418,8 @@ mod tests {
                 HtmlToken::StartTag {
                     name: 500186508905,
                     attributes: vec![
-                        (1701869940, Some("text".to_string())),
-                        (435761734006, Some("test".to_string()))
+                        (1701869940, Some("text".into())),
+                        (435761734006, Some("test".into()))
                     ],
                     is_self_closing: false
                 },
@@ -433,11 +435,7 @@ mod tests {
                 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![
-                        (98, Some("1".to_string())),
-                        (98, None),
-                        (99, Some("123".to_string()))
-                    ],
+                    attributes: vec![(98, Some("1".into())), (98, None), (99, Some("123".into()))],
                     is_self_closing: false
                 }
             ]

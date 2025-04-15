@@ -138,7 +138,7 @@ async fn manage_queue() {
         .queue_receiver
         .queue_rx
         .spawn(local.server.inner.clone());
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("foobar.net").await;
     for test_num in 0..6 {

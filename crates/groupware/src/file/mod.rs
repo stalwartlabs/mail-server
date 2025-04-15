@@ -8,7 +8,7 @@ pub mod index;
 
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::value::AclGrant;
-use store::{SERIALIZE_OBJ_11_V1, SerializedVersion};
+use store::{SERIALIZE_FILENODE_V1, SerializedVersion};
 use utils::BlobHash;
 
 #[derive(
@@ -39,6 +39,6 @@ pub struct FileProperties {
 
 impl SerializedVersion for FileNode {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_11_V1
+        SERIALIZE_FILENODE_V1
     }
 }

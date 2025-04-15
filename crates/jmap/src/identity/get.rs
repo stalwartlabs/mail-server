@@ -5,7 +5,8 @@
  */
 
 use common::{Server, storage::index::ObjectIndexBuilder};
-use directory::{QueryBy, backend::internal::PrincipalField};
+use compact_str::format_compact;
+use directory::QueryBy;
 use email::identity::{ArchivedEmailAddress, Identity};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
@@ -143,15 +144,19 @@ impl IdentityGet for Server {
         }
 
         // Obtain principal
-        let principal = self
+        let principal = if let Some(principal) = self
             .core
             .storage
             .directory
             .query(QueryBy::Id(account_id), false)
             .await
             .caused_by(trc::location!())?
-            .unwrap_or_default();
-        let num_emails = principal.field_len(PrincipalField::Emails);
+        {
+            principal
+        } else {
+            return Ok(identity_ids);
+        };
+        let num_emails = principal.emails.len();
         if num_emails == 0 {
             return Ok(identity_ids);
         }
@@ -162,18 +167,14 @@ impl IdentityGet for Server {
             .with_collection(Collection::Identity);
 
         // Create identities
-        let name = principal
-            .description()
-            .unwrap_or(principal.name())
-            .trim()
-            .to_string();
+        let name = principal.description.unwrap_or(principal.name);
         let has_many = num_emails > 1;
         let mut next_document_id = self
             .store()
             .assign_document_ids(account_id, Collection::Identity, num_emails as u64)
             .await
             .caused_by(trc::location!())?;
-        for email in principal.iter_str(PrincipalField::Emails) {
+        for email in &principal.emails {
             let email = sanitize_email(email).unwrap_or_default();
             if email.is_empty() {
                 continue;
@@ -181,7 +182,7 @@ impl IdentityGet for Server {
             let name = if name.is_empty() {
                 email.clone()
             } else if has_many {
-                format!("{} <{}>", name, email)
+                format_compact!("{} <{}>", name, email)
             } else {
                 name.clone()
             };

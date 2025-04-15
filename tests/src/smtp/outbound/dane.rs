@@ -107,7 +107,7 @@ async fn dane_verify() {
     );
 
     let mut session = local.new_session();
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
@@ -343,8 +343,8 @@ async fn dane_test() {
         assert_eq!(
             tlsa.verify(0, &host, Some(&certs)),
             Err(Status::PermanentFailure(Error::DaneError(ErrorDetails {
-                entity: host.to_string(),
-                details: "No matching certificates found in TLSA records".to_string()
+                entity: host.into(),
+                details: "No matching certificates found in TLSA records".into()
             })))
         );
     }

@@ -42,6 +42,7 @@ rev_lines = "0.3.0"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
 form-data = { version = "0.6.0", features = ["sync"], default-features = false }
 mime = "0.3.17"
+compact_str = "0.9.0"
 
 [dev-dependencies]
 

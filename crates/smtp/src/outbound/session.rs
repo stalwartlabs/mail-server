@@ -181,7 +181,7 @@ impl Message {
                         accepted_rcpts.push((
                             rcpt,
                             Status::Completed(HostResponse {
-                                hostname: params.hostname.to_string(),
+                                hostname: params.hostname.into(),
                                 response,
                             }),
                         ));
@@ -199,8 +199,8 @@ impl Message {
 
                         let response = HostResponse {
                             hostname: ErrorDetails {
-                                entity: params.hostname.to_string(),
-                                details: cmd.trim().to_string(),
+                                entity: params.hostname.into(),
+                                details: cmd.trim().into(),
                             },
                             response,
                         };
@@ -345,11 +345,8 @@ impl Message {
 
                                     let response = HostResponse {
                                         hostname: ErrorDetails {
-                                            entity: params.hostname.to_string(),
-                                            details: bdat_cmd
-                                                .as_deref()
-                                                .unwrap_or("DATA")
-                                                .to_string(),
+                                            entity: params.hostname.into(),
+                                            details: bdat_cmd.as_deref().unwrap_or("DATA").into(),
                                         },
                                         response,
                                     };

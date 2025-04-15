@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use common::ipc::EncryptionKeys;
+use compact_str::CompactString;
 use jmap_proto::{response::status::StateChangeResponse, types::id::Id};
 use reqwest::header::{CONTENT_ENCODING, CONTENT_TYPE};
 use tokio::sync::mpsc;
@@ -57,7 +58,7 @@ impl PushServer {
 }
 
 pub(crate) async fn http_request(
-    url: String,
+    url: CompactString,
     mut body: String,
     keys: Option<EncryptionKeys>,
     push_timeout: Duration,
@@ -70,7 +71,7 @@ pub(crate) async fn http_request(
     let mut client = client_builder
         .build()
         .unwrap_or_default()
-        .post(&url)
+        .post(url.as_str())
         .header(CONTENT_TYPE, "application/json")
         .header("TTL", "86400");
 

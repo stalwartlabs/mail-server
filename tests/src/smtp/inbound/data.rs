@@ -117,7 +117,7 @@ async fn data() {
     let test = TestSMTP::from_core(core);
     let mut qr = test.queue_receiver;
     let mut session = Session::test(test.server.clone());
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.test_builder().await;
 
@@ -158,7 +158,7 @@ async fn data() {
     session.rset().await;
 
     // Headers should be added to messages from 10.0.0.3
-    session.data.remote_ip_str = "10.0.0.3".to_string();
+    session.data.remote_ip_str = "10.0.0.3".into();
     session.eval_session_params().await;
     session
         .send_message("bill@doe.org", &["mike@test.com"], "test:no_msgid", "250")
@@ -178,7 +178,7 @@ async fn data() {
         .assert_contains("Received-SPF: ");
 
     // Only one message is allowed in the queue from john@doe.org
-    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip_str = "10.0.0.2".into();
     session.eval_session_params().await;
     session
         .send_message("john@doe.org", &["bill@foobar.org"], "test:no_dkim", "250")

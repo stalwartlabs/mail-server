@@ -11,6 +11,7 @@ use common::{
         oauth::{GrantType, oidc::StandardClaims},
     },
 };
+use compact_str::CompactString;
 use hyper::StatusCode;
 use std::future::Future;
 use store::{
@@ -44,8 +45,8 @@ pub trait TokenHandler: Sync + Send {
         &self,
         account_id: u32,
         client_id: &str,
-        issuer: String,
-        nonce: Option<String>,
+        issuer: CompactString,
+        nonce: Option<CompactString>,
         with_refresh_token: bool,
         with_id_token: bool,
     ) -> impl Future<Output = trc::Result<OAuthResponse>> + Send;
@@ -118,7 +119,7 @@ impl TokenHandler for Server {
                                     oauth.account_id.into(),
                                     &oauth.client_id,
                                     issuer,
-                                    oauth.nonce.as_ref().map(|s| s.to_string()),
+                                    oauth.nonce.as_ref().map(|s| s.as_str().into()),
                                     true,
                                     true,
                                 )
@@ -190,7 +191,7 @@ impl TokenHandler for Server {
                                         oauth.account_id.into(),
                                         &oauth.client_id,
                                         issuer,
-                                        oauth.nonce.as_ref().map(|s| s.to_string()),
+                                        oauth.nonce.as_ref().map(|s| s.as_str().into()),
                                         true,
                                         true,
                                     )
@@ -288,8 +289,8 @@ impl TokenHandler for Server {
         &self,
         account_id: u32,
         client_id: &str,
-        issuer: String,
-        nonce: Option<String>,
+        issuer: CompactString,
+        nonce: Option<CompactString>,
         with_refresh_token: bool,
         with_id_token: bool,
     ) -> trc::Result<OAuthResponse> {

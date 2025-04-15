@@ -6,11 +6,11 @@
 
 use ahash::AHashSet;
 use directory::{
-    Principal, QueryBy, Type,
+    QueryBy, Type,
     backend::{
         RcptType,
         internal::{
-            PrincipalField, PrincipalUpdate, PrincipalValue,
+            PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue,
             lookup::DirectoryStore,
             manage::{self, ChangedPrincipals, ManageDirectory, UpdatePrincipal},
         },
@@ -37,7 +37,7 @@ async fn internal_directory() {
         // A principal without name should fail
         assert_eq!(
             store
-                .create_principal(Principal::default(), None, None)
+                .create_principal(PrincipalSet::default(), None, None)
                 .await,
             Err(manage::err_missing(PrincipalField::Name))
         );
@@ -46,9 +46,9 @@ async fn internal_directory() {
         let john_id = store
             .create_principal(
                 TestPrincipal {
-                    name: "john".to_string(),
-                    description: Some("John Doe".to_string()),
-                    secrets: vec!["secret".to_string(), "secret2".to_string()],
+                    name: "john".into(),
+                    description: Some("John Doe".into()),
+                    secrets: vec!["secret".into(), "secret2".into()],
                     ..Default::default()
                 }
                 .into(),
@@ -64,7 +64,7 @@ async fn internal_directory() {
             store
                 .create_principal(
                     TestPrincipal {
-                        name: "john".to_string(),
+                        name: "john".into(),
                         ..Default::default()
                     }
                     .into(),
@@ -72,7 +72,7 @@ async fn internal_directory() {
                     None
                 )
                 .await,
-            Err(manage::err_exists(PrincipalField::Name, "john".to_string()))
+            Err(manage::err_exists(PrincipalField::Name, "john"))
         );
 
         // An account using a non-existent domain should fail
@@ -80,8 +80,8 @@ async fn internal_directory() {
             store
                 .create_principal(
                     TestPrincipal {
-                        name: "jane".to_string(),
-                        emails: vec!["jane@example.org".to_string()],
+                        name: "jane".into(),
+                        emails: vec!["jane@example.org".into()],
                         ..Default::default()
                     }
                     .into(),
@@ -89,14 +89,14 @@ async fn internal_directory() {
                     None
                 )
                 .await,
-            Err(manage::not_found("example.org".to_string()))
+            Err(manage::not_found("example.org"))
         );
 
         // Create a domain name
         store
             .create_principal(
                 TestPrincipal {
-                    name: "example.org".to_string(),
+                    name: "example.org".into(),
                     typ: Type::Domain,
                     ..Default::default()
                 }
@@ -115,7 +115,7 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
                     PrincipalUpdate::add_item(
                         PrincipalField::Emails,
-                        PrincipalValue::String("john@example.org".to_string()),
+                        PrincipalValue::String("john@example.org".into()),
                     )
                 ]))
                 .await
@@ -136,21 +136,21 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
                     PrincipalUpdate::add_item(
                         PrincipalField::Emails,
-                        PrincipalValue::String("john@otherdomain.org".to_string()),
+                        PrincipalValue::String("john@otherdomain.org".into()),
                     )
                 ]))
                 .await,
-            Err(manage::not_found("otherdomain.org".to_string()))
+            Err(manage::not_found("otherdomain.org"))
         );
 
         // Create an account with an email address
         let jane_id = store
             .create_principal(
                 TestPrincipal {
-                    name: "jane".to_string(),
-                    description: Some("Jane Doe".to_string()),
-                    secrets: vec!["my_secret".to_string(), "my_secret2".to_string()],
-                    emails: vec!["jane@example.org".to_string()],
+                    name: "jane".into(),
+                    description: Some("Jane Doe".into()),
+                    secrets: vec!["my_secret".into(), "my_secret2".into()],
+                    emails: vec!["jane@example.org".into()],
                     quota: 123,
                     ..Default::default()
                 }
@@ -178,10 +178,7 @@ async fn internal_directory() {
         assert_eq!(
             store
                 .query(
-                    QueryBy::Credentials(&Credentials::new(
-                        "jane".to_string(),
-                        "my_secret".to_string()
-                    )),
+                    QueryBy::Credentials(&Credentials::new("jane".into(), "my_secret".into())),
                     true
                 )
                 .await
@@ -189,10 +186,10 @@ async fn internal_directory() {
                 .map(|p| p.into_test()),
             Some(TestPrincipal {
                 id: jane_id,
-                name: "jane".to_string(),
-                description: Some("Jane Doe".to_string()),
-                emails: vec!["jane@example.org".to_string()],
-                secrets: vec!["my_secret".to_string(), "my_secret2".to_string()],
+                name: "jane".into(),
+                description: Some("Jane Doe".into()),
+                emails: vec!["jane@example.org".into()],
+                secrets: vec!["my_secret".into(), "my_secret2".into()],
                 quota: 123,
                 ..Default::default()
             })
@@ -200,10 +197,7 @@ async fn internal_directory() {
         assert_eq!(
             store
                 .query(
-                    QueryBy::Credentials(&Credentials::new(
-                        "jane".to_string(),
-                        "wrong_password".to_string()
-                    )),
+                    QueryBy::Credentials(&Credentials::new("jane".into(), "wrong_password".into())),
                     true
                 )
                 .await
@@ -216,9 +210,9 @@ async fn internal_directory() {
             store
                 .create_principal(
                     TestPrincipal {
-                        name: "janeth".to_string(),
-                        description: Some("Janeth Doe".to_string()),
-                        emails: vec!["jane@example.org".to_string()],
+                        name: "janeth".into(),
+                        description: Some("Janeth Doe".into()),
+                        emails: vec!["jane@example.org".into()],
                         ..Default::default()
                     }
                     .into(),
@@ -228,7 +222,7 @@ async fn internal_directory() {
                 .await,
             Err(manage::err_exists(
                 PrincipalField::Emails,
-                "jane@example.org".to_string()
+                "jane@example.org"
             ))
         );
 
@@ -236,9 +230,9 @@ async fn internal_directory() {
         let list_id = store
             .create_principal(
                 TestPrincipal {
-                    name: "list".to_string(),
+                    name: "list".into(),
                     typ: Type::List,
-                    emails: vec!["list@example.org".to_string()],
+                    emails: vec!["list@example.org".into()],
                     ..Default::default()
                 }
                 .into(),
@@ -253,13 +247,13 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
                     PrincipalUpdate::set(
                         PrincipalField::Members,
-                        PrincipalValue::StringList(vec!["john".to_string(), "jane".to_string()]),
+                        PrincipalValue::StringList(vec!["john".into(), "jane".into()]),
                     ),
                     PrincipalUpdate::set(
                         PrincipalField::ExternalMembers,
                         PrincipalValue::StringList(vec![
-                            "mike@other.org".to_string(),
-                            "lucy@foobar.net".to_string()
+                            "mike@other.org".into(),
+                            "lucy@foobar.net".into()
                         ]),
                     )
                 ]))
@@ -287,10 +281,10 @@ async fn internal_directory() {
                 .unwrap()
                 .into_test(),
             TestPrincipal {
-                name: "list".to_string(),
+                name: "list".into(),
                 id: list_id,
                 typ: Type::List,
-                emails: vec!["list@example.org".to_string()],
+                emails: vec!["list@example.org".into()],
                 ..Default::default()
             }
         );
@@ -308,7 +302,7 @@ async fn internal_directory() {
                 "jane@example.org"
             ]
             .into_iter()
-            .map(|s| s.to_string())
+            .map(|s| s.into())
             .collect::<AHashSet<_>>()
         );
 
@@ -316,8 +310,8 @@ async fn internal_directory() {
         store
             .create_principal(
                 TestPrincipal {
-                    name: "sales".to_string(),
-                    description: Some("Sales Team".to_string()),
+                    name: "sales".into(),
+                    description: Some("Sales Team".into()),
                     typ: Type::Group,
                     ..Default::default()
                 }
@@ -330,8 +324,8 @@ async fn internal_directory() {
         store
             .create_principal(
                 TestPrincipal {
-                    name: "support".to_string(),
-                    description: Some("Support Team".to_string()),
+                    name: "support".into(),
+                    description: Some("Support Team".into()),
                     typ: Type::Group,
                     ..Default::default()
                 }
@@ -348,32 +342,32 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
                     PrincipalUpdate::add_item(
                         PrincipalField::MemberOf,
-                        PrincipalValue::String("sales".to_string()),
+                        PrincipalValue::String("sales".into()),
                     ),
                     PrincipalUpdate::add_item(
                         PrincipalField::MemberOf,
-                        PrincipalValue::String("support".to_string()),
+                        PrincipalValue::String("support".into()),
                     )
                 ]))
                 .await
                 .is_ok()
         );
-        let mut principal = store
+        let principal = store
             .query(QueryBy::Name("john"), true)
             .await
             .unwrap()
             .unwrap();
-        store.map_field_ids(&mut principal, &[]).await.unwrap();
+        let principal = store.map_principal(principal, &[]).await.unwrap();
         assert_eq!(
             principal.into_test().into_sorted(),
             TestPrincipal {
                 id: john_id,
-                name: "john".to_string(),
-                description: Some("John Doe".to_string()),
-                secrets: vec!["secret".to_string(), "secret2".to_string()],
-                emails: vec!["john@example.org".to_string()],
-                member_of: vec!["sales".to_string(), "support".to_string()],
-                lists: vec!["list".to_string()],
+                name: "john".into(),
+                description: Some("John Doe".into()),
+                secrets: vec!["secret".into(), "secret2".into()],
+                emails: vec!["john@example.org".into()],
+                member_of: vec!["sales".into(), "support".into()],
+                lists: vec!["list".into()],
                 ..Default::default()
             }
         );
@@ -384,11 +378,11 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
                     PrincipalUpdate::add_item(
                         PrincipalField::MemberOf,
-                        PrincipalValue::String("accounting".to_string()),
+                        PrincipalValue::String("accounting".into()),
                     )
                 ]))
                 .await,
-            Err(manage::not_found("accounting".to_string()))
+            Err(manage::not_found("accounting"))
         );
 
         // Remove a member from a group
@@ -397,28 +391,28 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
                     PrincipalUpdate::remove_item(
                         PrincipalField::MemberOf,
-                        PrincipalValue::String("support".to_string()),
+                        PrincipalValue::String("support".into()),
                     )
                 ]))
                 .await
                 .is_ok()
         );
-        let mut principal = store
+        let principal = store
             .query(QueryBy::Name("john"), true)
             .await
             .unwrap()
             .unwrap();
-        store.map_field_ids(&mut principal, &[]).await.unwrap();
+        let principal = store.map_principal(principal, &[]).await.unwrap();
         assert_eq!(
             principal.into_test().into_sorted(),
             TestPrincipal {
                 id: john_id,
-                name: "john".to_string(),
-                description: Some("John Doe".to_string()),
-                secrets: vec!["secret".to_string(), "secret2".to_string()],
-                emails: vec!["john@example.org".to_string()],
-                member_of: vec!["sales".to_string()],
-                lists: vec!["list".to_string()],
+                name: "john".into(),
+                description: Some("John Doe".into()),
+                secrets: vec!["secret".into(), "secret2".into()],
+                emails: vec!["john@example.org".into()],
+                member_of: vec!["sales".into()],
+                lists: vec!["list".into()],
                 ..Default::default()
             }
         );
@@ -429,48 +423,48 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
                     PrincipalUpdate::set(
                         PrincipalField::Name,
-                        PrincipalValue::String("john.doe".to_string())
+                        PrincipalValue::String("john.doe".into())
                     ),
                     PrincipalUpdate::set(
                         PrincipalField::Description,
-                        PrincipalValue::String("Johnny Doe".to_string())
+                        PrincipalValue::String("Johnny Doe".into())
                     ),
                     PrincipalUpdate::set(
                         PrincipalField::Secrets,
-                        PrincipalValue::StringList(vec!["12345".to_string()])
+                        PrincipalValue::StringList(vec!["12345".into()])
                     ),
                     PrincipalUpdate::set(PrincipalField::Quota, PrincipalValue::Integer(1024)),
                     PrincipalUpdate::remove_item(
                         PrincipalField::Emails,
-                        PrincipalValue::String("john@example.org".to_string()),
+                        PrincipalValue::String("john@example.org".into()),
                     ),
                     PrincipalUpdate::add_item(
                         PrincipalField::Emails,
-                        PrincipalValue::String("john.doe@example.org".to_string()),
+                        PrincipalValue::String("john.doe@example.org".into()),
                     )
                 ]))
                 .await
                 .is_ok()
         );
 
-        let mut principal = store
+        let principal = store
             .query(QueryBy::Name("john.doe"), true)
             .await
             .unwrap()
             .unwrap();
-        store.map_field_ids(&mut principal, &[]).await.unwrap();
+        let principal = store.map_principal(principal, &[]).await.unwrap();
         assert_eq!(
             principal.into_test().into_sorted(),
             TestPrincipal {
                 id: john_id,
-                name: "john.doe".to_string(),
-                description: Some("Johnny Doe".to_string()),
-                secrets: vec!["12345".to_string()],
-                emails: vec!["john.doe@example.org".to_string()],
+                name: "john.doe".into(),
+                description: Some("Johnny Doe".into()),
+                secrets: vec!["12345".into()],
+                emails: vec!["john.doe@example.org".into()],
                 quota: 1024,
                 typ: Type::Individual,
-                member_of: vec!["sales".to_string()],
-                lists: vec!["list".to_string()],
+                member_of: vec!["sales".into()],
+                lists: vec!["list".into()],
                 ..Default::default()
             }
         );
@@ -490,7 +484,7 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
                     PrincipalUpdate::remove_item(
                         PrincipalField::Members,
-                        PrincipalValue::String("john.doe".to_string()),
+                        PrincipalValue::String("john.doe".into()),
                     )
                 ]))
                 .await
@@ -507,7 +501,7 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
                     PrincipalUpdate::add_item(
                         PrincipalField::Members,
-                        PrincipalValue::String("john.doe".to_string()),
+                        PrincipalValue::String("john.doe".into()),
                     )
                 ]))
                 .await
@@ -531,24 +525,24 @@ async fn internal_directory() {
                 .update_principal(UpdatePrincipal::by_name("john.doe").with_updates(vec![
                     PrincipalUpdate::set(
                         PrincipalField::Name,
-                        PrincipalValue::String("jane".to_string())
+                        PrincipalValue::String("jane".into())
                     ),
                 ]))
                 .await,
-            Err(manage::err_exists(PrincipalField::Name, "jane".to_string()))
+            Err(manage::err_exists(PrincipalField::Name, "jane"))
         );
         assert_eq!(
             store
                 .update_principal(UpdatePrincipal::by_name("john.doe").with_updates(vec![
                     PrincipalUpdate::add_item(
                         PrincipalField::Emails,
-                        PrincipalValue::String("jane@example.org".to_string())
+                        PrincipalValue::String("jane@example.org".into())
                     ),
                 ]))
                 .await,
             Err(manage::err_exists(
                 PrincipalField::Emails,
-                "jane@example.org".to_string()
+                "jane@example.org"
             ))
         );
 
@@ -559,7 +553,7 @@ async fn internal_directory() {
                     None,
                     None,
                     &[Type::Individual, Type::Group, Type::List],
-                    &[],
+                    true,
                     0,
                     0
                 )
@@ -567,60 +561,60 @@ async fn internal_directory() {
                 .unwrap()
                 .items
                 .into_iter()
-                .map(|p| p.name().to_string())
+                .map(|p| p.name)
                 .collect::<AHashSet<_>>(),
             ["jane", "john.doe", "list", "sales", "support"]
                 .into_iter()
-                .map(|s| s.to_string())
+                .map(|s| s.into())
                 .collect::<AHashSet<_>>()
         );
         assert_eq!(
             store
-                .list_principals("john".into(), None, &[], &[], 0, 0)
+                .list_principals("john".into(), None, &[], true, 0, 0)
                 .await
                 .unwrap()
                 .items
                 .into_iter()
-                .map(|p| p.name().to_string())
+                .map(|p| p.name)
                 .collect::<Vec<_>>(),
             vec!["john.doe"]
         );
         assert_eq!(
             store
-                .list_principals(None, None, &[Type::Individual], &[], 0, 0)
+                .list_principals(None, None, &[Type::Individual], true, 0, 0)
                 .await
                 .unwrap()
                 .items
                 .into_iter()
-                .map(|p| p.name().to_string())
+                .map(|p| p.name)
                 .collect::<AHashSet<_>>(),
             ["jane", "john.doe"]
                 .into_iter()
-                .map(|s| s.to_string())
+                .map(|s| s.into())
                 .collect::<AHashSet<_>>()
         );
         assert_eq!(
             store
-                .list_principals(None, None, &[Type::Group], &[], 0, 0)
+                .list_principals(None, None, &[Type::Group], true, 0, 0)
                 .await
                 .unwrap()
                 .items
                 .into_iter()
-                .map(|p| p.name().to_string())
+                .map(|p| p.name)
                 .collect::<AHashSet<_>>(),
             ["sales", "support"]
                 .into_iter()
-                .map(|s| s.to_string())
+                .map(|s| s.into())
                 .collect::<AHashSet<_>>()
         );
         assert_eq!(
             store
-                .list_principals(None, None, &[Type::List], &[], 0, 0)
+                .list_principals(None, None, &[Type::List], true, 0, 0)
                 .await
                 .unwrap()
                 .items
                 .into_iter()
-                .map(|p| p.name().to_string())
+                .map(|p| p.name)
                 .collect::<Vec<_>>(),
             vec!["list"]
         );
@@ -653,7 +647,7 @@ async fn internal_directory() {
                     })
                     .await
                     .unwrap(),
-                Some("hello".to_string())
+                Some("hello".into())
             );
         }
 
@@ -674,7 +668,7 @@ async fn internal_directory() {
                     None,
                     None,
                     &[Type::Individual, Type::Group, Type::List],
-                    &[],
+                    true,
                     0,
                     0
                 )
@@ -682,11 +676,11 @@ async fn internal_directory() {
                 .unwrap()
                 .items
                 .into_iter()
-                .map(|p| p.name().to_string())
+                .map(|p| p.name)
                 .collect::<AHashSet<_>>(),
             ["jane", "list", "sales", "support"]
                 .into_iter()
-                .map(|s| s.to_string())
+                .map(|s| s.into())
                 .collect::<AHashSet<_>>()
         );
         assert_eq!(
@@ -746,7 +740,7 @@ async fn internal_directory() {
                 })
                 .await
                 .unwrap(),
-            Some("hello".to_string())
+            Some("hello".into())
         );
     }
 }
@@ -778,19 +772,19 @@ impl TestInternalDirectory for Store {
             self.update_principal(UpdatePrincipal::by_id(principal.id()).with_updates(vec![
                 PrincipalUpdate::set(
                     PrincipalField::Secrets,
-                    PrincipalValue::StringList(vec![secret.to_string()]),
+                    PrincipalValue::StringList(vec![secret.into()]),
                 ),
                 PrincipalUpdate::set(
                     PrincipalField::Description,
-                    PrincipalValue::String(name.to_string()),
+                    PrincipalValue::String(name.into()),
                 ),
                 PrincipalUpdate::set(
                     PrincipalField::Emails,
-                    PrincipalValue::StringList(emails.iter().map(|s| s.to_string()).collect()),
+                    PrincipalValue::StringList(emails.iter().map(|s| (*s).into()).collect()),
                 ),
                 PrincipalUpdate::add_item(
                     PrincipalField::Roles,
-                    PrincipalValue::String(role.to_string()),
+                    PrincipalValue::String(role.into()),
                 ),
             ]))
             .await
@@ -798,20 +792,20 @@ impl TestInternalDirectory for Store {
             principal.id()
         } else {
             self.create_principal(
-                Principal::new(0, Type::Individual)
-                    .with_field(PrincipalField::Name, login.to_string())
-                    .with_field(PrincipalField::Description, name.to_string())
+                PrincipalSet::new(0, Type::Individual)
+                    .with_field(PrincipalField::Name, login)
+                    .with_field(PrincipalField::Description, name)
                     .with_field(
                         PrincipalField::Secrets,
-                        PrincipalValue::StringList(vec![secret.to_string()]),
+                        PrincipalValue::StringList(vec![secret.into()]),
                     )
                     .with_field(
                         PrincipalField::Emails,
-                        PrincipalValue::StringList(emails.iter().map(|s| s.to_string()).collect()),
+                        PrincipalValue::StringList(emails.iter().map(|s| (*s).into()).collect()),
                     )
                     .with_field(
                         PrincipalField::Roles,
-                        PrincipalValue::StringList(vec![role.to_string()]),
+                        PrincipalValue::StringList(vec![role.into()]),
                     ),
                 None,
                 None,
@@ -828,16 +822,16 @@ impl TestInternalDirectory for Store {
             principal.id()
         } else {
             self.create_principal(
-                Principal::new(0, Type::Group)
-                    .with_field(PrincipalField::Name, login.to_string())
-                    .with_field(PrincipalField::Description, name.to_string())
+                PrincipalSet::new(0, Type::Group)
+                    .with_field(PrincipalField::Name, login)
+                    .with_field(PrincipalField::Description, name)
                     .with_field(
                         PrincipalField::Emails,
-                        PrincipalValue::StringList(emails.iter().map(|s| s.to_string()).collect()),
+                        PrincipalValue::StringList(emails.iter().map(|s| (*s).into()).collect()),
                     )
                     .with_field(
                         PrincipalField::Roles,
-                        PrincipalValue::StringList(vec!["user".to_string()]),
+                        PrincipalValue::StringList(vec!["user".into()]),
                     ),
                 None,
                 None,
@@ -854,16 +848,16 @@ impl TestInternalDirectory for Store {
         } else {
             self.create_test_domains(&[login]).await;
             self.create_principal(
-                Principal::new(0, Type::List)
-                    .with_field(PrincipalField::Name, login.to_string())
-                    .with_field(PrincipalField::Description, name.to_string())
+                PrincipalSet::new(0, Type::List)
+                    .with_field(PrincipalField::Name, login)
+                    .with_field(PrincipalField::Description, name)
                     .with_field(
                         PrincipalField::Members,
-                        PrincipalValue::StringList(members.iter().map(|s| s.to_string()).collect()),
+                        PrincipalValue::StringList(members.iter().map(|s| (*s).into()).collect()),
                     )
                     .with_field(
                         PrincipalField::Emails,
-                        PrincipalValue::StringList(vec![login.to_string()]),
+                        PrincipalValue::StringList(vec![login.into()]),
                     ),
                 None,
                 None,
@@ -886,7 +880,7 @@ impl TestInternalDirectory for Store {
         self.update_principal(UpdatePrincipal::by_name(login).with_updates(vec![
             PrincipalUpdate::add_item(
                 PrincipalField::MemberOf,
-                PrincipalValue::String(group.to_string()),
+                PrincipalValue::String(group.into()),
             ),
         ]))
         .await
@@ -897,7 +891,7 @@ impl TestInternalDirectory for Store {
         self.update_principal(UpdatePrincipal::by_name(login).with_updates(vec![
             PrincipalUpdate::remove_item(
                 PrincipalField::MemberOf,
-                PrincipalValue::String(group.to_string()),
+                PrincipalValue::String(group.into()),
             ),
         ]))
         .await
@@ -908,7 +902,7 @@ impl TestInternalDirectory for Store {
         self.update_principal(UpdatePrincipal::by_name(login).with_updates(vec![
             PrincipalUpdate::remove_item(
                 PrincipalField::Emails,
-                PrincipalValue::String(alias.to_string()),
+                PrincipalValue::String(alias.into()),
             ),
         ]))
         .await
@@ -925,8 +919,7 @@ impl TestInternalDirectory for Store {
                 .is_none()
             {
                 self.create_principal(
-                    Principal::new(0, Type::Domain)
-                        .with_field(PrincipalField::Name, domain.to_string()),
+                    PrincipalSet::new(0, Type::Domain).with_field(PrincipalField::Name, domain),
                     None,
                     None,
                 )
@@ -948,7 +941,7 @@ async fn assert_list_members(
                 items.into_iter().collect::<AHashSet<_>>(),
                 members
                     .into_iter()
-                    .map(|s| s.to_string())
+                    .map(|s| s.into())
                     .collect::<AHashSet<_>>()
             );
         }

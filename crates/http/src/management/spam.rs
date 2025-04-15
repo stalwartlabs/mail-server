@@ -7,6 +7,7 @@
 use std::net::IpAddr;
 
 use common::{Server, auth::AccessToken, config::spamfilter::SpamFilterAction, psl};
+use compact_str::CompactString;
 use directory::{
     Permission,
     backend::internal::manage::{self, ManageDirectory},
@@ -65,7 +66,7 @@ pub struct SpamClassifyRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SpamClassifyResponse {
     pub score: f64,
-    pub tags: AHashMap<String, SpamFilterDisposition<f64>>,
+    pub tags: AHashMap<CompactString, SpamFilterDisposition<f64>>,
     pub disposition: SpamFilterDisposition<String>,
 }
 

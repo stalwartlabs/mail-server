@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::{CompactString, ToCompactString};
 use directory::{
     QueryBy, ROLE_USER, Type,
     backend::{RcptType, internal::manage::ManageDirectory},
@@ -114,8 +115,8 @@ async fn sql_directory() {
             handle
                 .query(
                     QueryBy::Credentials(&Credentials::Plain {
-                        username: "john".to_string(),
-                        secret: "12345".to_string()
+                        username: "john".into(),
+                        secret: "12345".into()
                     }),
                     true
                 )
@@ -125,21 +126,21 @@ async fn sql_directory() {
                 .into_test(),
             TestPrincipal {
                 id: base_store.get_principal_id("john").await.unwrap().unwrap(),
-                name: "john".to_string(),
-                description: "John Doe".to_string().into(),
-                secrets: vec!["12345".to_string()],
+                name: "john".into(),
+                description: Some("John Doe".into()),
+                secrets: vec!["12345".into()],
                 typ: Type::Individual,
                 member_of: map_account_ids(base_store, vec!["sales"])
                     .await
                     .into_iter()
-                    .map(|v| v.to_string())
+                    .map(|v| v.to_compact_string())
                     .collect(),
                 emails: vec![
-                    "john@example.org".to_string(),
-                    "jdoe@example.org".to_string(),
-                    "john.doe@example.org".to_string()
+                    "john@example.org".into(),
+                    "jdoe@example.org".into(),
+                    "john.doe@example.org".into()
                 ],
-                roles: vec![ROLE_USER.to_string()],
+                roles: vec![ROLE_USER.to_compact_string()],
                 ..Default::default()
             }
         );
@@ -147,8 +148,8 @@ async fn sql_directory() {
             handle
                 .query(
                     QueryBy::Credentials(&Credentials::Plain {
-                        username: "bill".to_string(),
-                        secret: "password".to_string()
+                        username: "bill".into(),
+                        secret: "password".into()
                     }),
                     true
                 )
@@ -158,15 +159,15 @@ async fn sql_directory() {
                 .into_test(),
             TestPrincipal {
                 id: base_store.get_principal_id("bill").await.unwrap().unwrap(),
-                name: "bill".to_string(),
-                description: "Bill Foobar".to_string().into(),
+                name: "bill".into(),
+                description: Some("Bill Foobar".into()),
                 secrets: vec![
-                    "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe".to_string()
+                    "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe".into()
                 ],
                 typ: Type::Individual,
                 quota: 500000,
-                emails: vec!["bill@example.org".to_string(),],
-                roles: vec![ROLE_USER.to_string()],
+                emails: vec!["bill@example.org".into(),],
+                roles: vec![ROLE_USER.to_compact_string()],
                 ..Default::default()
             }
         );
@@ -174,8 +175,8 @@ async fn sql_directory() {
             handle
                 .query(
                     QueryBy::Credentials(&Credentials::Plain {
-                        username: "admin".to_string(),
-                        secret: "very_secret".to_string()
+                        username: "admin".into(),
+                        secret: "very_secret".into()
                     }),
                     true
                 )
@@ -185,11 +186,11 @@ async fn sql_directory() {
                 .into_test(),
             TestPrincipal {
                 id: base_store.get_principal_id("admin").await.unwrap().unwrap(),
-                name: "admin".to_string(),
-                description: "Administrator".to_string().into(),
-                secrets: vec!["very_secret".to_string()],
+                name: "admin".into(),
+                description: Some("Administrator".into()),
+                secrets: vec!["very_secret".into()],
                 typ: Type::Individual,
-                roles: vec![ROLE_USER.to_string()],
+                roles: vec![ROLE_USER.to_compact_string()],
                 ..Default::default()
             }
         );
@@ -197,8 +198,8 @@ async fn sql_directory() {
             handle
                 .query(
                     QueryBy::Credentials(&Credentials::Plain {
-                        username: "bill".to_string(),
-                        secret: "invalid".to_string()
+                        username: "bill".into(),
+                        secret: "invalid".into()
                     }),
                     true
                 )
@@ -217,17 +218,17 @@ async fn sql_directory() {
                 .into_test(),
             TestPrincipal {
                 id: base_store.get_principal_id("jane").await.unwrap().unwrap(),
-                name: "jane".to_string(),
-                description: "Jane Doe".to_string().into(),
+                name: "jane".into(),
+                description: Some("Jane Doe".into()),
                 typ: Type::Individual,
-                secrets: vec!["abcde".to_string()],
+                secrets: vec!["abcde".into()],
                 member_of: map_account_ids(base_store, vec!["sales", "support"])
                     .await
                     .into_iter()
-                    .map(|v| v.to_string())
+                    .map(|v| v.to_compact_string())
                     .collect(),
-                emails: vec!["jane@example.org".to_string(),],
-                roles: vec![ROLE_USER.to_string()],
+                emails: vec!["jane@example.org".into(),],
+                roles: vec![ROLE_USER.to_compact_string()],
                 ..Default::default()
             }
         );
@@ -242,10 +243,10 @@ async fn sql_directory() {
                 .into_test(),
             TestPrincipal {
                 id: base_store.get_principal_id("sales").await.unwrap().unwrap(),
-                name: "sales".to_string(),
-                description: "Sales Team".to_string().into(),
+                name: "sales".into(),
+                description: Some("Sales Team".into()),
                 typ: Type::Group,
-                roles: vec![ROLE_USER.to_string()],
+                roles: vec![ROLE_USER.to_compact_string()],
                 ..Default::default()
             }
         );
@@ -315,35 +316,35 @@ async fn sql_directory() {
         // VRFY
         assert_eq!(
             core.vrfy(&handle, "jane", 0).await.unwrap(),
-            vec!["jane@example.org".to_string()]
+            vec!["jane@example.org".to_compact_string()]
         );
         assert_eq!(
             core.vrfy(&handle, "john", 0).await.unwrap(),
             vec![
-                "john.doe@example.org".to_string(),
-                "john@example.org".to_string(),
+                "john.doe@example.org".to_compact_string(),
+                "john@example.org".to_compact_string(),
             ]
         );
         assert_eq!(
             core.vrfy(&handle, "jane+alias@example", 0).await.unwrap(),
-            vec!["jane@example.org".to_string()]
+            vec!["jane@example.org".to_compact_string()]
         );
         assert_eq!(
             core.vrfy(&handle, "info", 0).await.unwrap(),
-            Vec::<String>::new()
+            Vec::<CompactString>::new()
         );
         assert_eq!(
             core.vrfy(&handle, "invalid", 0).await.unwrap(),
-            Vec::<String>::new()
+            Vec::<CompactString>::new()
         );
 
         // EXPN (now handled by the internal store)
         /*assert_eq!(
             core.expn(&handle, "info@example.org", 0).await.unwrap(),
             vec![
-                "bill@example.org".to_string(),
-                "jane@example.org".to_string(),
-                "john@example.org".to_string()
+                "bill@example.org".into(),
+                "jane@example.org".into(),
+                "john@example.org".into()
             ]
         );
         assert_eq!(
@@ -381,7 +382,7 @@ impl DirectoryStore {
             let query = if self.is_mysql() {
                 query.replace("TEXT", "VARCHAR(255)")
             } else {
-                query.to_string()
+                query.into()
             };
 
             self.store

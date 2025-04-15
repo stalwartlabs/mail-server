@@ -39,8 +39,8 @@ impl TlsaVerify for Tlsa {
             );
 
             return Err(Status::TemporaryFailure(Error::DaneError(ErrorDetails {
-                entity: hostname.to_string(),
-                details: "No certificates were provided by host".to_string(),
+                entity: hostname.into(),
+                details: "No certificates were provided by host".into(),
             })));
         };
 
@@ -59,8 +59,8 @@ impl TlsaVerify for Tlsa {
                     );
 
                     return Err(Status::TemporaryFailure(Error::DaneError(ErrorDetails {
-                        entity: hostname.to_string(),
-                        details: "Failed to parse X.509 certificate".to_string(),
+                        entity: hostname.into(),
+                        details: "Failed to parse X.509 certificate".into(),
                     })));
                 }
             };
@@ -143,8 +143,8 @@ impl TlsaVerify for Tlsa {
             );
 
             Err(Status::PermanentFailure(Error::DaneError(ErrorDetails {
-                entity: hostname.to_string(),
-                details: "No matching certificates found in TLSA records".to_string(),
+                entity: hostname.into(),
+                details: "No matching certificates found in TLSA records".into(),
             })))
         }
     }

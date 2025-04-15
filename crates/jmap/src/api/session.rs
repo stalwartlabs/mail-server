@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use common::{Server, auth::AccessToken};
-use directory::{QueryBy, backend::internal::PrincipalField};
+use directory::backend::internal::manage::ManageDirectory;
 use jmap_proto::{
     request::capability::{Capability, Session},
     types::{acl::Acl, collection::Collection, id::Id},
@@ -33,11 +33,12 @@ impl SessionHandler for Server {
         session.set_state(access_token.state());
         session.set_primary_account(
             access_token.primary_id().into(),
-            access_token.name.clone(),
+            access_token.name.to_string(),
             access_token
                 .description
-                .clone()
-                .unwrap_or_else(|| access_token.name.clone()),
+                .as_ref()
+                .unwrap_or(&access_token.name)
+                .to_string(),
             None,
             &self.core.jmap.capabilities.account,
         );
@@ -54,13 +55,11 @@ impl SessionHandler for Server {
 
             session.add_account(
                 (*id).into(),
-                self.core
-                    .storage
-                    .directory
-                    .query(QueryBy::Id(*id), false)
+                self.store()
+                    .get_principal_name(*id)
                     .await
                     .caused_by(trc::location!())?
-                    .and_then(|mut p| p.take_str(PrincipalField::Name))
+                    .map(Into::into)
                     .unwrap_or_else(|| Id::from(*id).to_string()),
                 is_personal,
                 is_readonly,

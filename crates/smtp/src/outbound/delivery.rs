@@ -20,6 +20,7 @@ use common::config::{
     smtp::{queue::RequireOptional, report::AggregateFrequency},
 };
 use common::ipc::{PolicyType, QueueEvent, QueueEventStatus, TlsEvent};
+use compact_str::{CompactString, ToCompactString};
 use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, ResultType},
@@ -44,6 +45,7 @@ use crate::queue::{Domain, Error, QueueEnvelope, QueuedMessage, Status};
 
 impl QueuedMessage {
     pub fn try_deliver(self, server: Server) {
+        #![allow(clippy::large_futures)]
         tokio::spawn(async move {
             // Lock queue event
             let queue_id = self.queue_id;
@@ -58,9 +60,9 @@ impl QueuedMessage {
                         SpanId = message.span_id,
                         QueueId = message.queue_id,
                         From = if !message.return_path.is_empty() {
-                            trc::Value::String(message.return_path.to_string())
+                            trc::Value::String(message.return_path.as_str().into())
                         } else {
-                            trc::Value::Static("<>")
+                            trc::Value::String("<>".into())
                         },
                         To = message
                             .recipients
@@ -70,7 +72,7 @@ impl QueuedMessage {
                                     r.status,
                                     Status::Scheduled | Status::TemporaryFailure(_)
                                 ) {
-                                    Some(trc::Value::String(r.address_lcase.to_string()))
+                                    Some(trc::Value::String(r.address_lcase.as_str().into()))
                                 } else {
                                     None
                                 }
@@ -237,7 +239,7 @@ impl QueuedMessage {
 
             // Obtain next hop
             let (mut remote_hosts, is_smtp) = match server
-                .eval_if::<String, _>(&queue_config.next_hop, &envelope, message.span_id)
+                .eval_if::<CompactString, _>(&queue_config.next_hop, &envelope, message.span_id)
                 .await
                 .and_then(|name| server.get_relay_host(&name, message.span_id))
             {
@@ -376,7 +378,7 @@ impl QueuedMessage {
                             Details = mta_sts_policy
                                 .mx
                                 .iter()
-                                .map(|mx| trc::Value::String(mx.to_string()))
+                                .map(|mx| trc::Value::String(mx.to_compact_string()))
                                 .collect::<Vec<_>>(),
                             Elapsed = time.elapsed(),
                         );
@@ -493,7 +495,7 @@ impl QueuedMessage {
                     .smtp
                     .resolvers
                     .dns
-                    .mx_lookup(&domain.domain, Some(&server.inner.cache.dns_mx))
+                    .mx_lookup(domain.domain.as_str(), Some(&server.inner.cache.dns_mx))
                     .await
                 {
                     Ok(mx) => mx,
@@ -543,7 +545,7 @@ impl QueuedMessage {
                         Domain = domain.domain.clone(),
                         Details = remote_hosts_
                             .iter()
-                            .map(|h| trc::Value::String(h.hostname().to_string()))
+                            .map(|h| trc::Value::String(h.hostname().into()))
                             .collect::<Vec<_>>(),
                         Elapsed = time.elapsed(),
                     );
@@ -566,7 +568,7 @@ impl QueuedMessage {
                         .unwrap_or_else(|| vec![Duration::from_secs(60)]);
                     message.domains[domain_idx].set_status(
                         Status::PermanentFailure(Error::DnsError(
-                            "Domain does not accept messages (null MX)".to_string(),
+                            "Domain does not accept messages (null MX)".into(),
                         )),
                         &schedule,
                     );
@@ -610,16 +612,15 @@ impl QueuedMessage {
                             Details = mta_sts_policy
                                 .mx
                                 .iter()
-                                .map(|mx| trc::Value::String(mx.to_string()))
+                                .map(|mx| trc::Value::String(mx.to_compact_string()))
                                 .collect::<Vec<_>>(),
                             Strict = strict,
                         );
 
                         if strict {
-                            last_status = Status::PermanentFailure(Error::MtaStsError(format!(
-                                "MX {:?} not authorized by policy.",
-                                envelope.mx
-                            )));
+                            last_status = Status::PermanentFailure(Error::MtaStsError(
+                                format!("MX {:?} not authorized by policy.", envelope.mx).into(),
+                            ));
                             continue 'next_host;
                         }
                     } else {
@@ -631,7 +632,7 @@ impl QueuedMessage {
                             Details = mta_sts_policy
                                 .mx
                                 .iter()
-                                .map(|mx| trc::Value::String(mx.to_string()))
+                                .map(|mx| trc::Value::String(mx.to_compact_string()))
                                 .collect::<Vec<_>>(),
                             Strict = strict,
                         );
@@ -737,8 +738,8 @@ impl QueuedMessage {
                                 if strict {
                                     last_status =
                                         Status::PermanentFailure(Error::DaneError(ErrorDetails {
-                                            entity: envelope.mx.to_string(),
-                                            details: "No valid TLSA records were found".to_string(),
+                                            entity: envelope.mx.into(),
+                                            details: "No valid TLSA records were found".into(),
                                         }));
                                     continue 'next_host;
                                 }
@@ -776,8 +777,8 @@ impl QueuedMessage {
 
                                 last_status =
                                     Status::PermanentFailure(Error::DaneError(ErrorDetails {
-                                        entity: envelope.mx.to_string(),
-                                        details: "No TLSA DNSSEC records found".to_string(),
+                                        entity: envelope.mx.into(),
+                                        details: "No TLSA DNSSEC records found".into(),
                                     }));
                                 continue 'next_host;
                             }
@@ -830,8 +831,8 @@ impl QueuedMessage {
                                     }
 
                                     Status::PermanentFailure(Error::DaneError(ErrorDetails {
-                                        entity: envelope.mx.to_string(),
-                                        details: "No TLSA records found".to_string(),
+                                        entity: envelope.mx.into(),
+                                        details: "No TLSA records found".into(),
                                     }))
                                 } else {
                                     err.into()
@@ -929,7 +930,11 @@ impl QueuedMessage {
 
                     // Obtain session parameters
                     let local_hostname = server
-                        .eval_if::<String, _>(&queue_config.hostname, &envelope, message.span_id)
+                        .eval_if::<CompactString, _>(
+                            &queue_config.hostname,
+                            &envelope,
+                            message.span_id,
+                        )
                         .await
                         .filter(|s| !s.is_empty())
                         .unwrap_or_else(|| {
@@ -937,7 +942,7 @@ impl QueuedMessage {
                                 Delivery(DeliveryEvent::MissingOutboundHostname),
                                 SpanId = message.span_id,
                             );
-                            "local.host".to_string()
+                            "local.host".into()
                         });
                     let params = SessionParams {
                         session_id: message.span_id,
@@ -1387,9 +1392,8 @@ impl Message {
                         }
                     }
 
-                    domain.status = Status::PermanentFailure(Error::Io(
-                        "Queue rate limit exceeded.".to_string(),
-                    ));
+                    domain.status =
+                        Status::PermanentFailure(Error::Io("Queue rate limit exceeded.".into()));
                 }
                 Status::Completed(_) | Status::PermanentFailure(_) => (),
                 _ => {

@@ -155,11 +155,7 @@ async fn sieve_scripts() {
             .set_variable("from", "john.doe@example.org")
             .with_envelope(&test.server, &session, 0)
             .await;
-        match test
-            .server
-            .run_script(name.to_string(), script, params)
-            .await
-        {
+        match test.server.run_script(name.into(), script, params).await {
             ScriptResult::Accept { .. } => (),
             ScriptResult::Reject(message) => panic!("{}", message),
             err => {

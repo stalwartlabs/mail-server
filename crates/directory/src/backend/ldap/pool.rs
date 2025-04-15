@@ -26,7 +26,7 @@ impl managed::Manager for LdapConnectionManager {
             Details = self
                 .bind_dn
                 .as_ref()
-                .map(|b| trc::Value::String(b.dn.clone())),
+                .map(|b| trc::Value::String(b.dn.as_str().into())),
         );
 
         if let Some(bind) = &self.bind_dn {

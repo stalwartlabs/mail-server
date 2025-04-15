@@ -12,9 +12,10 @@ pub mod smtp;
 pub mod sql;
 
 use common::{Core, Server, config::smtp::session::AddressMapping};
+use compact_str::{CompactString, ToCompactString, format_compact};
 use directory::{
     Directories, Principal, Type,
-    backend::internal::{PrincipalField, manage::ManageDirectory},
+    backend::internal::{PrincipalField, PrincipalSet, manage::ManageDirectory},
 };
 use mail_send::Credentials;
 use rustls::ServerConfig;
@@ -322,13 +323,13 @@ pub struct TestPrincipal {
     pub id: u32,
     pub typ: Type,
     pub quota: u64,
-    pub name: String,
-    pub secrets: Vec<String>,
-    pub emails: Vec<String>,
-    pub member_of: Vec<String>,
-    pub roles: Vec<String>,
-    pub lists: Vec<String>,
-    pub description: Option<String>,
+    pub name: CompactString,
+    pub secrets: Vec<CompactString>,
+    pub emails: Vec<CompactString>,
+    pub member_of: Vec<CompactString>,
+    pub roles: Vec<CompactString>,
+    pub lists: Vec<CompactString>,
+    pub description: Option<CompactString>,
 }
 
 impl DirectoryTest {
@@ -493,6 +494,12 @@ trait IntoTestPrincipal {
     fn into_test(self) -> TestPrincipal;
 }
 
+impl IntoTestPrincipal for PrincipalSet {
+    fn into_test(self) -> TestPrincipal {
+        TestPrincipal::from(self)
+    }
+}
+
 impl IntoTestPrincipal for Principal {
     fn into_test(self) -> TestPrincipal {
         TestPrincipal::from(self)
@@ -507,8 +514,8 @@ impl TestPrincipal {
     }
 }
 
-impl From<Principal> for TestPrincipal {
-    fn from(mut value: Principal) -> Self {
+impl From<PrincipalSet> for TestPrincipal {
+    fn from(mut value: PrincipalSet) -> Self {
         Self {
             id: value.id(),
             typ: value.typ(),
@@ -534,9 +541,38 @@ impl From<Principal> for TestPrincipal {
     }
 }
 
-impl From<TestPrincipal> for Principal {
+impl From<Principal> for TestPrincipal {
+    fn from(value: Principal) -> Self {
+        Self {
+            id: value.id(),
+            typ: value.typ(),
+            quota: value.quota(),
+            member_of: value
+                .member_of()
+                .iter()
+                .map(|v| v.to_compact_string())
+                .collect(),
+            roles: value
+                .roles()
+                .iter()
+                .map(|v| v.to_compact_string())
+                .collect(),
+            lists: value
+                .lists()
+                .iter()
+                .map(|v| v.to_compact_string())
+                .collect(),
+            name: value.name,
+            secrets: value.secrets,
+            emails: value.emails,
+            description: value.description,
+        }
+    }
+}
+
+impl From<TestPrincipal> for PrincipalSet {
     fn from(value: TestPrincipal) -> Self {
-        Principal::new(value.id, value.typ)
+        PrincipalSet::new(value.id, value.typ)
             .with_field(PrincipalField::Name, value.name)
             .with_field(PrincipalField::Quota, value.quota)
             .with_field(PrincipalField::Secrets, value.secrets)
@@ -549,23 +585,23 @@ impl From<TestPrincipal> for Principal {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Item {
-    IsAccount(String),
+    IsAccount(CompactString),
     Authenticate(Credentials<String>),
-    Verify(String),
-    Expand(String),
+    Verify(CompactString),
+    Expand(CompactString),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LookupResult {
     True,
     False,
-    Values(Vec<String>),
+    Values(Vec<CompactString>),
 }
 
 impl Item {
     pub fn append(&self, append: usize) -> Self {
         match self {
-            Item::IsAccount(str) => Item::IsAccount(format!("{append}{str}")),
+            Item::IsAccount(str) => Item::IsAccount(format_compact!("{append}{str}")),
             Item::Authenticate(str) => Item::Authenticate(match str {
                 Credentials::Plain { username, secret } => Credentials::Plain {
                     username: username.to_string(),
@@ -579,8 +615,8 @@ impl Item {
                     secret: format!("{append}{secret}"),
                 },
             }),
-            Item::Verify(str) => Item::Verify(format!("{append}{str}")),
-            Item::Expand(str) => Item::Expand(format!("{append}{str}")),
+            Item::Verify(str) => Item::Verify(format_compact!("{append}{str}")),
+            Item::Expand(str) => Item::Expand(format_compact!("{append}{str}")),
         }
     }
 
@@ -601,9 +637,9 @@ impl LookupResult {
                 let mut r = Vec::with_capacity(v.len());
                 for (pos, val) in v.iter().enumerate() {
                     r.push(if pos == 0 {
-                        format!("{append}{val}")
+                        format_compact!("{append}{val}")
                     } else {
-                        val.to_string()
+                        val.to_compact_string()
                     });
                 }
                 LookupResult::Values(r)
@@ -622,8 +658,8 @@ impl From<bool> for LookupResult {
     }
 }
 
-impl From<Vec<String>> for LookupResult {
-    fn from(v: Vec<String>) -> Self {
+impl From<Vec<CompactString>> for LookupResult {
+    fn from(v: Vec<CompactString>) -> Self {
         LookupResult::Values(v)
     }
 }

@@ -7,9 +7,10 @@
 use std::collections::HashMap;
 
 use calcard::icalendar::ICalendar;
+use compact_str::CompactString;
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
-use store::{SERIALIZE_OBJ_14_V1, SERIALIZE_OBJ_16_V1, SerializedVersion, ahash};
+use store::{SERIALIZE_CALENDAR_V1, SERIALIZE_CALENDAREVENT_V1, SerializedVersion, ahash};
 use utils::map::vec_map::VecMap;
 
 use crate::DavName;
@@ -18,7 +19,7 @@ use crate::DavName;
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct Calendar {
-    pub name: String,
+    pub name: CompactString,
     pub preferences: HashMap<u32, CalendarPreferences, ahash::RandomState>,
     pub acls: Vec<AclGrant>,
     pub dead_properties: DeadProperty,
@@ -30,16 +31,16 @@ pub struct Calendar {
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct CalendarPreferences {
-    pub name: String,
-    pub description: Option<String>,
+    pub name: CompactString,
+    pub description: Option<CompactString>,
     pub sort_order: u32,
-    pub color: Option<String>,
+    pub color: Option<CompactString>,
     pub is_subscribed: bool,
     pub is_default: bool,
     pub is_visible: bool,
     pub include_in_availability: IncludeInAvailability,
-    pub default_alerts_with_time: HashMap<String, ICalendar, ahash::RandomState>,
-    pub default_alerts_without_time: HashMap<String, ICalendar, ahash::RandomState>,
+    pub default_alerts_with_time: HashMap<CompactString, ICalendar, ahash::RandomState>,
+    pub default_alerts_without_time: HashMap<CompactString, ICalendar, ahash::RandomState>,
     pub time_zone: Timezone,
 }
 
@@ -48,7 +49,7 @@ pub struct CalendarPreferences {
 )]
 pub struct CalendarEvent {
     pub names: Vec<DavName>,
-    pub display_name: Option<String>,
+    pub display_name: Option<CompactString>,
     pub event: ICalendar,
     pub user_properties: VecMap<u32, ICalendar>,
     pub may_invite_self: bool,
@@ -65,7 +66,7 @@ pub struct CalendarEvent {
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub enum Timezone {
-    IANA(String),
+    IANA(CompactString),
     Custom(ICalendar),
     #[default]
     Default,
@@ -128,13 +129,13 @@ impl From<CalendarRight> for Acl {
 
 impl SerializedVersion for Calendar {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_14_V1
+        SERIALIZE_CALENDAR_V1
     }
 }
 
 impl SerializedVersion for CalendarEvent {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_16_V1
+        SERIALIZE_CALENDAREVENT_V1
     }
 }
 

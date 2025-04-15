@@ -9,7 +9,7 @@ use std::sync::{Arc, LazyLock};
 use ahash::AHashSet;
 use directory::{
     Permission, Permissions, QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
-    backend::internal::{PrincipalField, lookup::DirectoryStore},
+    backend::internal::lookup::DirectoryStore,
 };
 use trc::AddContext;
 use utils::cache::CacheItemWeight;
@@ -77,7 +77,7 @@ impl Server {
         role_id: u32,
         revision: u64,
     ) -> trc::Result<Arc<RolePermissions>> {
-        let mut role_ids = vec![role_id as u64].into_iter();
+        let mut role_ids = vec![role_id].into_iter();
         let mut role_ids_stack = vec![];
         let mut fetched_role_ids = AHashSet::new();
         let mut return_permissions = RolePermissions {
@@ -87,8 +87,6 @@ impl Server {
 
         'outer: loop {
             if let Some(role_id) = role_ids.next() {
-                let role_id = role_id as u32;
-
                 // Skip if already fetched
                 if !fetched_role_ids.insert(role_id) {
                     continue;
@@ -149,21 +147,11 @@ impl Server {
                                 })?;
 
                             // Add permissions
-                            for (permissions, field) in [
-                                (
-                                    &mut role_permissions.enabled,
-                                    PrincipalField::EnabledPermissions,
-                                ),
-                                (
-                                    &mut role_permissions.disabled,
-                                    PrincipalField::DisabledPermissions,
-                                ),
-                            ] {
-                                for permission in principal.iter_int(field) {
-                                    let permission = permission as usize;
-                                    if permission < Permission::COUNT {
-                                        permissions.set(permission);
-                                    }
+                            for permission in principal.permissions() {
+                                if permission.grant {
+                                    role_permissions.enabled.set(permission.permission.id());
+                                } else {
+                                    role_permissions.disabled.set(permission.permission.id());
                                 }
                             }
 
@@ -171,12 +159,11 @@ impl Server {
                             return_permissions.union(&role_permissions);
 
                             // Add parent roles
-                            if let Some(parent_role_ids) = principal
-                                .take_int_array(PrincipalField::Roles)
-                                .filter(|r| !r.is_empty())
+                            if let Some(parent_role_ids) =
+                                principal.roles_mut().filter(|r| !r.is_empty())
                             {
                                 role_ids_stack.push(role_ids);
-                                role_ids = parent_role_ids.into_iter();
+                                role_ids = std::mem::take(parent_role_ids).into_iter();
                             } else {
                                 // Cache role
                                 self.inner

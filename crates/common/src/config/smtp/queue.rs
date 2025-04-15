@@ -636,7 +636,9 @@ impl<'x> TryFrom<Variable<'x>> for IpLookupStrategy {
                 5 => Ok(IpLookupStrategy::Ipv4thenIpv6),
                 _ => Err(()),
             },
-            Variable::String(value) => IpLookupStrategy::parse_value(&value).map_err(|_| ()),
+            Variable::String(value) => {
+                IpLookupStrategy::parse_value(value.as_str()).map_err(|_| ())
+            }
             _ => Err(()),
         }
     }

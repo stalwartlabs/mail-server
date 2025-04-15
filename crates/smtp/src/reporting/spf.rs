@@ -5,6 +5,7 @@
  */
 
 use common::listener::SessionStream;
+use compact_str::ToCompactString;
 use mail_auth::{AuthenticationResults, SpfOutput, report::AuthFailureType};
 use trc::OutgoingReportEvent;
 use utils::config::Rate;
@@ -40,7 +41,7 @@ impl<T: SessionStream> Session<T> {
             .server
             .eval_if(&config.address, self, self.data.session_id)
             .await
-            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
+            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_compact_string());
         let mut report = Vec::with_capacity(128);
         self.new_auth_failure(AuthFailureType::Spf, rejected)
             .with_authentication_results(
@@ -66,7 +67,7 @@ impl<T: SessionStream> Session<T> {
                     self.server
                         .eval_if(&config.name, self, self.data.session_id)
                         .await
-                        .unwrap_or_else(|| "Mailer Daemon".to_string())
+                        .unwrap_or_else(|| "Mailer Daemon".to_compact_string())
                         .as_str(),
                     from_addr.as_str(),
                 ),
@@ -75,7 +76,7 @@ impl<T: SessionStream> Session<T> {
                     .server
                     .eval_if(&config.subject, self, self.data.session_id)
                     .await
-                    .unwrap_or_else(|| "SPF Report".to_string()),
+                    .unwrap_or_else(|| "SPF Report".to_compact_string()),
                 &mut report,
             )
             .ok();

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
 use sieve::Envelope;
 use smtp_proto::{
     MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY,
@@ -16,15 +17,19 @@ use crate::{
 };
 
 impl SessionData {
-    pub fn apply_envelope_modification(&mut self, envelope: Envelope, value: String) {
+    pub fn apply_envelope_modification(&mut self, envelope: Envelope, value: CompactString) {
         match envelope {
             Envelope::From => {
                 let (address, address_lcase, domain) = if value.contains('@') {
-                    let address_lcase = value.to_lowercase();
-                    let domain = address_lcase.domain_part().to_string();
+                    let address_lcase = CompactString::from_str_to_lowercase(&value);
+                    let domain = address_lcase.domain_part().into();
                     (value, address_lcase, domain)
                 } else if value.is_empty() {
-                    (String::new(), String::new(), String::new())
+                    (
+                        CompactString::new(""),
+                        CompactString::new(""),
+                        CompactString::new(""),
+                    )
                 } else {
                     return;
                 };
@@ -46,7 +51,7 @@ impl SessionData {
             Envelope::To => {
                 if value.contains('@') {
                     let address_lcase = value.to_lowercase();
-                    let domain = address_lcase.domain_part().to_string();
+                    let domain = address_lcase.domain_part().into();
                     if let Some(rcpt_to) = self.rcpt_to.last_mut() {
                         rcpt_to.address = value;
                         rcpt_to.address_lcase = address_lcase;

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
+use compact_str::CompactString;
 
-use crate::expr::Variable;
+use crate::expr::{StringCow, Variable};
 
 pub(crate) fn fn_is_email(v: Vec<Variable>) -> Variable {
     let mut last_ch = 0;
@@ -16,7 +16,7 @@ pub(crate) fn fn_is_email(v: Vec<Variable>) -> Variable {
     let mut lp_len = 0;
     let mut value = 0;
 
-    for ch in v[0].to_string().bytes() {
+    for &ch in v[0].to_string().as_bytes() {
         match ch {
             b'0'..=b'9'
             | b'a'..=b'z'
@@ -84,19 +84,19 @@ pub(crate) fn fn_email_part(v: Vec<Variable>) -> Variable {
     let part = v.next().unwrap().into_string();
 
     value.transform(|s| match s {
-        Cow::Borrowed(s) => s
+        StringCow::Borrowed(s) => s
             .rsplit_once('@')
-            .map(|(u, d)| match part.as_ref() {
+            .map(|(u, d)| match part.as_str() {
                 "local" => Variable::from(u.trim()),
                 "domain" => Variable::from(d.trim()),
                 _ => Variable::default(),
             })
             .unwrap_or_default(),
-        Cow::Owned(s) => s
+        StringCow::Owned(s) => s
             .rsplit_once('@')
-            .map(|(u, d)| match part.as_ref() {
-                "local" => Variable::from(u.trim().to_string()),
-                "domain" => Variable::from(d.trim().to_string()),
+            .map(|(u, d)| match part.as_str() {
+                "local" => Variable::from(CompactString::new(u.trim())),
+                "domain" => Variable::from(CompactString::new(d.trim())),
                 _ => Variable::default(),
             })
             .unwrap_or_default(),

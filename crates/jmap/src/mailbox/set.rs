@@ -289,7 +289,7 @@ impl MailboxSet for Server {
                 (Property::Name, MaybePatchValue::Value(Value::Text(value))) => {
                     let value = value.trim();
                     if !value.is_empty() && value.len() < self.core.jmap.mailbox_name_max_len {
-                        changes.name = value.to_string();
+                        changes.name = value.into();
                     } else {
                         return Ok(Err(SetError::invalid_properties()
                             .with_property(Property::Name)

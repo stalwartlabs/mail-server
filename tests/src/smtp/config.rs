@@ -14,6 +14,7 @@ use common::{
     },
     expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
 };
+use compact_str::{CompactString, ToCompactString};
 use throttle::parse_queue_rate_limiter;
 use tokio::net::TcpSocket;
 
@@ -62,13 +63,13 @@ fn parse_if_blocks() {
     assert_eq!(
         IfBlock::try_parse(&mut config, "durations", &token_map).unwrap(),
         IfBlock {
-            key: "durations".to_string(),
+            key: "durations".into(),
             if_then: vec![
                 IfThen {
                     expr: Expression {
                         items: vec![
                             ExpressionItem::Variable(V_SENDER),
-                            ExpressionItem::Constant(Constant::String("jdoe".to_string())),
+                            ExpressionItem::Constant(Constant::String("jdoe".into())),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq)
                         ]
                     },
@@ -85,7 +86,7 @@ fn parse_if_blocks() {
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq),
                             ExpressionItem::JmpIf { val: true, pos: 4 },
                             ExpressionItem::Variable(V_RECIPIENT),
-                            ExpressionItem::Constant(Constant::String("jane".to_string())),
+                            ExpressionItem::Constant(Constant::String("jane".into())),
                             ExpressionItem::Function {
                                 id: 29,
                                 num_args: 2
@@ -107,21 +108,21 @@ fn parse_if_blocks() {
     assert_eq!(
         IfBlock::try_parse(&mut config, "string-list", &token_map).unwrap(),
         IfBlock {
-            key: "string-list".to_string(),
+            key: "string-list".into(),
             if_then: vec![
                 IfThen {
                     expr: Expression {
                         items: vec![
                             ExpressionItem::Variable(V_SENDER),
-                            ExpressionItem::Constant(Constant::String("jdoe".to_string())),
+                            ExpressionItem::Constant(Constant::String("jdoe".into())),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq)
                         ]
                     },
                     then: Expression {
                         items: vec![
-                            ExpressionItem::Constant(Constant::String("From".to_string())),
-                            ExpressionItem::Constant(Constant::String("To".to_string())),
-                            ExpressionItem::Constant(Constant::String("Date".to_string())),
+                            ExpressionItem::Constant(Constant::String("From".into())),
+                            ExpressionItem::Constant(Constant::String("To".into())),
+                            ExpressionItem::Constant(Constant::String("Date".into())),
                             ExpressionItem::ArrayBuild(3)
                         ]
                     }
@@ -135,7 +136,7 @@ fn parse_if_blocks() {
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq),
                             ExpressionItem::JmpIf { val: true, pos: 4 },
                             ExpressionItem::Variable(V_RECIPIENT),
-                            ExpressionItem::Constant(Constant::String("jane".to_string())),
+                            ExpressionItem::Constant(Constant::String("jane".into())),
                             ExpressionItem::Function {
                                 id: 29,
                                 num_args: 2
@@ -145,7 +146,7 @@ fn parse_if_blocks() {
                     },
                     then: Expression {
                         items: vec![ExpressionItem::Constant(Constant::String(
-                            "Other-ID".to_string()
+                            "Other-ID".into()
                         ))]
                     }
                 }
@@ -159,21 +160,21 @@ fn parse_if_blocks() {
     assert_eq!(
         IfBlock::try_parse(&mut config, "string-list-bis", &token_map).unwrap(),
         IfBlock {
-            key: "string-list-bis".to_string(),
+            key: "string-list-bis".into(),
             if_then: vec![
                 IfThen {
                     expr: Expression {
                         items: vec![
                             ExpressionItem::Variable(V_SENDER),
-                            ExpressionItem::Constant(Constant::String("jdoe".to_string())),
+                            ExpressionItem::Constant(Constant::String("jdoe".into())),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq)
                         ]
                     },
                     then: Expression {
                         items: vec![
-                            ExpressionItem::Constant(Constant::String("From".to_string())),
-                            ExpressionItem::Constant(Constant::String("To".to_string())),
-                            ExpressionItem::Constant(Constant::String("Date".to_string())),
+                            ExpressionItem::Constant(Constant::String("From".into())),
+                            ExpressionItem::Constant(Constant::String("To".into())),
+                            ExpressionItem::Constant(Constant::String("Date".into())),
                             ExpressionItem::ArrayBuild(3)
                         ]
                     }
@@ -187,7 +188,7 @@ fn parse_if_blocks() {
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq),
                             ExpressionItem::JmpIf { val: true, pos: 4 },
                             ExpressionItem::Variable(V_RECIPIENT),
-                            ExpressionItem::Constant(Constant::String("jane".to_string())),
+                            ExpressionItem::Constant(Constant::String("jane".into())),
                             ExpressionItem::Function {
                                 id: 29,
                                 num_args: 2
@@ -202,7 +203,7 @@ fn parse_if_blocks() {
             ],
             default: Expression {
                 items: vec![
-                    ExpressionItem::Constant(Constant::String("ID-Bis".to_string())),
+                    ExpressionItem::Constant(Constant::String("ID-Bis".into())),
                     ExpressionItem::ArrayBuild(1)
                 ]
             }
@@ -212,11 +213,11 @@ fn parse_if_blocks() {
     assert_eq!(
         IfBlock::try_parse(&mut config, "single-value", &token_map).unwrap(),
         IfBlock {
-            key: "single-value".to_string(),
+            key: "single-value".into(),
             if_then: vec![],
             default: Expression {
                 items: vec![ExpressionItem::Constant(Constant::String(
-                    "hello world".to_string()
+                    "hello world".into()
                 ))]
             }
         }
@@ -263,11 +264,11 @@ fn parse_throttles() {
         throttle,
         vec![
             QueueRateLimiter {
-                id: "0000".to_string(),
+                id: "0000".into(),
                 expr: Expression {
                     items: vec![
                         ExpressionItem::Variable(8),
-                        ExpressionItem::Constant(Constant::String("127.0.0.1".to_string())),
+                        ExpressionItem::Constant(Constant::String("127.0.0.1".into())),
                         ExpressionItem::BinaryOperator(BinaryOperator::Eq)
                     ]
                 },
@@ -278,7 +279,7 @@ fn parse_throttles() {
                 }
             },
             QueueRateLimiter {
-                id: "0001".to_string(),
+                id: "0001".into(),
                 expr: Expression::default(),
                 keys: THROTTLE_SENDER_DOMAIN,
                 rate: Rate {
@@ -306,7 +307,7 @@ fn parse_servers() {
     let id_generator = Arc::new(utils::snowflake::SnowflakeIdGenerator::new());
     let expected_servers = vec![
         Listener {
-            id: "smtp".to_string(),
+            id: "smtp".into(),
             protocol: ServerProtocol::Smtp,
             listeners: vec![TcpListener {
                 socket: TcpSocket::new_v4().unwrap(),
@@ -321,7 +322,7 @@ fn parse_servers() {
             span_id_gen: id_generator.clone(),
         },
         Listener {
-            id: "smtps".to_string(),
+            id: "smtps".into(),
             protocol: ServerProtocol::Smtp,
             listeners: vec![
                 TcpListener {
@@ -346,7 +347,7 @@ fn parse_servers() {
             span_id_gen: id_generator.clone(),
         },
         Listener {
-            id: "submission".to_string(),
+            id: "submission".into(),
             protocol: ServerProtocol::Smtp,
             listeners: vec![TcpListener {
                 socket: TcpSocket::new_v4().unwrap(),
@@ -429,7 +430,7 @@ async fn eval_if() {
         assert_eq!(
             core.eval_if::<Variable, _>(
                 &IfBlock {
-                    key: key.to_string(),
+                    key: key.to_compact_string(),
                     if_then: vec![IfThen {
                         expr: Expression::try_parse(&mut config, key.as_str(), &token_map).unwrap(),
                         then: Expression::from(true),
@@ -486,10 +487,12 @@ async fn eval_dynvalue() {
         .unwrap();
         let expected = config
             .property_require::<Option<String>>(("eval", test_name.as_str(), "expect"))
-            .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"));
+            .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"))
+            .map(Into::into);
 
         assert_eq!(
-            core.eval_if::<String, _>(&if_block, &envelope, 0).await,
+            core.eval_if::<CompactString, _>(&if_block, &envelope, 0)
+                .await,
             expected,
             "failed for test {test_name:?}"
         );
@@ -504,10 +507,10 @@ impl ResolveVariable for TestEnvelope {
             V_SENDER => self.sender.as_str().into(),
             V_SENDER_DOMAIN => self.sender_domain.as_str().into(),
             V_AUTHENTICATED_AS => self.authenticated_as.as_str().into(),
-            V_LISTENER => self.listener_id.to_string().into(),
-            V_REMOTE_IP => self.remote_ip.to_string().into(),
-            V_LOCAL_IP => self.local_ip.to_string().into(),
-            V_PRIORITY => self.priority.to_string().into(),
+            V_LISTENER => self.listener_id.to_compact_string().into(),
+            V_REMOTE_IP => self.remote_ip.to_compact_string().into(),
+            V_LOCAL_IP => self.local_ip.to_compact_string().into(),
+            V_PRIORITY => self.priority.to_compact_string().into(),
             V_MX => self.mx.as_str().into(),
             V_HELO_DOMAIN => self.helo_domain.as_str().into(),
             _ => Default::default(),

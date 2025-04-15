@@ -371,7 +371,7 @@ impl BootManager {
                 stores.parse_in_memory(&mut config, false).await;
 
                 // Parse settings
-                let core = Core::parse(&mut config, stores, manager).await;
+                let core = Box::pin(Core::parse(&mut config, stores, manager)).await;
 
                 // Parse data
                 let data = Data::parse(&mut config);
@@ -455,7 +455,7 @@ impl BootManager {
                 telemetry.enable(false);
 
                 // Parse settings and backup
-                Core::parse(&mut config, stores, manager)
+                Box::pin(Core::parse(&mut config, stores, manager))
                     .await
                     .backup(path)
                     .await;
@@ -466,7 +466,7 @@ impl BootManager {
                 telemetry.enable(false);
 
                 // Parse settings and restore
-                Core::parse(&mut config, stores, manager)
+                Box::pin(Core::parse(&mut config, stores, manager))
                     .await
                     .restore(path)
                     .await;
@@ -474,7 +474,13 @@ impl BootManager {
             }
             StoreOp::Console => {
                 // Store console
-                store_console(Core::parse(&mut config, stores, manager).await.storage.data).await;
+                store_console(
+                    Box::pin(Core::parse(&mut config, stores, manager))
+                        .await
+                        .storage
+                        .data,
+                )
+                .await;
                 std::process::exit(0);
             }
         }

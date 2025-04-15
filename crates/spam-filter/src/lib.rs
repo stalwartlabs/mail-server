@@ -14,6 +14,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use analysis::ElementLocation;
 use analysis::url::UrlParts;
+use compact_str::CompactString;
 use mail_auth::{ArcOutput, DkimOutput, DmarcResult, IprevOutput, SpfOutput, dmarc::Policy};
 use mail_parser::Message;
 use modules::html::HtmlToken;
@@ -54,7 +55,7 @@ pub struct SpamFilterInput<'x> {
 
 pub struct SpamFilterOutput<'x> {
     pub ehlo_host: Hostname,
-    pub iprev_ptr: Option<String>,
+    pub iprev_ptr: Option<CompactString>,
 
     pub env_from_addr: Email,
     pub env_from_postmaster: bool,
@@ -74,7 +75,7 @@ pub struct SpamFilterOutput<'x> {
     pub ips: AHashSet<ElementLocation<IpAddr>>,
     pub urls: HashSet<ElementLocation<UrlParts<'x>>>,
     pub emails: HashSet<ElementLocation<Recipient>>,
-    pub domains: HashSet<ElementLocation<String>>,
+    pub domains: HashSet<ElementLocation<CompactString>>,
 
     pub text_parts: Vec<TextPart<'x>>,
 }
@@ -100,7 +101,7 @@ pub enum TextPart<'x> {
 
 #[derive(Debug, Default)]
 pub struct SpamFilterResult {
-    pub tags: AHashSet<String>,
+    pub tags: AHashSet<CompactString>,
     pub score: f64,
     pub rbl_ip_checks: usize,
     pub rbl_domain_checks: usize,
@@ -117,22 +118,22 @@ pub struct SpamFilterContext<'x> {
 
 #[derive(Debug, Clone)]
 pub struct Hostname {
-    pub fqdn: String,
+    pub fqdn: CompactString,
     pub ip: Option<IpAddr>,
-    pub sld: Option<String>,
+    pub sld: Option<CompactString>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Email {
-    pub address: String,
-    pub local_part: String,
+    pub address: CompactString,
+    pub local_part: CompactString,
     pub domain_part: Hostname,
 }
 
 #[derive(Debug, Clone)]
 pub struct Recipient {
     pub email: Email,
-    pub name: Option<String>,
+    pub name: Option<CompactString>,
 }
 
 impl<'x> SpamFilterInput<'x> {

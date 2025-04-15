@@ -87,7 +87,10 @@ async fn lookup_ip() {
     let resolve_result = test
         .server
         .resolve_host(
-            &NextHop::MX("mx.foobar.org"),
+            &NextHop::MX {
+                host: "mx.foobar.org",
+                is_implicit: false,
+            },
             &RecipientDomain::new("envelope"),
             2,
             0,
@@ -124,7 +127,10 @@ async fn lookup_ip() {
     let resolve_result = test
         .server
         .resolve_host(
-            &NextHop::MX("mx.foobar.org"),
+            &NextHop::MX {
+                host: "mx.foobar.org",
+                is_implicit: false,
+            },
             &RecipientDomain::new("envelope"),
             2,
             0,
@@ -170,7 +176,7 @@ fn to_remote_hosts() {
     let hosts = mx.to_remote_hosts("domain", 7).unwrap();
     assert_eq!(hosts.len(), 7);
     for host in hosts {
-        if let NextHop::MX(host) = host {
+        if let NextHop::MX { host, .. } = host {
             assert!((*host.as_bytes().last().unwrap() - b'0') <= 8);
         }
     }

@@ -106,7 +106,7 @@ async fn mail() {
 
     // Be rude and do not say EHLO
     let mut session = Session::test(server.clone());
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
     session
@@ -185,7 +185,7 @@ async fn mail() {
     session.response().assert_code("552 5.3.4");
 
     // Test strict IPREV
-    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip_str = "10.0.0.2".into();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.data.iprev = None;
     session.eval_session_params().await;

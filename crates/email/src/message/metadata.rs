@@ -20,7 +20,7 @@ use rkyv::{
     string::ArchivedString,
     vec::ArchivedVec,
 };
-use store::{SERIALIZE_OBJ_06_V1, SERIALIZE_OBJ_07_V1, SerializedVersion};
+use store::{SERIALIZE_MSGDATA_V1, SERIALIZE_MSGMETADATA_V1, SerializedVersion};
 use utils::BlobHash;
 
 use crate::mailbox::{ArchivedUidMailbox, UidMailbox};
@@ -48,13 +48,13 @@ impl IndexableAndSerializableObject for MessageData {}
 
 impl SerializedVersion for MessageData {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_06_V1
+        SERIALIZE_MSGDATA_V1
     }
 }
 
 impl SerializedVersion for MessageMetadata {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_07_V1
+        SERIALIZE_MSGMETADATA_V1
     }
 }
 

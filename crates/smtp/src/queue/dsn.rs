@@ -5,6 +5,7 @@
  */
 
 use common::Server;
+use compact_str::CompactString;
 use mail_builder::MessageBuilder;
 use mail_builder::headers::HeaderType;
 use mail_builder::headers::content_type::ContentType;
@@ -43,9 +44,9 @@ impl SendDsn for Server {
                 let mut dsn_message = self.new_message("", "", "", message.span_id);
                 dsn_message
                     .add_recipient_parts(
-                        &message.return_path,
-                        &message.return_path_lcase,
-                        &message.return_path_domain,
+                        message.return_path.as_str(),
+                        message.return_path_lcase.as_str(),
+                        message.return_path_domain.as_str(),
                         self,
                     )
                     .await;
@@ -347,15 +348,15 @@ impl Message {
         let from_name = server
             .eval_if(&config.dsn.name, self, self.span_id)
             .await
-            .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
+            .unwrap_or_else(|| CompactString::from("Mail Delivery Subsystem"));
         let from_addr = server
             .eval_if(&config.dsn.address, self, self.span_id)
             .await
-            .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
+            .unwrap_or_else(|| CompactString::from("MAILER-DAEMON@localhost"));
         let reporting_mta = server
             .eval_if(&server.core.smtp.report.submitter, self, self.span_id)
             .await
-            .unwrap_or_else(|| String::from("localhost"));
+            .unwrap_or_else(|| CompactString::from("localhost"));
 
         // Prepare DSN
         let mut dsn_header = String::with_capacity(dsn.len() + 128);
@@ -656,22 +657,27 @@ impl Status<HostResponse<String>, HostResponse<ErrorDetails>> {
 
     fn write_dsn_remote_mta(&self, dsn: &mut String) {
         dsn.push_str("Remote-MTA: dns;");
-        if let Status::Completed(HostResponse { hostname, .. })
-        | Status::PermanentFailure(HostResponse {
-            hostname: ErrorDetails {
-                entity: hostname, ..
-            },
-            ..
-        })
-        | Status::TemporaryFailure(HostResponse {
-            hostname: ErrorDetails {
-                entity: hostname, ..
-            },
-            ..
-        }) = self
-        {
-            dsn.push_str(hostname);
+        match self {
+            Status::Completed(HostResponse { hostname, .. }) => {
+                dsn.push_str(hostname);
+            }
+            Status::PermanentFailure(HostResponse {
+                hostname: ErrorDetails {
+                    entity: hostname, ..
+                },
+                ..
+            })
+            | Status::TemporaryFailure(HostResponse {
+                hostname: ErrorDetails {
+                    entity: hostname, ..
+                },
+                ..
+            }) => {
+                dsn.push_str(hostname);
+            }
+            _ => (),
         }
+
         dsn.push_str("\r\n");
     }
 

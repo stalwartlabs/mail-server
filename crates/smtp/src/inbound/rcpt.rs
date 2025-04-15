@@ -7,6 +7,7 @@
 use common::{
     KV_GREYLIST, config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification,
 };
+use compact_str::{CompactString, format_compact};
 use directory::backend::RcptType;
 use smtp_proto::{
     RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS, RcptTo,
@@ -21,7 +22,7 @@ use crate::{
 };
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_rcpt_to(&mut self, to: RcptTo<String>) -> Result<(), ()> {
+    pub async fn handle_rcpt_to(&mut self, to: RcptTo<CompactString>) -> Result<(), ()> {
         #[cfg(feature = "test_mode")]
         if self.instance.id.ends_with("-debug") {
             if to.address.contains("fail@") {
@@ -69,7 +70,7 @@ impl<T: SessionStream> Session<T> {
         // Build RCPT
         let address_lcase = to.address.to_lowercase();
         let rcpt = SessionAddress {
-            domain: address_lcase.domain_part().to_string(),
+            domain: address_lcase.domain_part().into(),
             address_lcase,
             address: to.address,
             flags: to.flags,
@@ -90,7 +91,7 @@ impl<T: SessionStream> Session<T> {
         // Address rewriting and Sieve filtering
         let rcpt_script = self
             .server
-            .eval_if::<String, _>(
+            .eval_if::<CompactString, _>(
                 &self.server.core.smtp.session.rcpt.script,
                 self,
                 self.data.session_id,
@@ -157,7 +158,7 @@ impl<T: SessionStream> Session<T> {
             // Address rewriting
             if let Some(new_address) = self
                 .server
-                .eval_if::<String, _>(
+                .eval_if::<CompactString, _>(
                     &self.server.core.smtp.session.rcpt.rewrite,
                     self,
                     self.data.session_id,
@@ -175,7 +176,7 @@ impl<T: SessionStream> Session<T> {
 
                 if new_address.contains('@') {
                     rcpt.address_lcase = new_address.to_lowercase();
-                    rcpt.domain = rcpt.address_lcase.domain_part().to_string();
+                    rcpt.domain = rcpt.address_lcase.domain_part().into();
                     rcpt.address = new_address;
                 }
             }
@@ -199,7 +200,7 @@ impl<T: SessionStream> Session<T> {
         let mut rcpt_members = None;
         if let Some(directory) = self
             .server
-            .eval_if::<String, _>(
+            .eval_if::<CompactString, _>(
                 &self.server.core.smtp.session.rcpt.directory,
                 self,
                 self.data.session_id,
@@ -393,7 +394,7 @@ impl<T: SessionStream> Session<T> {
         // Expand list
         if let Some(members) = rcpt_members {
             let list_addr = self.data.rcpt_to.pop().unwrap();
-            let orcpt = format!("rfc822;{}", list_addr.address_lcase);
+            let orcpt = format_compact!("rfc822;{}", list_addr.address_lcase);
             for member in members {
                 let mut member_addr = SessionAddress::new(member);
                 if !self.data.rcpt_to.contains(&member_addr)
@@ -410,7 +411,7 @@ impl<T: SessionStream> Session<T> {
         self.write(b"250 2.1.5 OK\r\n").await
     }
 
-    async fn rcpt_error(&mut self, response: &[u8], rcpt: String) -> Result<(), ()> {
+    async fn rcpt_error(&mut self, response: &[u8], rcpt: CompactString) -> Result<(), ()> {
         tokio::time::sleep(self.params.rcpt_errors_wait).await;
         self.data.rcpt_errors += 1;
         let has_too_many_errors = self.data.rcpt_errors >= self.params.rcpt_errors_max;

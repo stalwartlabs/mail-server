@@ -15,6 +15,7 @@ pub mod write;
 
 pub use ahash;
 pub use blake3;
+use compact_str::CompactString;
 pub use gxhash;
 pub use parking_lot;
 pub use rand;
@@ -70,23 +71,23 @@ pub trait SerializeInfallible {
 }
 
 // Max 64 versions (2 ^ 6)
-pub const SERIALIZE_OBJ_01_V1: u8 = 0;
-pub const SERIALIZE_OBJ_02_V1: u8 = 1;
-pub const SERIALIZE_OBJ_03_V1: u8 = 2;
-pub const SERIALIZE_OBJ_04_V1: u8 = 3;
-pub const SERIALIZE_OBJ_05_V1: u8 = 4;
-pub const SERIALIZE_OBJ_06_V1: u8 = 5;
-pub const SERIALIZE_OBJ_07_V1: u8 = 6;
-pub const SERIALIZE_OBJ_08_V1: u8 = 7;
-pub const SERIALIZE_OBJ_09_V1: u8 = 8;
-pub const SERIALIZE_OBJ_10_V1: u8 = 9;
-pub const SERIALIZE_OBJ_11_V1: u8 = 10;
-pub const SERIALIZE_OBJ_12_V1: u8 = 11;
-pub const SERIALIZE_OBJ_13_V1: u8 = 12;
-pub const SERIALIZE_OBJ_14_V1: u8 = 13;
-pub const SERIALIZE_OBJ_15_V1: u8 = 14;
-pub const SERIALIZE_OBJ_16_V1: u8 = 15;
-pub const SERIALIZE_OBJ_17_V1: u8 = 16;
+pub const SERIALIZE_CERT_V1: u8 = 0;
+pub const SERIALIZE_LOCKDATA_V1: u8 = 1;
+pub const SERIALIZE_IDENTITY_V1: u8 = 2;
+pub const SERIALIZE_MAILBOX_V1: u8 = 3;
+pub const SERIALIZE_CRYPTO_V1: u8 = 4;
+pub const SERIALIZE_MSGDATA_V1: u8 = 5;
+pub const SERIALIZE_MSGMETADATA_V1: u8 = 6;
+pub const SERIALIZE_PUSH_V1: u8 = 7;
+pub const SERIALIZE_SIEVE_V1: u8 = 8;
+pub const SERIALIZE_SUBMISSION_V1: u8 = 9;
+pub const SERIALIZE_FILENODE_V1: u8 = 10;
+pub const SERIALIZE_OAUTHCODE_V1: u8 = 11;
+pub const SERIALIZE_QUEUEMSG_V1: u8 = 12;
+pub const SERIALIZE_CALENDAR_V1: u8 = 13;
+pub const SERIALIZE_ADDRESSBOOK_V1: u8 = 14;
+pub const SERIALIZE_CALENDAREVENT_V1: u8 = 15;
+pub const SERIALIZE_PRINCIPAL_V1: u8 = 16;
 
 pub trait SerializedVersion {
     fn serialize_version() -> u8;
@@ -656,19 +657,30 @@ impl From<Vec<u8>> for Value<'_> {
 }
 
 impl Value<'_> {
-    pub fn into_string(self) -> String {
+    pub fn into_string(self) -> CompactString {
         match self {
-            Value::Text(s) => s.into_owned(),
-            Value::Integer(i) => i.to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::Float(f) => f.to_string(),
-            Value::Blob(b) => String::from_utf8_lossy(b.as_ref()).into_owned(),
-            Value::Null => String::new(),
+            Value::Text(s) => s.as_ref().into(),
+            Value::Integer(i) => i.to_string().into(),
+            Value::Bool(b) => b.to_string().into(),
+            Value::Float(f) => f.to_string().into(),
+            Value::Blob(b) => CompactString::from_utf8_lossy(b.as_ref()),
+            Value::Null => "".into(),
+        }
+    }
+
+    pub fn into_lower_string(self) -> CompactString {
+        match self {
+            Value::Text(s) => CompactString::from_str_to_lowercase(s.as_ref()),
+            Value::Integer(i) => i.to_string().into(),
+            Value::Bool(b) => b.to_string().into(),
+            Value::Float(f) => f.to_string().into(),
+            Value::Blob(b) => CompactString::from_utf8_lossy(b.as_ref()).to_lowercase(),
+            Value::Null => "".into(),
         }
     }
 }
 
-impl From<Row> for Vec<String> {
+impl From<Row> for Vec<CompactString> {
     fn from(value: Row) -> Self {
         value.values.into_iter().map(|v| v.into_string()).collect()
     }
@@ -690,7 +702,7 @@ impl From<Row> for Vec<u32> {
     }
 }
 
-impl From<Rows> for Vec<String> {
+impl From<Rows> for Vec<CompactString> {
     fn from(value: Rows) -> Self {
         value
             .rows
@@ -788,7 +800,10 @@ impl From<Value<'_>> for trc::Value {
             Value::Integer(v) => trc::Value::Int(v),
             Value::Bool(v) => trc::Value::Bool(v),
             Value::Float(v) => trc::Value::Float(v),
-            Value::Text(v) => trc::Value::String(v.into_owned()),
+            Value::Text(v) => trc::Value::String(match v {
+                Cow::Borrowed(v) => v.into(),
+                Cow::Owned(v) => v.into(),
+            }),
             Value::Blob(v) => trc::Value::Bytes(v.into_owned()),
             Value::Null => trc::Value::None,
         }

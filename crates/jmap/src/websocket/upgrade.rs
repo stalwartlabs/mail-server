@@ -79,15 +79,17 @@ impl WebSocketUpgrade for Server {
             let session_id = session.session_id;
             match hyper::upgrade::on(req).await {
                 Ok(upgraded) => {
-                    jmap.handle_websocket_stream(
-                        WebSocketStream::from_raw_socket(
-                            TokioIo::new(upgraded),
-                            Role::Server,
-                            None,
-                        )
-                        .await,
-                        access_token,
-                        session,
+                    Box::pin(
+                        jmap.handle_websocket_stream(
+                            WebSocketStream::from_raw_socket(
+                                TokioIo::new(upgraded),
+                                Role::Server,
+                                None,
+                            )
+                            .await,
+                            access_token,
+                            session,
+                        ),
                     )
                     .await;
                 }

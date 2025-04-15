@@ -4,23 +4,25 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+#![warn(clippy::large_futures)]
+
 use core::cache::CachedDirectory;
 use std::{fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
 use backend::{
     imap::{ImapDirectory, ImapError},
-    internal::{PrincipalField, PrincipalValue},
     ldap::LdapDirectory,
     memory::MemoryDirectory,
     smtp::SmtpDirectory,
     sql::SqlDirectory,
 };
+use compact_str::CompactString;
 use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
 use proc_macros::EnumMethods;
-use store::Store;
+use store::{SERIALIZE_PRINCIPAL_V1, SerializedVersion, Store};
 use trc::ipc::bitset::Bitset;
 
 pub mod backend;
@@ -31,15 +33,68 @@ pub struct Directory {
     pub cache: Option<CachedDirectory>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Principal {
-    pub(crate) id: u32,
-    pub(crate) typ: Type,
-
-    pub(crate) fields: AHashMap<PrincipalField, PrincipalValue>,
+    pub id: u32,
+    pub typ: Type,
+    pub name: CompactString,
+    pub description: Option<CompactString>,
+    pub secrets: Vec<CompactString>,
+    pub emails: Vec<CompactString>,
+    pub quota: Option<u64>,
+    pub tenant: Option<u32>,
+    pub data: Vec<PrincipalData>,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+impl SerializedVersion for Principal {
+    fn serialize_version() -> u8 {
+        SERIALIZE_PRINCIPAL_V1
+    }
+}
+
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
+pub enum PrincipalData {
+    MemberOf(Vec<u32>),
+    Roles(Vec<u32>),
+    Lists(Vec<u32>),
+    Permissions(Vec<PermissionGrant>),
+    Picture(CompactString),
+    ExternalMembers(Vec<CompactString>),
+    Urls(Vec<CompactString>),
+    PrincipalQuota(Vec<PrincipalQuota>),
+}
+
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct PrincipalQuota {
+    pub quota: u64,
+    pub typ: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberOf {
+    pub principal_id: u32,
+    pub typ: Type,
+}
+
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct PermissionGrant {
+    pub permission: Permission,
+    pub grant: bool,
+}
+
+#[derive(
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum Type {
     #[default]
@@ -56,10 +111,19 @@ pub enum Type {
     OauthClient = 11,
 }
 
-pub const MAX_TYPE_ID: usize = 11;
-
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, EnumMethods,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    EnumMethods,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Permission {

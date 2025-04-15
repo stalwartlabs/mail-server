@@ -6,8 +6,9 @@
 
 use common::{
     config::spamfilter::*,
-    expr::{Variable, functions::ResolveVariable},
+    expr::{StringCow, Variable, functions::ResolveVariable},
 };
+use compact_str::{CompactString, ToCompactString, format_compact};
 use mail_parser::{Header, HeaderValue};
 use nlp::tokenizers::types::TokenType;
 
@@ -33,7 +34,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
             0..100 => self.item.resolve_variable(variable),
-            V_SPAM_REMOTE_IP => self.ctx.input.remote_ip.to_string().into(),
+            V_SPAM_REMOTE_IP => self.ctx.input.remote_ip.to_compact_string().into(),
             V_SPAM_REMOTE_IP_PTR => self
                 .ctx
                 .output
@@ -61,7 +62,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .env_to_addr
                 .iter()
-                .map(|e| Variable::String(e.address.as_str().into()))
+                .map(|e| Variable::from(e.address.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_FROM => self.ctx.output.from.email.address.as_str().into(),
@@ -112,7 +113,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_to
                 .iter()
-                .map(|r| Variable::String(r.email.address.as_str().into()))
+                .map(|r| Variable::from(r.email.address.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_TO_NAME => self
@@ -120,7 +121,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_to
                 .iter()
-                .filter_map(|r| Variable::String(r.name.as_deref()?.into()).into())
+                .filter_map(|r| Variable::from(r.name.as_deref()?).into())
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_TO_LOCAL => self
@@ -128,7 +129,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_to
                 .iter()
-                .map(|r| Variable::String(r.email.local_part.as_str().into()))
+                .map(|r| Variable::from(r.email.local_part.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_TO_DOMAIN => self
@@ -136,7 +137,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_to
                 .iter()
-                .map(|r| Variable::String(r.email.domain_part.fqdn.as_str().into()))
+                .map(|r| Variable::from(r.email.domain_part.fqdn.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_CC => self
@@ -144,7 +145,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_cc
                 .iter()
-                .map(|r| Variable::String(r.email.address.as_str().into()))
+                .map(|r| Variable::from(r.email.address.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_CC_NAME => self
@@ -152,7 +153,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_cc
                 .iter()
-                .filter_map(|r| Variable::String(r.name.as_deref()?.into()).into())
+                .filter_map(|r| Variable::from(r.name.as_deref()?).into())
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_CC_LOCAL => self
@@ -160,7 +161,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_cc
                 .iter()
-                .map(|r| Variable::String(r.email.local_part.as_str().into()))
+                .map(|r| Variable::from(r.email.local_part.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_CC_DOMAIN => self
@@ -168,7 +169,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_cc
                 .iter()
-                .map(|r| Variable::String(r.email.domain_part.fqdn.as_str().into()))
+                .map(|r| Variable::from(r.email.domain_part.fqdn.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_BCC => self
@@ -176,7 +177,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_bcc
                 .iter()
-                .map(|r| Variable::String(r.email.address.as_str().into()))
+                .map(|r| Variable::from(r.email.address.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_BCC_NAME => self
@@ -184,7 +185,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_bcc
                 .iter()
-                .filter_map(|r| Variable::String(r.name.as_deref()?.into()).into())
+                .filter_map(|r| Variable::from(r.name.as_deref()?).into())
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_BCC_LOCAL => self
@@ -192,7 +193,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_bcc
                 .iter()
-                .map(|r| Variable::String(r.email.local_part.as_str().into()))
+                .map(|r| Variable::from(r.email.local_part.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_BCC_DOMAIN => self
@@ -200,7 +201,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .output
                 .recipients_bcc
                 .iter()
-                .map(|r| Variable::String(r.email.domain_part.fqdn.as_str().into()))
+                .map(|r| Variable::from(r.email.domain_part.fqdn.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SPAM_BODY_TEXT => self.ctx.text_body().unwrap_or_default().into(),
@@ -213,13 +214,14 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .and_then(|idx| self.ctx.output.text_parts.get(*idx))
                 .map(|part| {
                     if let TextPart::Html { text_body, .. } = part {
-                        text_body.as_str().into()
+                        text_body.as_str()
                     } else {
-                        "".into()
+                        ""
                     }
                 })
-                .unwrap_or_default(),
-            V_SPAM_BODY_RAW => Variable::String(String::from_utf8_lossy(
+                .unwrap_or_default()
+                .into(),
+            V_SPAM_BODY_RAW => Variable::from(CompactString::from_utf8_lossy(
                 self.ctx.input.message.raw_message(),
             )),
             V_SPAM_SUBJECT => self.ctx.output.subject_lc.as_str().into(),
@@ -234,7 +236,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                     TokenType::Alphabetic(w)
                     | TokenType::Alphanumeric(w)
                     | TokenType::Integer(w)
-                    | TokenType::Float(w) => Some(Variable::String(w.as_ref().into())),
+                    | TokenType::Float(w) => Some(Variable::from(w.as_ref())),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -253,7 +255,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                             TokenType::Alphabetic(w)
                             | TokenType::Alphanumeric(w)
                             | TokenType::Integer(w)
-                            | TokenType::Float(w) => Some(Variable::String(w.as_ref().into())),
+                            | TokenType::Float(w) => Some(Variable::from(w.as_ref())),
                             _ => None,
                         })
                         .collect::<Vec<_>>(),
@@ -279,11 +281,11 @@ impl ResolveVariable for EmailHeader<'_> {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
             V_HEADER_NAME => self.header.name().into(),
-            V_HEADER_NAME_LOWER => self.header.name().to_ascii_lowercase().into(),
+            V_HEADER_NAME_LOWER => CompactString::from_str_to_lowercase(self.header.name()).into(),
             V_HEADER_VALUE | V_HEADER_VALUE_LOWER | V_HEADER_PROPERTY => match &self.header.value {
                 HeaderValue::Text(text) => {
                     if variable == V_HEADER_VALUE_LOWER {
-                        text.to_ascii_lowercase().into()
+                        CompactString::from_str_to_lowercase(text).into()
                     } else {
                         text.as_ref().into()
                     }
@@ -292,9 +294,9 @@ impl ResolveVariable for EmailHeader<'_> {
                     list.iter()
                         .map(|text| {
                             Variable::String(if variable == V_HEADER_VALUE_LOWER {
-                                text.to_ascii_lowercase().into()
+                                StringCow::Owned(CompactString::from_str_to_lowercase(text))
                             } else {
-                                text.as_ref().into()
+                                StringCow::Borrowed(text.as_ref())
                             })
                         })
                         .collect(),
@@ -305,9 +307,9 @@ impl ResolveVariable for EmailHeader<'_> {
                         .filter_map(|a| {
                             a.address.as_ref().map(|text| {
                                 Variable::String(if variable == V_HEADER_VALUE_LOWER {
-                                    text.to_ascii_lowercase().into()
+                                    StringCow::Owned(CompactString::from_str_to_lowercase(text))
                                 } else {
-                                    text.as_ref().into()
+                                    StringCow::Borrowed(text.as_ref())
                                 })
                             })
                         })
@@ -318,19 +320,21 @@ impl ResolveVariable for EmailHeader<'_> {
                         .filter_map(|a| {
                             a.name.as_ref().map(|text| {
                                 Variable::String(if variable == V_HEADER_VALUE_LOWER {
-                                    text.to_ascii_lowercase().into()
+                                    StringCow::Owned(CompactString::from_str_to_lowercase(text))
                                 } else {
-                                    text.as_ref().into()
+                                    StringCow::Borrowed(text.as_ref())
                                 })
                             })
                         })
                         .collect()
                 }),
-                HeaderValue::DateTime(date_time) => date_time.to_rfc3339().into(),
+                HeaderValue::DateTime(date_time) => {
+                    CompactString::new(date_time.to_rfc3339()).into()
+                }
                 HeaderValue::ContentType(ct) => {
                     if variable != V_HEADER_PROPERTY {
                         if let Some(st) = ct.subtype() {
-                            format!("{}/{}", ct.ctype(), st).into()
+                            format_compact!("{}/{}", ct.ctype(), st).into()
                         } else {
                             ct.ctype().into()
                         }
@@ -339,7 +343,7 @@ impl ResolveVariable for EmailHeader<'_> {
                             ct.attributes()
                                 .map(|attr| {
                                     attr.iter()
-                                        .map(|(k, v)| Variable::String(format!("{k}={v}").into()))
+                                        .map(|(k, v)| Variable::from(format_compact!("{k}={v}")))
                                         .collect::<Vec<_>>()
                                 })
                                 .unwrap_or_default(),
@@ -348,7 +352,7 @@ impl ResolveVariable for EmailHeader<'_> {
                 }
                 HeaderValue::Received(_) => {
                     if variable == V_HEADER_VALUE_LOWER {
-                        self.raw.trim().to_lowercase().into()
+                        CompactString::from_str_to_lowercase(self.raw.trim()).into()
                     } else {
                         self.raw.trim().into()
                     }
@@ -356,7 +360,7 @@ impl ResolveVariable for EmailHeader<'_> {
                 HeaderValue::Empty => "".into(),
             },
             V_HEADER_RAW => self.raw.into(),
-            V_HEADER_RAW_LOWER => self.raw.to_lowercase().into(),
+            V_HEADER_RAW_LOWER => CompactString::from_str_to_lowercase(self.raw).into(),
             _ => Variable::Integer(0),
         }
     }
@@ -369,11 +373,11 @@ impl ResolveVariable for EmailHeader<'_> {
 impl ResolveVariable for Recipient {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
-            V_RCPT_EMAIL => Variable::String(self.email.address.as_str().into()),
-            V_RCPT_NAME => Variable::String(self.name.as_deref().unwrap_or_default().into()),
-            V_RCPT_LOCAL => Variable::String(self.email.local_part.as_str().into()),
-            V_RCPT_DOMAIN => Variable::String(self.email.domain_part.fqdn.as_str().into()),
-            V_RCPT_DOMAIN_SLD => Variable::String(self.email.domain_part.sld_or_default().into()),
+            V_RCPT_EMAIL => Variable::from(self.email.address.as_str()),
+            V_RCPT_NAME => Variable::from(self.name.as_deref().unwrap_or_default()),
+            V_RCPT_LOCAL => Variable::from(self.email.local_part.as_str()),
+            V_RCPT_DOMAIN => Variable::from(self.email.domain_part.fqdn.as_str()),
+            V_RCPT_DOMAIN_SLD => Variable::from(self.email.domain_part.sld_or_default()),
             _ => Variable::Integer(0),
         }
     }
@@ -386,55 +390,48 @@ impl ResolveVariable for Recipient {
 impl ResolveVariable for UrlParts<'_> {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
-            V_URL_FULL => Variable::String(self.url.as_str().into()),
-            V_URL_PATH_QUERY => Variable::String(
+            V_URL_FULL => Variable::from(self.url.as_str()),
+            V_URL_PATH_QUERY => Variable::from(
                 self.url_parsed
                     .as_ref()
                     .and_then(|p| p.parts.path_and_query().map(|p| p.as_str()))
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ),
-            V_URL_PATH => Variable::String(
+            V_URL_PATH => Variable::from(
                 self.url_parsed
                     .as_ref()
                     .map(|p| p.parts.path())
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ),
-            V_URL_QUERY => Variable::String(
+            V_URL_QUERY => Variable::from(
                 self.url_parsed
                     .as_ref()
                     .and_then(|p| p.parts.query())
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ),
-            V_URL_SCHEME => Variable::String(
+            V_URL_SCHEME => Variable::from(
                 self.url_parsed
                     .as_ref()
                     .and_then(|p| p.parts.scheme_str())
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ),
-            V_URL_AUTHORITY => Variable::String(
+            V_URL_AUTHORITY => Variable::from(
                 self.url_parsed
                     .as_ref()
                     .and_then(|p| p.parts.authority().map(|a| a.as_str()))
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ),
-            V_URL_HOST => Variable::String(
+            V_URL_HOST => Variable::from(
                 self.url_parsed
                     .as_ref()
                     .map(|p| p.host.fqdn.as_str())
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ),
-            V_URL_HOST_SLD => Variable::String(
+            V_URL_HOST_SLD => Variable::from(
                 self.url_parsed
                     .as_ref()
                     .map(|p| p.host.sld_or_default())
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ),
             V_URL_PORT => Variable::Integer(
                 self.url_parsed
@@ -455,7 +452,7 @@ pub struct StringResolver<'x>(pub &'x str);
 
 impl ResolveVariable for StringResolver<'_> {
     fn resolve_variable(&self, _: u32) -> Variable<'_> {
-        Variable::String(self.0.into())
+        Variable::from(self.0)
     }
 
     fn resolve_global(&self, _: &str) -> Variable<'_> {
@@ -467,7 +464,7 @@ pub struct StringListResolver<'x>(pub &'x [String]);
 
 impl ResolveVariable for StringListResolver<'_> {
     fn resolve_variable(&self, _: u32) -> Variable<'_> {
-        Variable::Array(self.0.iter().map(|v| Variable::String(v.into())).collect())
+        Variable::Array(self.0.iter().map(|v| Variable::from(v.as_str())).collect())
     }
 
     fn resolve_global(&self, _: &str) -> Variable<'_> {

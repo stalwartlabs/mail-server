@@ -236,6 +236,7 @@ impl TestSMTP {
         let stores = Stores::parse_all(&mut config, false).await;
         let core = Core::parse(&mut config, stores, Default::default()).await;
         let data = Data::parse(&mut config);
+        core.storage.data.destroy().await;
 
         Self::from_core_and_tempdir(core, data, Some(temp_dir))
     }

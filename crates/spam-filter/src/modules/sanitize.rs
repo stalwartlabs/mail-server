@@ -6,15 +6,17 @@
 
 use std::net::IpAddr;
 
+use compact_str::CompactString;
+
 use crate::{Email, Hostname};
 
 impl Hostname {
     pub fn new(host: &str) -> Self {
-        let mut fqdn = host.trim_end_matches('.').to_lowercase();
+        let mut fqdn = CompactString::from_str_to_lowercase(host.trim_end_matches('.'));
 
         // Decode punycode
         if fqdn.contains("xn--") {
-            let mut decoded = String::with_capacity(fqdn.len());
+            let mut decoded = CompactString::with_capacity(fqdn.len());
 
             for part in fqdn.split('.') {
                 if !decoded.is_empty() {
@@ -45,9 +47,7 @@ impl Hostname {
             sld: if ip.is_none() {
                 psl::domain(fqdn.as_bytes()).and_then(|domain| {
                     if domain.suffix().typ().is_some() {
-                        std::str::from_utf8(domain.as_bytes())
-                            .ok()
-                            .map(str::to_string)
+                        std::str::from_utf8(domain.as_bytes()).ok().map(Into::into)
                     } else {
                         None
                     }
@@ -63,11 +63,11 @@ impl Hostname {
 
 impl Email {
     pub fn new(address: &str) -> Self {
-        let address = address.to_lowercase();
+        let address = CompactString::from_str_to_lowercase(address);
         let (local_part, domain) = address.rsplit_once('@').unwrap_or_default();
 
         Email {
-            local_part: local_part.to_string(),
+            local_part: local_part.into(),
             domain_part: Hostname::new(domain),
             address,
         }

@@ -53,35 +53,35 @@ async fn generate_dsn() {
         created: SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
-        return_path: "sender@foobar.org".to_string(),
-        return_path_lcase: "".to_string(),
-        return_path_domain: "foobar.org".to_string(),
+        return_path: "sender@foobar.org".into(),
+        return_path_lcase: "".into(),
+        return_path_domain: "foobar.org".into(),
         recipients: vec![Recipient {
             domain_idx: 0,
-            address: "foobar@example.org".to_string(),
-            address_lcase: "foobar@example.org".to_string(),
+            address: "foobar@example.org".into(),
+            address_lcase: "foobar@example.org".into(),
             status: Status::PermanentFailure(HostResponse {
                 hostname: ErrorDetails {
-                    entity: "mx.example.org".to_string(),
-                    details: "RCPT TO:<foobar@example.org>".to_string(),
+                    entity: "mx.example.org".into(),
+                    details: "RCPT TO:<foobar@example.org>".into(),
                 },
                 response: Response {
                     code: 550,
                     esc: [5, 1, 2],
-                    message: "User does not exist".to_string(),
+                    message: "User does not exist".into(),
                 },
             }),
             flags: 0,
             orcpt: None,
         }],
         domains: vec![Domain {
-            domain: "example.org".to_string(),
+            domain: "example.org".into(),
             retry: Schedule::now(),
             notify: Schedule::now(),
             expires: now() + 10,
             status: Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
-                entity: "mx.domain.org".to_string(),
-                details: "Connection timeout".to_string(),
+                entity: "mx.domain.org".into(),
+                details: "Connection timeout".into(),
             })),
         }],
         flags: 0,
@@ -116,14 +116,14 @@ async fn generate_dsn() {
     // Success DSN
     message.recipients.push(Recipient {
         domain_idx: 0,
-        address: "jane@example.org".to_string(),
-        address_lcase: "jane@example.org".to_string(),
+        address: "jane@example.org".into(),
+        address_lcase: "jane@example.org".into(),
         status: Status::Completed(HostResponse {
-            hostname: "mx2.example.org".to_string(),
+            hostname: "mx2.example.org".into(),
             response: Response {
                 code: 250,
                 esc: [2, 1, 5],
-                message: "Message accepted for delivery".to_string(),
+                message: "Message accepted for delivery".into(),
             },
         }),
         flags,
@@ -136,11 +136,11 @@ async fn generate_dsn() {
     // Delay DSN
     message.recipients.push(Recipient {
         domain_idx: 0,
-        address: "john.doe@example.org".to_string(),
-        address_lcase: "john.doe@example.org".to_string(),
+        address: "john.doe@example.org".into(),
+        address_lcase: "john.doe@example.org".into(),
         status: Status::Scheduled,
         flags,
-        orcpt: "jdoe@example.org".to_string().into(),
+        orcpt: Some("jdoe@example.org".into()),
     });
     core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;

@@ -6,6 +6,7 @@
 
 use std::{net::IpAddr, sync::Arc};
 
+use compact_str::CompactString;
 use directory::{
     Directory, Permission, Permissions, Principal, QueryBy, core::secret::verify_secret_hash,
 };
@@ -30,9 +31,9 @@ pub struct AccessToken {
     pub primary_id: u32,
     pub member_of: Vec<u32>,
     pub access_to: VecMap<u32, Bitmap<Collection>>,
-    pub name: String,
-    pub description: Option<String>,
-    pub emails: Vec<String>,
+    pub name: CompactString,
+    pub description: Option<CompactString>,
+    pub emails: Vec<CompactString>,
     pub quota: u64,
     pub permissions: Permissions,
     pub tenant: Option<TenantInfo>,

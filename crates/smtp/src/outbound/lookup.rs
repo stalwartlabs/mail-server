@@ -132,14 +132,24 @@ impl DnsLookup for Server {
             .await
             .map_err(|err| {
                 if let mail_auth::Error::DnsRecordNotFound(_) = &err {
-                    Status::PermanentFailure(Error::ConnectionError(ErrorDetails {
-                        entity: remote_host.hostname().to_string(),
-                        details: "record not found for MX".to_string(),
-                    }))
+                    if matches!(
+                        remote_host,
+                        NextHop::MX {
+                            is_implicit: true,
+                            ..
+                        }
+                    ) {
+                        Status::PermanentFailure(Error::DnsError("No MX record found.".into()))
+                    } else {
+                        Status::PermanentFailure(Error::ConnectionError(ErrorDetails {
+                            entity: remote_host.hostname().into(),
+                            details: "record not found for MX".into(),
+                        }))
+                    }
                 } else {
                     Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
-                        entity: remote_host.hostname().to_string(),
-                        details: format!("lookup error: {err}"),
+                        entity: remote_host.hostname().into(),
+                        details: format!("lookup error: {err}").into(),
                     }))
                 }
             })?;
@@ -195,10 +205,13 @@ impl DnsLookup for Server {
 
             Ok(result)
         } else {
-            Err(Status::TemporaryFailure(Error::DnsError(format!(
-                "No IP addresses found for {:?}.",
-                envelope.resolve_variable(V_MX).to_string()
-            ))))
+            Err(Status::TemporaryFailure(Error::DnsError(
+                format!(
+                    "No IP addresses found for {:?}.",
+                    envelope.resolve_variable(V_MX).to_string()
+                )
+                .into(),
+            )))
         }
     }
 }
@@ -226,7 +239,10 @@ impl ToNextHop for Vec<MX> {
                     let mut slice = mx.exchanges.iter().collect::<Vec<_>>();
                     slice.shuffle(&mut rand::rng());
                     for remote_host in slice {
-                        remote_hosts.push(NextHop::MX(remote_host.as_str()));
+                        remote_hosts.push(NextHop::MX {
+                            host: remote_host.as_str(),
+                            is_implicit: false,
+                        });
                         if remote_hosts.len() == max_mx {
                             break 'outer;
                         }
@@ -236,7 +252,10 @@ impl ToNextHop for Vec<MX> {
                     if mx.preference == 0 && remote_host == "." {
                         return None;
                     }
-                    remote_hosts.push(NextHop::MX(remote_host.as_str()));
+                    remote_hosts.push(NextHop::MX {
+                        host: remote_host.as_str(),
+                        is_implicit: false,
+                    });
                     if remote_hosts.len() == max_mx {
                         break;
                     }
@@ -246,7 +265,11 @@ impl ToNextHop for Vec<MX> {
         } else {
             // If an empty list of MXs is returned, the address is treated as if it was
             // associated with an implicit MX RR with a preference of 0, pointing to that host.
-            vec![NextHop::MX(domain)].into()
+            vec![NextHop::MX {
+                host: domain,
+                is_implicit: true,
+            }]
+            .into()
         }
     }
 }

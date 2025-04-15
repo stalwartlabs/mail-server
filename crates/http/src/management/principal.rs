@@ -7,12 +7,16 @@
 use std::sync::Arc;
 
 use common::{KV_BAYES_MODEL_USER, Server, auth::AccessToken};
+use compact_str::{CompactString, format_compact};
 use directory::{
-    DirectoryInner, Permission, Principal, QueryBy, Type,
+    DirectoryInner, Permission, QueryBy, Type,
     backend::internal::{
-        PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue, SpecialSecrets,
+        PrincipalAction, PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue,
+        SpecialSecrets,
         lookup::DirectoryStore,
-        manage::{self, ChangedPrincipals, ManageDirectory, UpdatePrincipal, not_found},
+        manage::{
+            self, ChangedPrincipals, ManageDirectory, PrincipalList, UpdatePrincipal, not_found,
+        },
     },
 };
 
@@ -28,11 +32,22 @@ use std::future::Future;
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum AccountAuthRequest {
-    SetPassword { password: String },
-    EnableOtpAuth { url: String },
-    DisableOtpAuth { url: Option<String> },
-    AddAppPassword { name: String, password: String },
-    RemoveAppPassword { name: Option<String> },
+    SetPassword {
+        password: CompactString,
+    },
+    EnableOtpAuth {
+        url: CompactString,
+    },
+    DisableOtpAuth {
+        url: Option<CompactString>,
+    },
+    AddAppPassword {
+        name: CompactString,
+        password: CompactString,
+    },
+    RemoveAppPassword {
+        name: Option<CompactString>,
+    },
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -40,7 +55,7 @@ pub struct AccountAuthResponse {
     #[serde(rename = "otpEnabled")]
     pub otp_auth: bool,
     #[serde(rename = "appPasswords")]
-    pub app_passwords: Vec<String>,
+    pub app_passwords: Vec<CompactString>,
 }
 
 pub trait PrincipalManager: Sync + Send {
@@ -79,7 +94,7 @@ impl PrincipalManager for Server {
             (None, &Method::POST) => {
                 // Parse principal
                 let principal =
-                    serde_json::from_slice::<Principal>(body.as_deref().unwrap_or_default())
+                    serde_json::from_slice::<PrincipalSet>(body.as_deref().unwrap_or_default())
                         .map_err(|err| {
                             trc::EventType::Resource(trc::ResourceEvent::BadParameters)
                                 .from_json_error(err)
@@ -279,16 +294,38 @@ impl PrincipalManager for Server {
 
                 // SPDX-SnippetEnd
 
-                let mut principals = self
-                    .core
-                    .storage
-                    .data
-                    .list_principals(filter, tenant, &types, &fields, page, limit)
+                let principals = self
+                    .store()
+                    .list_principals(
+                        filter,
+                        tenant,
+                        &types,
+                        fields.len() != 1
+                            || fields.first().is_none_or(|v| v != &PrincipalField::Name),
+                        page,
+                        limit,
+                    )
                     .await?;
 
-                if count {
-                    principals.items.clear();
-                }
+                let principals: PrincipalList<PrincipalSet> = if !count {
+                    let mut expanded = PrincipalList {
+                        items: Vec::with_capacity(principals.items.len()),
+                        total: principals.total,
+                    };
+
+                    for principal in principals.items {
+                        expanded
+                            .items
+                            .push(self.store().map_principal(principal, &fields).await?);
+                    }
+
+                    expanded
+                } else {
+                    PrincipalList {
+                        items: vec![],
+                        total: principals.total,
+                    }
+                };
 
                 Ok(JsonResponse::new(json!({
                         "data": principals,
@@ -345,10 +382,8 @@ impl PrincipalManager for Server {
                 }
 
                 let principals = self
-                    .core
-                    .storage
-                    .data
-                    .list_principals(filter, tenant, &[typ], &[PrincipalField::Name], 0, 0)
+                    .store()
+                    .list_principals(filter, tenant, &[typ], false, 0, 0)
                     .await?;
 
                 let found = !principals.items.is_empty();
@@ -452,19 +487,18 @@ impl PrincipalManager for Server {
                             }
                         })?;
 
-                        let mut principal = self
-                            .core
-                            .storage
-                            .data
+                        let principal = self
+                            .store()
                             .query(QueryBy::Id(account_id), true)
                             .await?
                             .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
                         // Map fields
-                        self.core
+                        let principal = self
+                            .core
                             .storage
                             .data
-                            .map_field_ids(&mut principal, &[])
+                            .map_principal(principal, &[])
                             .await
                             .caused_by(trc::location!())?;
 
@@ -677,20 +711,18 @@ impl PrincipalManager for Server {
 
         if access_token.primary_id() != u32::MAX {
             let principal = self
-                .core
-                .storage
-                .directory
+                .directory()
                 .query(QueryBy::Id(access_token.primary_id()), false)
                 .await?
                 .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
-            for secret in principal.iter_str(PrincipalField::Secrets) {
+            for secret in &principal.secrets {
                 if secret.is_otp_auth() {
                     response.otp_auth = true;
                 } else if let Some((app_name, _)) =
                     secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
                 {
-                    response.app_passwords.push(app_name.to_string());
+                    response.app_passwords.push(app_name.into());
                 }
             }
         }
@@ -747,7 +779,10 @@ impl PrincipalManager for Server {
                     self.core
                         .storage
                         .config
-                        .set([("authentication.fallback-admin.secret", password)], true)
+                        .set(
+                            [("authentication.fallback-admin.secret", password.to_string())],
+                            true,
+                        )
                         .await?;
 
                     // Increment revision
@@ -783,7 +818,7 @@ impl PrincipalManager for Server {
                     actions.push(PrincipalUpdate {
                         action: PrincipalAction::RemoveItem,
                         field: PrincipalField::Secrets,
-                        value: PrincipalValue::String(String::new()),
+                        value: PrincipalValue::String(CompactString::new("")),
                     });
 
                     (PrincipalAction::AddItem, password)
@@ -791,14 +826,15 @@ impl PrincipalManager for Server {
                 AccountAuthRequest::EnableOtpAuth { url } => (PrincipalAction::AddItem, url),
                 AccountAuthRequest::DisableOtpAuth { url } => (
                     PrincipalAction::RemoveItem,
-                    url.unwrap_or_else(|| "otpauth://".to_string()),
+                    url.unwrap_or_else(|| "otpauth://".into()),
                 ),
-                AccountAuthRequest::AddAppPassword { name, password } => {
-                    (PrincipalAction::AddItem, format!("$app${name}${password}"))
-                }
+                AccountAuthRequest::AddAppPassword { name, password } => (
+                    PrincipalAction::AddItem,
+                    format_compact!("$app${name}${password}"),
+                ),
                 AccountAuthRequest::RemoveAppPassword { name } => (
                     PrincipalAction::RemoveItem,
-                    format!("$app${}", name.unwrap_or_default()),
+                    format_compact!("$app${}", name.unwrap_or_default()),
                 ),
             };
 

@@ -18,6 +18,7 @@ use common::{
         },
     },
 };
+use compact_str::{CompactString, ToCompactString};
 use http_proto::{JsonResponse, ToHttpResponse};
 use hyper::Method;
 use mail_auth::{
@@ -359,7 +360,7 @@ async fn antispam() {
             let mut dkim_signatures = vec![];
             let mut dmarc_result = None;
             let mut dmarc_policy = None;
-            let mut expected_tags = AHashSet::new();
+            let mut expected_tags: AHashSet<CompactString> = AHashSet::new();
             let mut expect_headers = String::new();
             let mut score_set = 0.0;
             let mut score_final = 0.0;
@@ -376,15 +377,15 @@ async fn antispam() {
                     let value = value.trim();
                     match param {
                         "remote_ip" => {
-                            session.data.remote_ip_str = value.to_string();
+                            session.data.remote_ip_str = value.to_compact_string();
                             session.data.remote_ip = value.parse().unwrap();
                         }
                         "helo_domain" => {
-                            session.data.helo_domain = value.to_string();
+                            session.data.helo_domain = value.to_compact_string();
                         }
                         "authenticated_as" => {
                             session.data.authenticated_as = Some(Arc::new(AccessToken {
-                                name: value.to_string(),
+                                name: value.to_compact_string(),
                                 ..Default::default()
                             }));
                         }
@@ -428,13 +429,14 @@ async fn antispam() {
                                 .collect();
                         }
                         "envelope_from" => {
-                            session.data.mail_from = Some(SessionAddress::new(value.to_string()));
+                            session.data.mail_from =
+                                Some(SessionAddress::new(value.to_compact_string()));
                         }
                         "envelope_to" => {
                             session
                                 .data
                                 .rcpt_to
-                                .push(SessionAddress::new(value.to_string()));
+                                .push(SessionAddress::new(value.to_compact_string()));
                         }
                         "iprev.ptr" => {
                             session
@@ -453,8 +455,11 @@ async fn antispam() {
                             dmarc_policy = Policy::from_str(value).into();
                         }
                         "expect" => {
-                            expected_tags
-                                .extend(value.split_ascii_whitespace().map(|v| v.to_uppercase()));
+                            expected_tags.extend(
+                                value
+                                    .split_ascii_whitespace()
+                                    .map(|v| v.to_uppercase().into()),
+                            );
                         }
                         "expect_header" => {
                             let value = value.trim();
@@ -501,7 +506,7 @@ async fn antispam() {
                 session
                     .data
                     .mail_from
-                    .get_or_insert_with(|| SessionAddress::new("".to_string()))
+                    .get_or_insert_with(|| SessionAddress::new("".to_compact_string()))
                     .flags = body_params;
             }
 
@@ -775,7 +780,7 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "hello".to_string(),
+                    text: "hello".to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 29282,
@@ -783,7 +788,7 @@ fn html_tokens() {
                     is_self_closing: true,
                 },
                 HtmlToken::Text {
-                    text: "world".to_string(),
+                    text: "world".to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 29282,
@@ -802,7 +807,7 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "using <>".to_string(),
+                    text: "using <>".to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 29282,
@@ -816,7 +821,7 @@ fn html_tokens() {
             concat!("test <not br/>tag<br />"),
             vec![
                 HtmlToken::Text {
-                    text: "test".to_string(),
+                    text: "test".to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 7630702,
@@ -824,7 +829,7 @@ fn html_tokens() {
                     is_self_closing: true,
                 },
                 HtmlToken::Text {
-                    text: " tag".to_string(),
+                    text: " tag".to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 29282,
@@ -842,7 +847,7 @@ fn html_tokens() {
                     is_self_closing: true,
                 },
                 HtmlToken::Text {
-                    text: ">hello world".to_string(),
+                    text: ">hello world".to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 29282,
@@ -869,7 +874,7 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "ignore head".to_string(),
+                    text: "ignore head".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 435611265396 },
                 HtmlToken::StartTag {
@@ -878,7 +883,7 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "xyz".to_string(),
+                    text: "xyz".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 7630702 },
                 HtmlToken::EndTag { name: 1684104552 },
@@ -888,7 +893,7 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "<body>".to_string(),
+                    text: "<body>".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 12648 },
             ],
@@ -906,7 +911,7 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "what is ♥?".to_string(),
+                    text: "what is ♥?".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 112 },
                 HtmlToken::StartTag {
@@ -915,7 +920,7 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "ßĂΒγ don't hurt me.".to_string(),
+                    text: "ßĂΒγ don't hurt me.".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 112 },
             ],
@@ -935,22 +940,22 @@ fn html_tokens() {
                         "table, td, a, p, span, ul, li {font-family: ",
                         "Arial, sans-serif!important;}</style><![endif]--"
                     )
-                    .to_string(),
+                    .to_compact_string(),
                 },
                 HtmlToken::Text {
-                    text: "this is".to_string(),
+                    text: "this is".to_compact_string(),
                 },
                 HtmlToken::Comment {
-                    text: "!-- <> < < < < ignore  > -> here --".to_string(),
+                    text: "!-- <> < < < < ignore  > -> here --".to_compact_string(),
                 },
                 HtmlToken::Text {
-                    text: " the actual".to_string(),
+                    text: " the actual".to_compact_string(),
                 },
                 HtmlToken::Comment {
-                    text: "!--".to_string(),
+                    text: "!--".to_compact_string(),
                 },
                 HtmlToken::Text {
-                    text: " text".to_string(),
+                    text: " text".to_compact_string(),
                 },
             ],
         ),
@@ -966,7 +971,7 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "hello".to_string(),
+                    text: "hello".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 112 },
                 HtmlToken::StartTag {
@@ -975,11 +980,11 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: " world".to_string(),
+                    text: " world".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 112 },
                 HtmlToken::Text {
-                    text: " !!!".to_string(),
+                    text: " !!!".to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 29282,
@@ -997,19 +1002,19 @@ fn html_tokens() {
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "please unsubscribe".to_string(),
+                    text: "please unsubscribe".to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("#".to_string()))],
+                    attributes: vec![(1717924456, Some("#".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: " here".to_string(),
+                    text: " here".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::Text {
-                    text: ".".to_string(),
+                    text: ".".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 112 },
             ],
@@ -1025,65 +1030,65 @@ fn html_tokens() {
             vec![
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("a".to_string()))],
+                    attributes: vec![(1717924456, Some("a".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("b".to_string()))],
+                    attributes: vec![(1717924456, Some("b".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("c".to_string()))],
+                    attributes: vec![(1717924456, Some("c".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("d".to_string()))],
+                    attributes: vec![(1717924456, Some("d".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("e".to_string()))],
+                    attributes: vec![(1717924456, Some("e".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(125779835187816, Some("ignore".to_string()))],
+                    attributes: vec![(125779835187816, Some("ignore".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 125822818283105,
-                    attributes: vec![(1717924456, Some("x".to_string()))],
+                    attributes: vec![(1717924456, Some("x".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
             ],
@@ -1098,65 +1103,65 @@ fn html_tokens() {
             vec![
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("a".to_string()))],
+                    attributes: vec![(1717924456, Some("a".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("b".to_string()))],
+                    attributes: vec![(1717924456, Some("b".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("c".to_string()))],
+                    attributes: vec![(1717924456, Some("c".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("d".to_string()))],
+                    attributes: vec![(1717924456, Some("d".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("e".to_string()))],
+                    attributes: vec![(1717924456, Some("e".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(125779835187816, Some("ignore".to_string()))],
+                    attributes: vec![(125779835187816, Some("ignore".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 125822818283105,
-                    attributes: vec![(1717924456, Some("x".to_string()))],
+                    attributes: vec![(1717924456, Some("x".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
             ],
@@ -1173,49 +1178,49 @@ fn html_tokens() {
             vec![
                 HtmlToken::Comment {
                     text: "!-- <a href=a>text</a><a href =b>text</a><a href= c>--text</a>--"
-                        .to_string(),
+                        .to_compact_string(),
                 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("hello world".to_string()))],
+                    attributes: vec![(1717924456, Some("hello world".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
                     attributes: vec![
-                        (1717924456, Some("test".to_string())),
+                        (1717924456, Some("test".to_compact_string())),
                         (111542170183529, None),
                     ],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
                     attributes: vec![
-                        (1717924456, Some("fudge".to_string())),
+                        (1717924456, Some("fudge".to_compact_string())),
                         (1717924456, None),
                         (111542170183529, None),
                     ],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "text".to_string(),
+                    text: "text".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
                 HtmlToken::StartTag {
                     name: 97,
-                    attributes: vec![(1717924456, Some("foobar".to_string()))],
+                    attributes: vec![(1717924456, Some("foobar".to_compact_string()))],
                     is_self_closing: false,
                 },
                 HtmlToken::Text {
-                    text: "a href = \"unknown\"".to_string(),
+                    text: "a href = \"unknown\"".to_compact_string(),
                 },
                 HtmlToken::EndTag { name: 97 },
             ],

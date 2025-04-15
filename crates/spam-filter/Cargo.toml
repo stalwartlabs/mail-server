@@ -25,6 +25,7 @@ unicode-security = "0.1.0"
 infer = "0.16"
 sha1 = "0.10"
 sha2 = "0.10.6"
+compact_str = "0.9.0"
 
 [features]
 test_mode = []

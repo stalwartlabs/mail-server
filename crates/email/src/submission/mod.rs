@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use store::{SERIALIZE_OBJ_10_V1, SerializedVersion};
+use store::{SERIALIZE_SUBMISSION_V1, SerializedVersion};
 use utils::map::vec_map::VecMap;
 
 pub mod index;
@@ -25,7 +25,7 @@ pub struct EmailSubmission {
 
 impl SerializedVersion for EmailSubmission {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_10_V1
+        SERIALIZE_SUBMISSION_V1
     }
 }
 

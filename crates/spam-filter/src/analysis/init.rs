@@ -5,6 +5,7 @@
  */
 
 use common::Server;
+use compact_str::CompactString;
 use mail_parser::{HeaderName, PartType, parsers::fields::thread::thread_name};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
@@ -41,7 +42,7 @@ impl SpamFilterInit for Server {
                                 name: addr.name().and_then(|s| {
                                     let s = s.trim();
                                     if !s.is_empty() {
-                                        Some(s.to_lowercase())
+                                        Some(CompactString::from_str_to_lowercase(s))
                                     } else {
                                         None
                                     }
@@ -68,7 +69,7 @@ impl SpamFilterInit for Server {
                                 name: addr.name().and_then(|s| {
                                     let s = s.trim();
                                     if !s.is_empty() {
-                                        Some(s.to_lowercase())
+                                        Some(CompactString::from_str_to_lowercase(s))
                                     } else {
                                         None
                                     }
@@ -245,10 +246,9 @@ impl SpamFilterInit for Server {
             output: SpamFilterOutput {
                 ehlo_host: Hostname::new(input.ehlo_domain.unwrap_or("unknown")),
                 iprev_ptr: input.iprev_result.and_then(|r| {
-                    r.ptr
-                        .as_ref()
-                        .and_then(|ptr| ptr.first())
-                        .map(|ptr| ptr.strip_suffix('.').unwrap_or(ptr).to_lowercase())
+                    r.ptr.as_ref().and_then(|ptr| ptr.first()).map(|ptr| {
+                        CompactString::from_str_to_lowercase(ptr.strip_suffix('.').unwrap_or(ptr))
+                    })
                 }),
                 env_from_postmaster: env_from_addr.address.is_empty()
                     || POSTMASTER_ADDRESSES.contains(&env_from_addr.local_part.as_str()),
@@ -260,7 +260,9 @@ impl SpamFilterInit for Server {
                     .collect(),
                 from: Recipient {
                     email: Email::new(from.and_then(|f| f.address()).unwrap_or_default()),
-                    name: from.and_then(|f| f.name()).map(|s| s.to_lowercase()),
+                    name: from
+                        .and_then(|f| f.name())
+                        .map(CompactString::from_str_to_lowercase),
                 },
                 reply_to,
                 subject_thread_lc: subject_thread.trim().to_lowercase(),

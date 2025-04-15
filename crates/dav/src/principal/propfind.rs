@@ -7,13 +7,14 @@
 use std::borrow::Cow;
 
 use common::{Server, auth::AccessToken};
+use compact_str::format_compact;
 use dav_proto::schema::{
     Namespace,
     property::{DavProperty, PrincipalProperty, ReportSet, ResourceType, WebDavProperty},
     request::{DavPropertyValue, PropFind},
     response::{Href, MultiStatus, PropStat, Response},
 };
-use directory::{QueryBy, backend::internal::PrincipalField};
+use directory::{QueryBy, backend::internal::manage::ManageDirectory};
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
 use percent_encoding::NON_ALPHANUMERIC;
@@ -110,14 +111,10 @@ impl PrincipalPropFind for Server {
                     .query(QueryBy::Id(account_id), false)
                     .await
                     .caused_by(trc::location!())?
-                    .map(|mut p| {
-                        let name = p
-                            .take_str(PrincipalField::Name)
-                            .unwrap_or_else(|| format!("_{account_id}"));
-                        let description = p
-                            .take_str(PrincipalField::Description)
-                            .unwrap_or_else(|| name.clone());
-                        (Cow::Owned(name), description)
+                    .map(|p| {
+                        let name = p.name;
+                        let description = p.description.unwrap_or_else(|| name.clone());
+                        (Cow::Owned(name.to_string()), description.to_string())
                     })
                     .unwrap_or_else(|| {
                         (
@@ -293,12 +290,11 @@ impl PrincipalPropFind for Server {
             Ok(access_token.current_user_principal())
         } else {
             let name = self
-                .directory()
-                .query(QueryBy::Id(account_id), false)
+                .store()
+                .get_principal_name(account_id)
                 .await
                 .caused_by(trc::location!())?
-                .and_then(|mut p| p.take_str(PrincipalField::Name))
-                .unwrap_or_else(|| format!("_{account_id}"));
+                .unwrap_or_else(|| format_compact!("_{account_id}"));
             Ok(Href(format!(
                 "{}/{}",
                 DavResource::Principal.base_path(),

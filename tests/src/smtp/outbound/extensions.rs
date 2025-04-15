@@ -77,7 +77,7 @@ async fn extensions() {
     );
 
     let mut session = local.new_session();
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
@@ -150,7 +150,7 @@ async fn extensions() {
         .try_deliver(core.clone());
     local.queue_receiver.read_event().await.assert_done();
     let message = remote.queue_receiver.expect_message().await;
-    assert_eq!(message.env_id, Some("abc123".to_string()));
+    assert_eq!(message.env_id, Some("abc123".into()));
     assert!((message.flags & MAIL_RET_HDRS) != 0);
     assert!((message.flags & MAIL_REQUIRETLS) != 0);
     assert!((message.flags & MAIL_SMTPUTF8) != 0);

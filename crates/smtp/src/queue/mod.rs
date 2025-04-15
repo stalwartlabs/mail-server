@@ -11,8 +11,9 @@ use std::{
 };
 
 use common::expr::{self, functions::ResolveVariable, *};
+use compact_str::{CompactString, ToCompactString};
 use smtp_proto::{ArchivedResponse, Response};
-use store::{SERIALIZE_OBJ_13_V1, SerializedVersion, write::now};
+use store::{SERIALIZE_QUEUEMSG_V1, SerializedVersion, write::now};
 use utils::BlobHash;
 
 pub mod dsn;
@@ -50,14 +51,14 @@ pub struct Message {
     pub created: u64,
     pub blob_hash: BlobHash,
 
-    pub return_path: String,
-    pub return_path_lcase: String,
-    pub return_path_domain: String,
+    pub return_path: CompactString,
+    pub return_path_lcase: CompactString,
+    pub return_path_domain: CompactString,
     pub recipients: Vec<Recipient>,
     pub domains: Vec<Domain>,
 
     pub flags: u64,
-    pub env_id: Option<String>,
+    pub env_id: Option<CompactString>,
     pub priority: i16,
 
     pub size: u64,
@@ -69,7 +70,7 @@ pub struct Message {
 
 impl SerializedVersion for Message {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_13_V1
+        SERIALIZE_QUEUEMSG_V1
     }
 }
 
@@ -81,7 +82,7 @@ pub enum QuotaKey {
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone, PartialEq, Eq)]
 pub struct Domain {
-    pub domain: String,
+    pub domain: CompactString,
     pub retry: Schedule<u32>,
     pub notify: Schedule<u32>,
     pub expires: u64,
@@ -91,11 +92,11 @@ pub struct Domain {
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone, PartialEq, Eq)]
 pub struct Recipient {
     pub domain_idx: u32,
-    pub address: String,
-    pub address_lcase: String,
+    pub address: CompactString,
+    pub address_lcase: CompactString,
     pub status: Status<HostResponse<String>, HostResponse<ErrorDetails>>,
     pub flags: u64,
-    pub orcpt: Option<String>,
+    pub orcpt: Option<CompactString>,
 }
 
 pub const RCPT_DSN_SENT: u64 = 1 << 32;
@@ -131,23 +132,23 @@ pub struct HostResponse<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 pub enum Error {
-    DnsError(String),
+    DnsError(CompactString),
     UnexpectedResponse(HostResponse<ErrorDetails>),
     ConnectionError(ErrorDetails),
     TlsError(ErrorDetails),
     DaneError(ErrorDetails),
-    MtaStsError(String),
+    MtaStsError(CompactString),
     RateLimited,
     ConcurrencyLimited,
-    Io(String),
+    Io(CompactString),
 }
 
 #[derive(
     Debug, Clone, PartialEq, Eq, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Default,
 )]
 pub struct ErrorDetails {
-    pub entity: String,
-    pub details: String,
+    pub entity: CompactString,
+    pub details: CompactString,
 }
 
 impl<T> Ord for Schedule<T> {
@@ -266,7 +267,7 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
                 .into(),
             V_QUEUE_LAST_STATUS => self
                 .current_domain()
-                .map(|d| d.status.to_string())
+                .map(|d| d.status.to_compact_string())
                 .unwrap_or_default()
                 .into(),
             V_QUEUE_LAST_ERROR => self
@@ -289,8 +290,8 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
                 .into(),
             V_MX => self.mx.into(),
             V_PRIORITY => self.message.priority.into(),
-            V_REMOTE_IP => self.remote_ip.to_string().into(),
-            V_LOCAL_IP => self.local_ip.to_string().into(),
+            V_REMOTE_IP => self.remote_ip.to_compact_string().into(),
+            V_LOCAL_IP => self.local_ip.to_compact_string().into(),
             _ => "".into(),
         }
     }
@@ -372,17 +373,13 @@ pub trait DomainPart {
     fn domain_part(&self) -> &str;
 }
 
-impl DomainPart for &str {
+impl<T: AsRef<str>> DomainPart for T {
     #[inline(always)]
     fn domain_part(&self) -> &str {
-        self.rsplit_once('@').map(|(_, d)| d).unwrap_or_default()
-    }
-}
-
-impl DomainPart for String {
-    #[inline(always)]
-    fn domain_part(&self) -> &str {
-        self.rsplit_once('@').map(|(_, d)| d).unwrap_or_default()
+        self.as_ref()
+            .rsplit_once('@')
+            .map(|(_, d)| d)
+            .unwrap_or_default()
     }
 }
 
@@ -498,7 +495,7 @@ impl Display for Status<(), Error> {
     }
 }
 
-impl Display for Status<HostResponse<String>, HostResponse<ErrorDetails>> {
+impl Display for Status<HostResponse<CompactString>, HostResponse<ErrorDetails>> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Status::Scheduled => write!(f, "Scheduled"),

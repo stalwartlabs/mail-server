@@ -6,6 +6,7 @@
 
 use std::net::IpAddr;
 
+use compact_str::CompactString;
 use mail_auth::common::resolver::ToReverseName;
 
 use crate::expr::Variable;
@@ -24,11 +25,16 @@ pub(crate) fn fn_is_number(v: Vec<Variable>) -> Variable {
 }
 
 pub(crate) fn fn_is_ip_addr(v: Vec<Variable>) -> Variable {
-    v[0].to_string().parse::<std::net::IpAddr>().is_ok().into()
+    v[0].to_string()
+        .as_str()
+        .parse::<std::net::IpAddr>()
+        .is_ok()
+        .into()
 }
 
 pub(crate) fn fn_is_ipv4_addr(v: Vec<Variable>) -> Variable {
     v[0].to_string()
+        .as_str()
         .parse::<std::net::IpAddr>()
         .is_ok_and(|ip| matches!(ip, IpAddr::V4(_)))
         .into()
@@ -36,17 +42,21 @@ pub(crate) fn fn_is_ipv4_addr(v: Vec<Variable>) -> Variable {
 
 pub(crate) fn fn_is_ipv6_addr(v: Vec<Variable>) -> Variable {
     v[0].to_string()
+        .as_str()
         .parse::<std::net::IpAddr>()
         .is_ok_and(|ip| matches!(ip, IpAddr::V6(_)))
         .into()
 }
 
 pub(crate) fn fn_ip_reverse_name(v: Vec<Variable>) -> Variable {
-    v[0].to_string()
-        .parse::<std::net::IpAddr>()
-        .map(|ip| ip.to_reverse_name())
-        .unwrap_or_default()
-        .into()
+    CompactString::new(
+        v[0].to_string()
+            .as_str()
+            .parse::<std::net::IpAddr>()
+            .map(|ip| ip.to_reverse_name())
+            .unwrap_or_default(),
+    )
+    .into()
 }
 
 pub(crate) fn fn_if_then(v: Vec<Variable>) -> Variable {

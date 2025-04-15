@@ -234,7 +234,7 @@ impl UndeleteApi for Server {
                                                     .take_value(trc::Key::Reason)
                                                     .and_then(|v| v.into_string())
                                                     .unwrap()
-                                                    .into_owned(),
+                                                    .to_string(),
                                             });
                                         }
                                         Err(err) => {

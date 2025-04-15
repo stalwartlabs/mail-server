@@ -17,6 +17,7 @@ pub mod snowflake;
 pub mod topological;
 pub mod url_params;
 
+use compact_str::CompactString;
 use futures::StreamExt;
 use reqwest::Response;
 use rustls::{
@@ -364,8 +365,8 @@ impl ServerCertVerifier for DummyVerifier {
 }
 
 // Basic email sanitizer
-pub fn sanitize_email(email: &str) -> Option<String> {
-    let mut result = String::with_capacity(email.len());
+pub fn sanitize_email(email: &str) -> Option<CompactString> {
+    let mut result = CompactString::with_capacity(email.len());
     let mut found_local = false;
     let mut found_domain = false;
     let mut last_ch = char::from(0);

@@ -61,6 +61,7 @@ pub trait RequestHandler: Sync + Send {
 }
 
 impl RequestHandler for Server {
+    #![allow(clippy::large_futures)]
     async fn handle_jmap_request(
         &self,
         request: Request,

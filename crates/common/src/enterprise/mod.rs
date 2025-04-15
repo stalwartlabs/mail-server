@@ -17,10 +17,8 @@ pub mod undelete;
 use std::{sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
-use directory::{
-    QueryBy, Type,
-    backend::internal::{PrincipalField, lookup::DirectoryStore},
-};
+use compact_str::CompactString;
+use directory::{QueryBy, Type, backend::internal::lookup::DirectoryStore};
 use license::LicenseKey;
 use llm::AiApiConfig;
 use mail_parser::DateTime;
@@ -166,21 +164,18 @@ impl Server {
                     .caused_by(trc::location!())?
                     .filter(|p| p.typ() == Type::Domain)
                 {
-                    if let Some(logo) = principal
-                        .take_str(PrincipalField::Picture)
-                        .filter(|l| l.starts_with("http"))
-                    {
-                        logo.into()
-                    } else if let Some(tenant_id) = principal.get_int(PrincipalField::Tenant) {
+                    if let Some(logo) = principal.picture_mut().filter(|l| l.starts_with("http")) {
+                        std::mem::take(logo).into()
+                    } else if let Some(tenant_id) = principal.tenant {
                         if let Some(logo) = self
                             .store()
-                            .query(QueryBy::Id(tenant_id as u32), false)
+                            .query(QueryBy::Id(tenant_id), false)
                             .await
                             .caused_by(trc::location!())?
-                            .and_then(|mut p| p.take_str(PrincipalField::Picture))
+                            .and_then(|mut p| p.picture_mut().map(std::mem::take))
                             .filter(|l| l.starts_with("http"))
                         {
-                            logo.into()
+                            logo.clone().into()
                         } else {
                             self.default_logo_url()
                         }
@@ -193,7 +188,7 @@ impl Server {
 
                 let mut logo = None;
                 if let Some(logo_url) = logo_url {
-                    let response = reqwest::get(&logo_url).await.map_err(|err| {
+                    let response = reqwest::get(logo_url.as_str()).await.map_err(|err| {
                         trc::ResourceEvent::DownloadExternal
                             .into_err()
                             .details("Failed to download logo")
@@ -238,10 +233,10 @@ impl Server {
         }
     }
 
-    fn default_logo_url(&self) -> Option<String> {
+    fn default_logo_url(&self) -> Option<CompactString> {
         self.core
             .enterprise
             .as_ref()
-            .and_then(|e| e.logo_url.as_ref().map(|l| l.to_string()))
+            .and_then(|e| e.logo_url.as_ref().map(|l| l.into()))
     }
 }

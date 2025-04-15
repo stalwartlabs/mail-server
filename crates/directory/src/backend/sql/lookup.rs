@@ -4,23 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use mail_send::Credentials;
-use store::{NamedRows, Rows, Value};
-use trc::AddContext;
-
+use super::{SqlDirectory, SqlMappings};
 use crate::{
-    Principal, QueryBy, ROLE_ADMIN, ROLE_USER, Type,
+    Principal, PrincipalData, QueryBy, ROLE_ADMIN, ROLE_USER, Type,
     backend::{
         RcptType,
         internal::{
-            PrincipalField, PrincipalValue,
             lookup::DirectoryStore,
             manage::{self, ManageDirectory, UpdatePrincipal},
         },
     },
 };
-
-use super::{SqlDirectory, SqlMappings};
+use compact_str::CompactString;
+use mail_send::Credentials;
+use store::{NamedRows, Rows, Value};
+use trc::AddContext;
 
 impl SqlDirectory {
     pub async fn query(
@@ -41,7 +39,10 @@ impl SqlDirectory {
                             .caused_by(trc::location!())?,
                     )
                     .caused_by(trc::location!())?
-                    .map(|p| p.with_field(PrincipalField::Name, username.to_string())),
+                    .map(|mut p| {
+                        p.name = username.into();
+                        p
+                    }),
                 None,
             ),
             QueryBy::Id(uid) => {
@@ -102,10 +103,7 @@ impl SqlDirectory {
                                 .caused_by(trc::location!())?;
 
                             if !secrets.rows.is_empty() {
-                                principal.set(
-                                    PrincipalField::Secrets,
-                                    PrincipalValue::StringList(secrets.into()),
-                                );
+                                principal.secrets = secrets.into();
                             }
                         }
 
@@ -114,13 +112,8 @@ impl SqlDirectory {
                             .await
                             .caused_by(trc::location!())?
                         {
-                            (
-                                Some(
-                                    principal
-                                        .with_field(PrincipalField::Name, username.to_string()),
-                                ),
-                                None,
-                            )
+                            principal.name = username.into();
+                            (Some(principal), None)
                         } else {
                             (None, None)
                         }
@@ -139,6 +132,7 @@ impl SqlDirectory {
 
         // Obtain members
         if return_member_of && !self.mappings.query_members.is_empty() {
+            let mut data = Vec::new();
             for row in self
                 .sql_store
                 .sql_query::<Rows>(
@@ -150,8 +144,7 @@ impl SqlDirectory {
                 .rows
             {
                 if let Some(Value::Text(account_id)) = row.values.first() {
-                    external_principal.append_int(
-                        PrincipalField::MemberOf,
+                    data.push(
                         self.data_store
                             .get_or_create_principal_id(account_id, Type::Group)
                             .await
@@ -159,22 +152,25 @@ impl SqlDirectory {
                     );
                 }
             }
+            if !data.is_empty() {
+                external_principal.data.push(PrincipalData::MemberOf(data));
+            }
         }
 
         // Obtain emails
         if !self.mappings.query_emails.is_empty() {
-            external_principal.set(
-                PrincipalField::Emails,
-                PrincipalValue::StringList(
-                    self.sql_store
-                        .sql_query::<Rows>(
-                            &self.mappings.query_emails,
-                            vec![external_principal.name().into()],
-                        )
-                        .await
-                        .caused_by(trc::location!())?
-                        .into(),
-                ),
+            let rows = self
+                .sql_store
+                .sql_query::<Rows>(
+                    &self.mappings.query_emails,
+                    vec![external_principal.name().into()],
+                )
+                .await
+                .caused_by(trc::location!())?;
+            external_principal.emails.extend(
+                rows.rows
+                    .into_iter()
+                    .flat_map(|v| v.values.into_iter().map(|v| v.into_lower_string())),
             );
         }
 
@@ -254,11 +250,11 @@ impl SqlDirectory {
         }
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         self.data_store.vrfy(address).await
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         self.data_store.expn(address).await
     }
 
@@ -273,14 +269,14 @@ impl SqlMappings {
             return Ok(None);
         }
 
-        let mut principal = Principal::default();
+        let mut principal = Principal::new(u32::MAX, Type::Individual);
         let mut role = ROLE_USER;
 
         if let Some(row) = rows.rows.into_iter().next() {
             for (name, value) in rows.names.into_iter().zip(row.values) {
                 if name.eq_ignore_ascii_case(&self.column_secret) {
                     if let Value::Text(text) = value {
-                        principal.set(PrincipalField::Secrets, text.into_owned());
+                        principal.secrets.push(text.as_ref().into());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_type) {
                     match value.to_str().as_ref() {
@@ -296,20 +292,24 @@ impl SqlMappings {
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_description) {
                     if let Value::Text(text) = value {
-                        principal.set(PrincipalField::Description, text.into_owned());
+                        principal.description = Some(text.as_ref().into());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_email) {
                     if let Value::Text(text) = value {
-                        principal.set(PrincipalField::Emails, text.to_lowercase());
+                        principal
+                            .emails
+                            .push(CompactString::from_str_to_lowercase(text.as_ref()));
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_quota) {
                     if let Value::Integer(quota) = value {
-                        principal.set(PrincipalField::Quota, quota as u64);
+                        principal.quota = (quota as u64).into();
                     }
                 }
             }
         }
 
-        Ok(Some(principal.with_field(PrincipalField::Roles, role)))
+        principal.data.push(PrincipalData::Roles(vec![role]));
+
+        Ok(Some(principal))
     }
 }

@@ -6,12 +6,13 @@
 
 use std::{cmp::Ordering, net::IpAddr, vec::IntoIter};
 
+use compact_str::{CompactString, ToCompactString};
 use directory::backend::RcptType;
 use mail_auth::IpLookupStrategy;
 use store::{Deserialize, Rows, Value, dispatch::lookup::KeyValue};
 use trc::AddContext;
 
-use crate::Server;
+use crate::{Server, expr::StringCow};
 
 use super::*;
 
@@ -49,8 +50,8 @@ impl Server {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_in_memory_store_or_default(store.as_ref(), session_id)
-                    .key_get::<VariableWrapper>(key)
+                self.get_in_memory_store_or_default(store.as_str(), session_id)
+                    .key_get::<VariableWrapper>(key.as_str())
                     .await
                     .map(|value| value.map(|v| v.into_inner()).unwrap_or_default())
                     .caused_by(trc::location!())
@@ -59,8 +60,8 @@ impl Server {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_in_memory_store_or_default(store.as_ref(), session_id)
-                    .key_exists(key)
+                self.get_in_memory_store_or_default(store.as_str(), session_id)
+                    .key_exists(key.as_str())
                     .await
                     .caused_by(trc::location!())
                     .map(|v| v.into())
@@ -72,8 +73,8 @@ impl Server {
 
                 self.get_in_memory_store_or_default(store.as_ref(), session_id)
                     .key_set(KeyValue::new(
-                        key.into_owned().into_bytes(),
-                        value.into_owned().into_bytes(),
+                        key.as_bytes().to_vec(),
+                        value.as_bytes().to_vec(),
                     ))
                     .await
                     .map(|_| true)
@@ -96,7 +97,7 @@ impl Server {
                 let key = params.next_as_string();
 
                 self.get_in_memory_store_or_default(store.as_ref(), session_id)
-                    .counter_get(key.into_owned().into_bytes())
+                    .counter_get(key.as_bytes().to_vec())
                     .await
                     .map(Variable::Integer)
                     .caused_by(trc::location!())
@@ -134,7 +135,7 @@ impl Server {
             .is_some_and(|q| q.eq_ignore_ascii_case(b"SELECT"))
         {
             let mut rows = store
-                .sql_query::<Rows>(&query, arguments)
+                .sql_query::<Rows>(query.as_str(), arguments)
                 .await
                 .caused_by(trc::location!())?;
             Ok(match rows.rows.len().cmp(&1) {
@@ -162,7 +163,7 @@ impl Server {
             })
         } else {
             store
-                .sql_query::<usize>(&query, arguments)
+                .sql_query::<usize>(query.as_str(), arguments)
                 .await
                 .caused_by(trc::location!())
                 .map(|v| v.into())
@@ -173,7 +174,7 @@ impl Server {
         let entry = arguments.next_as_string();
         let record_type = arguments.next_as_string();
 
-        if record_type.eq_ignore_ascii_case("ip") {
+        if record_type.as_str().eq_ignore_ascii_case("ip") {
             self.core
                 .smtp
                 .resolvers
@@ -190,16 +191,16 @@ impl Server {
                 .map(|result| {
                     result
                         .iter()
-                        .map(|ip| Variable::from(ip.to_string()))
+                        .map(|ip| Variable::from(ip.to_compact_string()))
                         .collect::<Vec<_>>()
                         .into()
                 })
-        } else if record_type.eq_ignore_ascii_case("mx") {
+        } else if record_type.as_str().eq_ignore_ascii_case("mx") {
             self.core
                 .smtp
                 .resolvers
                 .dns
-                .mx_lookup(entry.as_ref(), Some(&self.inner.cache.dns_mx))
+                .mx_lookup(entry.as_str(), Some(&self.inner.cache.dns_mx))
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| {
@@ -207,33 +208,32 @@ impl Server {
                         .iter()
                         .flat_map(|mx| {
                             mx.exchanges.iter().map(|host| {
-                                Variable::String(
+                                Variable::String(StringCow::Owned(
                                     host.strip_suffix('.')
                                         .unwrap_or(host.as_str())
-                                        .to_string()
-                                        .into(),
-                                )
+                                        .to_compact_string(),
+                                ))
                             })
                         })
                         .collect::<Vec<_>>()
                         .into()
                 })
-        } else if record_type.eq_ignore_ascii_case("txt") {
+        } else if record_type.as_str().eq_ignore_ascii_case("txt") {
             self.core
                 .smtp
                 .resolvers
                 .dns
-                .txt_raw_lookup(entry.as_ref())
+                .txt_raw_lookup(entry.as_str())
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
-                .map(|result| Variable::from(String::from_utf8(result).unwrap_or_default()))
-        } else if record_type.eq_ignore_ascii_case("ptr") {
+                .map(|result| Variable::from(CompactString::from_utf8(result).unwrap_or_default()))
+        } else if record_type.as_str().eq_ignore_ascii_case("ptr") {
             self.core
                 .smtp
                 .resolvers
                 .dns
                 .ptr_lookup(
-                    entry.parse::<IpAddr>().map_err(|err| {
+                    entry.as_str().parse::<IpAddr>().map_err(|err| {
                         trc::EventType::Eval(trc::EvalEvent::Error)
                             .into_err()
                             .details("Failed to parse IP address")
@@ -246,37 +246,37 @@ impl Server {
                 .map(|result| {
                     result
                         .iter()
-                        .map(|host| Variable::from(host.to_string()))
+                        .map(|host| Variable::from(host.to_compact_string()))
                         .collect::<Vec<_>>()
                         .into()
                 })
-        } else if record_type.eq_ignore_ascii_case("ipv4") {
+        } else if record_type.as_str().eq_ignore_ascii_case("ipv4") {
             self.core
                 .smtp
                 .resolvers
                 .dns
-                .ipv4_lookup(entry.as_ref(), Some(&self.inner.cache.dns_ipv4))
+                .ipv4_lookup(entry.as_str(), Some(&self.inner.cache.dns_ipv4))
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| {
                     result
                         .iter()
-                        .map(|ip| Variable::from(ip.to_string()))
+                        .map(|ip| Variable::from(ip.to_compact_string()))
                         .collect::<Vec<_>>()
                         .into()
                 })
-        } else if record_type.eq_ignore_ascii_case("ipv6") {
+        } else if record_type.as_str().eq_ignore_ascii_case("ipv6") {
             self.core
                 .smtp
                 .resolvers
                 .dns
-                .ipv6_lookup(entry.as_ref(), Some(&self.inner.cache.dns_ipv6))
+                .ipv6_lookup(entry.as_str(), Some(&self.inner.cache.dns_ipv6))
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| {
                     result
                         .iter()
-                        .map(|ip| Variable::from(ip.to_string()))
+                        .map(|ip| Variable::from(ip.to_compact_string()))
                         .collect::<Vec<_>>()
                         .into()
                 })
@@ -297,7 +297,7 @@ impl<'x> FncParams<'x> {
         }
     }
 
-    pub fn next_as_string(&mut self) -> Cow<'x, str> {
+    pub fn next_as_string(&mut self) -> StringCow<'x> {
         self.params.next().unwrap().into_string()
     }
 
@@ -321,7 +321,9 @@ impl From<i64> for VariableWrapper {
 
 impl Deserialize for VariableWrapper {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        String::deserialize(bytes).map(|v| VariableWrapper(Variable::String(v.into())))
+        Ok(VariableWrapper(Variable::String(StringCow::Owned(
+            CompactString::from_utf8_lossy(bytes),
+        ))))
     }
 }
 
@@ -331,12 +333,12 @@ impl From<store::Value<'static>> for VariableWrapper {
             Value::Integer(v) => Variable::Integer(v),
             Value::Bool(v) => Variable::Integer(v as i64),
             Value::Float(v) => Variable::Float(v),
-            Value::Text(v) => Variable::String(v),
-            Value::Blob(v) => Variable::String(match v {
-                std::borrow::Cow::Borrowed(v) => String::from_utf8_lossy(v),
-                std::borrow::Cow::Owned(v) => String::from_utf8_lossy(&v).into_owned().into(),
-            }),
-            Value::Null => Variable::String("".into()),
+            Value::Text(v) => Variable::String(StringCow::Owned(v.into())),
+            Value::Blob(v) => Variable::String(StringCow::Owned(match v {
+                std::borrow::Cow::Borrowed(v) => CompactString::from_utf8_lossy(v),
+                std::borrow::Cow::Owned(v) => CompactString::from_utf8_lossy(&v),
+            })),
+            Value::Null => Variable::String(StringCow::Borrowed("")),
         })
     }
 }
@@ -349,7 +351,7 @@ impl VariableWrapper {
 
 fn to_store_value(value: Variable) -> Value {
     match value {
-        Variable::String(v) => Value::Text(v),
+        Variable::String(v) => Value::Text(v.to_string().into()),
         Variable::Integer(v) => Value::Integer(v),
         Variable::Float(v) => Value::Float(v),
         v => Value::Text(v.to_string().into_owned().into()),
@@ -361,12 +363,8 @@ fn into_variable(value: Value) -> Variable {
         Value::Integer(v) => Variable::Integer(v),
         Value::Bool(v) => Variable::Integer(i64::from(v)),
         Value::Float(v) => Variable::Float(v),
-        Value::Text(v) => Variable::String(v),
-        Value::Blob(v) => Variable::String(
-            String::from_utf8(v.into_owned())
-                .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned())
-                .into(),
-        ),
+        Value::Text(v) => Variable::String(v.into()),
+        Value::Blob(v) => Variable::String(StringCow::Owned(CompactString::from_utf8_lossy(&v))),
         Value::Null => Variable::default(),
     }
 }

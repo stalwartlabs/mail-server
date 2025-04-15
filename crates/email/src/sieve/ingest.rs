@@ -20,7 +20,8 @@ use crate::{
 use common::{
     Server, auth::AccessToken, config::jmap::settings::SpecialUse, scripts::plugins::PluginContext,
 };
-use directory::{Permission, QueryBy, backend::internal::PrincipalField};
+use compact_str::CompactString;
+use directory::{Permission, QueryBy};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
@@ -116,23 +117,23 @@ impl SieveScriptIngest for Server {
             .query(QueryBy::Id(account_id), false)
             .await
             .caused_by(trc::location!())?
-            .and_then(|mut p| {
+            .and_then(|p| {
                 instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
-                p.take_str_array(PrincipalField::Emails)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .next()
+                p.emails.into_iter().next()
             });
 
         // Set account address
-        let mail_from = mail_from.unwrap_or_else(|| envelope_to.to_string());
+        let mail_from = mail_from.unwrap_or_else(|| envelope_to.into());
         instance.set_user_address(&mail_from);
 
         // Set envelope
         instance.set_envelope(Envelope::From, envelope_from);
         instance.set_envelope(Envelope::To, envelope_to);
 
-        let mut input = Input::script(active_script.script_name, active_script.script.clone());
+        let mut input = Input::script(
+            active_script.script_name.to_string(),
+            active_script.script.clone(),
+        );
 
         let mut do_discard = false;
         let mut do_deliver = false;
@@ -376,9 +377,11 @@ impl SieveScriptIngest for Server {
                     } => {
                         input = true.into();
                         if let Some(message) = messages.get(message_id) {
-                            let recipients = match recipient {
-                                Recipient::Address(rcpt) => vec![rcpt],
-                                Recipient::Group(rcpts) => rcpts,
+                            let recipients: Vec<CompactString> = match recipient {
+                                Recipient::Address(rcpt) => vec![rcpt.into()],
+                                Recipient::Group(rcpts) => {
+                                    rcpts.into_iter().map(CompactString::from).collect()
+                                }
                                 Recipient::List(_) => {
                                     // Not yet implemented
                                     continue;
@@ -646,7 +649,7 @@ impl SieveScriptIngest for Server {
         {
             Ok(CompiledScript {
                 script: sieve.inner,
-                name: unarchived_script.name.to_string(),
+                name: unarchived_script.name.as_str().into(),
                 hash,
             })
         } else {
@@ -719,6 +722,6 @@ impl SieveScriptIngest for Server {
 
 pub struct CompiledScript {
     pub script: Sieve,
-    pub name: String,
+    pub name: CompactString,
     pub hash: u32,
 }

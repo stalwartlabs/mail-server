@@ -5,16 +5,16 @@
  */
 
 use ahash::HashMap;
+use compact_str::CompactString;
 use mail_send::Credentials;
 use reqwest::{StatusCode, header::AUTHORIZATION};
 use trc::{AddContext, AuthEvent};
 
 use crate::{
-    Principal, QueryBy, ROLE_USER, Type,
+    Principal, PrincipalData, QueryBy, ROLE_USER, Type,
     backend::{
         RcptType,
         internal::{
-            PrincipalField,
             lookup::DirectoryStore,
             manage::{self, ManageDirectory, UpdatePrincipal},
         },
@@ -145,11 +145,11 @@ impl OpenIdDirectory {
         self.data_store.rcpt(address).await
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         self.data_store.vrfy(address).await
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         self.data_store.expn(address).await
     }
 
@@ -185,11 +185,17 @@ impl BuildPrincipal for OpenIdResponse {
             .as_ref()
             .and_then(|field| self.take_field(field));
 
-        Ok(Principal::new(u32::MAX, Type::Individual)
-            .with_field(PrincipalField::Name, username)
-            .with_field(PrincipalField::Emails, email)
-            .with_field(PrincipalField::Roles, ROLE_USER)
-            .with_opt_field(PrincipalField::Description, full_name))
+        Ok(Principal {
+            id: u32::MAX,
+            typ: Type::Individual,
+            name: username.into(),
+            description: full_name.map(Into::into),
+            secrets: Default::default(),
+            emails: vec![email.into()],
+            quota: Default::default(),
+            tenant: Default::default(),
+            data: vec![PrincipalData::Roles(vec![ROLE_USER])],
+        })
     }
 
     fn take_required_field(&mut self, field: &str) -> trc::Result<String> {

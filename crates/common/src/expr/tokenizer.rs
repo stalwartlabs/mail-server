@@ -233,7 +233,7 @@ impl<'x> Tokenizer<'x> {
         Err("Unexpected end of expression".to_string())
     }
 
-    fn parse_string(&mut self, stop_ch: u8) -> Result<String, String> {
+    fn parse_string(&mut self, stop_ch: u8) -> Result<CompactString, String> {
         let mut buf = Vec::with_capacity(16);
         let mut last_ch = 0;
         let mut found_end = false;
@@ -267,7 +267,7 @@ impl<'x> Tokenizer<'x> {
         }
 
         if found_end {
-            String::from_utf8(buf).map_err(|_| "Invalid UTF-8".to_string())
+            CompactString::from_utf8(buf).map_err(|_| "Invalid UTF-8".into())
         } else {
             Err("Unterminated string".to_string())
         }

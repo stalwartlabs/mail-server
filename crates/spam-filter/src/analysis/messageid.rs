@@ -64,7 +64,7 @@ impl SpamFilterAnalyzeMid for Server {
                     ("ENV_FROM", &ctx.output.env_from_addr),
                 ] {
                     if !sender.address.is_empty() {
-                        if mid.contains(&sender.address) {
+                        if mid.contains(sender.address.as_str()) {
                             ctx.result.add_tag(format!("MID_CONTAINS_{part}"));
                         } else if mid_host.fqdn == sender.domain_part.fqdn {
                             ctx.result.add_tag(format!("MID_RHS_MATCH_{part}"));
@@ -77,7 +77,7 @@ impl SpamFilterAnalyzeMid for Server {
 
                 // To/Cc addresses present in Message-ID checks
                 for rcpt in ctx.output.all_recipients() {
-                    if mid.contains(&rcpt.email.address) {
+                    if mid.contains(rcpt.email.address.as_str()) {
                         ctx.result.add_tag("MID_CONTAINS_TO");
                     } else if mid_host.fqdn == rcpt.email.domain_part.fqdn {
                         ctx.result.add_tag("MID_RHS_MATCH_TO");

@@ -7,10 +7,7 @@
 use std::{sync::Arc, time::Instant};
 
 use common::{Inner, KV_LOCK_EMAIL_TASK, Server, core::BuildServer};
-use directory::{
-    Type,
-    backend::internal::{PrincipalField, manage::ManageDirectory},
-};
+use directory::{Type, backend::internal::manage::ManageDirectory};
 use email::message::{bayes::EmailBayesTrain, index::IndexMessageText, metadata::MessageMetadata};
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_parser::MessageParser;
@@ -353,7 +350,7 @@ impl Indexer for Server {
                     None,
                     tenant_id,
                     &[Type::Individual, Type::Group],
-                    &[PrincipalField::Name],
+                    false,
                     0,
                     0,
                 )

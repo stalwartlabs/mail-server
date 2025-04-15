@@ -4,15 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, cmp::Ordering, fmt::Display};
+use std::{cmp::Ordering, fmt::Display};
 
+use compact_str::{CompactString, ToCompactString, format_compact};
 use hyper::StatusCode;
 use trc::EvalEvent;
 
 use crate::Server;
 
 use super::{
-    BinaryOperator, Constant, Expression, ExpressionItem, Setting, UnaryOperator, Variable,
+    BinaryOperator, Constant, Expression, ExpressionItem, Setting, StringCow, UnaryOperator,
+    Variable,
     functions::{FUNCTIONS, ResolveVariable},
     if_block::IfBlock,
 };
@@ -105,7 +107,7 @@ impl Server {
                 trc::event!(
                     Eval(EvalEvent::Result),
                     SpanId = session_id,
-                    Id = expr_id.to_string(),
+                    Id = expr_id.to_compact_string(),
                     Result = format!("{result:?}"),
                 );
 
@@ -115,7 +117,7 @@ impl Server {
                         trc::event!(
                             Eval(EvalEvent::Error),
                             SpanId = session_id,
-                            Id = expr_id.to_string(),
+                            Id = expr_id.to_compact_string(),
                             Details = "Failed to convert result",
                         );
 
@@ -127,7 +129,7 @@ impl Server {
                 trc::event!(
                     Eval(EvalEvent::Error),
                     SpanId = session_id,
-                    Id = expr_id.to_string(),
+                    Id = expr_id.to_compact_string(),
                     CausedBy = err,
                 );
 
@@ -145,7 +147,7 @@ struct EvalContext<'x, V: ResolveVariable, T, C> {
     session_id: u64,
 }
 
-impl<'x, V: ResolveVariable> EvalContext<'x, V, IfBlock, Vec<String>> {
+impl<'x, V: ResolveVariable> EvalContext<'x, V, IfBlock, Vec<CompactString>> {
     async fn eval(&mut self) -> trc::Result<Variable<'x>> {
         for if_then in &self.expr.if_then {
             if (EvalContext {
@@ -183,7 +185,7 @@ impl<'x, V: ResolveVariable> EvalContext<'x, V, IfBlock, Vec<String>> {
     }
 }
 
-impl<'x, V: ResolveVariable> EvalContext<'x, V, Expression, &mut Vec<String>> {
+impl<'x, V: ResolveVariable> EvalContext<'x, V, Expression, &mut Vec<CompactString>> {
     async fn eval(&mut self) -> trc::Result<Variable<'x>> {
         let mut stack = Vec::new();
         let mut exprs = self.expr.items.iter();
@@ -200,12 +202,12 @@ impl<'x, V: ResolveVariable> EvalContext<'x, V, Expression, &mut Vec<String>> {
                     stack.push(Variable::from(val));
                 }
                 ExpressionItem::Capture(v) => {
-                    stack.push(Variable::String(Cow::Owned(
+                    stack.push(Variable::String(StringCow::Owned(
                         self.captures
                             .get(*v as usize)
                             .map(|v| v.as_str())
                             .unwrap_or_default()
-                            .to_string(),
+                            .to_compact_string(),
                     )));
                 }
                 ExpressionItem::Setting(setting) => match setting {
@@ -224,6 +226,7 @@ impl<'x, V: ResolveVariable> EvalContext<'x, V, Expression, &mut Vec<String>> {
                             .get(key)
                             .await?
                             .unwrap_or_default()
+                            .to_compact_string()
                             .into(),
                     ),
                 },
@@ -305,7 +308,7 @@ impl<'x, V: ResolveVariable> EvalContext<'x, V, Expression, &mut Vec<String>> {
                     if let Some(captures_) = regex.captures(value.as_ref()) {
                         for capture in captures_.iter() {
                             self.captures
-                                .push(capture.map_or("", |m| m.as_str()).to_string());
+                                .push(capture.map_or("", |m| m.as_str()).to_compact_string());
                         }
                     }
 
@@ -346,14 +349,14 @@ impl<'x> Variable<'x> {
             }
             (Variable::String(a), b) => {
                 if !a.is_empty() {
-                    Variable::String(format!("{}{}", a, b).into())
+                    Variable::String(StringCow::Owned(format_compact!("{}{}", a, b)))
                 } else {
                     b
                 }
             }
             (a, Variable::String(b)) => {
                 if !b.is_empty() {
-                    Variable::String(format!("{}{}", a, b).into())
+                    Variable::String(StringCow::Owned(format_compact!("{}{}", a, b)))
                 } else {
                     a
                 }
@@ -453,9 +456,9 @@ impl<'x> Variable<'x> {
     pub fn parse_number(&self) -> Variable<'static> {
         match self {
             Variable::String(s) if !s.is_empty() => {
-                if let Ok(n) = s.parse::<i64>() {
+                if let Ok(n) = s.as_str().parse::<i64>() {
                     Variable::Integer(n)
-                } else if let Ok(n) = s.parse::<f64>() {
+                } else if let Ok(n) = s.as_str().parse::<f64>() {
                     Variable::Float(n)
                 } else {
                     Variable::Integer(0)
@@ -479,7 +482,7 @@ impl<'x> Variable<'x> {
 
     pub fn to_ref<'y: 'x>(&'y self) -> Variable<'x> {
         match self {
-            Variable::String(s) => Variable::String(Cow::Borrowed(s.as_ref())),
+            Variable::String(s) => Variable::String(StringCow::Borrowed(s.as_str())),
             Variable::Integer(n) => Variable::Integer(*n),
             Variable::Float(n) => Variable::Float(*n),
             Variable::Array(l) => Variable::Array(l.iter().map(|v| v.to_ref()).collect::<Vec<_>>()),
@@ -495,48 +498,48 @@ impl<'x> Variable<'x> {
         }
     }
 
-    pub fn to_string(&self) -> Cow<'_, str> {
+    pub fn to_string(&self) -> StringCow {
         match self {
-            Variable::String(s) => Cow::Borrowed(s.as_ref()),
-            Variable::Integer(n) => Cow::Owned(n.to_string()),
-            Variable::Float(n) => Cow::Owned(n.to_string()),
+            Variable::String(s) => StringCow::Borrowed(s.as_str()),
+            Variable::Integer(n) => StringCow::Owned(n.to_compact_string()),
+            Variable::Float(n) => StringCow::Owned(n.to_compact_string()),
             Variable::Array(l) => {
-                let mut result = String::with_capacity(self.len() * 10);
+                let mut result = CompactString::with_capacity(self.len() * 10);
                 for item in l {
                     if !result.is_empty() {
                         result.push_str("\r\n");
                     }
                     match item {
-                        Variable::String(v) => result.push_str(v),
-                        Variable::Integer(v) => result.push_str(&v.to_string()),
-                        Variable::Float(v) => result.push_str(&v.to_string()),
+                        Variable::String(v) => result.push_str(v.as_str()),
+                        Variable::Integer(v) => result.push_str(&v.to_compact_string()),
+                        Variable::Float(v) => result.push_str(&v.to_compact_string()),
                         Variable::Array(_) => {}
                     }
                 }
-                Cow::Owned(result)
+                StringCow::Owned(result)
             }
         }
     }
 
-    pub fn into_string(self) -> Cow<'x, str> {
+    pub fn into_string(self) -> StringCow<'x> {
         match self {
             Variable::String(s) => s,
-            Variable::Integer(n) => Cow::Owned(n.to_string()),
-            Variable::Float(n) => Cow::Owned(n.to_string()),
+            Variable::Integer(n) => StringCow::Owned(n.to_compact_string()),
+            Variable::Float(n) => StringCow::Owned(n.to_compact_string()),
             Variable::Array(l) => {
-                let mut result = String::with_capacity(l.len() * 10);
+                let mut result = CompactString::with_capacity(l.len() * 10);
                 for item in l {
                     if !result.is_empty() {
                         result.push_str("\r\n");
                     }
                     match item {
                         Variable::String(v) => result.push_str(v.as_ref()),
-                        Variable::Integer(v) => result.push_str(&v.to_string()),
-                        Variable::Float(v) => result.push_str(&v.to_string()),
+                        Variable::Integer(v) => result.push_str(&v.to_compact_string()),
+                        Variable::Float(v) => result.push_str(&v.to_compact_string()),
                         Variable::Array(_) => {}
                     }
                 }
-                Cow::Owned(result)
+                StringCow::Owned(result)
             }
         }
     }
@@ -545,7 +548,7 @@ impl<'x> Variable<'x> {
         match self {
             Variable::Integer(n) => Some(*n),
             Variable::Float(n) => Some(*n as i64),
-            Variable::String(s) if !s.is_empty() => s.parse::<i64>().ok(),
+            Variable::String(s) if !s.is_empty() => s.as_str().parse::<i64>().ok(),
             _ => None,
         }
     }
@@ -554,7 +557,7 @@ impl<'x> Variable<'x> {
         match self {
             Variable::Integer(n) => Some(*n as usize),
             Variable::Float(n) => Some(*n as usize),
-            Variable::String(s) if !s.is_empty() => s.parse::<usize>().ok(),
+            Variable::String(s) if !s.is_empty() => s.as_str().parse::<usize>().ok(),
             _ => None,
         }
     }
@@ -599,7 +602,7 @@ impl<'x> Variable<'x> {
 
     pub fn into_owned(self) -> Variable<'static> {
         match self {
-            Variable::String(s) => Variable::String(Cow::Owned(s.into_owned())),
+            Variable::String(s) => Variable::String(StringCow::Owned(s.into_owned())),
             Variable::Integer(n) => Variable::Integer(n),
             Variable::Float(n) => Variable::Float(n),
             Variable::Array(l) => Variable::Array(l.into_iter().map(|v| v.into_owned()).collect()),
@@ -615,7 +618,7 @@ impl PartialEq for Variable<'_> {
             (Self::Integer(a), Self::Float(b)) | (Self::Float(b), Self::Integer(a)) => {
                 *a as f64 == *b
             }
-            (Self::String(a), Self::String(b)) => a == b,
+            (Self::String(a), Self::String(b)) => a.as_str() == b.as_str(),
             (Self::String(_), Self::Integer(_) | Self::Float(_)) => &self.parse_number() == other,
             (Self::Integer(_) | Self::Float(_), Self::String(_)) => self == &other.parse_number(),
             (Self::Array(a), Self::Array(b)) => a == b,
@@ -634,7 +637,7 @@ impl PartialOrd for Variable<'_> {
             (Self::Float(a), Self::Float(b)) => a.partial_cmp(b),
             (Self::Integer(a), Self::Float(b)) => (*a as f64).partial_cmp(b),
             (Self::Float(a), Self::Integer(b)) => a.partial_cmp(&(*b as f64)),
-            (Self::String(a), Self::String(b)) => a.partial_cmp(b),
+            (Self::String(a), Self::String(b)) => a.as_str().partial_cmp(b.as_str()),
             (Self::String(_), Self::Integer(_) | Self::Float(_)) => {
                 self.parse_number().partial_cmp(other)
             }
@@ -678,17 +681,20 @@ impl<'x> From<&'x Constant> for Variable<'x> {
         match value {
             Constant::Integer(i) => Variable::Integer(*i),
             Constant::Float(f) => Variable::Float(*f),
-            Constant::String(s) => Variable::String(s.as_str().into()),
+            Constant::String(s) => Variable::String(StringCow::Borrowed(s.as_str())),
         }
     }
 }
 
-impl<'x> TryFrom<Variable<'x>> for String {
+impl<'x> TryFrom<Variable<'x>> for CompactString {
     type Error = ();
 
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         if let Variable::String(s) = value {
-            Ok(s.into_owned())
+            Ok(match s {
+                StringCow::Borrowed(v) => v.into(),
+                StringCow::Owned(v) => v,
+            })
         } else {
             Err(())
         }

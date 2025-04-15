@@ -12,6 +12,7 @@ use std::{
 
 use ahash::AHashSet;
 use base64::{Engine, engine::general_purpose::STANDARD};
+use compact_str::CompactString;
 use hyper::{
     HeaderMap,
     header::{AUTHORIZATION, CONTENT_TYPE, HeaderName, HeaderValue},
@@ -142,9 +143,9 @@ pub struct Data {
 #[derive(Clone)]
 pub struct Milter {
     pub enable: IfBlock,
-    pub id: Arc<String>,
+    pub id: Arc<CompactString>,
     pub addrs: Vec<SocketAddr>,
-    pub hostname: String,
+    pub hostname: CompactString,
     pub port: u16,
     pub timeout_connect: Duration,
     pub timeout_command: Duration,
@@ -461,7 +462,7 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
             .unwrap_or_else(|| {
                 IfBlock::new::<()>(format!("session.milter.{id}.enable"), [], "false")
             }),
-        id: id.to_string().into(),
+        id: Arc::new(id.into()),
         addrs: format!("{}:{}", hostname, port)
             .to_socket_addrs()
             .map_err(|err| {
@@ -472,7 +473,7 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
             })
             .ok()?
             .collect(),
-        hostname,
+        hostname: hostname.into(),
         port,
         timeout_connect: config
             .property_or_default(("session.milter", id, "timeout.connect"), "30s")
@@ -914,7 +915,7 @@ impl<'x> TryFrom<Variable<'x>> for MtPriority {
                 4 => Ok(MtPriority::Nsep),
                 _ => Err(()),
             },
-            Variable::String(value) => MtPriority::parse_value(&value).map_err(|_| ()),
+            Variable::String(value) => MtPriority::parse_value(value.as_str()).map_err(|_| ()),
             _ => Err(()),
         }
     }

@@ -7,6 +7,7 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
+use compact_str::CompactString;
 use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult, spf::verify::SpfParameters};
 use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS, MailFrom, MtPriority};
 use trc::SmtpEvent;
@@ -19,7 +20,7 @@ use crate::{
 };
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_mail_from(&mut self, from: MailFrom<String>) -> Result<(), ()> {
+    pub async fn handle_mail_from(&mut self, from: MailFrom<CompactString>) -> Result<(), ()> {
         if self.data.helo_domain.is_empty()
             && (self.params.ehlo_require
                 || self.params.spf_ehlo.verify()
@@ -109,10 +110,14 @@ impl<T: SessionStream> Session<T> {
 
         let (address, address_lcase, domain) = if !from.address.is_empty() {
             let address_lcase = from.address.to_lowercase();
-            let domain = address_lcase.domain_part().to_string();
+            let domain = address_lcase.domain_part().into();
             (from.address, address_lcase, domain)
         } else {
-            (String::new(), String::new(), String::new())
+            (
+                CompactString::new(""),
+                CompactString::new(""),
+                CompactString::new(""),
+            )
         };
 
         let has_dsn = from.env_id.is_some();
@@ -150,7 +155,7 @@ impl<T: SessionStream> Session<T> {
         // Sieve filtering
         if let Some((script, script_id)) = self
             .server
-            .eval_if::<String, _>(
+            .eval_if::<CompactString, _>(
                 &self.server.core.smtp.session.mail.script,
                 self,
                 self.data.session_id,
@@ -202,7 +207,7 @@ impl<T: SessionStream> Session<T> {
         // Address rewriting
         if let Some(new_address) = self
             .server
-            .eval_if::<String, _>(
+            .eval_if::<CompactString, _>(
                 &self.server.core.smtp.session.mail.rewrite,
                 self,
                 self.data.session_id,
@@ -220,7 +225,7 @@ impl<T: SessionStream> Session<T> {
 
             if new_address.contains('@') {
                 mail_from.address_lcase = new_address.to_lowercase();
-                mail_from.domain = mail_from.address_lcase.domain_part().to_string();
+                mail_from.domain = mail_from.address_lcase.domain_part().into();
                 mail_from.address = new_address;
             } else if new_address.is_empty() {
                 mail_from.address_lcase.clear();
@@ -245,19 +250,20 @@ impl<T: SessionStream> Session<T> {
                 let address_lcase = self.data.mail_from.as_ref().unwrap().address_lcase.as_str();
                 if authenticated_as != address_lcase
                     && !self.authenticated_emails().iter().any(|e| {
-                        e == address_lcase || (e.starts_with('@') && address_lcase.ends_with(e))
+                        e == address_lcase
+                            || (e.starts_with('@') && address_lcase.ends_with(e.as_str()))
                     })
                 {
                     trc::event!(
                         Smtp(SmtpEvent::MailFromUnauthorized),
                         SpanId = self.data.session_id,
                         From = address_lcase.to_string(),
-                        Details = [trc::Value::String(authenticated_as.to_string())]
+                        Details = [trc::Value::String(authenticated_as.into())]
                             .into_iter()
                             .chain(
                                 self.authenticated_emails()
                                     .iter()
-                                    .map(|e| trc::Value::String(e.to_string()))
+                                    .map(|e| trc::Value::String(e.clone()))
                             )
                             .collect::<Vec<_>>()
                     );

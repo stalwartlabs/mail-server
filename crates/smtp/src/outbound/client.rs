@@ -221,7 +221,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
                     CausedBy = trc::location!()
                 );
                 Err(Status::TemporaryFailure(Error::Io(
-                    "Queue system error.".to_string(),
+                    "Queue system error.".into(),
                 )))
             }
             Err(err) => {
@@ -232,7 +232,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
                 );
 
                 Err(Status::TemporaryFailure(Error::Io(
-                    "Queue system error.".to_string(),
+                    "Queue system error.".into(),
                 )))
             }
         }

@@ -56,8 +56,8 @@ impl<T: SessionStream> Session<T> {
                         (&self.state, response.key(trc::Key::Code)),
                         (
                             State::NotAuthenticated { .. },
-                            Some(trc::Value::Static("PARSE"))
-                        )
+                            Some(trc::Value::String(v))
+                        ) if v == "PARSE"
                     ) {
                         match self.server.is_scanner_fail2banned(self.remote_addr).await {
                             Ok(true) => {

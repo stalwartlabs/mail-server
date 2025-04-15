@@ -48,7 +48,7 @@ async fn queue_retry() {
     let mut session = local.new_session();
     let qr = &mut local.queue_receiver;
 
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
@@ -165,7 +165,7 @@ async fn queue_retry() {
         .assert_contains("Action: failed");
 
     // Test FUTURERELEASE + DELIVERBY (RETURN)
-    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip_str = "10.0.0.2".into();
     session.eval_session_params().await;
     session
         .send_message(

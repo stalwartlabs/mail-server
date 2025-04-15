@@ -19,19 +19,19 @@ impl AsRef<EventType> for Error {
 
 impl From<&'static str> for Value {
     fn from(value: &'static str) -> Self {
-        Self::Static(value)
+        Self::String(CompactString::const_new(value))
     }
 }
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Self::String(value)
+        Self::String(value.into())
     }
 }
 
 impl From<CompactString> for Value {
     fn from(value: CompactString) -> Self {
-        Self::String(value.to_string())
+        Self::String(value)
     }
 }
 
@@ -146,8 +146,8 @@ impl From<&[u8]> for Value {
 impl From<Cow<'static, str>> for Value {
     fn from(value: Cow<'static, str>) -> Self {
         match value {
-            Cow::Borrowed(value) => Self::Static(value),
-            Cow::Owned(value) => Self::String(value),
+            Cow::Borrowed(value) => Self::String(CompactString::const_new(value)),
+            Cow::Owned(value) => Self::String(value.into()),
         }
     }
 }
@@ -356,7 +356,7 @@ impl From<&mail_auth::IprevOutput> for Error {
             Key::Details,
             value.ptr.as_ref().map(|s| {
                 s.iter()
-                    .map(|v| Value::String(v.to_string()))
+                    .map(|v| Value::String(v.into()))
                     .collect::<Vec<_>>()
             }),
         )

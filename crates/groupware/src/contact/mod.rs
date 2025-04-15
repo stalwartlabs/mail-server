@@ -9,7 +9,7 @@ pub mod index;
 use calcard::vcard::VCard;
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
-use store::{SERIALIZE_OBJ_15_V1, SERIALIZE_OBJ_16_V1, SerializedVersion};
+use store::{SERIALIZE_ADDRESSBOOK_V1, SERIALIZE_CALENDAREVENT_V1, SerializedVersion};
 
 use crate::DavName;
 
@@ -78,12 +78,12 @@ impl From<AddressBookRight> for Acl {
 
 impl SerializedVersion for AddressBook {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_15_V1
+        SERIALIZE_ADDRESSBOOK_V1
     }
 }
 
 impl SerializedVersion for ContactCard {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_16_V1
+        SERIALIZE_CALENDAREVENT_V1
     }
 }

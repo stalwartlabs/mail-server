@@ -9,6 +9,7 @@ use std::{
     str::FromStr,
 };
 
+use compact_str::CompactString;
 use utils::map::bitmap::BitmapItem;
 
 use super::{property::Property, type_state::DataType};
@@ -192,7 +193,7 @@ impl FromStr for Collection {
 
 impl From<Collection> for trc::Value {
     fn from(value: Collection) -> Self {
-        trc::Value::Static(value.as_str())
+        trc::Value::String(CompactString::const_new(value.as_str()))
     }
 }
 

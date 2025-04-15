@@ -9,6 +9,7 @@ use common::{
     auth::{AccessToken, ResourceToken},
     storage::index::ObjectIndexBuilder,
 };
+use compact_str::CompactString;
 use email::sieve::{
     ArchivedSieveScript, SieveScript, activate::SieveScriptActivate, delete::SieveScriptDelete,
 };
@@ -400,7 +401,7 @@ impl SieveScriptSet for Server {
                         }
                     }
 
-                    changes.name = value;
+                    changes.name = value.into();
                 }
                 (Property::BlobId, MaybePatchValue::Value(Value::BlobId(value))) => {
                     blob_id = value.into();
@@ -424,7 +425,7 @@ impl SieveScriptSet for Server {
                     .sample_iter(Alphanumeric)
                     .take(15)
                     .map(char::from)
-                    .collect::<String>();
+                    .collect::<CompactString>();
             }
 
             // Set script as inactive

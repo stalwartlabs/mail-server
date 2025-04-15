@@ -6,6 +6,7 @@
 
 use std::{
     borrow::Cow,
+    fmt::{Display, Formatter},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
@@ -68,6 +69,7 @@ pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("country", V_COUNTRY),
 ];
 
+use compact_str::CompactString;
 use regex::Regex;
 use utils::config::{Rate, utils::ParseValue};
 
@@ -87,7 +89,7 @@ pub struct Expression {
 #[derive(Debug, Clone)]
 pub enum ExpressionItem {
     Variable(u32),
-    Global(String),
+    Global(CompactString),
     Setting(Setting),
     Capture(u32),
     Constant(Constant),
@@ -102,15 +104,21 @@ pub enum ExpressionItem {
 
 #[derive(Debug, Clone)]
 pub enum Variable<'x> {
-    String(Cow<'x, str>),
+    String(StringCow<'x>),
     Integer(i64),
     Float(f64),
     Array(Vec<Variable<'x>>),
 }
 
+#[derive(Debug, Clone)]
+pub enum StringCow<'x> {
+    Owned(CompactString),
+    Borrowed(&'x str),
+}
+
 impl Default for Variable<'_> {
     fn default() -> Self {
-        Variable::String("".into())
+        Variable::String(StringCow::Borrowed(""))
     }
 }
 
@@ -118,13 +126,13 @@ impl Default for Variable<'_> {
 pub enum Constant {
     Integer(i64),
     Float(f64),
-    String(String),
+    String(CompactString),
 }
 
 impl Eq for Constant {}
 
-impl From<String> for Constant {
-    fn from(value: String) -> Self {
+impl From<CompactString> for Constant {
+    fn from(value: CompactString) -> Self {
         Constant::String(value)
     }
 }
@@ -193,7 +201,7 @@ pub enum UnaryOperator {
 #[derive(Debug, Clone)]
 pub enum Token {
     Variable(u32),
-    Global(String),
+    Global(CompactString),
     Capture(u32),
     Function {
         name: Cow<'static, str>,
@@ -217,11 +225,11 @@ pub enum Setting {
     Hostname,
     ReportDomain,
     NodeId,
-    Other(String),
+    Other(CompactString),
 }
 
-impl From<String> for Setting {
-    fn from(value: String) -> Self {
+impl From<CompactString> for Setting {
+    fn from(value: CompactString) -> Self {
         match value.as_str() {
             "server.hostname" => Setting::Hostname,
             "report.domain" => Setting::ReportDomain,
@@ -281,13 +289,13 @@ impl From<f64> for Variable<'_> {
 
 impl<'x> From<&'x str> for Variable<'x> {
     fn from(value: &'x str) -> Self {
-        Variable::String(Cow::Borrowed(value))
+        Variable::String(StringCow::Borrowed(value))
     }
 }
 
-impl From<String> for Variable<'_> {
-    fn from(value: String) -> Self {
-        Variable::String(Cow::Owned(value))
+impl From<CompactString> for Variable<'_> {
+    fn from(value: CompactString) -> Self {
+        Variable::String(StringCow::Owned(value))
     }
 }
 
@@ -412,9 +420,82 @@ impl<'x> TryFrom<Variable<'x>> for Duration {
             Variable::Integer(value) if value > 0 => Ok(Duration::from_millis(value as u64)),
             Variable::Float(value) if value > 0.0 => Ok(Duration::from_millis(value as u64)),
             Variable::String(value) if !value.is_empty() => {
-                Duration::parse_value(&value).map_err(|_| ())
+                Duration::parse_value(value.as_str()).map_err(|_| ())
             }
             _ => Err(()),
+        }
+    }
+}
+
+impl StringCow<'_> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            StringCow::Owned(s) => s.as_str(),
+            StringCow::Borrowed(s) => s,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            StringCow::Owned(s) => s.as_bytes(),
+            StringCow::Borrowed(s) => s.as_bytes(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            StringCow::Owned(s) => s.is_empty(),
+            StringCow::Borrowed(s) => s.is_empty(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            StringCow::Owned(s) => s.len(),
+            StringCow::Borrowed(s) => s.len(),
+        }
+    }
+
+    pub fn into_owned(self) -> CompactString {
+        match self {
+            StringCow::Owned(s) => s,
+            StringCow::Borrowed(s) => s.into(),
+        }
+    }
+}
+
+impl<'x> From<Cow<'x, str>> for StringCow<'x> {
+    fn from(value: Cow<'x, str>) -> Self {
+        match value {
+            Cow::Borrowed(s) => StringCow::Borrowed(s),
+            Cow::Owned(s) => StringCow::Owned(s.into()),
+        }
+    }
+}
+
+impl From<CompactString> for StringCow<'_> {
+    fn from(value: CompactString) -> Self {
+        StringCow::Owned(value)
+    }
+}
+
+impl AsRef<str> for StringCow<'_> {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl AsRef<[u8]> for StringCow<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_str().as_bytes()
+    }
+}
+
+impl Display for StringCow<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StringCow::Owned(s) => write!(f, "{}", s),
+            StringCow::Borrowed(s) => write!(f, "{}", s),
         }
     }
 }
@@ -453,7 +534,7 @@ impl<'x> TryFrom<Variable<'x>> for Ipv4Addr {
 
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         match value {
-            Variable::String(value) => value.parse().map_err(|_| ()),
+            Variable::String(value) => value.as_str().parse().map_err(|_| ()),
             _ => Err(()),
         }
     }
@@ -464,7 +545,7 @@ impl<'x> TryFrom<Variable<'x>> for Ipv6Addr {
 
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         match value {
-            Variable::String(value) => value.parse().map_err(|_| ()),
+            Variable::String(value) => value.as_str().parse().map_err(|_| ()),
             _ => Err(()),
         }
     }
@@ -475,7 +556,7 @@ impl<'x> TryFrom<Variable<'x>> for IpAddr {
 
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         match value {
-            Variable::String(value) => value.parse().map_err(|_| ()),
+            Variable::String(value) => value.as_str().parse().map_err(|_| ()),
             _ => Err(()),
         }
     }

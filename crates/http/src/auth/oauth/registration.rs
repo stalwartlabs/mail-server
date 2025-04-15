@@ -10,9 +10,12 @@ use common::{
     Server,
     auth::oauth::registration::{ClientRegistrationRequest, ClientRegistrationResponse},
 };
+use compact_str::CompactString;
 use directory::{
-    Permission, Principal, QueryBy, Type,
-    backend::internal::{PrincipalField, lookup::DirectoryStore, manage::ManageDirectory},
+    Permission, QueryBy, Type,
+    backend::internal::{
+        PrincipalField, PrincipalSet, lookup::DirectoryStore, manage::ManageDirectory,
+    },
 };
 use store::rand::{Rng, distr::Alphanumeric, rng};
 use trc::{AddContext, AuthEvent};
@@ -67,10 +70,10 @@ impl ClientRegistrationHandler for Server {
             .sample_iter(Alphanumeric)
             .take(20)
             .map(|ch| char::from(ch.to_ascii_lowercase()))
-            .collect::<String>();
+            .collect::<CompactString>();
         self.store()
             .create_principal(
-                Principal::new(u32::MAX, Type::OauthClient)
+                PrincipalSet::new(u32::MAX, Type::OauthClient)
                     .with_field(PrincipalField::Name, client_id.clone())
                     .with_field(PrincipalField::Urls, request.redirect_uris.clone())
                     .with_opt_field(PrincipalField::Description, request.client_name.clone())
@@ -116,12 +119,7 @@ impl ClientRegistrationHandler for Server {
             .filter(|p| p.typ() == Type::OauthClient)
         {
             if let Some(redirect_uri) = redirect_uri {
-                if client
-                    .get_str_array(PrincipalField::Urls)
-                    .unwrap_or_default()
-                    .iter()
-                    .any(|uri| uri == redirect_uri)
-                {
+                if client.urls().iter().any(|uri| uri == redirect_uri) {
                     return Ok(None);
                 }
             } else {

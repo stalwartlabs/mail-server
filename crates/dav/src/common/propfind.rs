@@ -226,7 +226,7 @@ impl PropFindRequestHandler for Server {
                             None,
                             access_token.tenant_id(),
                             &[Type::Individual, Type::Group],
-                            &[PrincipalField::Name],
+                            false,
                             0,
                             0,
                         )

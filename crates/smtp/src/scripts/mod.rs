@@ -10,6 +10,7 @@ use ahash::AHashMap;
 use common::{
     Server, auth::AccessToken, expr::functions::ResolveVariable, scripts::ScriptModification,
 };
+use compact_str::CompactString;
 use mail_parser::Message;
 use sieve::{Envelope, runtime::Variable};
 
@@ -26,7 +27,7 @@ pub enum ScriptResult {
         message: Vec<u8>,
         modifications: Vec<ScriptModification>,
     },
-    Reject(String),
+    Reject(CompactString),
     Discard,
 }
 
@@ -35,10 +36,10 @@ pub struct ScriptParameters<'x> {
     headers: Option<&'x [u8]>,
     variables: AHashMap<Cow<'static, str>, Variable>,
     envelope: Vec<(Envelope, Variable)>,
-    from_addr: String,
-    from_name: String,
-    return_path: String,
-    sign: Vec<String>,
+    from_addr: CompactString,
+    from_name: CompactString,
+    return_path: CompactString,
+    sign: Vec<CompactString>,
     access_token: Option<&'x AccessToken>,
     session_id: u64,
 }

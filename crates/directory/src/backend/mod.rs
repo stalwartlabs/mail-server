@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
+
 pub mod imap;
 pub mod internal;
 pub mod ldap;
@@ -15,7 +17,7 @@ pub mod sql;
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub enum RcptType {
     Mailbox,
-    List(Vec<String>),
+    List(Vec<CompactString>),
     #[default]
     Invalid,
 }

@@ -9,6 +9,7 @@ use common::{
     expr::{self, functions::ResolveVariable, *},
     listener::SessionStream,
 };
+use compact_str::ToCompactString;
 use smtp_proto::{
     request::receiver::{
         BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver,
@@ -34,14 +35,37 @@ impl<T: SessionStream> Session<T> {
                     match receiver.ingest(&mut iter, bytes) {
                         Ok(request) => match request {
                             Request::Rcpt { to } => {
-                                self.handle_rcpt_to(to).await?;
+                                self.handle_rcpt_to(RcptTo {
+                                    address: to.address.into(),
+                                    orcpt: to.orcpt.map(Into::into),
+                                    rrvs: to.rrvs,
+                                    flags: to.flags,
+                                })
+                                .await?;
                             }
                             Request::Mail { from } => {
-                                self.handle_mail_from(from).await?;
+                                self.handle_mail_from(MailFrom {
+                                    address: from.address.into(),
+                                    flags: from.flags,
+                                    size: from.size,
+                                    trans_id: from.trans_id.map(Into::into),
+                                    by: from.by,
+                                    env_id: from.env_id.map(Into::into),
+                                    solicit: from.solicit.map(Into::into),
+                                    mtrk: from.mtrk.map(|m| Mtrk {
+                                        certifier: m.certifier.into(),
+                                        timeout: m.timeout,
+                                    }),
+                                    auth: from.auth.map(Into::into),
+                                    hold_for: from.hold_for,
+                                    hold_until: from.hold_until,
+                                    mt_priority: from.mt_priority,
+                                })
+                                .await?;
                             }
                             Request::Ehlo { host } => {
                                 if self.instance.protocol == ServerProtocol::Smtp {
-                                    self.handle_ehlo(host, true).await?;
+                                    self.handle_ehlo(host.into(), true).await?;
                                 } else {
                                     trc::event!(
                                         Smtp(SmtpEvent::LhloExpected),
@@ -196,7 +220,7 @@ impl<T: SessionStream> Session<T> {
                             }
                             Request::Helo { host } => {
                                 if self.instance.protocol == ServerProtocol::Smtp {
-                                    self.handle_ehlo(host, false).await?;
+                                    self.handle_ehlo(host.into(), false).await?;
                                 } else {
                                     trc::event!(
                                         Smtp(SmtpEvent::LhloExpected),
@@ -209,7 +233,7 @@ impl<T: SessionStream> Session<T> {
                             }
                             Request::Lhlo { host } => {
                                 if self.instance.protocol == ServerProtocol::Lmtp {
-                                    self.handle_ehlo(host, true).await?;
+                                    self.handle_ehlo(host.into(), true).await?;
                                 } else {
                                     trc::event!(
                                         Smtp(SmtpEvent::EhloExpected),
@@ -552,7 +576,7 @@ impl<T: SessionStream> ResolveVariable for Session<T> {
                 .data
                 .rcpt_to
                 .iter()
-                .map(|r| Variable::String(r.address_lcase.as_str().into()))
+                .map(|r| Variable::from(r.address_lcase.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_SENDER => self
@@ -577,7 +601,7 @@ impl<T: SessionStream> ResolveVariable for Session<T> {
             V_LOCAL_IP => self.data.local_ip_str.as_str().into(),
             V_LOCAL_PORT => self.data.local_port.into(),
             V_TLS => self.stream.is_tls().into(),
-            V_PRIORITY => self.data.priority.to_string().into(),
+            V_PRIORITY => self.data.priority.to_compact_string().into(),
             V_PROTOCOL => self.instance.protocol.as_str().into(),
             V_ASN => self
                 .data

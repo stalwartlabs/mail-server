@@ -7,10 +7,8 @@
 use std::future::Future;
 
 use common::{Server, auth::AccessToken};
-use directory::{
-    Permission, Type,
-    backend::internal::{PrincipalField, manage::ManageDirectory},
-};
+use compact_str::CompactString;
+use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
 use hyper::Method;
 use mail_auth::report::{
     Feedback,
@@ -54,7 +52,7 @@ impl ManageReports for Server {
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Limit to tenant domains
-        let mut tenant_domains: Option<Vec<String>> = None;
+        let mut tenant_domains: Option<Vec<CompactString>> = None;
         #[cfg(feature = "enterprise")]
         if self.core.is_enterprise_edition() {
             if let Some(tenant) = access_token.tenant {
@@ -62,20 +60,13 @@ impl ManageReports for Server {
                     .core
                     .storage
                     .data
-                    .list_principals(
-                        None,
-                        tenant.id.into(),
-                        &[Type::Domain],
-                        &[PrincipalField::Name],
-                        0,
-                        0,
-                    )
+                    .list_principals(None, tenant.id.into(), &[Type::Domain], false, 0, 0)
                     .await
                     .map(|principals| {
                         principals
                             .items
                             .into_iter()
-                            .filter_map(|mut p| p.take_str(PrincipalField::Name))
+                            .map(|p| p.name)
                             .collect::<Vec<_>>()
                     })
                     .caused_by(trc::location!())?
@@ -306,7 +297,7 @@ async fn fetch_incoming_reports(
     server: &Server,
     class: &str,
     params: &UrlParams<'_>,
-    tenant_domains: &Option<Vec<String>>,
+    tenant_domains: &Option<Vec<CompactString>>,
 ) -> trc::Result<IncomingReports> {
     let filter = params.get("text");
     let page: usize = params.parse::<usize>("page").unwrap_or_default();

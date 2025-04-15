@@ -67,10 +67,10 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                                         }
                                     }
                                     (Key::RemoteIp, Value::Ipv4(ip)) => {
-                                        values.insert(ip.to_string());
+                                        values.insert(ip.to_string().into());
                                     }
                                     (Key::RemoteIp, Value::Ipv6(ip)) => {
-                                        values.insert(ip.to_string());
+                                        values.insert(ip.to_string().into());
                                     }
 
                                     _ => {}
@@ -112,7 +112,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                                 batch.set(
                                     ValueClass::Telemetry(TelemetryClass::Index {
                                         span_id,
-                                        value: value.into_bytes(),
+                                        value: value.as_bytes().to_vec(),
                                     }),
                                     vec![],
                                 );

@@ -75,7 +75,7 @@ async fn address_rewrite() {
 
     // Init session
     let mut session = Session::test(TestSMTP::from_core(core).server);
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;
 

@@ -7,6 +7,7 @@
 use crate::queue::DomainPart;
 use common::ipc::QueueEvent;
 use common::{KV_LOCK_QUEUE_MESSAGE, Server};
+use compact_str::CompactString;
 use std::borrow::Cow;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
@@ -29,9 +30,9 @@ pub const QUEUE_REFRESH: u64 = 300;
 pub trait SmtpSpool: Sync + Send {
     fn new_message(
         &self,
-        return_path: impl Into<String>,
-        return_path_lcase: impl Into<String>,
-        return_path_domain: impl Into<String>,
+        return_path: impl Into<CompactString>,
+        return_path_lcase: impl Into<CompactString>,
+        return_path_domain: impl Into<CompactString>,
         span_id: u64,
     ) -> Message;
 
@@ -52,9 +53,9 @@ pub trait SmtpSpool: Sync + Send {
 impl SmtpSpool for Server {
     fn new_message(
         &self,
-        return_path: impl Into<String>,
-        return_path_lcase: impl Into<String>,
-        return_path_domain: impl Into<String>,
+        return_path: impl Into<CompactString>,
+        return_path_lcase: impl Into<CompactString>,
+        return_path_domain: impl Into<CompactString>,
         span_id: u64,
     ) -> Message {
         let created = SystemTime::now()
@@ -254,9 +255,9 @@ impl Message {
             SpanId = session_id,
             QueueId = self.queue_id,
             From = if !self.return_path.is_empty() {
-                trc::Value::String(self.return_path.to_string())
+                trc::Value::String(self.return_path.as_str().into())
             } else {
-                trc::Value::Static("<>")
+                trc::Value::String("<>".into())
             },
             To = self
                 .recipients
@@ -358,9 +359,9 @@ impl Message {
 
     pub async fn add_recipient_parts(
         &mut self,
-        rcpt: impl Into<String>,
-        rcpt_lcase: impl Into<String>,
-        rcpt_domain: impl Into<String>,
+        rcpt: impl Into<CompactString>,
+        rcpt_lcase: impl Into<CompactString>,
+        rcpt_domain: impl Into<CompactString>,
         server: &Server,
     ) {
         let rcpt_domain = rcpt_domain.into();
@@ -404,7 +405,7 @@ impl Message {
         });
     }
 
-    pub async fn add_recipient(&mut self, rcpt: impl Into<String>, server: &Server) {
+    pub async fn add_recipient(&mut self, rcpt: impl Into<CompactString>, server: &Server) {
         let rcpt = rcpt.into();
         let rcpt_lcase = rcpt.to_lowercase();
         let rcpt_domain = rcpt_lcase.domain_part().to_string();
@@ -513,24 +514,24 @@ impl Message {
         }
     }
 
-    pub fn has_domain(&self, domains: &[String]) -> bool {
+    pub fn has_domain(&self, domains: &[CompactString]) -> bool {
         self.domains.iter().any(|d| domains.contains(&d.domain))
             || self
                 .return_path
                 .rsplit_once('@')
-                .is_some_and(|(_, domain)| domains.contains(&domain.to_string()))
+                .is_some_and(|(_, domain)| domains.iter().any(|dd| dd == domain))
     }
 }
 
 impl ArchivedMessage {
-    pub fn has_domain(&self, domains: &[String]) -> bool {
+    pub fn has_domain(&self, domains: &[CompactString]) -> bool {
         self.domains
             .iter()
             .any(|d| domains.iter().any(|dd| dd == d.domain.as_str()))
             || self
                 .return_path
                 .rsplit_once('@')
-                .is_some_and(|(_, domain)| domains.contains(&domain.to_string()))
+                .is_some_and(|(_, domain)| domains.iter().any(|dd| dd == domain))
     }
 
     pub fn next_delivery_event(&self) -> u64 {

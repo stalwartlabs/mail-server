@@ -302,12 +302,12 @@ impl SerializeResponse for trc::Error {
 
 impl From<ResponseCode> for trc::Value {
     fn from(value: ResponseCode) -> Self {
-        trc::Value::Static(value.as_str())
+        trc::Value::String(CompactString::const_new(value.as_str()))
     }
 }
 
 impl From<ResponseType> for trc::Value {
     fn from(value: ResponseType) -> Self {
-        trc::Value::Static(value.as_str())
+        trc::Value::String(CompactString::const_new(value.as_str()))
     }
 }

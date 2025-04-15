@@ -7,6 +7,7 @@
 use std::{sync::Arc, time::Instant};
 
 use ahash::RandomState;
+use compact_str::CompactString;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use mail_auth::{
     dmarc::Dmarc,
@@ -69,8 +70,8 @@ pub enum StateEvent {
 pub enum UpdateSubscription {
     Unverified {
         id: u32,
-        url: String,
-        code: String,
+        url: CompactString,
+        code: CompactString,
         keys: Option<EncryptionKeys>,
     },
     Verified(PushSubscription),
@@ -79,7 +80,7 @@ pub enum UpdateSubscription {
 #[derive(Debug)]
 pub struct PushSubscription {
     pub id: u32,
-    pub url: String,
+    pub url: CompactString,
     pub expires: u64,
     pub types: Bitmap<DataType>,
     pub keys: Option<EncryptionKeys>,

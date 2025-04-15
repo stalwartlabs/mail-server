@@ -38,6 +38,7 @@ downcast-rs = "2.0.1"
 fast-float = "0.2.0"
 erased-serde = "0.4.5"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
+compact_str = "0.9.0"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

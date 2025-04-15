@@ -5,6 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
+use compact_str::format_compact;
 use dav_proto::{
     RequestHeaders,
     schema::{
@@ -13,7 +14,7 @@ use dav_proto::{
         response::{Ace, BaseCondition, GrantDeny, Href, MultiStatus, Principal},
     },
 };
-use directory::{QueryBy, Type, backend::internal::PrincipalField};
+use directory::{QueryBy, Type, backend::internal::manage::ManageDirectory};
 use groupware::{
     calendar::Calendar, contact::AddressBook, file::FileNode, hierarchy::DavHierarchy,
 };
@@ -488,12 +489,11 @@ impl DavAclHandler for Server {
                 }
 
                 let grant_account_name = self
-                    .directory()
-                    .query(QueryBy::Id(grant_account_id), false)
+                    .store()
+                    .get_principal_name(grant_account_id)
                     .await
                     .caused_by(trc::location!())?
-                    .and_then(|mut p| p.take_str(PrincipalField::Name))
-                    .unwrap_or_else(|| format!("_{grant_account_id}"));
+                    .unwrap_or_else(|| format_compact!("_{grant_account_id}"));
 
                 aces.push(Ace::new(
                     Principal::Href(Href(format!(

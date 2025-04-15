@@ -13,6 +13,7 @@ use common::{
     },
     listener::SessionStream,
 };
+use compact_str::CompactString;
 use directory::Permission;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
@@ -224,7 +225,7 @@ impl<T: SessionStream> Session<T> {
         self.data.authenticated_as.is_some()
     }
 
-    pub fn authenticated_emails(&self) -> &[String] {
+    pub fn authenticated_emails(&self) -> &[CompactString] {
         self.data
             .authenticated_as
             .as_ref()

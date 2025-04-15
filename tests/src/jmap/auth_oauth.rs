@@ -14,6 +14,7 @@ use common::auth::oauth::{
     oidc::StandardClaims,
     registration::{ClientRegistrationRequest, ClientRegistrationResponse},
 };
+use compact_str::ToCompactString;
 use http::auth::oauth::{
     DeviceAuthResponse, ErrorType, OAuthCodeRequest, TokenResponse, auth::OAuthMetadata,
     openid::OpenIdMetadata,
@@ -81,7 +82,7 @@ pub async fn test(params: &mut JMAPTest) {
         &metadata.registration_endpoint,
         None,
         &ClientRegistrationRequest {
-            redirect_uris: vec!["https://localhost".to_string()],
+            redirect_uris: vec!["https://localhost".to_compact_string()],
             ..Default::default()
         },
     )
@@ -164,18 +165,18 @@ pub async fn test(params: &mut JMAPTest) {
     let claims = id_token.payload().unwrap();
     let registered_claims = &claims.registered;
     let private_claims = &claims.private;
-    assert_eq!(registered_claims.issuer, Some(oidc_metadata.issuer));
+    assert_eq!(registered_claims.issuer, Some(oidc_metadata.issuer.into()));
     assert_eq!(registered_claims.subject, Some(john_int_id.to_string()));
     assert_eq!(
         registered_claims.audience,
         Some(SingleOrMultiple::Single(client_id.to_string()))
     );
-    assert_eq!(private_claims.nonce, Some("abc1234".to_string()));
+    assert_eq!(private_claims.nonce, Some("abc1234".into()));
     assert_eq!(
         private_claims.preferred_username,
-        Some("jdoe@example.com".to_string())
+        Some("jdoe@example.com".into())
     );
-    assert_eq!(private_claims.email, Some("jdoe@example.com".to_string()));
+    assert_eq!(private_claims.email, Some("jdoe@example.com".into()));
 
     // Introspect token
     let access_introspect: OAuthIntrospect = post_with_auth::<OAuthIntrospect>(

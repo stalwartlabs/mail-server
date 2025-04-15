@@ -11,9 +11,10 @@ use common::{
     expr::{tokenizer::TokenMap, *},
 };
 
+use compact_str::{CompactString, ToCompactString};
 use directory::{
-    Principal, QueryBy, Type,
-    backend::internal::{PrincipalField, PrincipalValue, manage::ManageDirectory},
+    QueryBy, Type,
+    backend::internal::{PrincipalField, PrincipalSet, PrincipalValue, manage::ManageDirectory},
 };
 use mail_auth::MX;
 use store::Stores;
@@ -158,7 +159,7 @@ async fn lookup_sql() {
     for name in ["foobar.org", "foobar.net"] {
         internal_store
             .create_principal(
-                Principal::new(0, Type::Domain).with_field(PrincipalField::Name, name),
+                PrincipalSet::new(0, Type::Domain).with_field(PrincipalField::Name, name),
                 None,
                 None,
             )
@@ -169,12 +170,12 @@ async fn lookup_sql() {
     // Create lists
     internal_store
         .create_principal(
-            Principal::new(0, Type::List)
+            PrincipalSet::new(0, Type::List)
                 .with_field(PrincipalField::Name, "support@foobar.org")
                 .with_field(PrincipalField::Emails, "support@foobar.org")
                 .with_field(
                     PrincipalField::ExternalMembers,
-                    PrincipalValue::StringList(vec!["mike@foobar.net".to_string()]),
+                    PrincipalValue::StringList(vec!["mike@foobar.net".to_compact_string()]),
                 ),
             None,
             None,
@@ -183,15 +184,15 @@ async fn lookup_sql() {
         .unwrap();
     internal_store
         .create_principal(
-            Principal::new(0, Type::List)
+            PrincipalSet::new(0, Type::List)
                 .with_field(PrincipalField::Name, "sales@foobar.org")
                 .with_field(PrincipalField::Emails, "sales@foobar.org")
                 .with_field(
                     PrincipalField::ExternalMembers,
                     PrincipalValue::StringList(vec![
-                        "jane@foobar.org".to_string(),
-                        "john@foobar.org".to_string(),
-                        "bill@foobar.org".to_string(),
+                        "jane@foobar.org".to_compact_string(),
+                        "john@foobar.org".to_compact_string(),
+                        "bill@foobar.org".to_compact_string(),
                     ]),
                 ),
             None,
@@ -219,7 +220,7 @@ async fn lookup_sql() {
             Expression::try_parse(&mut config, ("test", test_name, "expr"), &token_map).unwrap();
         assert_eq!(
             test.server
-                .eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text", 0)
+                .eval_expr::<CompactString, _>(&e, &RecipientDomain::new("test.org"), "text", 0)
                 .await
                 .unwrap(),
             config.value(("test", test_name, "expect")).unwrap(),
@@ -236,7 +237,7 @@ async fn lookup_sql() {
         .ehlo("mx.foobar.org")
         .await
         .assert_contains("REQUIRETLS");
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session
         .ehlo("mx1.foobar.org")

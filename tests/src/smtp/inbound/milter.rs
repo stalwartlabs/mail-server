@@ -13,6 +13,7 @@ use common::{
     expr::if_block::IfBlock,
     manager::webadmin::Resource,
 };
+use compact_str::CompactString;
 use http_proto::{ToHttpResponse, request::fetch_body};
 use hyper::{body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
@@ -112,7 +113,7 @@ async fn milter_session() {
     let test = TestSMTP::from_core(core);
     let mut qr = test.queue_receiver;
     let mut session = Session::test(test.server);
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;
 
@@ -245,7 +246,7 @@ async fn mta_hook_session() {
     let test = TestSMTP::from_core(core);
     let mut qr = test.queue_receiver;
     let mut session = Session::test(test.server);
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;
 
@@ -380,8 +381,8 @@ fn milter_address_modifications() {
     assert!(
         data.apply_milter_modifications(
             vec![Modification::ChangeFrom {
-                sender: "<>".to_string(),
-                args: String::new()
+                sender: "<>".into(),
+                args: "".into(),
             }],
             &parsed_test_message
         )
@@ -396,8 +397,8 @@ fn milter_address_modifications() {
     assert!(
         data.apply_milter_modifications(
             vec![Modification::ChangeFrom {
-                sender: "john@example.org".to_string(),
-                args: "REQUIRETLS ENVID=abc123".to_string(), //"NOTIFY=SUCCESS,FAILURE ENVID=abc123\n".to_string()
+                sender: "john@example.org".into(),
+                args: "REQUIRETLS ENVID=abc123".into(), //"NOTIFY=SUCCESS,FAILURE ENVID=abc123\n".into()
             }],
             &parsed_test_message
         )
@@ -406,27 +407,27 @@ fn milter_address_modifications() {
     let addr = data.mail_from.as_ref().unwrap();
     assert_eq!(addr.address_lcase, "john@example.org");
     assert_ne!(addr.flags, 0);
-    assert_eq!(addr.dsn_info, Some("abc123".to_string()));
+    assert_eq!(addr.dsn_info, Some("abc123".into()));
 
     // Add recipients
     assert!(
         data.apply_milter_modifications(
             vec![
                 Modification::AddRcpt {
-                    recipient: "bill@example.org".to_string(),
-                    args: "".to_string(),
+                    recipient: "bill@example.org".into(),
+                    args: "".into(),
                 },
                 Modification::AddRcpt {
-                    recipient: "jane@foobar.org".to_string(),
-                    args: "NOTIFY=SUCCESS,FAILURE ORCPT=rfc822;Jane.Doe@Foobar.org".to_string(),
+                    recipient: "jane@foobar.org".into(),
+                    args: "NOTIFY=SUCCESS,FAILURE ORCPT=rfc822;Jane.Doe@Foobar.org".into(),
                 },
                 Modification::AddRcpt {
-                    recipient: "<bill@example.org>".to_string(),
-                    args: "".to_string(),
+                    recipient: "<bill@example.org>".into(),
+                    args: "".into(),
                 },
                 Modification::AddRcpt {
-                    recipient: "<>".to_string(),
-                    args: "".to_string(),
+                    recipient: "<>".into(),
+                    args: "".into(),
                 },
             ],
             &parsed_test_message
@@ -441,17 +442,17 @@ fn milter_address_modifications() {
     let addr = data.rcpt_to.last().unwrap();
     assert_eq!(addr.address_lcase, "jane@foobar.org");
     assert_ne!(addr.flags, 0);
-    assert_eq!(addr.dsn_info, Some("Jane.Doe@Foobar.org".to_string()));
+    assert_eq!(addr.dsn_info, Some("Jane.Doe@Foobar.org".into()));
 
     // Remove recipients
     assert!(
         data.apply_milter_modifications(
             vec![
                 Modification::DeleteRcpt {
-                    recipient: "bill@example.org".to_string(),
+                    recipient: "bill@example.org".into(),
                 },
                 Modification::DeleteRcpt {
-                    recipient: "<>".to_string(),
+                    recipient: "<>".into(),
                 },
             ],
             &parsed_test_message
@@ -462,7 +463,7 @@ fn milter_address_modifications() {
     let addr = data.rcpt_to.last().unwrap();
     assert_eq!(addr.address_lcase, "jane@foobar.org");
     assert_ne!(addr.flags, 0);
-    assert_eq!(addr.dsn_info, Some("Jane.Doe@Foobar.org".to_string()));
+    assert_eq!(addr.dsn_info, Some("Jane.Doe@Foobar.org".into()));
 }
 
 #[test]
@@ -552,9 +553,9 @@ async fn milter_client_test() {
     let mut client = MilterClient::connect(
         &Milter {
             enable: IfBlock::empty(""),
-            id: "test".to_string().into(),
+            id: Arc::new("test".into()),
             addrs: vec![SocketAddr::from(([127, 0, 0, 1], PORT))],
-            hostname: "localhost".to_string(),
+            hostname: "localhost".into(),
             port: PORT,
             timeout_connect: Duration::from_secs(10),
             timeout_command: Duration::from_secs(30),
@@ -727,7 +728,7 @@ async fn accept_milter(
                                 "conn_fail" => Action::ConnectionFailure,
                                 "reply_code" => Action::ReplyCode {
                                     code: [b'3', b'2', b'1'],
-                                    text: "test".to_string(),
+                                    text: "test".into(),
                                 },
                                 test_num => {
                                     modifications = tests[test_num.parse::<usize>().unwrap()]
@@ -867,8 +868,8 @@ fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Resp
             action: hooks::Action::Reject,
             response: SmtpResponse {
                 status: 451.into(),
-                enhanced_status: "4.3.5".to_string().into(),
-                message: "Unable to accept message at this time.".to_string().into(),
+                enhanced_status: Some("4.3.5".into()),
+                message: Some("Unable to accept message at this time.".into()),
                 disconnect: false,
             }
             .into(),
@@ -878,8 +879,8 @@ fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Resp
             action: hooks::Action::Reject,
             response: SmtpResponse {
                 status: 421.into(),
-                enhanced_status: "4.3.0".to_string().into(),
-                message: "Server shutting down".to_string().into(),
+                enhanced_status: Some("4.3.0".into()),
+                message: Some("Server shutting down".into()),
                 disconnect: false,
             }
             .into(),
@@ -898,8 +899,8 @@ fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Resp
             action: hooks::Action::Reject,
             response: SmtpResponse {
                 status: 321.into(),
-                enhanced_status: "3.1.1".to_string().into(),
-                message: "Test".to_string().into(),
+                enhanced_status: Some("3.1.1".into()),
+                message: Some("Test".into()),
                 disconnect: false,
             }
             .into(),
@@ -918,7 +919,7 @@ fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Resp
                             .split_whitespace()
                             .map(|arg| {
                                 let (key, value) = arg.split_once('=').unwrap();
-                                (key.to_string(), Some(value.to_string()))
+                                (key.into(), Some(value.into()))
                             })
                             .collect(),
                     },
@@ -929,7 +930,7 @@ fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Resp
                                 .split_whitespace()
                                 .map(|arg| {
                                     let (key, value) = arg.split_once('=').unwrap();
-                                    (key.to_string(), Some(value.to_string()))
+                                    (key.into(), Some(value.into()))
                                 })
                                 .collect(),
                         }
@@ -940,7 +941,7 @@ fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Resp
                         }
                     }
                     Modification::ReplaceBody { value } => hooks::Modification::ReplaceContents {
-                        value: String::from_utf8(value.clone()).unwrap(),
+                        value: CompactString::from_utf8(value.clone()).unwrap(),
                     },
                     Modification::AddHeader { name, value } => hooks::Modification::AddHeader {
                         name: name.clone(),
@@ -961,8 +962,8 @@ fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Resp
                         }
                     }
                     Modification::Quarantine { reason } => hooks::Modification::AddHeader {
-                        name: "X-Quarantine".to_string(),
-                        value: reason.to_string(),
+                        name: "X-Quarantine".into(),
+                        value: reason.clone(),
                     },
                 })
                 .collect(),

@@ -10,24 +10,25 @@ use common::{
     Server,
     auth::{AccessToken, oauth::oidc::Userinfo},
 };
+use compact_str::{CompactString, ToCompactString, format_compact};
 use serde::{Deserialize, Serialize};
 
 use http_proto::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenIdMetadata {
-    pub issuer: String,
-    pub authorization_endpoint: String,
-    pub token_endpoint: String,
-    pub userinfo_endpoint: String,
-    pub jwks_uri: String,
-    pub registration_endpoint: String,
-    pub scopes_supported: Vec<String>,
-    pub response_types_supported: Vec<String>,
-    pub subject_types_supported: Vec<String>,
-    pub grant_types_supported: Vec<String>,
-    pub id_token_signing_alg_values_supported: Vec<String>,
-    pub claims_supported: Vec<String>,
+    pub issuer: CompactString,
+    pub authorization_endpoint: CompactString,
+    pub token_endpoint: CompactString,
+    pub userinfo_endpoint: CompactString,
+    pub jwks_uri: CompactString,
+    pub registration_endpoint: CompactString,
+    pub scopes_supported: Vec<CompactString>,
+    pub response_types_supported: Vec<CompactString>,
+    pub subject_types_supported: Vec<CompactString>,
+    pub grant_types_supported: Vec<CompactString>,
+    pub id_token_signing_alg_values_supported: Vec<CompactString>,
+    pub claims_supported: Vec<CompactString>,
 }
 
 pub trait OpenIdHandler: Sync + Send {
@@ -49,7 +50,7 @@ impl OpenIdHandler for Server {
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         Ok(JsonResponse::new(Userinfo {
-            sub: Some(access_token.primary_id.to_string()),
+            sub: Some(access_token.primary_id.to_compact_string()),
             name: access_token.description.clone(),
             preferred_username: Some(access_token.name.clone()),
             email: access_token.emails.first().cloned(),
@@ -70,42 +71,42 @@ impl OpenIdHandler for Server {
             .await;
 
         Ok(JsonResponse::new(OpenIdMetadata {
-            authorization_endpoint: format!("{base_url}/authorize/code",),
-            token_endpoint: format!("{base_url}/auth/token"),
-            userinfo_endpoint: format!("{base_url}/auth/userinfo"),
-            jwks_uri: format!("{base_url}/auth/jwks.json"),
-            registration_endpoint: format!("{base_url}/auth/register"),
+            authorization_endpoint: format_compact!("{base_url}/authorize/code",),
+            token_endpoint: format_compact!("{base_url}/auth/token"),
+            userinfo_endpoint: format_compact!("{base_url}/auth/userinfo"),
+            jwks_uri: format_compact!("{base_url}/auth/jwks.json"),
+            registration_endpoint: format_compact!("{base_url}/auth/register"),
             response_types_supported: vec![
-                "code".to_string(),
-                "id_token".to_string(),
-                "id_token token".to_string(),
+                "code".into(),
+                "id_token".into(),
+                "id_token token".into(),
             ],
             grant_types_supported: vec![
-                "authorization_code".to_string(),
-                "implicit".to_string(),
-                "urn:ietf:params:oauth:grant-type:device_code".to_string(),
+                "authorization_code".into(),
+                "implicit".into(),
+                "urn:ietf:params:oauth:grant-type:device_code".into(),
             ],
-            scopes_supported: vec!["openid".to_string(), "offline_access".to_string()],
-            subject_types_supported: vec!["public".to_string()],
+            scopes_supported: vec!["openid".into(), "offline_access".into()],
+            subject_types_supported: vec!["public".into()],
             id_token_signing_alg_values_supported: vec![
-                "RS256".to_string(),
-                "RS384".to_string(),
-                "RS512".to_string(),
-                "ES256".to_string(),
-                "ES384".to_string(),
-                "PS256".to_string(),
-                "PS384".to_string(),
-                "PS512".to_string(),
-                "HS256".to_string(),
-                "HS384".to_string(),
-                "HS512".to_string(),
+                "RS256".into(),
+                "RS384".into(),
+                "RS512".into(),
+                "ES256".into(),
+                "ES384".into(),
+                "PS256".into(),
+                "PS384".into(),
+                "PS512".into(),
+                "HS256".into(),
+                "HS384".into(),
+                "HS512".into(),
             ],
             claims_supported: vec![
-                "sub".to_string(),
-                "name".to_string(),
-                "preferred_username".to_string(),
-                "email".to_string(),
-                "email_verified".to_string(),
+                "sub".into(),
+                "name".into(),
+                "preferred_username".into(),
+                "email".into(),
+                "email_verified".into(),
             ],
             issuer: base_url,
         })

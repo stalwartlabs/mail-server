@@ -7,8 +7,9 @@
 use std::sync::Arc;
 
 use common::KV_SIEVE_ID;
+use compact_str::CompactString;
 use sieve::Sieve;
-use store::{SERIALIZE_OBJ_09_V1, SerializedVersion, blake3};
+use store::{SERIALIZE_SIEVE_V1, SerializedVersion, blake3};
 use utils::BlobHash;
 
 pub mod activate;
@@ -20,7 +21,7 @@ pub mod ingest;
 pub struct ActiveScript {
     pub document_id: u32,
     pub hash: u32,
-    pub script_name: String,
+    pub script_name: CompactString,
     pub script: Arc<Sieve>,
 }
 
@@ -29,7 +30,7 @@ pub struct ActiveScript {
 )]
 #[rkyv(derive(Debug))]
 pub struct SieveScript {
-    pub name: String,
+    pub name: CompactString,
     pub is_active: bool,
     pub blob_hash: BlobHash,
     pub size: u32,
@@ -38,7 +39,7 @@ pub struct SieveScript {
 
 impl SerializedVersion for SieveScript {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_09_V1
+        SERIALIZE_SIEVE_V1
     }
 }
 
@@ -49,13 +50,13 @@ impl SerializedVersion for SieveScript {
 pub struct VacationResponse {
     pub from_date: Option<u64>,
     pub to_date: Option<u64>,
-    pub subject: Option<String>,
-    pub text_body: Option<String>,
-    pub html_body: Option<String>,
+    pub subject: Option<CompactString>,
+    pub text_body: Option<CompactString>,
+    pub html_body: Option<CompactString>,
 }
 
 impl SieveScript {
-    pub fn new(name: impl Into<String>, blob_hash: BlobHash) -> Self {
+    pub fn new(name: impl Into<CompactString>, blob_hash: BlobHash) -> Self {
         SieveScript {
             name: name.into(),
             is_active: false,
@@ -65,7 +66,7 @@ impl SieveScript {
         }
     }
 
-    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+    pub fn with_name(mut self, name: impl Into<CompactString>) -> Self {
         self.name = name.into();
         self
     }

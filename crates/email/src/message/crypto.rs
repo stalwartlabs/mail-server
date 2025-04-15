@@ -26,7 +26,7 @@ use rasn_cms::{
 };
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs1::DecodeRsaPublicKey};
 use sequoia_openpgp as openpgp;
-use store::{Deserialize, SERIALIZE_OBJ_05_V1, SerializedVersion, write::Archive};
+use store::{Deserialize, SERIALIZE_CRYPTO_V1, SerializedVersion, write::Archive};
 
 const P: openpgp::policy::StandardPolicy<'static> = openpgp::policy::StandardPolicy::new();
 
@@ -86,7 +86,7 @@ pub struct EncryptionParams {
 
 impl SerializedVersion for EncryptionParams {
     fn serialize_version() -> u8 {
-        SERIALIZE_OBJ_05_V1
+        SERIALIZE_CRYPTO_V1
     }
 }
 

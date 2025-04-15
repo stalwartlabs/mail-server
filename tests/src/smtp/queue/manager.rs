@@ -134,9 +134,9 @@ pub fn new_message(queue_id: u64) -> Message {
         queue_id,
         span_id: 0,
         created: 0,
-        return_path: "sender@foobar.org".to_string(),
-        return_path_lcase: "".to_string(),
-        return_path_domain: "foobar.org".to_string(),
+        return_path: "sender@foobar.org".into(),
+        return_path_lcase: "".into(),
+        return_path_domain: "foobar.org".into(),
         recipients: vec![],
         domains: vec![],
         flags: 0,
@@ -149,7 +149,7 @@ pub fn new_message(queue_id: u64) -> Message {
 
 fn domain(domain: &str, retry: u64, notify: u64, expires: u64) -> Domain {
     Domain {
-        domain: domain.to_string(),
+        domain: domain.into(),
         retry: Schedule::later(Duration::from_secs(retry)),
         notify: Schedule::later(Duration::from_secs(notify)),
         expires: now() + expires,

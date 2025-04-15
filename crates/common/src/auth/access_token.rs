@@ -8,7 +8,6 @@ use ahash::AHashSet;
 use directory::{
     Permission, Principal, QueryBy, Type,
     backend::internal::{
-        PrincipalField,
         lookup::DirectoryStore,
         manage::{ChangedPrincipals, ManageDirectory},
     },
@@ -49,26 +48,16 @@ impl Server {
         let mut role_permissions = RolePermissions::default();
 
         // Apply role permissions
-        for role_id in principal.iter_int(PrincipalField::Roles) {
-            role_permissions.union(self.get_role_permissions(role_id as u32).await?.as_ref());
+        for role_id in principal.roles() {
+            role_permissions.union(self.get_role_permissions(*role_id).await?.as_ref());
         }
 
         // Add principal permissions
-        for (permissions, field) in [
-            (
-                &mut role_permissions.enabled,
-                PrincipalField::EnabledPermissions,
-            ),
-            (
-                &mut role_permissions.disabled,
-                PrincipalField::DisabledPermissions,
-            ),
-        ] {
-            for permission in principal.iter_int(field) {
-                let permission = permission as usize;
-                if permission < Permission::COUNT {
-                    permissions.set(permission);
-                }
+        for permission in principal.permissions() {
+            if permission.grant {
+                role_permissions.enabled.set(permission.permission.id());
+            } else {
+                role_permissions.disabled.set(permission.permission.id());
             }
         }
 
@@ -82,7 +71,7 @@ impl Server {
         let mut tenant = None;
         #[cfg(feature = "enterprise")]
         if self.is_enterprise_edition() {
-            if let Some(tenant_id) = principal.get_int(PrincipalField::Tenant).map(|v| v as u32) {
+            if let Some(tenant_id) = principal.tenant {
                 // Limit tenant permissions
                 permissions.intersection(&self.get_role_permissions(tenant_id).await?.enabled);
 
@@ -101,7 +90,7 @@ impl Server {
                                 .id(tenant_id)
                                 .caused_by(trc::location!())
                         })?
-                        .get_int(PrincipalField::Quota)
+                        .quota
                         .unwrap_or_default(),
                 });
             }
@@ -113,17 +102,15 @@ impl Server {
         let mut access_token = AccessToken {
             primary_id: principal.id(),
             member_of: principal
-                .iter_int(PrincipalField::MemberOf)
-                .map(|v| v as u32)
-                .collect(),
+                .member_of_mut()
+                .map(std::mem::take)
+                .unwrap_or_default(),
             access_to: VecMap::new(),
             tenant,
-            name: principal.take_str(PrincipalField::Name).unwrap_or_default(),
-            description: principal.take_str(PrincipalField::Description),
-            emails: principal
-                .take_str_array(PrincipalField::Emails)
-                .unwrap_or_default(),
-            quota: principal.quota(),
+            name: principal.name,
+            description: principal.description,
+            emails: principal.emails,
+            quota: principal.quota.unwrap_or_default(),
             permissions,
             concurrent_imap_requests: self.core.imap.rate_concurrent.map(ConcurrencyLimiter::new),
             concurrent_http_requests: self
@@ -280,7 +267,7 @@ impl Server {
                             None,
                             (*id).into(),
                             &[Type::Individual, Type::Group, Type::Role, Type::ApiKey],
-                            &[PrincipalField::Name],
+                            false,
                             0,
                             0,
                         )

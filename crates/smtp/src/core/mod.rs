@@ -17,6 +17,7 @@ use common::{
     config::smtp::auth::VerifyStrategy,
     listener::{ServerInstance, asn::AsnGeoLookupResult},
 };
+use compact_str::{CompactString, ToCompactString};
 use directory::Directory;
 use mail_auth::{IprevOutput, SpfOutput};
 use smtp_proto::request::receiver::{
@@ -55,7 +56,7 @@ pub enum State {
 }
 
 pub struct Session<T: AsyncWrite + AsyncRead> {
-    pub hostname: String,
+    pub hostname: CompactString,
     pub state: State,
     pub instance: Arc<ServerInstance>,
     pub server: Server,
@@ -67,13 +68,13 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
 pub struct SessionData {
     pub session_id: u64,
     pub local_ip: IpAddr,
-    pub local_ip_str: String,
+    pub local_ip_str: CompactString,
     pub local_port: u16,
     pub remote_ip: IpAddr,
-    pub remote_ip_str: String,
+    pub remote_ip_str: CompactString,
     pub remote_port: u16,
     pub asn_geo_data: AsnGeoLookupResult,
-    pub helo_domain: String,
+    pub helo_domain: CompactString,
 
     pub mail_from: Option<SessionAddress>,
     pub rcpt_to: Vec<SessionAddress>,
@@ -100,11 +101,11 @@ pub struct SessionData {
 
 #[derive(Clone, Debug)]
 pub struct SessionAddress {
-    pub address: String,
-    pub address_lcase: String,
-    pub domain: String,
+    pub address: CompactString,
+    pub address_lcase: CompactString,
+    pub domain: CompactString,
     pub flags: u64,
-    pub dsn_info: Option<String>,
+    pub dsn_info: Option<CompactString>,
 }
 
 #[derive(Debug, Default)]
@@ -151,11 +152,11 @@ impl SessionData {
             local_ip,
             local_port,
             remote_ip,
-            local_ip_str: local_ip.to_string(),
-            remote_ip_str: remote_ip.to_string(),
+            local_ip_str: local_ip.to_compact_string(),
+            remote_ip_str: remote_ip.to_compact_string(),
             remote_port,
             asn_geo_data,
-            helo_domain: String::new(),
+            helo_domain: CompactString::new(""),
             mail_from: None,
             rcpt_to: Vec::new(),
             authenticated_as: None,
@@ -219,7 +220,7 @@ impl Session<common::listener::stream::NullIo> {
         data: SessionData,
     ) -> Self {
         Session {
-            hostname: "localhost".to_string(),
+            hostname: "localhost".into(),
             state: State::None,
             instance,
             server,
@@ -247,7 +248,7 @@ impl Session<common::listener::stream::NullIo> {
         }
     }
 
-    pub fn has_failed(&mut self) -> Option<String> {
+    pub fn has_failed(&mut self) -> Option<CompactString> {
         if self.stream.tx_buf.first().is_none_or(|&c| c == b'2') {
             self.stream.tx_buf.clear();
             None
@@ -255,7 +256,7 @@ impl Session<common::listener::stream::NullIo> {
             let response = std::str::from_utf8(&self.stream.tx_buf)
                 .unwrap()
                 .trim()
-                .to_string();
+                .into();
             self.stream.tx_buf.clear();
             Some(response)
         }
@@ -273,8 +274,8 @@ impl SessionData {
         SessionData {
             local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
             remote_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
-            local_ip_str: "127.0.0.1".to_string(),
-            remote_ip_str: "127.0.0.1".to_string(),
+            local_ip_str: "127.0.0.1".into(),
+            remote_ip_str: "127.0.0.1".into(),
             remote_port: 0,
             local_port: 0,
             session_id,
@@ -308,10 +309,10 @@ impl Default for SessionData {
 }
 
 impl SessionAddress {
-    pub fn new(address: String) -> Self {
+    pub fn new(address: CompactString) -> Self {
         let address_lcase = address.to_lowercase();
         SessionAddress {
-            domain: address_lcase.domain_part().to_string(),
+            domain: address_lcase.domain_part().into(),
             address_lcase,
             address,
             flags: 0,

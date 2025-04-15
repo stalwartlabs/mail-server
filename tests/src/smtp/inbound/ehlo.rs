@@ -57,7 +57,7 @@ async fn ehlo() {
 
     // Reject non-FQDN domains
     let mut session = Session::test(server);
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.stream.tls = false;
     session.eval_session_params().await;
@@ -79,8 +79,8 @@ async fn ehlo() {
     );
 
     // Test SPF strict mode
-    session.data.helo_domain = String::new();
-    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.helo_domain = "".into();
+    session.data.remote_ip_str = "10.0.0.2".into();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.stream.tls = true;
     session.eval_session_params().await;

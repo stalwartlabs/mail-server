@@ -58,11 +58,11 @@ impl Message {
             match result {
                 LocalDeliveryStatus::Success => {
                     rcpt.status = Status::Completed(HostResponse {
-                        hostname: "localhost".to_string(),
+                        hostname: "localhost".into(),
                         response: Response {
                             code: 250,
                             esc: [2, 1, 5],
-                            message: "OK".to_string(),
+                            message: "OK".into(),
                         },
                     });
                     total_completed += 1;
@@ -70,13 +70,13 @@ impl Message {
                 LocalDeliveryStatus::TemporaryFailure { reason } => {
                     rcpt.status = Status::TemporaryFailure(HostResponse {
                         hostname: ErrorDetails {
-                            entity: "localhost".to_string(),
-                            details: format!("RCPT TO:<{}>", rcpt.address),
+                            entity: "localhost".into(),
+                            details: format!("RCPT TO:<{}>", rcpt.address).into(),
                         },
                         response: Response {
                             code: 451,
                             esc: [4, 3, 0],
-                            message: reason.into_owned(),
+                            message: reason.into(),
                         },
                     });
                 }
@@ -84,13 +84,13 @@ impl Message {
                     total_completed += 1;
                     rcpt.status = Status::PermanentFailure(HostResponse {
                         hostname: ErrorDetails {
-                            entity: "localhost".to_string(),
-                            details: format!("RCPT TO:<{}>", rcpt.address),
+                            entity: "localhost".into(),
+                            details: format!("RCPT TO:<{}>", rcpt.address).into(),
                         },
                         response: Response {
                             code: 550,
                             esc: code,
-                            message: reason.into_owned(),
+                            message: reason.into(),
                         },
                     });
                 }

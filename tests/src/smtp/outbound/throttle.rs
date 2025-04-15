@@ -67,13 +67,13 @@ async fn throttle_outbound() {
 
     // Build test message
     let mut test_message = new_message(0);
-    test_message.return_path_domain = "foobar.org".to_string();
+    test_message.return_path_domain = "foobar.org".into();
 
     let mut local = TestSMTP::new("smtp_throttle_outbound", CONFIG).await;
 
     let core = local.build_smtp();
     let mut session = local.new_session();
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
@@ -102,7 +102,7 @@ async fn throttle_outbound() {
     local.queue_receiver.read_event().await.assert_on_hold();*/
 
     // Expect rate limit throttle for sender domain 'foobar.net'
-    test_message.return_path_domain = "foobar.net".to_string();
+    test_message.return_path_domain = "foobar.net".into();
     for t in &throttle.sender {
         core.is_allowed(t, &QueueEnvelope::test(&test_message, 0, ""), 0)
             .await
@@ -123,9 +123,9 @@ async fn throttle_outbound() {
     assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for recipient domain 'example.org'
-    test_message.return_path_domain = "test.net".to_string();
+    test_message.return_path_domain = "test.net".into();
     test_message.domains.push(Domain {
-        domain: "example.org".to_string(),
+        domain: "example.org".into(),
         retry: Schedule::now(),
         notify: Schedule::now(),
         expires: 0,
@@ -155,7 +155,7 @@ async fn throttle_outbound() {
 
     // Expect rate limit throttle for recipient domain 'example.net'
     test_message.domains.push(Domain {
-        domain: "example.net".to_string(),
+        domain: "example.net".into(),
         retry: Schedule::now(),
         notify: Schedule::now(),
         expires: 0,
@@ -189,7 +189,7 @@ async fn throttle_outbound() {
     core.mx_add(
         "test.org",
         vec![MX {
-            exchanges: vec!["mx.test.org".to_string()],
+            exchanges: vec!["mx.test.org".into()],
             preference: 10,
         }],
         Instant::now() + Duration::from_secs(10),
@@ -200,7 +200,7 @@ async fn throttle_outbound() {
         Instant::now() + Duration::from_secs(10),
     );
     test_message.domains.push(Domain {
-        domain: "test.org".to_string(),
+        domain: "test.org".into(),
         retry: Schedule::now(),
         notify: Schedule::now(),
         expires: 0,
@@ -226,7 +226,7 @@ async fn throttle_outbound() {
     core.mx_add(
         "test.net",
         vec![MX {
-            exchanges: vec!["mx.test.net".to_string()],
+            exchanges: vec!["mx.test.net".into()],
             preference: 10,
         }],
         Instant::now() + Duration::from_secs(10),

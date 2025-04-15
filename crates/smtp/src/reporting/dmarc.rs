@@ -13,6 +13,7 @@ use common::{
     ipc::{DmarcEvent, ToHash},
     listener::SessionStream,
 };
+use compact_str::{CompactString, ToCompactString};
 use mail_auth::{
     ArcOutput, AuthenticatedMessage, AuthenticationResults, DkimOutput, DkimResult, DmarcOutput,
     SpfResult,
@@ -96,7 +97,7 @@ impl<T: SessionStream> Session<T> {
                                 Url = dmarc_record
                                     .ruf()
                                     .iter()
-                                    .map(|u| trc::Value::String(u.uri().to_string()))
+                                    .map(|u| trc::Value::String(u.uri().to_compact_string()))
                                     .collect::<Vec<_>>(),
                             );
                         }
@@ -110,7 +111,7 @@ impl<T: SessionStream> Session<T> {
                         Url = dmarc_record
                             .ruf()
                             .iter()
-                            .map(|u| trc::Value::String(u.uri().to_string()))
+                            .map(|u| trc::Value::String(u.uri().to_compact_string()))
                             .collect::<Vec<_>>(),
                     );
 
@@ -125,7 +126,7 @@ impl<T: SessionStream> Session<T> {
                     .server
                     .eval_if(&config.address, self, self.data.session_id)
                     .await
-                    .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
+                    .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_compact_string());
                 let mut auth_failure = self
                     .new_auth_failure(AuthFailureType::Dmarc, rejected)
                     .with_authentication_results(auth_results.to_string())
@@ -208,7 +209,7 @@ impl<T: SessionStream> Session<T> {
                             self.server
                                 .eval_if(&config.name, self, self.data.session_id)
                                 .await
-                                .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
+                                .unwrap_or_else(|| "Mail Delivery Subsystem".to_compact_string())
                                 .as_str(),
                             from_addr.as_str(),
                         ),
@@ -217,7 +218,7 @@ impl<T: SessionStream> Session<T> {
                             .server
                             .eval_if(&config.subject, self, self.data.session_id)
                             .await
-                            .unwrap_or_else(|| "DMARC Report".to_string()),
+                            .unwrap_or_else(|| "DMARC Report".to_compact_string()),
                         &mut report,
                     )
                     .ok();
@@ -228,7 +229,7 @@ impl<T: SessionStream> Session<T> {
                     From = from_addr.to_string(),
                     To = rcpts
                         .iter()
-                        .map(|a| trc::Value::String(a.to_string()))
+                        .map(|a| trc::Value::String(a.to_compact_string()))
                         .collect::<Vec<_>>(),
                 );
 
@@ -383,7 +384,7 @@ impl DmarcReporting for Server {
                         SpanId = span_id,
                         Url = rua
                             .iter()
-                            .map(|u| trc::Value::String(u.uri().to_string()))
+                            .map(|u| trc::Value::String(u.uri().to_compact_string()))
                             .collect::<Vec<_>>(),
                     );
 
@@ -397,7 +398,7 @@ impl DmarcReporting for Server {
                     SpanId = span_id,
                     Url = rua
                         .iter()
-                        .map(|u| trc::Value::String(u.uri().to_string()))
+                        .map(|u| trc::Value::String(u.uri().to_compact_string()))
                         .collect::<Vec<_>>(),
                 );
 
@@ -415,7 +416,7 @@ impl DmarcReporting for Server {
                 span_id,
             )
             .await
-            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
+            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_compact_string());
         let mut message = Vec::with_capacity(2048);
         let _ = report.write_rfc5322(
             &self
@@ -425,7 +426,7 @@ impl DmarcReporting for Server {
                     span_id,
                 )
                 .await
-                .unwrap_or_else(|| "localhost".to_string()),
+                .unwrap_or_else(|| "localhost".to_compact_string()),
             (
                 self.eval_if(
                     &config.name,
@@ -433,7 +434,7 @@ impl DmarcReporting for Server {
                     span_id,
                 )
                 .await
-                .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
+                .unwrap_or_else(|| "Mail Delivery Subsystem".to_compact_string())
                 .as_str(),
                 from_addr.as_str(),
             ),
@@ -493,10 +494,10 @@ impl DmarcReporting for Server {
                     span_id,
                 )
                 .await
-                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
+                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_compact_string()),
             );
         if let Some(org_name) = self
-            .eval_if::<String, _>(
+            .eval_if::<CompactString, _>(
                 &config.org_name,
                 &RecipientDomain::new(event.domain.as_str()),
                 span_id,
@@ -506,7 +507,7 @@ impl DmarcReporting for Server {
             report = report.with_org_name(org_name);
         }
         if let Some(contact_info) = self
-            .eval_if::<String, _>(
+            .eval_if::<CompactString, _>(
                 &config.contact_info,
                 &RecipientDomain::new(event.domain.as_str()),
                 span_id,

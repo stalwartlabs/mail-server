@@ -84,7 +84,7 @@ impl<T: SessionStream> SessionData<T> {
         };
 
         // Obtain mailbox
-        let mailbox = self
+        let mailbox_ = self
             .server
             .get_archive(params.account_id, Collection::Mailbox, mailbox_id)
             .await
@@ -96,8 +96,9 @@ impl<T: SessionStream> SessionData<T> {
                     .caused_by(trc::location!())
                     .code(ResponseCode::NonExistent)
                     .id(arguments.tag.clone())
-            })?
-            .into_deserialized::<email::mailbox::Mailbox>()
+            })?;
+        let mailbox = mailbox_
+            .to_unarchived::<email::mailbox::Mailbox>()
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Validate ACL
@@ -155,8 +156,10 @@ impl<T: SessionStream> SessionData<T> {
             create_ids.push(mailbox_id);
         }
 
-        let mut new_mailbox = mailbox.inner.clone();
-        new_mailbox.name = new_mailbox_name.to_string();
+        let mut new_mailbox = mailbox
+            .deserialize::<email::mailbox::Mailbox>()
+            .caused_by(trc::location!())?;
+        new_mailbox.name = new_mailbox_name.into();
         new_mailbox.parent_id = parent_id;
         new_mailbox.uid_validity = rand::random::<u32>();
         batch

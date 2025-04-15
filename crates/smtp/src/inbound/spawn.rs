@@ -11,6 +11,7 @@ use common::{
     core::BuildServer,
     listener::{self, SessionManager, SessionStream},
 };
+use compact_str::CompactString;
 use tokio_rustls::server::TlsStream;
 use trc::{SecurityEvent, SmtpEvent};
 
@@ -33,7 +34,7 @@ impl SessionManager for SmtpSessionManager {
                 server.lookup_asn_country(session.remote_ip).await,
                 session.session_id,
             ),
-            hostname: String::new(),
+            hostname: "".into(),
             server,
             instance: session.instance,
             state: State::default(),
@@ -81,7 +82,7 @@ impl<T: SessionStream> Session<T> {
         // Sieve filtering
         if let Some((script, script_id)) = self
             .server
-            .eval_if::<String, _>(&config.script, self, self.data.session_id)
+            .eval_if::<CompactString, _>(&config.script, self, self.data.session_id)
             .await
             .and_then(|name| {
                 self.server
@@ -117,7 +118,7 @@ impl<T: SessionStream> Session<T> {
         // Obtain hostname
         self.hostname = self
             .server
-            .eval_if::<String, _>(&config.hostname, self, self.data.session_id)
+            .eval_if::<CompactString, _>(&config.hostname, self, self.data.session_id)
             .await
             .unwrap_or_default();
         if self.hostname.is_empty() {
@@ -125,13 +126,13 @@ impl<T: SessionStream> Session<T> {
                 Smtp(SmtpEvent::MissingLocalHostname),
                 SpanId = self.data.session_id,
             );
-            self.hostname = "localhost".to_string();
+            self.hostname = "localhost".into();
         }
 
         // Obtain greeting
         let greeting = self
             .server
-            .eval_if::<String, _>(&config.greeting, self, self.data.session_id)
+            .eval_if::<CompactString, _>(&config.greeting, self, self.data.session_id)
             .await
             .filter(|g| !g.is_empty())
             .map(|g| format!("220 {}\r\n", g))

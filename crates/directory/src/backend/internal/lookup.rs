@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{PrincipalInfo, manage::ManageDirectory};
+use crate::{Principal, PrincipalData, QueryBy, Type, backend::RcptType};
+use compact_str::CompactString;
 use mail_send::Credentials;
 use store::{
     Deserialize, IterateParams, Store, ValueKey,
     write::{DirectoryClass, ValueClass},
 };
 use trc::AddContext;
-
-use crate::{Principal, QueryBy, Type, backend::RcptType};
-
-use super::{PrincipalField, PrincipalInfo, manage::ManageDirectory};
 
 #[allow(async_fn_in_trait)]
 pub trait DirectoryStore: Sync + Send {
@@ -25,9 +24,9 @@ pub trait DirectoryStore: Sync + Send {
     async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>>;
     async fn is_local_domain(&self, domain: &str) -> trc::Result<bool>;
     async fn rcpt(&self, address: &str) -> trc::Result<RcptType>;
-    async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>>;
-    async fn expn(&self, address: &str) -> trc::Result<Vec<String>>;
-    async fn expn_by_id(&self, id: u32) -> trc::Result<Vec<String>>;
+    async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>>;
+    async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>>;
+    async fn expn_by_id(&self, id: u32) -> trc::Result<Vec<CompactString>>;
 }
 
 impl DirectoryStore for Store {
@@ -63,13 +62,26 @@ impl DirectoryStore for Store {
                 }
 
                 if return_member_of {
+                    let mut roles = vec![];
+                    let mut lists = vec![];
+                    let mut member_of = vec![];
+
                     for member in self.get_member_of(principal.id).await? {
-                        let field = match member.typ {
-                            Type::List => PrincipalField::Lists,
-                            Type::Role => PrincipalField::Roles,
-                            _ => PrincipalField::MemberOf,
-                        };
-                        principal.append_int(field, member.principal_id);
+                        match member.typ {
+                            Type::List => lists.push(member.principal_id),
+                            Type::Role => roles.push(member.principal_id),
+                            _ => member_of.push(member.principal_id),
+                        }
+                    }
+
+                    if !roles.is_empty() {
+                        principal.data.push(PrincipalData::Roles(roles));
+                    }
+                    if !lists.is_empty() {
+                        principal.data.push(PrincipalData::Lists(lists));
+                    }
+                    if !member_of.is_empty() {
+                        principal.data.push(PrincipalData::MemberOf(member_of));
                     }
                 }
                 return Ok(Some(principal));
@@ -111,7 +123,7 @@ impl DirectoryStore for Store {
         }
     }
 
-    async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
+    async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         let mut results = Vec::new();
         let address = address.split('@').next().unwrap_or(address);
         if address.len() > 3 {
@@ -131,7 +143,7 @@ impl DirectoryStore for Store {
                             .typ
                             != Type::List
                     {
-                        results.push(key.to_string());
+                        results.push(key.into());
                     }
                     Ok(true)
                 },
@@ -143,7 +155,7 @@ impl DirectoryStore for Store {
         Ok(results)
     }
 
-    async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
+    async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         if let Some(ptype) = self
             .get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::EmailToId(address.as_bytes().to_vec()),
@@ -157,23 +169,27 @@ impl DirectoryStore for Store {
         }
     }
 
-    async fn expn_by_id(&self, list_id: u32) -> trc::Result<Vec<String>> {
+    async fn expn_by_id(&self, list_id: u32) -> trc::Result<Vec<CompactString>> {
         let mut results = Vec::new();
         for account_id in self.get_members(list_id).await? {
             if let Some(email) = self
                 .get_principal(account_id)
                 .await?
-                .and_then(|mut p| p.take_str(PrincipalField::Emails))
+                .and_then(|p| p.emails.into_iter().next())
             {
                 results.push(email);
             }
         }
 
-        if let Some(emails) = self
-            .get_principal(list_id)
-            .await?
-            .and_then(|mut p| p.take_str_array(PrincipalField::ExternalMembers))
-        {
+        if let Some(emails) = self.get_principal(list_id).await?.and_then(|p| {
+            p.data.into_iter().find_map(|data| {
+                if let PrincipalData::ExternalMembers(members) = data {
+                    Some(members)
+                } else {
+                    None
+                }
+            })
+        }) {
             results.extend(emails);
         }
 

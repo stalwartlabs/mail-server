@@ -845,8 +845,8 @@ pub struct IpResolver {
 impl ResolveVariable for IpResolver {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
-            V_IP => Variable::String(self.ip_string.as_str().into()),
-            V_IP_REVERSE => Variable::String(self.reverse.as_str().into()),
+            V_IP => self.ip_string.as_str().into(),
+            V_IP_REVERSE => self.reverse.as_str().into(),
             V_IP_OCTETS => self.octets.clone(),
             V_IP_IS_V4 => Variable::Integer(self.ip.is_ipv4() as _),
             V_IP_IS_V6 => Variable::Integer(self.ip.is_ipv6() as _),

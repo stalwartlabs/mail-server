@@ -10,6 +10,7 @@ use std::{
 };
 
 use common::{Server, config::spamfilter::Location};
+use compact_str::CompactString;
 use mail_parser::{Header, parsers::MessageStream};
 
 use crate::{
@@ -79,7 +80,7 @@ impl SpamFilterContext<'_> {
 }
 
 impl SpamFilterResult {
-    pub fn add_tag(&mut self, tag: impl Into<String>) {
+    pub fn add_tag(&mut self, tag: impl Into<CompactString>) {
         self.tags.insert(tag.into());
     }
 

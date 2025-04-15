@@ -296,7 +296,8 @@ impl OAuthApiHandler for Server {
     ) -> trc::Result<HttpResponse> {
         let base_url = HttpContext::new(&session, &req)
             .resolve_response_url(self)
-            .await;
+            .await
+            .to_string();
 
         Ok(JsonResponse::new(OAuthMetadata {
             authorization_endpoint: format!("{base_url}/authorize/code",),

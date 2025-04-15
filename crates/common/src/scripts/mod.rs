@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use compact_str::CompactString;
 use sieve::{Envelope, runtime::Variable};
 use store::Value;
 use unicode_security::mixed_script::AugmentedScriptSet;
@@ -21,7 +22,7 @@ pub mod plugins;
 pub enum ScriptModification {
     SetEnvelope {
         name: Envelope,
-        value: String,
+        value: CompactString,
     },
     AddHeader {
         name: Arc<String>,

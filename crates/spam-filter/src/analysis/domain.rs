@@ -10,6 +10,7 @@ use common::{
     Server,
     config::spamfilter::{Element, Location},
 };
+use compact_str::CompactString;
 use mail_auth::DkimResult;
 use mail_parser::{HeaderName, HeaderValue, Host, parsers::MessageStream};
 use nlp::tokenizers::types::TokenType;
@@ -35,7 +36,7 @@ pub trait SpamFilterAnalyzeDomain: Sync + Send {
 impl SpamFilterAnalyzeDomain for Server {
     async fn spam_filter_analyze_domain(&self, ctx: &mut SpamFilterContext<'_>) {
         // Obtain email addresses and domains
-        let mut domains: HashSet<ElementLocation<String>> = HashSet::new();
+        let mut domains: HashSet<ElementLocation<CompactString>> = HashSet::new();
         let mut emails: HashSet<ElementLocation<Recipient>> = HashSet::new();
 
         // Add DKIM domains
@@ -43,7 +44,7 @@ impl SpamFilterAnalyzeDomain for Server {
             if dkim.result() == &DkimResult::Pass {
                 if let Some(domain) = dkim.signature().map(|s| &s.d) {
                     domains.insert(ElementLocation::new(
-                        domain.to_lowercase(),
+                        CompactString::from_str_to_lowercase(domain),
                         Location::HeaderDkimPass,
                     ));
                 }

@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap};
 use ahash::AHashSet;
+use compact_str::CompactString;
 use utils::config::{Config, Rate};
 
 use super::*;
@@ -16,8 +17,8 @@ use super::*;
 pub struct Network {
     pub node_id: u64,
     pub roles: ClusterRoles,
-    pub server_name: String,
-    pub report_domain: String,
+    pub server_name: CompactString,
+    pub report_domain: CompactString,
     pub security: Security,
     pub contact_form: Option<ContactForm>,
     pub http_response_url: IfBlock,
@@ -27,14 +28,14 @@ pub struct Network {
 
 #[derive(Clone)]
 pub struct ContactForm {
-    pub rcpt_to: Vec<String>,
+    pub rcpt_to: Vec<CompactString>,
     pub max_size: usize,
     pub rate: Option<Rate>,
     pub validate_domain: bool,
     pub from_email: FieldOrDefault,
     pub from_subject: FieldOrDefault,
     pub from_name: FieldOrDefault,
-    pub field_honey_pot: Option<String>,
+    pub field_honey_pot: Option<CompactString>,
 }
 
 #[derive(Clone)]
@@ -128,7 +129,7 @@ impl ContactForm {
                 .values("form.deliver-to")
                 .filter_map(|(_, addr)| {
                     if addr.contains('@') && addr.contains('.') {
-                        Some(addr.trim().to_lowercase())
+                        Some(CompactString::from_str_to_lowercase(addr.trim()))
                     } else {
                         None
                     }
@@ -141,7 +142,7 @@ impl ContactForm {
             from_email: FieldOrDefault::parse(config, "form.email", "postmaster@localhost"),
             from_subject: FieldOrDefault::parse(config, "form.subject", "Contact form submission"),
             from_name: FieldOrDefault::parse(config, "form.name", "Anonymous"),
-            field_honey_pot: config.value("form.honey-pot.field").map(|v| v.to_string()),
+            field_honey_pot: config.value("form.honey-pot.field").map(|v| v.into()),
             rate: config
                 .property_or_default::<Option<Rate>>("form.rate-limit", "5/1h")
                 .unwrap_or_default(),
@@ -199,8 +200,8 @@ impl Network {
 
         let mut network = Network {
             node_id: config.property("cluster.node-id").unwrap_or(1),
-            report_domain,
-            server_name,
+            report_domain: report_domain.into(),
+            server_name: server_name.into(),
             security: Security::parse(config),
             contact_form: ContactForm::parse(config),
             asn_geo_lookup: AsnGeoLookupConfig::parse(config).unwrap_or_default(),

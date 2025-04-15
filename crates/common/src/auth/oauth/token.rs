@@ -6,7 +6,8 @@
 
 use std::time::SystemTime;
 
-use directory::{QueryBy, backend::internal::PrincipalField};
+use compact_str::CompactString;
+use directory::QueryBy;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
 use store::{
@@ -23,7 +24,7 @@ use super::{CLIENT_ID_MAX_LEN, GrantType, RANDOM_CODE_LEN, crypto::SymmetricEncr
 pub struct TokenInfo {
     pub grant_type: GrantType,
     pub account_id: u32,
-    pub client_id: String,
+    pub client_id: CompactString,
     pub expiry: u64,
     pub issued_at: u64,
     pub expires_in: u64,
@@ -52,7 +53,7 @@ impl Server {
                 .await
                 .caused_by(trc::location!())?
         } else {
-            String::new()
+            "".into()
         };
 
         let key = &self.core.oauth.oauth_key;
@@ -127,7 +128,7 @@ impl Server {
                     GrantType::from_id(bytes.next().copied()?)?,
                     bytes.next_leb128::<u64>()?,
                     bytes.next_leb128::<u64>()?,
-                    bytes.copied().map(char::from).collect::<String>(),
+                    bytes.copied().map(char::from).collect::<CompactString>(),
                 )
                     .into()
             })
@@ -161,7 +162,7 @@ impl Server {
                 .await
                 .map_err(|err| trc::AuthEvent::Error.into_err().ctx(trc::Key::Details, err))?
         } else {
-            String::new()
+            "".into()
         };
 
         // Build context
@@ -215,7 +216,7 @@ impl Server {
         })
     }
 
-    pub async fn password_hash(&self, account_id: u32) -> trc::Result<String> {
+    pub async fn password_hash(&self, account_id: u32) -> trc::Result<CompactString> {
         if account_id != u32::MAX {
             self.core
                 .storage
@@ -228,8 +229,7 @@ impl Server {
                         .into_err()
                         .details("Account no longer exists")
                 })?
-                .take_str_array(PrincipalField::Secrets)
-                .unwrap_or_default()
+                .secrets
                 .into_iter()
                 .next()
                 .ok_or(
@@ -239,7 +239,7 @@ impl Server {
                         .caused_by(trc::location!()),
                 )
         } else if let Some((_, secret)) = &self.core.jmap.fallback_admin {
-            Ok(secret.clone())
+            Ok(secret.into())
         } else {
             Err(trc::AuthEvent::Error
                 .into_err()

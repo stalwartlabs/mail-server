@@ -6,6 +6,8 @@
 
 use std::{borrow::Cow, net::IpAddr};
 
+use compact_str::CompactString;
+
 use super::{Macro, Macros};
 
 pub trait IntoMacroValue<'x> {
@@ -154,6 +156,12 @@ impl<'x> IntoMacroValue<'x> for &'x [u8] {
 }
 
 impl<'x> IntoMacroValue<'x> for &'x str {
+    fn into_macro_value(self) -> Cow<'x, [u8]> {
+        Cow::Borrowed(self.as_bytes())
+    }
+}
+
+impl<'x> IntoMacroValue<'x> for &'x CompactString {
     fn into_macro_value(self) -> Cow<'x, [u8]> {
         Cow::Borrowed(self.as_bytes())
     }

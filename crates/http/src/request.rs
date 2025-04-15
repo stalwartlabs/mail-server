@@ -233,7 +233,10 @@ impl ParseHttp for Server {
                         self.authenticate_headers(&req, &session, false).await?;
 
                     return self
-                        .handle_session_resource(ctx.resolve_response_url(self).await, access_token)
+                        .handle_session_resource(
+                            ctx.resolve_response_url(self).await.into(),
+                            access_token,
+                        )
                         .await
                         .map(|s| s.into_http_response());
                 }
@@ -732,9 +735,11 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
                         Http(trc::HttpEvent::ResponseBody),
                         SpanId = session.session_id,
                         Contents = match response.body() {
-                            HttpResponseBody::Text(value) => trc::Value::String(value.clone()),
-                            HttpResponseBody::Binary(_) => trc::Value::Static("[binary data]"),
-                            HttpResponseBody::Stream(_) => trc::Value::Static("[stream]"),
+                            HttpResponseBody::Text(value) =>
+                                trc::Value::String(value.as_str().into()),
+                            HttpResponseBody::Binary(_) =>
+                                trc::Value::String("[binary data]".into()),
+                            HttpResponseBody::Stream(_) => trc::Value::String("[stream]".into()),
                             _ => trc::Value::None,
                         },
                         Code = response.status().as_u16(),

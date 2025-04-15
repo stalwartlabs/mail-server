@@ -215,8 +215,7 @@ fn build_key_value(key_value: &(trc::Key, trc::Value)) -> Option<KeyValue> {
     (key_value.0 != trc::Key::SpanId).then(|| KeyValue {
         key: build_key(&key_value.0),
         value: match &key_value.1 {
-            trc::Value::Static(v) => Value::String((*v).into()),
-            trc::Value::String(v) => Value::String(v.clone().into()),
+            trc::Value::String(v) => Value::String(v.to_string().into()),
             trc::Value::UInt(v) => Value::I64(*v as i64),
             trc::Value::Int(v) => Value::I64(*v),
             trc::Value::Float(v) => Value::F64(*v),
@@ -241,8 +240,7 @@ fn build_key(key: &trc::Key) -> Key {
 
 fn build_any_value(value: &trc::Value) -> AnyValue {
     match value {
-        trc::Value::Static(v) => AnyValue::String((*v).into()),
-        trc::Value::String(v) => AnyValue::String(v.clone().into()),
+        trc::Value::String(v) => AnyValue::String(v.to_string().into()),
         trc::Value::UInt(v) => AnyValue::Int(*v as i64),
         trc::Value::Int(v) => AnyValue::Int(*v),
         trc::Value::Float(v) => AnyValue::Double(*v),

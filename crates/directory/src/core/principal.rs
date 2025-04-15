@@ -6,6 +6,7 @@
 
 use std::{collections::hash_map::Entry, fmt, str::FromStr};
 
+use compact_str::CompactString;
 use serde::{
     Deserializer, Serializer,
     de::{self, IgnoredAny, Visitor},
@@ -14,11 +15,306 @@ use serde::{
 use store::U64_LEN;
 
 use crate::{
-    Permission, Principal, ROLE_ADMIN, Type,
-    backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
+    Permission, PermissionGrant, Principal, PrincipalData, ROLE_ADMIN, Type,
+    backend::internal::{PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue},
 };
 
 impl Principal {
+    pub fn new(id: u32, typ: Type) -> Self {
+        Self {
+            id,
+            typ,
+            name: "".into(),
+            description: None,
+            secrets: Default::default(),
+            emails: Default::default(),
+            quota: Default::default(),
+            tenant: Default::default(),
+            data: Default::default(),
+        }
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    pub fn typ(&self) -> Type {
+        self.typ
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    pub fn quota(&self) -> u64 {
+        self.quota.unwrap_or_default()
+    }
+
+    pub fn principal_quota(&self, typ: &Type) -> Option<u64> {
+        self.data
+            .iter()
+            .find_map(|d| {
+                if let PrincipalData::PrincipalQuota(q) = d {
+                    Some(q)
+                } else {
+                    None
+                }
+            })
+            .and_then(|quotas| {
+                quotas
+                    .iter()
+                    .find_map(|q| if q.typ == *typ { Some(q.quota) } else { None })
+            })
+    }
+
+    // SPDX-SnippetBegin
+    // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+    // SPDX-License-Identifier: LicenseRef-SEL
+    pub fn tenant(&self) -> Option<u32> {
+        self.tenant
+    }
+    // SPDX-SnippetEnd
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_ref().map(|d| d.as_str())
+    }
+
+    pub fn member_of(&self) -> &[u32] {
+        self.data
+            .iter()
+            .find_map(|item| {
+                if let PrincipalData::MemberOf(items) = item {
+                    items.as_slice().into()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn member_of_mut(&mut self) -> Option<&mut Vec<u32>> {
+        self.data.iter_mut().find_map(|item| {
+            if let PrincipalData::MemberOf(items) = item {
+                items.into()
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn roles(&self) -> &[u32] {
+        self.data
+            .iter()
+            .find_map(|item| {
+                if let PrincipalData::Roles(items) = item {
+                    items.as_slice().into()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn permissions(&self) -> &[PermissionGrant] {
+        self.data
+            .iter()
+            .find_map(|item| {
+                if let PrincipalData::Permissions(items) = item {
+                    items.as_slice().into()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn urls(&self) -> &[CompactString] {
+        self.data
+            .iter()
+            .find_map(|item| {
+                if let PrincipalData::Urls(items) = item {
+                    items.as_slice().into()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn roles_mut(&mut self) -> Option<&mut Vec<u32>> {
+        self.data.iter_mut().find_map(|item| {
+            if let PrincipalData::Roles(items) = item {
+                items.into()
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn lists(&self) -> &[u32] {
+        self.data
+            .iter()
+            .find_map(|item| {
+                if let PrincipalData::Lists(items) = item {
+                    items.as_slice().into()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn picture(&self) -> Option<&CompactString> {
+        self.data.iter().find_map(|item| {
+            if let PrincipalData::Picture(picture) = item {
+                picture.into()
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn picture_mut(&mut self) -> Option<&mut CompactString> {
+        self.data.iter_mut().find_map(|item| {
+            if let PrincipalData::Picture(picture) = item {
+                picture.into()
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn add_permission(&mut self, permission: Permission, grant: bool) {
+        if let Some(permissions) = self.data.iter_mut().find_map(|item| {
+            if let PrincipalData::Permissions(permissions) = item {
+                Some(permissions)
+            } else {
+                None
+            }
+        }) {
+            if let Some(current) = permissions.iter_mut().find(|p| p.permission == permission) {
+                current.grant = grant;
+            } else {
+                permissions.push(PermissionGrant { permission, grant });
+            }
+        } else {
+            self.data
+                .push(PrincipalData::Permissions(vec![PermissionGrant {
+                    permission,
+                    grant,
+                }]));
+        }
+    }
+
+    pub fn add_permissions(&mut self, iter: impl Iterator<Item = PermissionGrant>) {
+        if let Some(permissions) = self.data.iter_mut().find_map(|item| {
+            if let PrincipalData::Permissions(permissions) = item {
+                Some(permissions)
+            } else {
+                None
+            }
+        }) {
+            permissions.extend(iter);
+        } else {
+            self.data.push(PrincipalData::Permissions(iter.collect()));
+        }
+    }
+
+    pub fn remove_permission(&mut self, permission: Permission, grant: bool) {
+        if let Some(permissions) = self.data.iter_mut().find_map(|item| {
+            if let PrincipalData::Permissions(permissions) = item {
+                Some(permissions)
+            } else {
+                None
+            }
+        }) {
+            if let Some(idx) = permissions
+                .iter_mut()
+                .position(|p| p.permission == permission && p.grant == grant)
+            {
+                permissions.swap_remove(idx);
+            }
+        }
+    }
+
+    pub fn remove_permissions(&mut self, grant: bool) {
+        if let Some(permissions) = self.data.iter_mut().find_map(|item| {
+            if let PrincipalData::Permissions(permissions) = item {
+                Some(permissions)
+            } else {
+                None
+            }
+        }) {
+            permissions.retain(|p| p.grant != grant);
+        }
+    }
+
+    pub fn update_external(&mut self, mut external: Principal) -> Vec<PrincipalUpdate> {
+        let mut updates = Vec::new();
+
+        // Add external members
+        if let Some(member_of) = external.member_of_mut().filter(|s| !s.is_empty()) {
+            self.data
+                .push(PrincipalData::MemberOf(std::mem::take(member_of)));
+        }
+
+        // If the principal has no roles, take the ones from the external principal
+        if let Some(roles) = external.roles_mut().filter(|s| !s.is_empty()) {
+            if self.roles().is_empty() {
+                self.data.push(PrincipalData::Roles(std::mem::take(roles)));
+            }
+        }
+
+        if external.description.as_ref().is_some_and(|v| !v.is_empty())
+            && self.description != external.description
+        {
+            self.description = external.description;
+            updates.push(PrincipalUpdate::set(
+                PrincipalField::Description,
+                PrincipalValue::String(self.description.clone().unwrap()),
+            ));
+        }
+
+        for (name, field, external_field) in [
+            (PrincipalField::Secrets, &mut self.secrets, external.secrets),
+            (PrincipalField::Emails, &mut self.emails, external.emails),
+        ] {
+            if !external_field.is_empty() && &external_field != field {
+                *field = external_field;
+                updates.push(PrincipalUpdate::set(
+                    name,
+                    PrincipalValue::StringList(field.clone()),
+                ));
+            }
+        }
+
+        if external.quota.is_some() && self.quota != external.quota {
+            self.quota = external.quota;
+            updates.push(PrincipalUpdate::set(
+                PrincipalField::Quota,
+                PrincipalValue::Integer(self.quota.unwrap()),
+            ));
+        }
+
+        updates
+    }
+
+    pub fn fallback_admin(fallback_pass: impl Into<CompactString>) -> Self {
+        Principal {
+            id: u32::MAX,
+            typ: Type::Individual,
+            name: "Fallback Administrator".into(),
+            secrets: vec![fallback_pass.into()],
+            data: vec![PrincipalData::MemberOf(vec![ROLE_ADMIN])],
+            description: Default::default(),
+            emails: Default::default(),
+            quota: Default::default(),
+            tenant: Default::default(),
+        }
+    }
+}
+
+impl PrincipalSet {
     pub fn new(id: u32, typ: Type) -> Self {
         Self {
             id,
@@ -67,7 +363,7 @@ impl Principal {
         self.fields.get(&key).and_then(|v| v.as_int())
     }
 
-    pub fn get_str_array(&self, key: PrincipalField) -> Option<&[String]> {
+    pub fn get_str_array(&self, key: PrincipalField) -> Option<&[CompactString]> {
         self.fields.get(&key).and_then(|v| match v {
             PrincipalValue::StringList(v) => Some(v.as_slice()),
             PrincipalValue::String(v) => Some(std::slice::from_ref(v)),
@@ -87,12 +383,12 @@ impl Principal {
         self.fields.remove(&key)
     }
 
-    pub fn take_str(&mut self, key: PrincipalField) -> Option<String> {
+    pub fn take_str(&mut self, key: PrincipalField) -> Option<CompactString> {
         self.take(key).and_then(|v| match v {
             PrincipalValue::String(s) => Some(s),
             PrincipalValue::StringList(l) => l.into_iter().next(),
-            PrincipalValue::Integer(i) => Some(i.to_string()),
-            PrincipalValue::IntegerList(l) => l.into_iter().next().map(|i| i.to_string()),
+            PrincipalValue::Integer(i) => Some(i.to_string().into()),
+            PrincipalValue::IntegerList(l) => l.into_iter().next().map(|i| i.to_string().into()),
         })
     }
 
@@ -105,7 +401,7 @@ impl Principal {
         })
     }
 
-    pub fn take_str_array(&mut self, key: PrincipalField) -> Option<Vec<String>> {
+    pub fn take_str_array(&mut self, key: PrincipalField) -> Option<Vec<CompactString>> {
         self.take(key).map(|v| v.into_str_array())
     }
 
@@ -116,7 +412,7 @@ impl Principal {
     pub fn iter_str(
         &self,
         key: PrincipalField,
-    ) -> Box<dyn Iterator<Item = &String> + Sync + Send + '_> {
+    ) -> Box<dyn Iterator<Item = &CompactString> + Sync + Send + '_> {
         self.fields
             .get(&key)
             .map(|v| v.iter_str())
@@ -126,7 +422,7 @@ impl Principal {
     pub fn iter_mut_str(
         &mut self,
         key: PrincipalField,
-    ) -> Box<dyn Iterator<Item = &mut String> + Sync + Send + '_> {
+    ) -> Box<dyn Iterator<Item = &mut CompactString> + Sync + Send + '_> {
         self.fields
             .get_mut(&key)
             .map(|v| v.iter_mut_str())
@@ -192,7 +488,11 @@ impl Principal {
         self
     }
 
-    pub fn append_str(&mut self, key: PrincipalField, value: impl Into<String>) -> &mut Self {
+    pub fn append_str(
+        &mut self,
+        key: PrincipalField,
+        value: impl Into<CompactString>,
+    ) -> &mut Self {
         let value = value.into();
         match self.fields.entry(key) {
             Entry::Occupied(v) => {
@@ -210,12 +510,12 @@ impl Principal {
                         }
                     }
                     PrincipalValue::Integer(i) => {
-                        *v = PrincipalValue::StringList(vec![i.to_string(), value]);
+                        *v = PrincipalValue::StringList(vec![i.to_string().into(), value]);
                     }
                     PrincipalValue::IntegerList(l) => {
                         *v = PrincipalValue::StringList(
                             l.iter()
-                                .map(|i| i.to_string())
+                                .map(|i| i.to_string().into())
                                 .chain(std::iter::once(value))
                                 .collect(),
                         );
@@ -229,7 +529,11 @@ impl Principal {
         self
     }
 
-    pub fn prepend_str(&mut self, key: PrincipalField, value: impl Into<String>) -> &mut Self {
+    pub fn prepend_str(
+        &mut self,
+        key: PrincipalField,
+        value: impl Into<CompactString>,
+    ) -> &mut Self {
         let value = value.into();
         match self.fields.entry(key) {
             Entry::Occupied(v) => {
@@ -247,12 +551,12 @@ impl Principal {
                         }
                     }
                     PrincipalValue::Integer(i) => {
-                        *v = PrincipalValue::StringList(vec![value, i.to_string()]);
+                        *v = PrincipalValue::StringList(vec![value, i.to_string().into()]);
                     }
                     PrincipalValue::IntegerList(l) => {
                         *v = PrincipalValue::StringList(
                             std::iter::once(value)
-                                .chain(l.iter().map(|i| i.to_string()))
+                                .chain(l.iter().map(|i| i.to_string().into()))
                                 .collect(),
                         );
                     }
@@ -325,7 +629,7 @@ impl Principal {
 
     pub fn retain_str<F>(&mut self, key: PrincipalField, mut f: F)
     where
-        F: FnMut(&String) -> bool,
+        F: FnMut(&CompactString) -> bool,
     {
         if let Some(value) = self.fields.get_mut(&key) {
             match value {
@@ -366,82 +670,6 @@ impl Principal {
             }
         }
     }
-
-    pub fn update_external(&mut self, mut external: Principal) -> Vec<PrincipalUpdate> {
-        let mut updates = Vec::new();
-        if let Some(name) = external
-            .take_str(PrincipalField::Description)
-            .filter(|s| !s.is_empty())
-        {
-            if self.get_str(PrincipalField::Description) != Some(name.as_str()) {
-                updates.push(PrincipalUpdate::set(
-                    PrincipalField::Description,
-                    PrincipalValue::String(name.clone()),
-                ));
-                self.set(PrincipalField::Description, name);
-            }
-        }
-
-        for field in [PrincipalField::Secrets, PrincipalField::Emails] {
-            if let Some(secrets) = external.take_str_array(field).filter(|s| !s.is_empty()) {
-                if self.get_str_array(field) != Some(secrets.as_ref()) {
-                    updates.push(PrincipalUpdate::set(
-                        field,
-                        PrincipalValue::StringList(secrets.clone()),
-                    ));
-                    self.set(field, secrets);
-                }
-            }
-        }
-
-        if let Some(quota) = external.take_int(PrincipalField::Quota) {
-            if self.get_int(PrincipalField::Quota) != Some(quota) {
-                updates.push(PrincipalUpdate::set(
-                    PrincipalField::Quota,
-                    PrincipalValue::Integer(quota),
-                ));
-                self.set(PrincipalField::Quota, quota);
-            }
-        }
-
-        // Add external members
-        if let Some(member_of) = external
-            .take_int_array(PrincipalField::MemberOf)
-            .filter(|s| !s.is_empty())
-        {
-            self.set(PrincipalField::MemberOf, member_of);
-        }
-
-        // If the principal has no roles, take the ones from the external principal
-        if let Some(member_of) = external
-            .take_int_array(PrincipalField::Roles)
-            .filter(|s| !s.is_empty())
-        {
-            if self
-                .get_int_array(PrincipalField::Roles)
-                .filter(|s| !s.is_empty())
-                .is_none()
-            {
-                self.set(PrincipalField::Roles, member_of);
-            }
-        }
-
-        updates
-    }
-
-    pub fn fallback_admin(fallback_pass: impl Into<String>) -> Self {
-        Principal {
-            id: u32::MAX,
-            typ: Type::Individual,
-            ..Default::default()
-        }
-        .with_field(PrincipalField::Name, "Fallback Administrator")
-        .with_field(
-            PrincipalField::Secrets,
-            PrincipalValue::String(fallback_pass.into()),
-        )
-        .with_field(PrincipalField::Roles, ROLE_ADMIN)
-    }
 }
 
 impl PrincipalValue {
@@ -461,7 +689,7 @@ impl PrincipalValue {
         }
     }
 
-    pub fn iter_str(&self) -> Box<dyn Iterator<Item = &String> + Sync + Send + '_> {
+    pub fn iter_str(&self) -> Box<dyn Iterator<Item = &CompactString> + Sync + Send + '_> {
         match self {
             PrincipalValue::String(v) => Box::new(std::iter::once(v)),
             PrincipalValue::StringList(v) => Box::new(v.iter()),
@@ -469,7 +697,9 @@ impl PrincipalValue {
         }
     }
 
-    pub fn iter_mut_str(&mut self) -> Box<dyn Iterator<Item = &mut String> + Sync + Send + '_> {
+    pub fn iter_mut_str(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = &mut CompactString> + Sync + Send + '_> {
         match self {
             PrincipalValue::String(v) => Box::new(std::iter::once(v)),
             PrincipalValue::StringList(v) => Box::new(v.iter_mut()),
@@ -501,12 +731,12 @@ impl PrincipalValue {
         }
     }
 
-    pub fn into_str_array(self) -> Vec<String> {
+    pub fn into_str_array(self) -> Vec<CompactString> {
         match self {
             PrincipalValue::StringList(v) => v,
             PrincipalValue::String(v) => vec![v],
-            PrincipalValue::Integer(v) => vec![v.to_string()],
-            PrincipalValue::IntegerList(v) => v.into_iter().map(|v| v.to_string()).collect(),
+            PrincipalValue::Integer(v) => vec![v.to_string().into()],
+            PrincipalValue::IntegerList(v) => v.into_iter().map(|v| v.to_string().into()).collect(),
         }
     }
 
@@ -546,20 +776,20 @@ impl From<u64> for PrincipalValue {
     }
 }
 
-impl From<String> for PrincipalValue {
-    fn from(v: String) -> Self {
+impl From<CompactString> for PrincipalValue {
+    fn from(v: CompactString) -> Self {
         Self::String(v)
     }
 }
 
 impl From<&str> for PrincipalValue {
     fn from(v: &str) -> Self {
-        Self::String(v.to_string())
+        Self::String(v.into())
     }
 }
 
-impl From<Vec<String>> for PrincipalValue {
-    fn from(v: Vec<String>) -> Self {
+impl From<Vec<CompactString>> for PrincipalValue {
+    fn from(v: Vec<CompactString>) -> Self {
         Self::StringList(v)
     }
 }
@@ -632,6 +862,8 @@ impl Type {
         }
     }
 
+    pub const MAX_ID: usize = 11;
+
     pub fn from_u8(value: u8) -> Self {
         match value {
             0 => Type::Individual,
@@ -659,7 +891,7 @@ impl FromStr for Type {
     }
 }
 
-impl serde::Serialize for Principal {
+impl serde::Serialize for PrincipalSet {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -702,7 +934,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
             where
                 E: de::Error,
             {
-                Ok(PrincipalValue::String(String::new()))
+                Ok(PrincipalValue::String("".into()))
             }
 
             fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -724,7 +956,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
                 E: de::Error,
             {
                 if value.len() <= MAX_STRING_LEN {
-                    Ok(PrincipalValue::String(value))
+                    Ok(PrincipalValue::String(value.into()))
                 } else {
                     Err(serde::de::Error::custom("string too long"))
                 }
@@ -735,7 +967,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
                 E: de::Error,
             {
                 if value.len() <= MAX_STRING_LEN {
-                    Ok(PrincipalValue::String(value.to_string()))
+                    Ok(PrincipalValue::String(value.into()))
                 } else {
                     Err(serde::de::Error::custom("string too long"))
                 }
@@ -752,7 +984,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
                     match value {
                         StringOrU64::String(s) => {
                             if s.len() <= MAX_STRING_LEN {
-                                vec_string.push(s);
+                                vec_string.push(s.into());
                             } else {
                                 return Err(serde::de::Error::custom("string too long"));
                             }
@@ -774,7 +1006,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
     }
 }
 
-impl<'de> serde::Deserialize<'de> for Principal {
+impl<'de> serde::Deserialize<'de> for PrincipalSet {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -783,7 +1015,7 @@ impl<'de> serde::Deserialize<'de> for Principal {
 
         // Deserialize the principal
         impl<'de> Visitor<'de> for PrincipalVisitor {
-            type Value = Principal;
+            type Value = PrincipalSet;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("a valid principal")
@@ -793,7 +1025,7 @@ impl<'de> serde::Deserialize<'de> for Principal {
             where
                 A: de::MapAccess<'de>,
             {
-                let mut principal = Principal::default();
+                let mut principal = PrincipalSet::default();
 
                 while let Some(key) = map.next_key::<&str>()? {
                     let key = PrincipalField::try_parse(key)
@@ -810,19 +1042,19 @@ impl<'de> serde::Deserialize<'de> for Principal {
                         })?;
 
                     let value = match key {
-                        PrincipalField::Name => {
-                            PrincipalValue::String(map.next_value::<String>().and_then(|v| {
+                        PrincipalField::Name => PrincipalValue::String(
+                            map.next_value::<CompactString>().and_then(|v| {
                                 if v.len() <= MAX_STRING_LEN {
                                     Ok(v)
                                 } else {
                                     Err(serde::de::Error::custom("string too long"))
                                 }
-                            })?)
-                        }
+                            })?,
+                        ),
                         PrincipalField::Description
                         | PrincipalField::Tenant
                         | PrincipalField::Picture => {
-                            if let Some(v) = map.next_value::<Option<String>>()? {
+                            if let Some(v) = map.next_value::<Option<CompactString>>()? {
                                 if v.len() <= MAX_STRING_LEN {
                                     PrincipalValue::String(v)
                                 } else {
@@ -867,7 +1099,7 @@ impl<'de> serde::Deserialize<'de> for Principal {
                         }
                     };
 
-                    principal.set(key, value);
+                    principal.fields.insert(key, value);
                 }
 
                 Ok(principal)
@@ -934,8 +1166,8 @@ impl<'de> serde::Deserialize<'de> for StringOrU64 {
 
 #[derive(Debug)]
 enum StringOrMany {
-    One(String),
-    Many(Vec<String>),
+    One(CompactString),
+    Many(Vec<CompactString>),
 }
 
 impl<'de> serde::Deserialize<'de> for StringOrMany {
@@ -957,7 +1189,7 @@ impl<'de> serde::Deserialize<'de> for StringOrMany {
                 E: de::Error,
             {
                 if value.len() <= MAX_STRING_LEN {
-                    Ok(StringOrMany::One(value.to_string()))
+                    Ok(StringOrMany::One(value.into()))
                 } else {
                     Err(serde::de::Error::custom("string too long"))
                 }
@@ -968,7 +1200,7 @@ impl<'de> serde::Deserialize<'de> for StringOrMany {
                 E: de::Error,
             {
                 if v.len() <= MAX_STRING_LEN {
-                    Ok(StringOrMany::One(v))
+                    Ok(StringOrMany::One(v.into()))
                 } else {
                     Err(serde::de::Error::custom("string too long"))
                 }
@@ -980,7 +1212,7 @@ impl<'de> serde::Deserialize<'de> for StringOrMany {
             {
                 let mut vec = Vec::new();
 
-                while let Some(value) = seq.next_element::<String>()? {
+                while let Some(value) = seq.next_element::<CompactString>()? {
                     vec.push(value);
                 }
 

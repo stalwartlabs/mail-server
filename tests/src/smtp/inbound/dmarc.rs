@@ -166,7 +166,7 @@ async fn dmarc() {
     let mut rr = test.report_receiver;
     let mut qr = test.queue_receiver;
     let mut session = Session::test(test.server.clone());
-    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip_str = "10.0.0.2".into();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
     session.ehlo("mx.example.com").await;
@@ -191,7 +191,7 @@ async fn dmarc() {
     qr.assert_no_events();
 
     // Invalid DKIM signatures should be rejected
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
     session

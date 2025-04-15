@@ -4,14 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use mail_send::Credentials;
-
-use crate::{
-    Principal, QueryBy,
-    backend::{RcptType, internal::PrincipalField},
-};
-
 use super::{EmailType, MemoryDirectory};
+use crate::{Principal, QueryBy, backend::RcptType};
+use compact_str::CompactString;
+use mail_send::Credentials;
 
 impl MemoryDirectory {
     pub async fn query(&self, by: QueryBy<'_>) -> trc::Result<Option<Principal>> {
@@ -66,17 +62,17 @@ impl MemoryDirectory {
         Ok(self.emails_to_ids.contains_key(address).into())
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         let mut result = Vec::new();
         for (key, value) in &self.emails_to_ids {
             if key.contains(address) && value.iter().any(|t| matches!(t, EmailType::Primary(_))) {
-                result.push(key.clone())
+                result.push(key.into())
             }
         }
         Ok(result)
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         let mut result = Vec::new();
         for (key, value) in &self.emails_to_ids {
             if key == address {
@@ -84,10 +80,8 @@ impl MemoryDirectory {
                     if let EmailType::List(uid) = item {
                         for principal in &self.principals {
                             if principal.id == *uid {
-                                if let Some(addr) =
-                                    principal.iter_str(PrincipalField::Emails).next()
-                                {
-                                    result.push(addr.to_string())
+                                if let Some(addr) = principal.emails.first() {
+                                    result.push(addr.clone())
                                 }
                                 break;
                             }

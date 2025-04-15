@@ -5,7 +5,7 @@
  */
 
 use common::{Server, storage::index::ObjectIndexBuilder};
-use directory::{QueryBy, backend::internal::PrincipalField};
+use directory::QueryBy;
 use email::identity::{EmailAddress, Identity};
 use jmap_proto::{
     error::set::SetError,
@@ -59,14 +59,11 @@ impl IdentitySet for Server {
 
             // Validate email address
             if !identity.email.is_empty() {
-                if !self
-                    .core
-                    .storage
-                    .directory
+                if self
+                    .directory()
                     .query(QueryBy::Id(account_id), false)
                     .await?
-                    .unwrap_or_default()
-                    .has_str_value(PrincipalField::Emails, &identity.email)
+                    .is_none_or(|p| !p.emails.iter().any(|e| e == identity.email))
                 {
                     response.not_created.append(
                         id,
@@ -192,7 +189,7 @@ fn validate_identity_value(
 ) -> Result<(), SetError> {
     match (property, value) {
         (Property::Name, MaybePatchValue::Value(Value::Text(value))) if value.len() < 255 => {
-            identity.name = value;
+            identity.name = value.into();
         }
         (Property::Email, MaybePatchValue::Value(Value::Text(value)))
             if is_create && value.len() < 255 =>
@@ -206,19 +203,19 @@ fn validate_identity_value(
         (Property::TextSignature, MaybePatchValue::Value(Value::Text(value)))
             if value.len() < 2048 =>
         {
-            identity.text_signature = value;
+            identity.text_signature = value.into();
         }
         (Property::HtmlSignature, MaybePatchValue::Value(Value::Text(value)))
             if value.len() < 2048 =>
         {
-            identity.html_signature = value;
+            identity.html_signature = value.into();
         }
         (Property::ReplyTo | Property::Bcc, MaybePatchValue::Value(Value::List(value))) => {
             let mut addresses = Vec::with_capacity(value.len());
             for addr in value {
                 let mut address = EmailAddress {
                     name: None,
-                    email: String::new(),
+                    email: "".into(),
                 };
                 let mut is_valid = false;
                 if let Value::Object(obj) = addr {
@@ -226,10 +223,10 @@ fn validate_identity_value(
                         match (key, value) {
                             (Property::Email, Value::Text(value)) if value.len() < 255 => {
                                 is_valid = true;
-                                address.email = value;
+                                address.email = value.into();
                             }
                             (Property::Name, Value::Text(value)) if value.len() < 255 => {
-                                address.name = Some(value);
+                                address.name = Some(value.into());
                             }
                             (Property::Name, Value::Null) => (),
                             _ => {

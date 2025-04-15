@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use base64::{Engine, engine::general_purpose};
-use directory::{QueryBy, backend::internal::PrincipalField};
+use directory::QueryBy;
 use http_proto::{JsonProblemResponse, JsonResponse, ToHttpResponse};
 use hyper::{Method, StatusCode};
 use mail_send::Credentials;
@@ -132,7 +132,7 @@ async fn oidc_directory() {
             .unwrap();
         assert_eq!(principal.name(), "jdoe");
         assert_eq!(
-            principal.get_str(PrincipalField::Emails),
+            principal.emails.first().map(|s| s.as_str()),
             Some("john@example.org")
         );
         assert_eq!(principal.description(), Some("John Doe"));

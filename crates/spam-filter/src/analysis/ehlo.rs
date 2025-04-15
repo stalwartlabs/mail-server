@@ -32,7 +32,7 @@ impl SpamFilterAnalyzeEhlo for Server {
                 .output
                 .iprev_ptr
                 .as_ref()
-                .is_some_and(|ptr| ptr != &ctx.output.ehlo_host.fqdn)
+                .is_some_and(|ptr| ptr != ctx.output.ehlo_host.fqdn)
             {
                 // Helo does not match reverse IP
                 ctx.result.add_tag("HELO_IPREV_MISMATCH");

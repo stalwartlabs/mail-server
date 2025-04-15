@@ -60,7 +60,7 @@ impl PrincipalPropSearch for Server {
                     search_for.as_str().into(),
                     access_token.tenant_id(),
                     &[Type::Individual, Type::Group],
-                    &[PrincipalField::Name],
+                    false,
                     0,
                     0,
                 )

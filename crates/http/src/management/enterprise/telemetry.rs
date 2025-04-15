@@ -230,7 +230,6 @@ impl TelemetryApi for Server {
                                             {
                                                 if let Some(needle) = key_filters.get(key).or(filter.as_ref()) {
                                                     let matches = match value {
-                                                        Value::Static(haystack) => haystack.contains(needle),
                                                         Value::String(haystack) => haystack.contains(needle),
                                                         Value::Timestamp(haystack) => {
                                                             DateTime::from_timestamp(*haystack as i64)

@@ -103,7 +103,7 @@ impl Server {
         };
 
         // Parse settings and build shared core
-        let core = Core::parse(&mut config, stores, manager).await;
+        let core = Box::pin(Core::parse(&mut config, stores, manager)).await;
         if !config.errors.is_empty() {
             return Ok(config.into());
         }

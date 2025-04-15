@@ -16,6 +16,7 @@ calcard = { path = "/Users/me/code/calcard", features = ["rkyv"] }
 hashify = "0.2"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
 percent-encoding = "2.3.1"
+compact_str = "0.9.0"
 
 [features]
 test_mode = []

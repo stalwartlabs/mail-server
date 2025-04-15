@@ -39,7 +39,7 @@ async fn limits() {
 
     // Exceed max line length
     let mut session = Session::test_with_shutdown(TestSMTP::from_core(core).server, rx);
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     let mut buf = vec![b'A'; 2049];
     session.ingest(&buf).await.unwrap();
     session.ingest(b"\r\n").await.unwrap();
@@ -57,7 +57,7 @@ async fn limits() {
     session.response().assert_code("452 4.7.28");
 
     // Loitering
-    session.data.remote_ip_str = "10.0.0.3".to_string();
+    session.data.remote_ip_str = "10.0.0.3".into();
     session.data.valid_until = Instant::now();
     session.eval_session_params().await;
     tokio::time::sleep(Duration::from_millis(600)).await;
@@ -66,7 +66,7 @@ async fn limits() {
     session.response().assert_code("421 4.3.2");
 
     // Timeout
-    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip_str = "10.0.0.2".into();
     session.data.valid_until = Instant::now();
     session.eval_session_params().await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");

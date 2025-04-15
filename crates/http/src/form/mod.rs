@@ -12,6 +12,7 @@ use common::{
     config::network::{ContactForm, FieldOrDefault},
     ip_to_bytes, psl,
 };
+use compact_str::CompactString;
 use email::message::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
 use hyper::StatusCode;
 use mail_auth::common::cache::NoCache;
@@ -85,10 +86,8 @@ impl FormHandler for Server {
         }
 
         // Obtain fields
-        let from_email = form_data
-            .get_or_default(&form.from_email)
-            .trim()
-            .to_lowercase();
+        let from_email =
+            CompactString::from_str_to_lowercase(form_data.get_or_default(&form.from_email).trim());
         let from_subject = form_data.get_or_default(&form.from_subject).trim();
         let from_name = form_data.get_or_default(&form.from_name).trim();
 

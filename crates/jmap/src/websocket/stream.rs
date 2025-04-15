@@ -36,6 +36,7 @@ pub trait WebSocketHandler: Sync + Send {
 }
 
 impl WebSocketHandler for Server {
+    #![allow(clippy::large_futures)]
     async fn handle_websocket_stream(
         &self,
         mut stream: WebSocketStream<TokioIo<Upgraded>>,

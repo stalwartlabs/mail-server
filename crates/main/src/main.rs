@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+#![warn(clippy::large_futures)]
+
 use std::time::Duration;
 
 use common::{config::server::ServerProtocol, core::BuildServer, manager::boot::BootManager};
@@ -26,7 +28,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     // Load config and apply macros
-    let mut init = BootManager::init().await;
+    let mut init = Box::pin(BootManager::init()).await;
 
     // Init services
     init.start_services().await;

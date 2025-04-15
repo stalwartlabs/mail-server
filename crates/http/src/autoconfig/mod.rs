@@ -7,7 +7,8 @@
 use std::fmt::Write;
 
 use common::{Server, manager::webadmin::Resource};
-use directory::{QueryBy, backend::internal::PrincipalField};
+use compact_str::CompactString;
+use directory::QueryBy;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use trc::AddContext;
@@ -28,7 +29,7 @@ pub trait Autoconfig: Sync + Send {
     fn autoconfig_parameters<'x>(
         &self,
         emailaddress: &'x str,
-    ) -> impl Future<Output = trc::Result<(String, String, &'x str)>> + Send;
+    ) -> impl Future<Output = trc::Result<(CompactString, CompactString, &'x str)>> + Send;
 }
 
 impl Autoconfig for Server {
@@ -176,7 +177,7 @@ impl Autoconfig for Server {
     async fn autoconfig_parameters<'x>(
         &self,
         emailaddress: &'x str,
-    ) -> trc::Result<(String, String, &'x str)> {
+    ) -> trc::Result<(CompactString, CompactString, &'x str)> {
         let (_, domain) = emailaddress.rsplit_once('@').ok_or_else(|| {
             trc::ResourceEvent::BadParameters
                 .into_err()
@@ -184,10 +185,10 @@ impl Autoconfig for Server {
         })?;
 
         // Obtain server name
-        let server_name = self.core.network.server_name.to_string();
+        let server_name = self.core.network.server_name.clone();
 
         // Find the account name by e-mail address
-        let mut account_name = emailaddress.to_string();
+        let mut account_name = emailaddress.into();
         if let Some(id) = self
             .core
             .storage
@@ -196,7 +197,7 @@ impl Autoconfig for Server {
             .await
             .caused_by(trc::location!())?
         {
-            if let Ok(Some(mut principal)) = self
+            if let Ok(Some(principal)) = self
                 .core
                 .storage
                 .directory
@@ -204,11 +205,11 @@ impl Autoconfig for Server {
                 .await
             {
                 if principal
-                    .get_str_array(PrincipalField::Emails)
-                    .and_then(|emails| emails.first())
+                    .emails
+                    .first()
                     .is_some_and(|email| email.eq_ignore_ascii_case(emailaddress))
                 {
-                    account_name = principal.take_str(PrincipalField::Name).unwrap_or_default();
+                    account_name = principal.name;
                 }
             }
         }

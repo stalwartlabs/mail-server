@@ -174,19 +174,19 @@ impl VacationResponseSet for Server {
                         if value.len() < 512 =>
                     {
                         build_script = true;
-                        vacation.subject = Some(value);
+                        vacation.subject = Some(value.into());
                     }
                     (Property::HtmlBody, MaybePatchValue::Value(Value::Text(value)))
                         if value.len() < 2048 =>
                     {
                         build_script = true;
-                        vacation.html_body = Some(value);
+                        vacation.html_body = Some(value.into());
                     }
                     (Property::TextBody, MaybePatchValue::Value(Value::Text(value)))
                         if value.len() < 2048 =>
                     {
                         build_script = true;
-                        vacation.text_body = Some(value);
+                        vacation.text_body = Some(value.into());
                     }
                     (Property::FromDate, MaybePatchValue::Value(Value::Date(date))) => {
                         vacation.from_date = Some(date.timestamp() as u64);

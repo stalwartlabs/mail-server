@@ -14,7 +14,7 @@ use common::{
     sharing::EffectiveAcl,
 };
 use compact_str::CompactString;
-use directory::{QueryBy, backend::internal::PrincipalField};
+use directory::backend::internal::manage::ManageDirectory;
 use email::{
     mailbox::{
         INBOX_ID,
@@ -65,14 +65,11 @@ impl<T: SessionStream> SessionData<T> {
                 session.server.core.jmap.shared_folder,
                 session
                     .server
-                    .core
-                    .storage
-                    .directory
-                    .query(QueryBy::Id(account_id), false)
+                    .store()
+                    .get_principal_name(account_id)
                     .await
-                    .unwrap_or_default()
-                    .and_then(|mut p| p.take_str(PrincipalField::Name))
-                    .unwrap_or_else(|| Id::from(account_id).to_string())
+                    .caused_by(trc::location!())?
+                    .unwrap_or_else(|| Id::from(account_id).to_string().into())
             )
             .into();
             mailboxes.push(
@@ -282,14 +279,11 @@ impl<T: SessionStream> SessionData<T> {
                     "{}/{}",
                     self.server.core.jmap.shared_folder,
                     self.server
-                        .core
-                        .storage
-                        .directory
-                        .query(QueryBy::Id(account_id), false)
+                        .store()
+                        .get_principal_name(account_id)
                         .await
                         .caused_by(trc::location!())?
-                        .and_then(|mut p| p.take_str(PrincipalField::Name))
-                        .unwrap_or_else(|| Id::from(account_id).to_string())
+                        .unwrap_or_else(|| Id::from(account_id).to_string().into())
                 )
                 .into();
                 added_accounts.push(

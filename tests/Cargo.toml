@@ -5,8 +5,8 @@ edition = "2024"
 resolver = "2"
 
 [features]
-default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
-#default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis"]
+#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
+default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis"]
 #default = ["rocks", "redis", "s3"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
@@ -70,6 +70,7 @@ ring = { version = "0.17" }
 biscuit = "0.7.0"
 form_urlencoded = "1.1.0"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
+compact_str = "0.9.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"

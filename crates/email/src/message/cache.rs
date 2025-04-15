@@ -197,6 +197,9 @@ async fn full_cache_build(
         .await
         .caused_by(trc::location!())?;
 
+    cache.items.shrink_to_fit();
+    cache.index.shrink_to_fit();
+
     Ok(Arc::new(cache))
 }
 

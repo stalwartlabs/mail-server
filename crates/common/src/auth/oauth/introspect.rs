@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 use trc::{AddContext, AuthEvent, EventType};
 
@@ -16,19 +17,19 @@ pub struct OAuthIntrospect {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<String>,
+    pub scope: Option<CompactString>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
+    pub client_id: Option<CompactString>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
+    pub username: Option<CompactString>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub token_type: Option<String>,
+    pub token_type: Option<CompactString>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,7 +45,7 @@ pub struct OAuthIntrospect {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sub: Option<String>,
+    pub sub: Option<CompactString>,
 }
 
 impl Server {
@@ -67,7 +68,7 @@ impl Server {
                         .clone()
                 }
                 .into(),
-                token_type: "bearer".to_string().into(),
+                token_type: Some("bearer".into()),
                 exp: Some(token_info.expiry as i64),
                 iat: Some(token_info.issued_at as i64),
                 ..Default::default()

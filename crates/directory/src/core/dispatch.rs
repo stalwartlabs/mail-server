@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
 use trc::AddContext;
 
 use crate::{
@@ -96,7 +97,7 @@ impl Directory {
         Ok(result)
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         match &self.store {
             DirectoryInner::Internal(store) => store.vrfy(address).await,
             DirectoryInner::Ldap(store) => store.vrfy(address).await,
@@ -109,7 +110,7 @@ impl Directory {
         .caused_by(trc::location!())
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         match &self.store {
             DirectoryInner::Internal(store) => store.expn(address).await,
             DirectoryInner::Ldap(store) => store.expn(address).await,

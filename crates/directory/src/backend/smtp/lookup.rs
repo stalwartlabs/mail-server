@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
 use mail_send::{Credentials, smtp::AssertReply};
 use smtp_proto::Severity;
 
-use crate::{IntoError, Principal, QueryBy, backend::RcptType};
+use crate::{IntoError, Principal, QueryBy, Type, backend::RcptType};
 
 use super::{SmtpClient, SmtpDirectory};
 
@@ -66,7 +67,7 @@ impl SmtpDirectory {
         }
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         self.pool
             .get()
             .await
@@ -75,7 +76,7 @@ impl SmtpDirectory {
             .await
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
         self.pool
             .get()
             .await
@@ -99,7 +100,7 @@ impl SmtpClient {
             .authenticate(credentials, &self.capabilities)
             .await
         {
-            Ok(_) => Ok(Some(Principal::default())),
+            Ok(_) => Ok(Some(Principal::new(u32::MAX, Type::Individual))),
             Err(err) => match &err {
                 mail_send::Error::AuthenticationFailed(err) if err.code() == 535 => {
                     self.num_auth_failures += 1;
@@ -110,7 +111,7 @@ impl SmtpClient {
         }
     }
 
-    async fn expand(&mut self, command: &str) -> trc::Result<Vec<String>> {
+    async fn expand(&mut self, command: &str) -> trc::Result<Vec<CompactString>> {
         let reply = self
             .client
             .cmd(command.as_bytes())
@@ -120,8 +121,8 @@ impl SmtpClient {
             250 | 251 => Ok(reply
                 .message()
                 .split('\n')
-                .map(|p| p.to_string())
-                .collect::<Vec<String>>()),
+                .map(|p| p.into())
+                .collect::<Vec<CompactString>>()),
             code @ (550 | 551 | 553 | 500 | 502) => {
                 Err(trc::StoreEvent::NotSupported.ctx(trc::Key::Code, code))
             }

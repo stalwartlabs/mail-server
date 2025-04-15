@@ -6,6 +6,7 @@
 
 use std::borrow::Cow;
 
+use compact_str::CompactString;
 use directory::{Directory, backend::RcptType};
 use utils::config::{Config, utils::AsKey};
 
@@ -99,7 +100,7 @@ impl Server {
         directory: &Directory,
         address: &str,
         session_id: u64,
-    ) -> trc::Result<Vec<String>> {
+    ) -> trc::Result<Vec<CompactString>> {
         directory
             .vrfy(
                 self.core
@@ -119,7 +120,7 @@ impl Server {
         directory: &Directory,
         address: &str,
         session_id: u64,
-    ) -> trc::Result<Vec<String>> {
+    ) -> trc::Result<Vec<CompactString>> {
         directory
             .expn(
                 self.core
@@ -195,7 +196,7 @@ impl AddressMapping {
             }
             AddressMapping::Custom(if_block) => {
                 if let Some(result) = core
-                    .eval_if::<String, _>(if_block, &Address(address), session_id)
+                    .eval_if::<CompactString, _>(if_block, &Address(address), session_id)
                     .await
                 {
                     return result.into();
@@ -219,9 +220,9 @@ impl AddressMapping {
                 .map(|(_, domain_part)| format!("@{}", domain_part))
                 .map(Cow::Owned),
             AddressMapping::Custom(if_block) => core
-                .eval_if::<String, _>(if_block, &Address(address), session_id)
+                .eval_if::<CompactString, _>(if_block, &Address(address), session_id)
                 .await
-                .map(Cow::Owned),
+                .map(|s| Cow::Owned(s.into())),
             AddressMapping::Disable => None,
         }
     }

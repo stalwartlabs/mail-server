@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::CompactString;
 use utils::config::{Config, utils::AsKey};
 
 use crate::expr::{Constant, Expression};
@@ -22,14 +23,14 @@ pub struct IfThen {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IfBlock {
-    pub key: String,
+    pub key: CompactString,
     pub if_then: Vec<IfThen>,
     pub default: Expression,
 }
 
 impl IfBlock {
     pub fn new<T: ConstantValue>(
-        key: impl Into<String>,
+        key: impl Into<CompactString>,
         if_thens: impl IntoIterator<Item = (&'static str, &'static str)>,
         default: impl AsRef<str>,
     ) -> Self {
@@ -50,7 +51,7 @@ impl IfBlock {
         }
     }
 
-    pub fn empty(key: impl Into<String>) -> Self {
+    pub fn empty(key: impl Into<CompactString>) -> Self {
         Self {
             key: key.into(),
             if_then: Default::default(),
@@ -101,7 +102,7 @@ impl IfBlock {
 
         // Parse conditions
         let mut if_block = IfBlock {
-            key,
+            key: key.into(),
             if_then: Default::default(),
             default: Expression {
                 items: Default::default(),
@@ -213,7 +214,7 @@ impl IfBlock {
         }
     }
 
-    pub fn into_default(self, key: impl Into<String>) -> IfBlock {
+    pub fn into_default(self, key: impl Into<CompactString>) -> IfBlock {
         IfBlock {
             key: key.into(),
             if_then: Default::default(),
@@ -231,7 +232,7 @@ impl IfBlock {
         None
     }
 
-    pub fn into_default_string(self) -> Option<String> {
+    pub fn into_default_string(self) -> Option<CompactString> {
         for expr_item in self.default.items {
             if let ExpressionItem::Constant(Constant::String(value)) = expr_item {
                 return Some(value);

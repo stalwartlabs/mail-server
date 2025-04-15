@@ -10,9 +10,13 @@ use common::{
     auth::AccessToken, listener::SessionStream, sharing::EffectiveAcl,
     storage::index::ObjectIndexBuilder,
 };
+use compact_str::ToCompactString;
 use directory::{
     Permission, QueryBy, Type,
-    backend::internal::{PrincipalField, manage::ChangedPrincipals},
+    backend::internal::{
+        PrincipalField,
+        manage::{ChangedPrincipals, ManageDirectory},
+    },
 };
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
@@ -56,13 +60,10 @@ impl<T: SessionStream> Session<T> {
             for item in mailbox.inner.acls.iter() {
                 if let Some(account_name) = data
                     .server
-                    .core
-                    .storage
-                    .directory
-                    .query(QueryBy::Id(item.account_id.into()), false)
+                    .store()
+                    .get_principal_name(item.account_id.into())
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
-                    .and_then(|mut p| p.take_str(PrincipalField::Name))
                 {
                     let mut rights = Vec::new();
 
@@ -104,7 +105,7 @@ impl<T: SessionStream> Session<T> {
                         }
                     }
 
-                    permissions.push((account_name.into(), rights));
+                    permissions.push((account_name, rights));
                 }
             }
 
@@ -201,7 +202,7 @@ impl<T: SessionStream> Session<T> {
                 MailboxId = mailbox_id.mailbox_id,
                 Details = rights
                     .iter()
-                    .map(|r| trc::Value::String(r.to_string()))
+                    .map(|r| trc::Value::String(r.to_compact_string()))
                     .collect::<Vec<_>>(),
                 Elapsed = op_start.elapsed()
             );

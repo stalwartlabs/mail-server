@@ -81,7 +81,7 @@ async fn auth() {
 
     // EHLO should not advertise plain text auth without TLS
     let mut session = Session::test(TestSMTP::from_core(core).server);
-    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.stream.tls = false;
     session
@@ -148,7 +148,7 @@ async fn auth() {
     session.cmd("cDRzc3cwcmQ=", "235 2.7.0").await;
 
     // Login should not be advertised to 10.0.0.2
-    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip_str = "10.0.0.2".into();
     session.eval_session_params().await;
     session.stream.tls = true;
     session

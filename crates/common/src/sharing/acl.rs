@@ -6,7 +6,10 @@
 
 use directory::{
     QueryBy, Type,
-    backend::internal::{PrincipalField, manage::ChangedPrincipals},
+    backend::internal::{
+        PrincipalField,
+        manage::{ChangedPrincipals, ManageDirectory},
+    },
 };
 use jmap_proto::{
     error::set::SetError,
@@ -91,16 +94,14 @@ impl Server {
         {
             let mut acl_obj = jmap_proto::types::value::Object::with_capacity(value.len() / 2);
             for item in value {
-                if let Some(mut principal) = self
-                    .core
-                    .storage
-                    .directory
-                    .query(QueryBy::Id(item.account_id), false)
+                if let Some(name) = self
+                    .store()
+                    .get_principal_name(item.account_id)
                     .await
                     .unwrap_or_default()
                 {
                     acl_obj.append(
-                        Property::_T(principal.take_str(PrincipalField::Name).unwrap_or_default()),
+                        Property::_T(name.into()),
                         item.grants
                             .map(|acl_item| Value::Text(acl_item.to_string()))
                             .collect::<Vec<_>>(),

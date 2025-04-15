@@ -192,7 +192,6 @@ impl Serialize for JsonEventSerializer<&Value> {
         S: Serializer,
     {
         match &self.inner {
-            Value::Static(value) => value.serialize(serializer),
             Value::String(value) => value.serialize(serializer),
             Value::UInt(value) => value.serialize(serializer),
             Value::Int(value) => value.serialize(serializer),

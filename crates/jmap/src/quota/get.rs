@@ -78,8 +78,12 @@ impl QuotaGet for Server {
                     Property::Used => (self.get_used_quota(account_id).await? as u64).into(),
                     Property::HardLimit => access_token.quota.into(),
                     Property::Scope => "account".to_string().into(),
-                    Property::Name => access_token.name.clone().into(),
-                    Property::Description => access_token.description.clone().into(),
+                    Property::Name => access_token.name.to_string().into(),
+                    Property::Description => access_token
+                        .description
+                        .as_ref()
+                        .map(|s| s.to_string())
+                        .into(),
                     Property::Types => vec![
                         Value::Text(DataType::Email.to_string()),
                         Value::Text(DataType::SieveScript.to_string()),

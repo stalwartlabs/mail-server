@@ -127,11 +127,6 @@ impl Event<EventDetails> {
 impl Value {
     fn serialize(&self, buf: &mut Vec<u8>) {
         match self {
-            Value::Static(v) => {
-                buf.push(0u8);
-                leb128_write(buf, v.len() as u64);
-                buf.extend(v.as_bytes());
-            }
             Value::String(v) => {
                 buf.push(0u8);
                 leb128_write(buf, v.len() as u64);
@@ -205,7 +200,7 @@ impl Value {
                 for byte in buf.iter_mut() {
                     *byte = *iter.next()?;
                 }
-                Some(Value::String(String::from_utf8(buf).ok()?))
+                Some(Value::String(CompactString::from_utf8(buf).ok()?))
             }
             1 => Some(Value::UInt(leb128_read(iter)?)),
             2 => {

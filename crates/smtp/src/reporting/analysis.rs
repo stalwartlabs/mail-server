@@ -12,6 +12,7 @@ use std::{
 
 use ahash::AHashMap;
 use common::Server;
+use compact_str::CompactString;
 use mail_auth::{
     flate2::read::GzDecoder,
     report::{ActionDisposition, DmarcResult, Feedback, Report, tlsrpt::TlsReport},
@@ -45,9 +46,9 @@ struct ReportData<'x> {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct IncomingReport<T> {
-    pub from: String,
-    pub to: Vec<String>,
-    pub subject: String,
+    pub from: CompactString,
+    pub to: Vec<CompactString>,
+    pub subject: CompactString,
     pub report: T,
 }
 
@@ -59,19 +60,19 @@ impl AnalyzeReport for Server {
     fn analyze_report(&self, message: Message<'static>, session_id: u64) {
         let core = self.clone();
         tokio::spawn(async move {
-            let from = message
+            let from: CompactString = message
                 .from()
                 .and_then(|a| a.last())
                 .and_then(|a| a.address())
                 .unwrap_or_default()
-                .to_string();
-            let to = message.to().map_or_else(Vec::new, |a| {
+                .into();
+            let to: Vec<CompactString> = message.to().map_or_else(Vec::new, |a| {
                 a.iter()
                     .filter_map(|a| a.address())
-                    .map(|a| a.to_string())
+                    .map(|a| a.into())
                     .collect()
             });
-            let subject = message.subject().unwrap_or_default().to_string();
+            let subject: CompactString = message.subject().unwrap_or_default().into();
             let mut reports = Vec::new();
 
             for part in &message.parts {
@@ -474,15 +475,13 @@ impl LogReport for Feedback<'_> {
             Domain = self
                 .reported_domain()
                 .iter()
-                .map(|d| trc::Value::String(d.to_string()))
+                .map(|d| trc::Value::String(d.as_ref().into()))
                 .collect::<Vec<_>>(),
-            Hostname = self
-                .reporting_mta()
-                .map(|d| trc::Value::String(d.to_string())),
+            Hostname = self.reporting_mta().map(|d| trc::Value::String(d.into())),
             Url = self
                 .reported_uri()
                 .iter()
-                .map(|d| trc::Value::String(d.to_string()))
+                .map(|d| trc::Value::String(d.as_ref().into()))
                 .collect::<Vec<_>>(),
             RemoteIp = self.source_ip(),
             Total = self.incidents(),
@@ -490,17 +489,17 @@ impl LogReport for Feedback<'_> {
             Details = self
                 .authentication_results()
                 .iter()
-                .map(|d| trc::Value::String(d.to_string()))
+                .map(|d| trc::Value::String(d.as_ref().into()))
                 .collect::<Vec<_>>(),
         );
     }
 }
 
 impl<T> IncomingReport<T> {
-    pub fn has_domain(&self, domain: &[String]) -> bool {
+    pub fn has_domain(&self, domain: &[CompactString]) -> bool {
         self.to
             .iter()
-            .any(|to| domain.iter().any(|d| to.ends_with(d)))
-            || domain.iter().any(|d| self.from.ends_with(d))
+            .any(|to| domain.iter().any(|d| to.ends_with(d.as_str())))
+            || domain.iter().any(|d| self.from.ends_with(d.as_str()))
     }
 }

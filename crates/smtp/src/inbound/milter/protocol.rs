@@ -6,6 +6,8 @@
 
 use std::net::IpAddr;
 
+use compact_str::CompactString;
+
 use crate::inbound::milter::Action;
 
 use super::{Command, Error, Modification, Options, Response};
@@ -269,7 +271,7 @@ impl Response {
         match *bytes.next()? {
             SMFIR_ADDRCPT => Response::Modification(Modification::AddRcpt {
                 recipient: read_nul_terminated(&mut bytes, frame_len)?,
-                args: String::new(),
+                args: CompactString::new(""),
             }),
             SMFIR_DELRCPT => Response::Modification(Modification::DeleteRcpt {
                 recipient: read_nul_terminated(&mut bytes, frame_len)?,
@@ -460,7 +462,10 @@ impl Response {
     }
 }
 
-fn read_nul_terminated(bytes: &mut std::slice::Iter<u8>, expected_len: usize) -> Option<String> {
+fn read_nul_terminated(
+    bytes: &mut std::slice::Iter<u8>,
+    expected_len: usize,
+) -> Option<CompactString> {
     let mut buf = Vec::with_capacity(expected_len);
     loop {
         match bytes.next()? {
@@ -468,7 +473,7 @@ fn read_nul_terminated(bytes: &mut std::slice::Iter<u8>, expected_len: usize) ->
             byte => buf.push(*byte),
         }
     }
-    String::from_utf8(buf).ok()
+    CompactString::from_utf8(buf).ok()
 }
 
 fn read_u32(bytes: &mut std::slice::Iter<u8>) -> Option<u32> {

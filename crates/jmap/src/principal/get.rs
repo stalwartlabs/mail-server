@@ -5,7 +5,7 @@
  */
 
 use common::Server;
-use directory::{QueryBy, backend::internal::PrincipalField};
+use directory::QueryBy;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -85,9 +85,9 @@ impl PrincipalGet for Server {
                         .map(|v| Value::Text(v.to_string()))
                         .unwrap_or(Value::Null),
                     Property::Email => principal
-                        .iter_str(PrincipalField::Emails)
-                        .next()
-                        .map(|email| Value::Text(email.clone()))
+                        .emails
+                        .first()
+                        .map(|email| Value::Text(email.to_string()))
                         .unwrap_or(Value::Null),
                     _ => Value::Null,
                 };

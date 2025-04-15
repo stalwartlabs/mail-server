@@ -10,6 +10,7 @@ use common::config::{
     server::ServerProtocol,
     smtp::queue::{RelayHost, RequireOptional},
 };
+use compact_str::ToCompactString;
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
 
@@ -43,15 +44,15 @@ impl Status<(), Error> {
             | mail_send::Error::MissingRcptTo
             | mail_send::Error::Timeout => {
                 Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
-                    entity: hostname.to_string(),
-                    details: err.to_string(),
+                    entity: hostname.into(),
+                    details: err.to_compact_string(),
                 }))
             }
 
             mail_send::Error::UnexpectedReply(reply) => {
                 let details = ErrorDetails {
-                    entity: hostname.to_string(),
-                    details: command.trim().to_string(),
+                    entity: hostname.into(),
+                    details: command.trim().into(),
                 };
                 if reply.severity() == Severity::PermanentNegativeCompletion {
                     Status::PermanentFailure(Error::UnexpectedResponse(HostResponse {
@@ -71,19 +72,19 @@ impl Status<(), Error> {
             | mail_send::Error::InvalidTLSName
             | mail_send::Error::MissingStartTls => {
                 Status::PermanentFailure(Error::ConnectionError(ErrorDetails {
-                    entity: hostname.to_string(),
-                    details: err.to_string(),
+                    entity: hostname.into(),
+                    details: err.to_compact_string(),
                 }))
             }
         }
     }
 
     pub fn from_starttls_error(hostname: &str, response: Option<Response<String>>) -> Self {
-        let entity = hostname.to_string();
+        let entity = hostname.into();
         if let Some(response) = response {
             let hostname = ErrorDetails {
                 entity,
-                details: "STARTTLS".to_string(),
+                details: "STARTTLS".into(),
             };
 
             if response.severity() == Severity::PermanentNegativeCompletion {
@@ -100,7 +101,7 @@ impl Status<(), Error> {
         } else {
             Status::PermanentFailure(Error::TlsError(ErrorDetails {
                 entity,
-                details: "STARTTLS not advertised by host.".to_string(),
+                details: "STARTTLS not advertised by host.".into(),
             }))
         }
     }
@@ -109,40 +110,40 @@ impl Status<(), Error> {
         match err {
             mail_send::Error::InvalidTLSName => {
                 Status::PermanentFailure(Error::TlsError(ErrorDetails {
-                    entity: hostname.to_string(),
-                    details: "Invalid hostname".to_string(),
+                    entity: hostname.into(),
+                    details: "Invalid hostname".into(),
                 }))
             }
             mail_send::Error::Timeout => Status::TemporaryFailure(Error::TlsError(ErrorDetails {
-                entity: hostname.to_string(),
-                details: "TLS handshake timed out".to_string(),
+                entity: hostname.into(),
+                details: "TLS handshake timed out".into(),
             })),
             mail_send::Error::Tls(err) => Status::TemporaryFailure(Error::TlsError(ErrorDetails {
-                entity: hostname.to_string(),
-                details: format!("Handshake failed: {err}"),
+                entity: hostname.into(),
+                details: format!("Handshake failed: {err}").into(),
             })),
             mail_send::Error::Io(err) => Status::TemporaryFailure(Error::TlsError(ErrorDetails {
-                entity: hostname.to_string(),
-                details: format!("I/O error: {err}"),
+                entity: hostname.into(),
+                details: format!("I/O error: {err}").into(),
             })),
             _ => Status::PermanentFailure(Error::TlsError(ErrorDetails {
-                entity: hostname.to_string(),
-                details: "Other TLS error".to_string(),
+                entity: hostname.into(),
+                details: "Other TLS error".into(),
             })),
         }
     }
 
     pub fn timeout(hostname: &str, stage: &str) -> Self {
         Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
-            entity: hostname.to_string(),
-            details: format!("Timeout while {stage}"),
+            entity: hostname.into(),
+            details: format!("Timeout while {stage}").into(),
         }))
     }
 
     pub fn local_error() -> Self {
         Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
-            entity: "localhost".to_string(),
-            details: "Could not deliver message locally.".to_string(),
+            entity: "localhost".into(),
+            details: "Could not deliver message locally.".into(),
         }))
     }
 }
@@ -150,10 +151,10 @@ impl Status<(), Error> {
 impl From<mail_auth::Error> for Status<(), Error> {
     fn from(err: mail_auth::Error) -> Self {
         match &err {
-            mail_auth::Error::DnsRecordNotFound(code) => {
-                Status::PermanentFailure(Error::DnsError(format!("Domain not found: {code:?}")))
-            }
-            _ => Status::TemporaryFailure(Error::DnsError(err.to_string())),
+            mail_auth::Error::DnsRecordNotFound(code) => Status::PermanentFailure(Error::DnsError(
+                format!("Domain not found: {code:?}").into(),
+            )),
+            _ => Status::TemporaryFailure(Error::DnsError(err.to_compact_string())),
         }
     }
 }
@@ -163,38 +164,34 @@ impl From<mta_sts::Error> for Status<(), Error> {
         match &err {
             mta_sts::Error::Dns(err) => match err {
                 mail_auth::Error::DnsRecordNotFound(code) => Status::PermanentFailure(
-                    Error::MtaStsError(format!("Record not found: {code:?}")),
+                    Error::MtaStsError(format!("Record not found: {code:?}").into()),
                 ),
                 mail_auth::Error::InvalidRecordType => Status::PermanentFailure(
-                    Error::MtaStsError("Failed to parse MTA-STS DNS record.".to_string()),
+                    Error::MtaStsError("Failed to parse MTA-STS DNS record.".into()),
                 ),
-                _ => {
-                    Status::TemporaryFailure(Error::MtaStsError(format!("DNS lookup error: {err}")))
-                }
+                _ => Status::TemporaryFailure(Error::MtaStsError(
+                    format!("DNS lookup error: {err}").into(),
+                )),
             },
             mta_sts::Error::Http(err) => {
                 if err.is_timeout() {
-                    Status::TemporaryFailure(Error::MtaStsError(
-                        "Timeout fetching policy.".to_string(),
-                    ))
+                    Status::TemporaryFailure(Error::MtaStsError("Timeout fetching policy.".into()))
                 } else if err.is_connect() {
                     Status::TemporaryFailure(Error::MtaStsError(
-                        "Could not reach policy host.".to_string(),
+                        "Could not reach policy host.".into(),
                     ))
                 } else if err.is_status()
                     & err
                         .status()
                         .is_some_and(|s| s == reqwest::StatusCode::NOT_FOUND)
                 {
-                    Status::PermanentFailure(Error::MtaStsError("Policy not found.".to_string()))
+                    Status::PermanentFailure(Error::MtaStsError("Policy not found.".into()))
                 } else {
-                    Status::TemporaryFailure(Error::MtaStsError(
-                        "Failed to fetch policy.".to_string(),
-                    ))
+                    Status::TemporaryFailure(Error::MtaStsError("Failed to fetch policy.".into()))
                 }
             }
             mta_sts::Error::InvalidPolicy(err) => Status::PermanentFailure(Error::MtaStsError(
-                format!("Failed to parse policy: {err}"),
+                format!("Failed to parse policy: {err}").into(),
             )),
         }
     }
@@ -203,14 +200,14 @@ impl From<mta_sts::Error> for Status<(), Error> {
 #[derive(Debug)]
 pub enum NextHop<'x> {
     Relay(&'x RelayHost),
-    MX(&'x str),
+    MX { is_implicit: bool, host: &'x str },
 }
 
 impl NextHop<'_> {
     #[inline(always)]
     pub fn hostname(&self) -> &str {
         match self {
-            NextHop::MX(host) => {
+            NextHop::MX { host, .. } => {
                 if let Some(host) = host.strip_suffix('.') {
                     host
                 } else {
@@ -224,7 +221,7 @@ impl NextHop<'_> {
     #[inline(always)]
     pub fn fqdn_hostname(&self) -> Cow<'_, str> {
         match self {
-            NextHop::MX(host) => {
+            NextHop::MX { host, .. } => {
                 if !host.ends_with('.') {
                     format!("{host}.").into()
                 } else {
@@ -239,9 +236,9 @@ impl NextHop<'_> {
     fn port(&self) -> u16 {
         match self {
             #[cfg(feature = "test_mode")]
-            NextHop::MX(_) => 9925,
+            NextHop::MX { .. } => 9925,
             #[cfg(not(feature = "test_mode"))]
-            NextHop::MX(_) => 25,
+            NextHop::MX { .. } => 25,
             NextHop::Relay(host) => host.port,
         }
     }
@@ -249,7 +246,7 @@ impl NextHop<'_> {
     #[inline(always)]
     fn credentials(&self) -> Option<&Credentials<String>> {
         match self {
-            NextHop::MX(_) => None,
+            NextHop::MX { .. } => None,
             NextHop::Relay(host) => host.auth.as_ref(),
         }
     }
@@ -262,7 +259,7 @@ impl NextHop<'_> {
         }
         #[cfg(not(feature = "test_mode"))]
         match self {
-            NextHop::MX(_) => false,
+            NextHop::MX { .. } => false,
             NextHop::Relay(host) => host.tls_allow_invalid_certs,
         }
     }
@@ -270,7 +267,7 @@ impl NextHop<'_> {
     #[inline(always)]
     fn implicit_tls(&self) -> bool {
         match self {
-            NextHop::MX(_) => false,
+            NextHop::MX { .. } => false,
             NextHop::Relay(host) => host.tls_implicit,
         }
     }
@@ -278,7 +275,7 @@ impl NextHop<'_> {
     #[inline(always)]
     fn is_smtp(&self) -> bool {
         match self {
-            NextHop::MX(_) => true,
+            NextHop::MX { .. } => true,
             NextHop::Relay(host) => host.protocol == ServerProtocol::Smtp,
         }
     }

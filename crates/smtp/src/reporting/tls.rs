@@ -15,6 +15,7 @@ use common::{
     },
     ipc::{TlsEvent, ToHash},
 };
+use compact_str::{CompactString, ToCompactString};
 use mail_auth::{
     flate2::{Compression, write::GzEncoder},
     mta_sts::{ReportUri, TlsRpt},
@@ -210,7 +211,7 @@ impl TlsReporting for Server {
             let from_addr = self
                 .eval_if(&config.address, &RecipientDomain::new(domain_name), span_id)
                 .await
-                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
+                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_compact_string());
             let mut message = Vec::with_capacity(2048);
             let _ = report.write_rfc5322_from_bytes(
                 domain_name,
@@ -221,11 +222,11 @@ impl TlsReporting for Server {
                         span_id,
                     )
                     .await
-                    .unwrap_or_else(|| "localhost".to_string()),
+                    .unwrap_or_else(|| "localhost".to_compact_string()),
                 (
                     self.eval_if(&config.name, &RecipientDomain::new(domain_name), span_id)
                         .await
-                        .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
+                        .unwrap_or_else(|| "Mail Delivery Subsystem".to_compact_string())
                         .as_str(),
                     from_addr.as_str(),
                 ),
@@ -267,24 +268,26 @@ impl TlsReporting for Server {
         let config = &self.core.smtp.report.tls;
         let mut report = TlsReport {
             organization_name: self
-                .eval_if(
+                .eval_if::<CompactString, _>(
                     &config.org_name,
                     &RecipientDomain::new(domain_name),
                     span_id,
                 )
                 .await
+                .map(Into::into)
                 .clone(),
             date_range: DateRange {
                 start_datetime: DateTime::from_timestamp(event_from as i64),
                 end_datetime: DateTime::from_timestamp(event_to as i64),
             },
             contact_info: self
-                .eval_if(
+                .eval_if::<CompactString, _>(
                     &config.contact_info,
                     &RecipientDomain::new(domain_name),
                     span_id,
                 )
                 .await
+                .map(Into::into)
                 .clone(),
             report_id: format!("{}_{}", event_from, policy),
             policies: Vec::with_capacity(events.len()),
