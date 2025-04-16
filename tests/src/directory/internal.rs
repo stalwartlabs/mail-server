@@ -618,6 +618,28 @@ async fn internal_directory() {
                 .collect::<Vec<_>>(),
             vec!["list"]
         );
+        assert_eq!(
+            store
+                .list_principals("example.org".into(), None, &[], true, 0, 0)
+                .await
+                .unwrap()
+                .items
+                .into_iter()
+                .map(|p| p.name)
+                .collect::<Vec<_>>(),
+            vec!["example.org", "jane", "john.doe", "list"]
+        );
+        assert_eq!(
+            store
+                .list_principals("johnny doe".into(), None, &[], true, 0, 0)
+                .await
+                .unwrap()
+                .items
+                .into_iter()
+                .map(|p| p.name)
+                .collect::<Vec<_>>(),
+            vec!["john.doe"]
+        );
 
         // Write records on John's and Jane's accounts
         let mut document_id = u32::MAX;

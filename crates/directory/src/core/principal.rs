@@ -6,15 +6,21 @@
 
 use std::{collections::hash_map::Entry, fmt, str::FromStr};
 
+use ahash::AHashSet;
+use nlp::tokenizers::word::WordTokenizer;
 use serde::{
     Deserializer, Serializer,
     de::{self, IgnoredAny, Visitor},
     ser::SerializeMap,
 };
-use store::U64_LEN;
+use store::{
+    U64_LEN,
+    backend::MAX_TOKEN_LENGTH,
+    write::{BatchBuilder, DirectoryClass},
+};
 
 use crate::{
-    Permission, PermissionGrant, Principal, PrincipalData, ROLE_ADMIN, Type,
+    ArchivedPrincipal, Permission, PermissionGrant, Principal, PrincipalData, ROLE_ADMIN, Type,
     backend::internal::{PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue},
 };
 
@@ -798,6 +804,53 @@ impl From<u32> for PrincipalValue {
 impl From<Vec<u32>> for PrincipalValue {
     fn from(v: Vec<u32>) -> Self {
         Self::IntegerList(v.into_iter().map(|v| v as u64).collect())
+    }
+}
+
+pub(crate) fn build_search_index(
+    batch: &mut BatchBuilder,
+    principal_id: u32,
+    current: Option<&ArchivedPrincipal>,
+    new: Option<&Principal>,
+) {
+    let mut current_words = AHashSet::new();
+    let mut new_words = AHashSet::new();
+
+    if let Some(current) = current {
+        for word in [Some(current.name.as_str()), current.description.as_deref()]
+            .into_iter()
+            .chain(current.emails.iter().map(|s| Some(s.as_str())))
+            .flatten()
+        {
+            current_words.extend(WordTokenizer::new(word, MAX_TOKEN_LENGTH).map(|t| t.word));
+        }
+    }
+
+    if let Some(new) = new {
+        for word in [Some(new.name.as_str()), new.description.as_deref()]
+            .into_iter()
+            .chain(new.emails.iter().map(|s| Some(s.as_str())))
+            .flatten()
+        {
+            new_words.extend(WordTokenizer::new(word, MAX_TOKEN_LENGTH).map(|t| t.word));
+        }
+    }
+
+    for word in new_words.difference(&current_words) {
+        batch.set(
+            DirectoryClass::Index {
+                word: word.as_bytes().to_vec(),
+                principal_id,
+            },
+            vec![],
+        );
+    }
+
+    for word in current_words.difference(&new_words) {
+        batch.clear(DirectoryClass::Index {
+            word: word.as_bytes().to_vec(),
+            principal_id,
+        });
     }
 }
 

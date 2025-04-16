@@ -439,3 +439,21 @@ impl IntoError for LdapError {
         }
     }
 }
+
+impl From<&ArchivedType> for Type {
+    fn from(archived: &ArchivedType) -> Self {
+        match archived {
+            ArchivedType::Individual => Type::Individual,
+            ArchivedType::Group => Type::Group,
+            ArchivedType::Resource => Type::Resource,
+            ArchivedType::Location => Type::Location,
+            ArchivedType::List => Type::List,
+            ArchivedType::Other => Type::Other,
+            ArchivedType::Domain => Type::Domain,
+            ArchivedType::Tenant => Type::Tenant,
+            ArchivedType::Role => Type::Role,
+            ArchivedType::ApiKey => Type::ApiKey,
+            ArchivedType::OauthClient => Type::OauthClient,
+        }
+    }
+}

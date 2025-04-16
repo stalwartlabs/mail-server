@@ -9,6 +9,7 @@ utils = { path =  "../utils" }
 proc_macros = { path =  "../utils/proc-macros" }
 store = { path =  "../store" }
 trc = { path = "../trc" }
+nlp = { path = "../nlp" }
 jmap_proto = { path =  "../jmap-proto" }
 smtp-proto = { version = "0.1" }
 mail-parser = { version = "0.10", features = ["full_encoding", "serde_support"] } 

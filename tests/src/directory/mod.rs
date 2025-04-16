@@ -362,6 +362,7 @@ impl DirectoryTest {
             true,
         )
         .await;
+
         config.assert_no_errors();
 
         // Enable catch-all and subaddressing

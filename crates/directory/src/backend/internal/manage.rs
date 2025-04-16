@@ -11,13 +11,16 @@ use super::{
 use crate::{
     MemberOf, Permission, PermissionGrant, Permissions, Principal, PrincipalData, PrincipalQuota,
     QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER, Type, backend::RcptType,
+    core::principal::build_search_index,
 };
 use ahash::{AHashMap, AHashSet};
-
 use compact_str::CompactString;
 use jmap_proto::types::collection::Collection;
+use nlp::tokenizers::word::WordTokenizer;
 use store::{
     Deserialize, IterateParams, Serialize, SerializeInfallible, Store, U32_LEN, ValueKey,
+    backend::MAX_TOKEN_LENGTH,
+    roaring::RoaringBitmap,
     write::{
         AlignedBytes, Archive, Archiver, BatchBuilder, DirectoryClass, ValueClass,
         key::DeserializeBigEndian,
@@ -148,7 +151,6 @@ impl ManageDirectory for Store {
         self.get_principal_info(name).await.map(|v| v.map(|v| v.id))
     }
     async fn get_principal_info(&self, name: &str) -> trc::Result<Option<PrincipalInfo>> {
-        let todo = "cache";
         self.get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
             DirectoryClass::NameToId(name.as_bytes().to_vec()),
         )))
@@ -195,7 +197,9 @@ impl ManageDirectory for Store {
                 .with_account_id(u32::MAX)
                 .with_collection(Collection::Principal)
                 .assert_value(name_key.clone(), ())
-                .create_document(principal_id)
+                .create_document(principal_id);
+            build_search_index(&mut batch, principal_id, None, Some(&principal));
+            batch
                 .set(
                     name_key,
                     PrincipalInfo::new(principal_id, typ, None).serialize(),
@@ -545,7 +549,9 @@ impl ManageDirectory for Store {
                     principal_create.name().as_bytes().to_vec(),
                 )),
                 (),
-            )
+            );
+        build_search_index(&mut batch, principal_id, None, Some(&principal_create));
+        batch
             .set(
                 ValueClass::Directory(DirectoryClass::Principal(principal_id)),
                 principal_bytes,
@@ -618,23 +624,33 @@ impl ManageDirectory for Store {
             QueryBy::Id(principal_id) => principal_id,
             QueryBy::Credentials(_) => unreachable!(),
         };
-        let principal = self
-            .get_principal(principal_id)
+
+        let principal_ = self
+            .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::Directory(
+                DirectoryClass::Principal(principal_id),
+            )))
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| not_found(principal_id.to_string()))?;
+        let principal = principal_
+            .unarchive::<Principal>()
+            .caused_by(trc::location!())?;
+        let typ = Type::from(&principal.typ);
+
         let mut batch = BatchBuilder::new();
+        batch.with_account_id(u32::MAX);
 
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Make sure tenant has no data
+        let tenant = principal.tenant.as_ref().map(|t| t.to_native());
         #[cfg(feature = "enterprise")]
-        match principal.typ {
+        match typ {
             Type::Individual | Type::Group => {
                 // Update tenant quota
-                if let Some(tenant_id) = principal.tenant() {
+                if let Some(tenant_id) = tenant {
                     let quota = self
                         .get_counter(DirectoryClass::UsedQuota(principal_id))
                         .await
@@ -648,7 +664,7 @@ impl ManageDirectory for Store {
                 let tenant_members = self
                     .list_principals(
                         None,
-                        principal.id().into(),
+                        principal_id.into(),
                         &[
                             Type::Individual,
                             Type::Group,
@@ -688,8 +704,8 @@ impl ManageDirectory for Store {
                 }
             }
             Type::Domain => {
-                if let Some(tenant_id) = principal.tenant() {
-                    let name = principal.name();
+                if let Some(tenant_id) = tenant {
+                    let name = principal.name.as_str();
                     let tenant_members = self
                         .list_principals(
                             None,
@@ -773,14 +789,16 @@ impl ManageDirectory for Store {
 
         // Delete principal
         batch
-            .with_account_id(principal_id)
+            .delete_document(principal_id)
             .clear(DirectoryClass::NameToId(principal.name.as_bytes().to_vec()))
             .clear(DirectoryClass::Principal(principal_id))
             .clear(DirectoryClass::UsedQuota(principal_id));
 
-        for email in principal.emails {
+        for email in principal.emails.iter() {
             batch.clear(DirectoryClass::EmailToId(email.as_bytes().to_vec()));
         }
+
+        build_search_index(&mut batch, principal_id, Some(principal), None);
 
         for member in self
             .get_member_of(principal_id)
@@ -790,7 +808,7 @@ impl ManageDirectory for Store {
             // Update changed principals
             changed_principals.add_member_change(
                 principal_id,
-                principal.typ,
+                typ,
                 member.principal_id,
                 member.typ,
             );
@@ -817,12 +835,7 @@ impl ManageDirectory for Store {
                 .await
                 .caused_by(trc::location!())?
             {
-                changed_principals.add_member_change(
-                    member_id,
-                    member_info.typ,
-                    principal_id,
-                    principal.typ,
-                );
+                changed_principals.add_member_change(member_id, member_info.typ, principal_id, typ);
             }
 
             // Remove members
@@ -840,7 +853,7 @@ impl ManageDirectory for Store {
             .await
             .caused_by(trc::location!())?;
 
-        changed_principals.add_deletion(principal_id, principal.typ);
+        changed_principals.add_deletion(principal_id, typ);
 
         Ok(changed_principals)
     }
@@ -907,13 +920,6 @@ impl ManageDirectory for Store {
                         | PrincipalField::Roles
                 )
             });
-
-        if update_principal {
-            batch.assert_value(
-                ValueClass::Directory(DirectoryClass::Principal(principal_id)),
-                prev_principal,
-            );
-        }
 
         let mut used_quota: Option<i64> = None;
 
@@ -1860,12 +1866,24 @@ impl ManageDirectory for Store {
         }
 
         if update_principal {
-            batch.set(
-                ValueClass::Directory(DirectoryClass::Principal(principal_id)),
-                Archiver::new(principal)
-                    .serialize()
-                    .caused_by(trc::location!())?,
+            build_search_index(
+                &mut batch,
+                principal_id,
+                Some(prev_principal.inner),
+                Some(&principal),
             );
+
+            batch
+                .assert_value(
+                    ValueClass::Directory(DirectoryClass::Principal(principal_id)),
+                    prev_principal,
+                )
+                .set(
+                    ValueClass::Directory(DirectoryClass::Principal(principal_id)),
+                    Archiver::new(principal)
+                        .serialize()
+                        .caused_by(trc::location!())?,
+                );
         }
 
         self.write(batch.build_all())
@@ -1884,24 +1902,91 @@ impl ManageDirectory for Store {
         page: usize,
         limit: usize,
     ) -> trc::Result<PrincipalList<Principal>> {
+        let filter = if let Some(filter) = filter.filter(|f| !f.trim().is_empty()) {
+            let mut matches = RoaringBitmap::new();
+
+            for token in WordTokenizer::new(filter, MAX_TOKEN_LENGTH) {
+                let word_bytes = token.word.as_bytes();
+                let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Index {
+                    word: word_bytes.to_vec(),
+                    principal_id: 0,
+                }));
+                let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Index {
+                    word: word_bytes.to_vec(),
+                    principal_id: u32::MAX,
+                }));
+
+                let mut word_matches = RoaringBitmap::new();
+                self.iterate(
+                    IterateParams::new(from_key, to_key).no_values(),
+                    |key, _| {
+                        let id_pos = key.len() - U32_LEN;
+                        if key.get(1..id_pos).is_some_and(|v| v == word_bytes) {
+                            word_matches.insert(key.deserialize_be_u32(id_pos)?);
+                            Ok(true)
+                        } else {
+                            Ok(false)
+                        }
+                    },
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+                if matches.is_empty() {
+                    matches = word_matches;
+                } else {
+                    matches &= word_matches;
+                    if matches.is_empty() {
+                        break;
+                    }
+                }
+            }
+
+            if !matches.is_empty() {
+                Some(matches)
+            } else {
+                return Ok(PrincipalList {
+                    total: 0,
+                    items: vec![],
+                });
+            }
+        } else {
+            None
+        };
+
         let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![])));
         let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
             u8::MAX;
             10
         ])));
 
-        let mut results = Vec::new();
+        let max_items = if limit > 0 { limit } else { usize::MAX };
+        let mut offset = page.saturating_sub(1) * limit;
+        let mut result = PrincipalList {
+            items: Vec::new(),
+            total: 0,
+        };
         self.iterate(
             IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
                 let pt = PrincipalInfo::deserialize(value).caused_by(trc::location!())?;
 
-                if (types.is_empty() || types.contains(&pt.typ)) && pt.has_tenant_access(tenant_id)
+                if (types.is_empty() || types.contains(&pt.typ))
+                    && pt.has_tenant_access(tenant_id)
+                    && filter.as_ref().is_none_or(|filter| filter.contains(pt.id))
                 {
-                    let mut principal = Principal::new(pt.id, pt.typ);
-                    principal.name =
-                        String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned();
-                    results.push(principal);
+                    result.total += 1;
+                    if offset == 0 {
+                        if result.items.len() < max_items {
+                            let mut principal = Principal::new(pt.id, pt.typ);
+                            principal.name =
+                                String::from_utf8_lossy(key.get(1..).unwrap_or_default())
+                                    .into_owned();
+                            result.items.push(principal);
+                        }
+                    } else {
+                        offset -= 1;
+                    }
                 }
 
                 Ok(true)
@@ -1910,69 +1995,23 @@ impl ManageDirectory for Store {
         .await
         .caused_by(trc::location!())?;
 
-        if filter.is_none() && !fetch {
-            return Ok(PrincipalList {
-                total: results.len() as u64,
-                items: results
-                    .into_iter()
-                    .skip(page.saturating_sub(1) * limit)
-                    .take(if limit > 0 { limit } else { usize::MAX })
-                    .collect(),
-            });
+        if fetch && !result.items.is_empty() {
+            let mut items = Vec::with_capacity(result.items.len());
+
+            for principal in result.items {
+                items.push(
+                    self.query(QueryBy::Id(principal.id), fetch)
+                        .await
+                        .caused_by(trc::location!())?
+                        .ok_or_else(|| not_found(principal.name().to_string()))?,
+                );
+            }
+            result.items = items;
+
+            Ok(result)
+        } else {
+            Ok(result)
         }
-
-        let mut result = PrincipalList {
-            items: vec![],
-            total: 0,
-        };
-        let filters = filter.and_then(|filter| {
-            let filters = filter
-                .split_whitespace()
-                .map(|r| r.to_lowercase())
-                .collect::<Vec<_>>();
-            if !filters.is_empty() {
-                Some(filters)
-            } else {
-                None
-            }
-        });
-
-        let todo = "fix search";
-        let mut offset = limit * page.saturating_sub(1);
-        let mut is_done = false;
-
-        for mut principal in results {
-            if !is_done || filters.is_some() {
-                principal = self
-                    .query(QueryBy::Id(principal.id), fetch)
-                    .await
-                    .caused_by(trc::location!())?
-                    .ok_or_else(|| not_found(principal.name().to_string()))?;
-            }
-
-            if filters.as_ref().is_none_or(|filters| {
-                filters.iter().all(|f| {
-                    principal.name.contains(f)
-                        || principal
-                            .description
-                            .as_ref()
-                            .is_some_and(|n| n.contains(f))
-                })
-            }) {
-                result.total += 1;
-
-                if offset == 0 {
-                    if !is_done {
-                        result.items.push(principal);
-                        is_done = limit != 0 && result.items.len() >= limit;
-                    }
-                } else {
-                    offset -= 1;
-                }
-            }
-        }
-
-        Ok(result)
     }
 
     async fn count_principals(
@@ -2236,7 +2275,7 @@ impl ManageDirectory for Store {
         if let Some(tenant_id) = principal.tenant {
             if fields.is_empty() || fields.contains(&PrincipalField::Tenant) {
                 if let Some(name) = self
-                    .get_principal_name(tenant_id as u32)
+                    .get_principal_name(tenant_id)
                     .await
                     .caused_by(trc::location!())?
                 {

@@ -203,6 +203,7 @@ pub enum InMemoryClass {
 pub enum DirectoryClass {
     NameToId(Vec<u8>),
     EmailToId(Vec<u8>),
+    Index { word: Vec<u8>, principal_id: u32 },
     MemberOf { principal_id: u32, member_of: u32 },
     Members { principal_id: u32, has_member: u32 },
     Principal(u32),

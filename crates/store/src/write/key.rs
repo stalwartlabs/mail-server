@@ -322,6 +322,10 @@ impl ValueClass {
                     .write(6u8)
                     .write(*principal_id)
                     .write(*has_member),
+                DirectoryClass::Index { word, principal_id } => serializer
+                    .write(7u8)
+                    .write(word.as_slice())
+                    .write(*principal_id),
             },
             ValueClass::Queue(queue) => match queue {
                 QueueClass::Message(queue_id) => serializer.write(*queue_id),
@@ -534,6 +538,7 @@ impl ValueClass {
                 DirectoryClass::NameToId(v) | DirectoryClass::EmailToId(v) => v.len(),
                 DirectoryClass::Principal(_) | DirectoryClass::UsedQuota(_) => U32_LEN,
                 DirectoryClass::Members { .. } | DirectoryClass::MemberOf { .. } => U32_LEN * 2,
+                DirectoryClass::Index { word, .. } => word.len() + U32_LEN,
             },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => BLOB_HASH_LEN + U64_LEN + U32_LEN + 1,
