@@ -114,6 +114,7 @@ impl DnsLookup for Server {
         }
     }
 
+    #[allow(unused_mut)]
     async fn resolve_host(
         &self,
         remote_host: &NextHop<'_>,
@@ -121,7 +122,7 @@ impl DnsLookup for Server {
         max_multihomed: usize,
         session_id: u64,
     ) -> Result<IpLookupResult, Status<(), Error>> {
-        let remote_ips = self
+        let mut remote_ips = self
             .ip_lookup(
                 remote_host.fqdn_hostname().as_ref(),
                 self.eval_if(&self.core.smtp.queue.ip_strategy, envelope, session_id)
@@ -139,7 +140,7 @@ impl DnsLookup for Server {
                             ..
                         }
                     ) {
-                        Status::PermanentFailure(Error::DnsError("No MX record found.".into()))
+                        Status::PermanentFailure(Error::DnsError("no MX record found.".into()))
                     } else {
                         Status::PermanentFailure(Error::ConnectionError(ErrorDetails {
                             entity: remote_host.hostname().into(),
@@ -155,6 +156,19 @@ impl DnsLookup for Server {
             })?;
 
         if !remote_ips.is_empty() {
+            #[cfg(not(feature = "test_mode"))]
+            if remote_ips.iter().any(|ip| ip.is_loopback()) {
+                remote_ips.retain(|ip| !ip.is_loopback());
+                if remote_ips.is_empty() {
+                    return Err(Status::PermanentFailure(Error::ConnectionError(
+                        ErrorDetails {
+                            entity: remote_host.hostname().into(),
+                            details: "host resolves loopback address".into(),
+                        },
+                    )));
+                }
+            }
+
             let mut result = IpLookupResult {
                 source_ipv4: None,
                 source_ipv6: None,
