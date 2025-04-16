@@ -6,7 +6,7 @@
 
 use super::{PrincipalInfo, manage::ManageDirectory};
 use crate::{Principal, PrincipalData, QueryBy, Type, backend::RcptType};
-use compact_str::CompactString;
+
 use mail_send::Credentials;
 use store::{
     Deserialize, IterateParams, Store, ValueKey,
@@ -24,9 +24,9 @@ pub trait DirectoryStore: Sync + Send {
     async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>>;
     async fn is_local_domain(&self, domain: &str) -> trc::Result<bool>;
     async fn rcpt(&self, address: &str) -> trc::Result<RcptType>;
-    async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>>;
-    async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>>;
-    async fn expn_by_id(&self, id: u32) -> trc::Result<Vec<CompactString>>;
+    async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>>;
+    async fn expn(&self, address: &str) -> trc::Result<Vec<String>>;
+    async fn expn_by_id(&self, id: u32) -> trc::Result<Vec<String>>;
 }
 
 impl DirectoryStore for Store {
@@ -123,7 +123,7 @@ impl DirectoryStore for Store {
         }
     }
 
-    async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut results = Vec::new();
         let address = address.split('@').next().unwrap_or(address);
         if address.len() > 3 {
@@ -155,7 +155,7 @@ impl DirectoryStore for Store {
         Ok(results)
     }
 
-    async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         if let Some(ptype) = self
             .get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::EmailToId(address.as_bytes().to_vec()),
@@ -169,7 +169,7 @@ impl DirectoryStore for Store {
         }
     }
 
-    async fn expn_by_id(&self, list_id: u32) -> trc::Result<Vec<CompactString>> {
+    async fn expn_by_id(&self, list_id: u32) -> trc::Result<Vec<String>> {
         let mut results = Vec::new();
         for account_id in self.get_members(list_id).await? {
             if let Some(email) = self

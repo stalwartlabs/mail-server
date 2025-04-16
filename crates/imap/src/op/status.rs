@@ -12,7 +12,7 @@ use crate::{
     spawn_op,
 };
 use common::listener::SessionStream;
-use compact_str::CompactString;
+
 use directory::Permission;
 use email::message::cache::{MessageCacheAccess, MessageCacheFetch};
 use imap_proto::{
@@ -90,11 +90,7 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> SessionData<T> {
-    pub async fn status(
-        &self,
-        mailbox_name: CompactString,
-        items: &[Status],
-    ) -> trc::Result<StatusItem> {
+    pub async fn status(&self, mailbox_name: String, items: &[Status]) -> trc::Result<StatusItem> {
         // Get mailbox id
         let mailbox = if let Some(mailbox) = self.get_mailbox_by_name(&mailbox_name) {
             mailbox
@@ -200,8 +196,7 @@ impl<T: SessionStream> SessionData<T> {
                                 *item,
                                 StatusItemType::String(
                                     Id::from_parts(mailbox.account_id, mailbox.mailbox_id)
-                                        .to_string()
-                                        .into(),
+                                        .to_string(),
                                 ),
                             ));
                         }

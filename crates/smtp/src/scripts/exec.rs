@@ -7,7 +7,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use common::listener::SessionStream;
-use compact_str::CompactString;
+
 use mail_auth::common::resolver::ToReverseName;
 use sieve::{Envelope, Sieve, runtime::Variable};
 use smtp_proto::*;
@@ -142,7 +142,7 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn run_script(
         &self,
-        script_id: CompactString,
+        script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
     ) -> ScriptResult {

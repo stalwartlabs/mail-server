@@ -7,7 +7,7 @@
 use std::fmt;
 
 use biscuit::{ClaimsSet, JWT, RegisteredClaims, SingleOrMultiple, jws::RegisteredHeader};
-use compact_str::CompactString;
+
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self, Visitor},
@@ -20,47 +20,47 @@ use crate::Server;
 pub struct Userinfo {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sub: Option<CompactString>,
+    pub sub: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<CompactString>,
+    pub name: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub given_name: Option<CompactString>,
+    pub given_name: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub family_name: Option<CompactString>,
+    pub family_name: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub middle_name: Option<CompactString>,
+    pub middle_name: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nickname: Option<CompactString>,
+    pub nickname: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub preferred_username: Option<CompactString>,
+    pub preferred_username: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub profile: Option<CompactString>,
+    pub profile: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub picture: Option<CompactString>,
+    pub picture: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub website: Option<CompactString>,
+    pub website: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<CompactString>,
+    pub email: Option<String>,
 
     #[serde(default, deserialize_with = "any_bool")]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -68,11 +68,11 @@ pub struct Userinfo {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub zoneinfo: Option<CompactString>,
+    pub zoneinfo: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub locale: Option<CompactString>,
+    pub locale: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -83,15 +83,15 @@ pub struct Userinfo {
 pub struct StandardClaims {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub nonce: Option<CompactString>,
+    pub nonce: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub preferred_username: Option<CompactString>,
+    pub preferred_username: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub email: Option<CompactString>,
+    pub email: Option<String>,
 }
 
 impl Server {

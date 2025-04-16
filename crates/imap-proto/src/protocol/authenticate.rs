@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: CompactString,
+    pub tag: String,
     pub mechanism: Mechanism,
-    pub params: Vec<CompactString>,
+    pub params: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

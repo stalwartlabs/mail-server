@@ -12,7 +12,7 @@ use common::{
     config::smtp::session::{MTAHook, Stage},
     listener::SessionStream,
 };
-use compact_str::{CompactString, ToCompactString};
+
 use mail_auth::AuthenticatedMessage;
 use trc::MtaHookEvent;
 
@@ -105,7 +105,7 @@ impl<T: SessionStream> Session<T> {
                                 Modification::ChangeHeader {
                                     index,
                                     name,
-                                    value: CompactString::new(""),
+                                    value: String::new(),
                                 }
                             }
                         });
@@ -184,7 +184,7 @@ impl<T: SessionStream> Session<T> {
             context: Context {
                 stage: stage.into(),
                 client: Client {
-                    ip: self.data.remote_ip.to_compact_string(),
+                    ip: self.data.remote_ip.to_string(),
                     port: self.data.remote_port,
                     ptr: self
                         .data
@@ -211,10 +211,10 @@ impl<T: SessionStream> Session<T> {
                 server: Server {
                     name: Some(DAEMON_NAME.into()),
                     port: self.data.local_port,
-                    ip: self.data.local_ip.to_compact_string().into(),
+                    ip: self.data.local_ip.to_string().into(),
                 },
                 queue: queue_id.map(|id| Queue {
-                    id: format!("{:x}", id).into(),
+                    id: format!("{:x}", id),
                 }),
                 protocol: Protocol { version: 1 },
             },
@@ -239,13 +239,13 @@ impl<T: SessionStream> Session<T> {
                     .iter()
                     .map(|(k, v)| {
                         (
-                            CompactString::from_utf8_lossy(k),
-                            CompactString::from_utf8_lossy(v),
+                            String::from_utf8_lossy(k).into_owned(),
+                            String::from_utf8_lossy(v).into_owned(),
                         )
                     })
                     .collect(),
                 server_headers: vec![],
-                contents: CompactString::from_utf8_lossy(message.raw_body()),
+                contents: String::from_utf8_lossy(message.raw_body()).into_owned(),
                 size: message.raw_message().len(),
             }),
         };
@@ -254,8 +254,8 @@ impl<T: SessionStream> Session<T> {
     }
 }
 
-fn flatten_parameters(parameters: AHashMap<CompactString, Option<CompactString>>) -> CompactString {
-    let mut arguments = CompactString::new("");
+fn flatten_parameters(parameters: AHashMap<String, Option<String>>) -> String {
+    let mut arguments = String::new();
     for (key, value) in parameters {
         if !arguments.is_empty() {
             arguments.push(' ');

@@ -12,7 +12,7 @@ use std::{
 
 use ahash::AHashSet;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use compact_str::CompactString;
+
 use hyper::{
     HeaderMap,
     header::{AUTHORIZATION, CONTENT_TYPE, HeaderName, HeaderValue},
@@ -143,9 +143,9 @@ pub struct Data {
 #[derive(Clone)]
 pub struct Milter {
     pub enable: IfBlock,
-    pub id: Arc<CompactString>,
+    pub id: Arc<String>,
     pub addrs: Vec<SocketAddr>,
-    pub hostname: CompactString,
+    pub hostname: String,
     pub port: u16,
     pub timeout_connect: Duration,
     pub timeout_command: Duration,
@@ -473,7 +473,7 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
             })
             .ok()?
             .collect(),
-        hostname: hostname.into(),
+        hostname,
         port,
         timeout_connect: config
             .property_or_default(("session.milter", id, "timeout.connect"), "30s")

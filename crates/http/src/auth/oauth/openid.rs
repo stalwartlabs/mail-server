@@ -10,25 +10,24 @@ use common::{
     Server,
     auth::{AccessToken, oauth::oidc::Userinfo},
 };
-use compact_str::{CompactString, ToCompactString, format_compact};
 use serde::{Deserialize, Serialize};
 
 use http_proto::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenIdMetadata {
-    pub issuer: CompactString,
-    pub authorization_endpoint: CompactString,
-    pub token_endpoint: CompactString,
-    pub userinfo_endpoint: CompactString,
-    pub jwks_uri: CompactString,
-    pub registration_endpoint: CompactString,
-    pub scopes_supported: Vec<CompactString>,
-    pub response_types_supported: Vec<CompactString>,
-    pub subject_types_supported: Vec<CompactString>,
-    pub grant_types_supported: Vec<CompactString>,
-    pub id_token_signing_alg_values_supported: Vec<CompactString>,
-    pub claims_supported: Vec<CompactString>,
+    pub issuer: String,
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    pub userinfo_endpoint: String,
+    pub jwks_uri: String,
+    pub registration_endpoint: String,
+    pub scopes_supported: Vec<String>,
+    pub response_types_supported: Vec<String>,
+    pub subject_types_supported: Vec<String>,
+    pub grant_types_supported: Vec<String>,
+    pub id_token_signing_alg_values_supported: Vec<String>,
+    pub claims_supported: Vec<String>,
 }
 
 pub trait OpenIdHandler: Sync + Send {
@@ -50,7 +49,7 @@ impl OpenIdHandler for Server {
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         Ok(JsonResponse::new(Userinfo {
-            sub: Some(access_token.primary_id.to_compact_string()),
+            sub: Some(access_token.primary_id.to_string()),
             name: access_token.description.clone(),
             preferred_username: Some(access_token.name.clone()),
             email: access_token.emails.first().cloned(),
@@ -71,11 +70,11 @@ impl OpenIdHandler for Server {
             .await;
 
         Ok(JsonResponse::new(OpenIdMetadata {
-            authorization_endpoint: format_compact!("{base_url}/authorize/code",),
-            token_endpoint: format_compact!("{base_url}/auth/token"),
-            userinfo_endpoint: format_compact!("{base_url}/auth/userinfo"),
-            jwks_uri: format_compact!("{base_url}/auth/jwks.json"),
-            registration_endpoint: format_compact!("{base_url}/auth/register"),
+            authorization_endpoint: format!("{base_url}/authorize/code",),
+            token_endpoint: format!("{base_url}/auth/token"),
+            userinfo_endpoint: format!("{base_url}/auth/userinfo"),
+            jwks_uri: format!("{base_url}/auth/jwks.json"),
+            registration_endpoint: format!("{base_url}/auth/register"),
             response_types_supported: vec![
                 "code".into(),
                 "id_token".into(),

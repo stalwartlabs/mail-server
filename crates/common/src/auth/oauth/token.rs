@@ -6,7 +6,7 @@
 
 use std::time::SystemTime;
 
-use compact_str::CompactString;
+
 use directory::QueryBy;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
@@ -24,7 +24,7 @@ use super::{CLIENT_ID_MAX_LEN, GrantType, RANDOM_CODE_LEN, crypto::SymmetricEncr
 pub struct TokenInfo {
     pub grant_type: GrantType,
     pub account_id: u32,
-    pub client_id: CompactString,
+    pub client_id: String,
     pub expiry: u64,
     pub issued_at: u64,
     pub expires_in: u64,
@@ -128,7 +128,7 @@ impl Server {
                     GrantType::from_id(bytes.next().copied()?)?,
                     bytes.next_leb128::<u64>()?,
                     bytes.next_leb128::<u64>()?,
-                    bytes.copied().map(char::from).collect::<CompactString>(),
+                    bytes.copied().map(char::from).collect::<String>(),
                 )
                     .into()
             })
@@ -216,7 +216,7 @@ impl Server {
         })
     }
 
-    pub async fn password_hash(&self, account_id: u32) -> trc::Result<CompactString> {
+    pub async fn password_hash(&self, account_id: u32) -> trc::Result<String> {
         if account_id != u32::MAX {
             self.core
                 .storage

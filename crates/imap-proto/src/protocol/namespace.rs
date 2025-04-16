@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 
 use super::{ImapResponse, quoted_string};
 
 pub struct Response {
-    pub shared_prefix: Option<CompactString>,
+    pub shared_prefix: Option<String>,
 }
 
 impl ImapResponse for Response {

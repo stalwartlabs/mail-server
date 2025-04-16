@@ -13,7 +13,7 @@ use common::{
     expr::if_block::IfBlock,
     manager::webadmin::Resource,
 };
-use compact_str::CompactString;
+
 use http_proto::{ToHttpResponse, request::fetch_body};
 use hyper::{body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
@@ -941,7 +941,7 @@ fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Resp
                         }
                     }
                     Modification::ReplaceBody { value } => hooks::Modification::ReplaceContents {
-                        value: CompactString::from_utf8(value.clone()).unwrap(),
+                        value: String::from_utf8(value.clone()).unwrap(),
                     },
                     Modification::AddHeader { name, value } => hooks::Modification::AddHeader {
                         name: name.clone(),

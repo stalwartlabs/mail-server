@@ -495,14 +495,12 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::EmailId => {
                         items.push(DataItem::EmailId {
-                            email_id: Id::from_parts(account_id, id).to_string().into(),
+                            email_id: Id::from_parts(account_id, id).to_string(),
                         });
                     }
                     Attribute::ThreadId => {
                         items.push(DataItem::ThreadId {
-                            thread_id: Id::from_parts(account_id, data.thread_id)
-                                .to_string()
-                                .into(),
+                            thread_id: Id::from_parts(account_id, data.thread_id).to_string(),
                         });
                     }
                 }

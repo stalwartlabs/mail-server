@@ -4,23 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
+use super::dummy_tls_acceptor;
+use crate::directory::{DirectoryTest, Item, LookupResult};
 use common::listener::limiter::{ConcurrencyLimiter, InFlight};
-use compact_str::ToCompactString;
 use directory::{QueryBy, backend::RcptType};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
+use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::watch,
 };
 use tokio_rustls::TlsAcceptor;
-
-use crate::directory::{DirectoryTest, Item, LookupResult};
-
-use super::dummy_tls_acceptor;
 
 #[tokio::test]
 async fn lmtp_directory() {
@@ -308,7 +304,7 @@ async fn accept_smtp(
                     .split(',')
                     .filter_map(|s| {
                         if !s.is_empty() {
-                            s.to_compact_string().into()
+                            s.to_string().into()
                         } else {
                             None
                         }

@@ -11,7 +11,7 @@ use common::{
     },
     listener::{SessionStream, limiter::LimiterResult},
 };
-use compact_str::CompactString;
+
 use directory::Permission;
 use imap_proto::{
     protocol::authenticate::Mechanism,
@@ -32,7 +32,7 @@ impl<T: SessionStream> Session<T> {
         let mut tokens = request.tokens.into_iter();
         let mechanism = Mechanism::parse(&tokens.next().unwrap().unwrap_bytes())
             .map_err(|err| trc::AuthEvent::Error.into_err().details(err))?;
-        let mut params: Vec<CompactString> = tokens
+        let mut params: Vec<String> = tokens
             .filter_map(|token| token.unwrap_string().ok())
             .collect();
 

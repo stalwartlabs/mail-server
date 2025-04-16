@@ -6,7 +6,6 @@
 
 use std::fmt::Display;
 
-use compact_str::CompactString;
 use store::{Serialize, write::TagValue};
 
 use crate::parser::{JsonObjectParser, json::Parser};
@@ -65,7 +64,7 @@ pub enum Keyword {
     Forwarded,
     #[serde(rename(serialize = "$mdnsent"))]
     MdnSent,
-    Other(CompactString),
+    Other(String),
 }
 
 impl JsonObjectParser for Keyword {
@@ -109,9 +108,9 @@ impl JsonObjectParser for Keyword {
         }
 
         if parser.is_eof || parser.skip_string() {
-            Ok(Keyword::Other(CompactString::from_utf8_lossy(
-                parser.bytes[pos..parser.pos - 1].as_ref(),
-            )))
+            Ok(Keyword::Other(
+                String::from_utf8_lossy(parser.bytes[pos..parser.pos - 1].as_ref()).into_owned(),
+            ))
         } else {
             Err(parser.error_unterminated())
         }
@@ -155,7 +154,7 @@ impl<T: AsRef<str>> From<T> for Keyword {
             }
         }
 
-        Keyword::Other(CompactString::from(value))
+        Keyword::Other(String::from(value))
     }
 }
 
@@ -238,7 +237,7 @@ impl Keyword {
         }
     }
 
-    pub fn into_id(self) -> Result<u32, CompactString> {
+    pub fn into_id(self) -> Result<u32, String> {
         match self {
             Keyword::Seen => Ok(SEEN as u32),
             Keyword::Draft => Ok(DRAFT as u32),

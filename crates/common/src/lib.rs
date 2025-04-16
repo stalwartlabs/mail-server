@@ -19,7 +19,6 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use auth::{AccessToken, oauth::config::OAuthConfig, roles::RolePermissions};
-use compact_str::CompactString;
 use config::{
     dav::DavConfig,
     imap::ImapConfig,
@@ -180,7 +179,7 @@ pub struct MessageStoreCache {
     pub change_id: u64,
     pub items: Vec<MessageCache>,
     pub index: AHashMap<u32, u32>,
-    pub keywords: Vec<CompactString>,
+    pub keywords: Vec<String>,
     pub update_lock: Arc<Semaphore>,
     pub size: u64,
 }
@@ -203,8 +202,8 @@ pub struct MessageUidCache {
 #[derive(Debug, Clone)]
 pub struct MailboxCache {
     pub document_id: u32,
-    pub name: CompactString,
-    pub path: CompactString,
+    pub name: String,
+    pub path: String,
     pub role: SpecialUse,
     pub parent_id: u32,
     pub sort_order: u32,

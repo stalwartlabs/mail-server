@@ -17,7 +17,7 @@ use backend::{
     smtp::SmtpDirectory,
     sql::SqlDirectory,
 };
-use compact_str::CompactString;
+
 use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
@@ -37,10 +37,10 @@ pub struct Directory {
 pub struct Principal {
     pub id: u32,
     pub typ: Type,
-    pub name: CompactString,
-    pub description: Option<CompactString>,
-    pub secrets: Vec<CompactString>,
-    pub emails: Vec<CompactString>,
+    pub name: String,
+    pub description: Option<String>,
+    pub secrets: Vec<String>,
+    pub emails: Vec<String>,
     pub quota: Option<u64>,
     pub tenant: Option<u32>,
     pub data: Vec<PrincipalData>,
@@ -58,9 +58,9 @@ pub enum PrincipalData {
     Roles(Vec<u32>),
     Lists(Vec<u32>),
     Permissions(Vec<PermissionGrant>),
-    Picture(CompactString),
-    ExternalMembers(Vec<CompactString>),
-    Urls(Vec<CompactString>),
+    Picture(String),
+    ExternalMembers(Vec<String>),
+    Urls(Vec<String>),
     PrincipalQuota(Vec<PrincipalQuota>),
 }
 

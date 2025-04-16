@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
 use ldap3::{Ldap, LdapConnAsync, ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
 use store::xxhash_rust;
@@ -298,11 +297,11 @@ impl LdapDirectory {
         }
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         self.data_store.vrfy(address).await
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         self.data_store.expn(address).await
     }
 
@@ -351,44 +350,39 @@ impl LdapMappings {
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
                 if !self.attr_email_address.contains(&attr) {
-                    principal.name = value.into_iter().next().unwrap_or_default().into();
+                    principal.name = value.into_iter().next().unwrap_or_default();
                 } else {
                     for (idx, item) in value.into_iter().enumerate() {
-                        principal
-                            .emails
-                            .insert(0, CompactString::from_str_to_lowercase(&item));
+                        principal.emails.insert(0, item.to_lowercase());
                         if idx == 0 {
-                            principal.name = item.into();
+                            principal.name = item;
                         }
                     }
                 }
             } else if self.attr_secret.contains(&attr) {
                 for item in value {
-                    principal.secrets.push(item.into());
+                    principal.secrets.push(item);
                 }
             } else if self.attr_secret_changed.contains(&attr) {
                 // Create a disabled AppPassword, used to indicate that the password has been changed
                 // but cannot be used for authentication.
                 for item in value {
-                    principal.secrets.push(
-                        format!("$app${}$", xxhash_rust::xxh3::xxh3_64(item.as_bytes())).into(),
-                    );
+                    principal.secrets.push(format!(
+                        "$app${}$",
+                        xxhash_rust::xxh3::xxh3_64(item.as_bytes())
+                    ));
                 }
             } else if self.attr_email_address.contains(&attr) {
                 for item in value {
-                    principal
-                        .emails
-                        .insert(0, CompactString::from_str_to_lowercase(&item));
+                    principal.emails.insert(0, item.to_lowercase());
                 }
             } else if self.attr_email_alias.contains(&attr) {
                 for item in value {
-                    principal
-                        .emails
-                        .push(CompactString::from_str_to_lowercase(&item));
+                    principal.emails.push(item.to_lowercase());
                 }
             } else if let Some(idx) = self.attr_description.iter().position(|a| a == &attr) {
                 if principal.description.is_none() || idx == 0 {
-                    principal.description = value.into_iter().next().map(Into::into);
+                    principal.description = value.into_iter().next();
                 }
             } else if self.attr_groups.contains(&attr) {
                 member_of.extend(value);

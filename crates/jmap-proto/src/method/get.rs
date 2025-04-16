@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::format_compact;
+
 use crate::{
     object::{blob, email},
     parser::{JsonObjectParser, Token, json::Parser},
@@ -81,7 +83,7 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
                 _ => {
                     return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
-                        .details(format!("{}/get", parser.ctx)));
+                        .details(format_compact!("{}/get", parser.ctx)));
                 }
             },
             account_id: Id::default(),

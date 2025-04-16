@@ -64,7 +64,7 @@ impl Deserialize for DavName {
                     .caused_by(trc::location!())
                     .ctx(trc::Key::Value, bytes)
             })?
-            .to_string();
+            .into();
 
         Ok(DavName { name, parent_id })
     }

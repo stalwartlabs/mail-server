@@ -6,7 +6,7 @@
 
 use super::{EmailType, MemoryDirectory};
 use crate::{Principal, QueryBy, backend::RcptType};
-use compact_str::CompactString;
+
 use mail_send::Credentials;
 
 impl MemoryDirectory {
@@ -62,7 +62,7 @@ impl MemoryDirectory {
         Ok(self.emails_to_ids.contains_key(address).into())
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut result = Vec::new();
         for (key, value) in &self.emails_to_ids {
             if key.contains(address) && value.iter().any(|t| matches!(t, EmailType::Primary(_))) {
@@ -72,7 +72,7 @@ impl MemoryDirectory {
         Ok(result)
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut result = Vec::new();
         for (key, value) in &self.emails_to_ids {
             if key == address {

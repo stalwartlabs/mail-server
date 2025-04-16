@@ -5,7 +5,7 @@
  */
 
 use common::Server;
-use compact_str::CompactString;
+
 use mail_builder::MessageBuilder;
 use mail_builder::headers::HeaderType;
 use mail_builder::headers::content_type::ContentType;
@@ -348,15 +348,15 @@ impl Message {
         let from_name = server
             .eval_if(&config.dsn.name, self, self.span_id)
             .await
-            .unwrap_or_else(|| CompactString::from("Mail Delivery Subsystem"));
+            .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
         let from_addr = server
             .eval_if(&config.dsn.address, self, self.span_id)
             .await
-            .unwrap_or_else(|| CompactString::from("MAILER-DAEMON@localhost"));
+            .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
         let reporting_mta = server
             .eval_if(&server.core.smtp.report.submitter, self, self.span_id)
             .await
-            .unwrap_or_else(|| CompactString::from("localhost"));
+            .unwrap_or_else(|| String::from("localhost"));
 
         // Prepare DSN
         let mut dsn_header = String::with_capacity(dsn.len() + 128);

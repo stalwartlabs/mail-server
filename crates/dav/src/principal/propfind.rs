@@ -294,7 +294,7 @@ impl PrincipalPropFind for Server {
                 .get_principal_name(account_id)
                 .await
                 .caused_by(trc::location!())?
-                .unwrap_or_else(|| format_compact!("_{account_id}"));
+                .unwrap_or_else(|| format!("_{account_id}"));
             Ok(Href(format!(
                 "{}/{}",
                 DavResource::Principal.base_path(),

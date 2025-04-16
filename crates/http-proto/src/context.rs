@@ -8,7 +8,7 @@ use common::{
     Server,
     expr::{functions::ResolveVariable, *},
 };
-use compact_str::{CompactString, ToCompactString, format_compact};
+use compact_str::{ToCompactString, format_compact};
 use hyper::StatusCode;
 
 use crate::{HttpContext, HttpRequest, HttpSessionData};
@@ -18,7 +18,7 @@ impl<'x> HttpContext<'x> {
         Self { session, req }
     }
 
-    pub async fn resolve_response_url(&self, server: &Server) -> CompactString {
+    pub async fn resolve_response_url(&self, server: &Server) -> String {
         server
             .eval_if(
                 &server.core.network.http_response_url,
@@ -27,7 +27,7 @@ impl<'x> HttpContext<'x> {
             )
             .await
             .unwrap_or_else(|| {
-                format_compact!(
+                format!(
                     "http{}://{}:{}",
                     if self.session.is_tls { "s" } else { "" },
                     self.session.local_ip,
@@ -67,12 +67,8 @@ impl ResolveVariable for HttpContext<'_> {
                 .iter()
                 .map(|(h, v)| {
                     Variable::String(
-                        CompactString::new(format_compact!(
-                            "{}: {}",
-                            h.as_str(),
-                            v.to_str().unwrap_or_default()
-                        ))
-                        .into(),
+                        format_compact!("{}: {}", h.as_str(), v.to_str().unwrap_or_default())
+                            .into(),
                     )
                 })
                 .collect::<Vec<_>>()

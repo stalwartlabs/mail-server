@@ -63,7 +63,7 @@ impl IdentitySet for Server {
                     .directory()
                     .query(QueryBy::Id(account_id), false)
                     .await?
-                    .is_none_or(|p| !p.emails.iter().any(|e| e == identity.email))
+                    .is_none_or(|p| !p.emails.iter().any(|e| e == &identity.email))
                 {
                     response.not_created.append(
                         id,
@@ -189,7 +189,7 @@ fn validate_identity_value(
 ) -> Result<(), SetError> {
     match (property, value) {
         (Property::Name, MaybePatchValue::Value(Value::Text(value))) if value.len() < 255 => {
-            identity.name = value.into();
+            identity.name = value;
         }
         (Property::Email, MaybePatchValue::Value(Value::Text(value)))
             if is_create && value.len() < 255 =>
@@ -203,12 +203,12 @@ fn validate_identity_value(
         (Property::TextSignature, MaybePatchValue::Value(Value::Text(value)))
             if value.len() < 2048 =>
         {
-            identity.text_signature = value.into();
+            identity.text_signature = value;
         }
         (Property::HtmlSignature, MaybePatchValue::Value(Value::Text(value)))
             if value.len() < 2048 =>
         {
-            identity.html_signature = value.into();
+            identity.html_signature = value;
         }
         (Property::ReplyTo | Property::Bcc, MaybePatchValue::Value(Value::List(value))) => {
             let mut addresses = Vec::with_capacity(value.len());
@@ -223,10 +223,10 @@ fn validate_identity_value(
                         match (key, value) {
                             (Property::Email, Value::Text(value)) if value.len() < 255 => {
                                 is_valid = true;
-                                address.email = value.into();
+                                address.email = value;
                             }
                             (Property::Name, Value::Text(value)) if value.len() < 255 => {
-                                address.name = Some(value.into());
+                                address.name = Some(value);
                             }
                             (Property::Name, Value::Null) => (),
                             _ => {

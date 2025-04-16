@@ -20,7 +20,7 @@ use crate::{
 use common::{
     Server, auth::AccessToken, config::jmap::settings::SpecialUse, scripts::plugins::PluginContext,
 };
-use compact_str::CompactString;
+
 use directory::{Permission, QueryBy};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
@@ -377,11 +377,9 @@ impl SieveScriptIngest for Server {
                     } => {
                         input = true.into();
                         if let Some(message) = messages.get(message_id) {
-                            let recipients: Vec<CompactString> = match recipient {
-                                Recipient::Address(rcpt) => vec![rcpt.into()],
-                                Recipient::Group(rcpts) => {
-                                    rcpts.into_iter().map(CompactString::from).collect()
-                                }
+                            let recipients: Vec<String> = match recipient {
+                                Recipient::Address(rcpt) => vec![rcpt],
+                                Recipient::Group(rcpts) => rcpts,
                                 Recipient::List(_) => {
                                     // Not yet implemented
                                     continue;
@@ -394,7 +392,7 @@ impl SieveScriptIngest for Server {
                                     From = mail_from.clone(),
                                     To = recipients
                                         .iter()
-                                        .map(|r| trc::Value::String(r.clone()))
+                                        .map(|r| trc::Value::String(r.as_str().into()))
                                         .collect::<Vec<_>>(),
                                     Size = message.raw_message.len(),
                                     SpanId = session_id
@@ -411,7 +409,7 @@ impl SieveScriptIngest for Server {
                                     From = mail_from.clone(),
                                     To = recipients
                                         .iter()
-                                        .map(|r| trc::Value::String(r.clone()))
+                                        .map(|r| trc::Value::String(r.as_str().into()))
                                         .collect::<Vec<_>>(),
                                     Size = message.raw_message.len(),
                                     Limit = self.core.jmap.mail_max_size,
@@ -722,6 +720,6 @@ impl SieveScriptIngest for Server {
 
 pub struct CompiledScript {
     pub script: Sieve,
-    pub name: CompactString,
+    pub name: String,
     pub hash: u32,
 }

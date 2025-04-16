@@ -7,7 +7,6 @@
 use std::time::Duration;
 
 use common::{config::smtp::auth::VerifyStrategy, listener::SessionStream};
-use compact_str::CompactString;
 
 use super::Session;
 
@@ -75,7 +74,7 @@ impl<T: SessionStream> Session<T> {
         let ac = &self.server.core.smtp.session.auth;
         self.params.auth_directory = self
             .server
-            .eval_if::<CompactString, _>(&ac.directory, self, self.data.session_id)
+            .eval_if::<String, _>(&ac.directory, self, self.data.session_id)
             .await
             .and_then(|name| self.server.get_directory(&name))
             .cloned();

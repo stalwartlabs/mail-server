@@ -5,7 +5,7 @@
  */
 
 use common::listener::SessionStream;
-use compact_str::ToCompactString;
+
 use mail_auth::{
     AuthenticatedMessage, AuthenticationResults, DkimOutput, common::verify::VerifySignature,
 };
@@ -50,7 +50,7 @@ impl<T: SessionStream> Session<T> {
             .server
             .eval_if(&config.address, self, self.data.session_id)
             .await
-            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_compact_string());
+            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
         let mut report = Vec::with_capacity(128);
         self.new_auth_failure(output.result().into(), rejected)
             .with_authentication_results(
@@ -67,7 +67,7 @@ impl<T: SessionStream> Session<T> {
                     self.server
                         .eval_if(&config.name, self, self.data.session_id)
                         .await
-                        .unwrap_or_else(|| "Mail Delivery Subsystem".to_compact_string())
+                        .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                         .as_str(),
                     from_addr.as_str(),
                 ),
@@ -76,7 +76,7 @@ impl<T: SessionStream> Session<T> {
                     .server
                     .eval_if(&config.subject, self, self.data.session_id)
                     .await
-                    .unwrap_or_else(|| "DKIM Report".to_compact_string()),
+                    .unwrap_or_else(|| "DKIM Report".to_string()),
                 &mut report,
             )
             .ok();

@@ -5,7 +5,7 @@
  */
 
 use ahash::HashMap;
-use compact_str::CompactString;
+
 use mail_send::Credentials;
 use reqwest::{StatusCode, header::AUTHORIZATION};
 use trc::{AddContext, AuthEvent};
@@ -145,11 +145,11 @@ impl OpenIdDirectory {
         self.data_store.rcpt(address).await
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         self.data_store.vrfy(address).await
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         self.data_store.expn(address).await
     }
 
@@ -188,10 +188,10 @@ impl BuildPrincipal for OpenIdResponse {
         Ok(Principal {
             id: u32::MAX,
             typ: Type::Individual,
-            name: username.into(),
-            description: full_name.map(Into::into),
+            name: username,
+            description: full_name,
             secrets: Default::default(),
-            emails: vec![email.into()],
+            emails: vec![email],
             quota: Default::default(),
             tenant: Default::default(),
             data: vec![PrincipalData::Roles(vec![ROLE_USER])],

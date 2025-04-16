@@ -7,6 +7,7 @@
 use std::net::IpAddr;
 
 use common::{Server, auth::AccessToken, config::spamfilter::SpamFilterAction, psl};
+
 use compact_str::CompactString;
 use directory::{
     Permission,

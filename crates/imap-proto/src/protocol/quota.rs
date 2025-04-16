@@ -4,18 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 
 use super::{ImapResponse, capability::QuotaResourceName, quoted_string};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: CompactString,
-    pub name: CompactString,
+    pub tag: String,
+    pub name: String,
 }
 
 pub struct QuotaItem {
-    pub name: CompactString,
+    pub name: String,
     pub resources: Vec<QuotaResource>,
 }
 
@@ -26,7 +26,7 @@ pub struct QuotaResource {
 }
 
 pub struct Response {
-    pub quota_root_items: Vec<CompactString>,
+    pub quota_root_items: Vec<String>,
     pub quota_items: Vec<QuotaItem>,
 }
 

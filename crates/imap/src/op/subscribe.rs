@@ -11,7 +11,7 @@ use crate::{
     spawn_op,
 };
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
-use compact_str::CompactString;
+
 use directory::Permission;
 use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
 use jmap_proto::types::collection::Collection;
@@ -50,8 +50,8 @@ impl<T: SessionStream> Session<T> {
 impl<T: SessionStream> SessionData<T> {
     pub async fn subscribe_folder(
         &self,
-        tag: CompactString,
-        mailbox_name: CompactString,
+        tag: String,
+        mailbox_name: String,
         subscribe: bool,
         op_start: Instant,
     ) -> trc::Result<StatusResponse> {

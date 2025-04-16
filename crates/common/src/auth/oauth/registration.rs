@@ -4,22 +4,22 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct ClientRegistrationRequest {
-    pub redirect_uris: Vec<CompactString>,
+    pub redirect_uris: Vec<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub response_types: Vec<CompactString>,
+    pub response_types: Vec<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub grant_types: Vec<CompactString>,
+    pub grant_types: Vec<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,31 +27,31 @@ pub struct ClientRegistrationRequest {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub contacts: Vec<CompactString>,
+    pub contacts: Vec<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_name: Option<CompactString>,
+    pub client_name: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub logo_uri: Option<CompactString>,
+    pub logo_uri: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_uri: Option<CompactString>,
+    pub client_uri: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub policy_uri: Option<CompactString>,
+    pub policy_uri: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tos_uri: Option<CompactString>,
+    pub tos_uri: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub jwks_uri: Option<CompactString>,
+    pub jwks_uri: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -59,7 +59,7 @@ pub struct ClientRegistrationRequest {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sector_identifier_uri: Option<CompactString>,
+    pub sector_identifier_uri: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,39 +67,39 @@ pub struct ClientRegistrationRequest {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id_token_signed_response_alg: Option<CompactString>,
+    pub id_token_signed_response_alg: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id_token_encrypted_response_alg: Option<CompactString>,
+    pub id_token_encrypted_response_alg: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id_token_encrypted_response_enc: Option<CompactString>,
+    pub id_token_encrypted_response_enc: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub userinfo_signed_response_alg: Option<CompactString>,
+    pub userinfo_signed_response_alg: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub userinfo_encrypted_response_alg: Option<CompactString>,
+    pub userinfo_encrypted_response_alg: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub userinfo_encrypted_response_enc: Option<CompactString>,
+    pub userinfo_encrypted_response_enc: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_object_signing_alg: Option<CompactString>,
+    pub request_object_signing_alg: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_object_encryption_alg: Option<CompactString>,
+    pub request_object_encryption_alg: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_object_encryption_enc: Option<CompactString>,
+    pub request_object_encryption_enc: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -107,7 +107,7 @@ pub struct ClientRegistrationRequest {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub token_endpoint_auth_signing_alg: Option<CompactString>,
+    pub token_endpoint_auth_signing_alg: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,34 +119,34 @@ pub struct ClientRegistrationRequest {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub default_acr_values: Vec<CompactString>,
+    pub default_acr_values: Vec<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub initiate_login_uri: Option<CompactString>,
+    pub initiate_login_uri: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub request_uris: Vec<CompactString>,
+    pub request_uris: Vec<String>,
 
     #[serde(flatten)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub additional_fields: HashMap<CompactString, serde_json::Value>,
+    pub additional_fields: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct ClientRegistrationResponse {
     // Required fields
-    pub client_id: CompactString,
+    pub client_id: String,
 
     // Optional fields specific to the response
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_secret: Option<CompactString>,
+    pub client_secret: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub registration_access_token: Option<CompactString>,
+    pub registration_access_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub registration_client_uri: Option<CompactString>,
+    pub registration_client_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id_issued_at: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]

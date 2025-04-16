@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 use mail_send::Credentials;
 use smtp_proto::{AUTH_CRAM_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 
@@ -69,11 +69,11 @@ impl ImapDirectory {
         Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
-    pub async fn vrfy(&self, _address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn vrfy(&self, _address: &str) -> trc::Result<Vec<String>> {
         Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
-    pub async fn expn(&self, _address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn expn(&self, _address: &str) -> trc::Result<Vec<String>> {
         Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 

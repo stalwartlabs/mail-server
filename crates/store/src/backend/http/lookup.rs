@@ -11,6 +11,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use compact_str::ToCompactString;
 use rand::seq::IndexedRandom;
 use utils::HttpLimitResponse;
 
@@ -102,7 +103,7 @@ impl HttpStore {
                 trc::StoreEvent::HttpStoreError
                     .into_err()
                     .reason(err)
-                    .ctx(trc::Key::Url, self.config.url.to_string())
+                    .ctx(trc::Key::Url, self.config.url.to_compact_string())
                     .details("Failed to build request")
             })?;
 
@@ -111,7 +112,7 @@ impl HttpStore {
                 trc::StoreEvent::HttpStoreError
                     .into_err()
                     .ctx(trc::Key::Code, response.status().as_u16())
-                    .ctx(trc::Key::Url, self.config.url.to_string())
+                    .ctx(trc::Key::Url, self.config.url.to_compact_string())
                     .ctx(trc::Key::Elapsed, time.elapsed())
                     .details("Failed to fetch HTTP list")
             );
@@ -124,14 +125,14 @@ impl HttpStore {
                 trc::StoreEvent::HttpStoreError
                     .into_err()
                     .reason(err)
-                    .ctx(trc::Key::Url, self.config.url.to_string())
+                    .ctx(trc::Key::Url, self.config.url.to_compact_string())
                     .ctx(trc::Key::Elapsed, time.elapsed())
                     .details("Failed to fetch resource")
             })?
             .ok_or_else(|| {
                 trc::StoreEvent::HttpStoreError
                     .into_err()
-                    .ctx(trc::Key::Url, self.config.url.to_string())
+                    .ctx(trc::Key::Url, self.config.url.to_compact_string())
                     .ctx(trc::Key::Elapsed, time.elapsed())
                     .details("Resource is too large")
             })?;
@@ -148,7 +149,7 @@ impl HttpStore {
                 trc::StoreEvent::HttpStoreError
                     .into_err()
                     .reason(err)
-                    .ctx(trc::Key::Url, self.config.url.to_string())
+                    .ctx(trc::Key::Url, self.config.url.to_compact_string())
                     .ctx(trc::Key::Elapsed, time.elapsed())
                     .details("Failed to read line")
             })?;
@@ -222,7 +223,7 @@ impl HttpStore {
 
         trc::event!(
             Store(trc::StoreEvent::HttpStoreFetch),
-            Url = self.config.url.to_string(),
+            Url = self.config.url.to_compact_string(),
             Total = entries.len(),
             Elapsed = time.elapsed(),
         );

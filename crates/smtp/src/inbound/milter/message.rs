@@ -11,7 +11,7 @@ use common::{
     config::smtp::session::{Milter, Stage},
     listener::SessionStream,
 };
-use compact_str::CompactString;
+
 use mail_auth::AuthenticatedMessage;
 use smtp_proto::{IntoString, request::parser::Rfc5321Parser};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -320,7 +320,7 @@ impl SessionData {
                         {
                             Ok(addr) => {
                                 mail_from.flags = addr.flags;
-                                mail_from.dsn_info = addr.env_id.map(Into::into);
+                                mail_from.dsn_info = addr.env_id;
                             }
                             Err(err) => {
                                 trc::event!(
@@ -356,7 +356,7 @@ impl SessionData {
                             {
                                 Ok(addr) => {
                                     rcpt.flags = addr.flags;
-                                    rcpt.dsn_info = addr.orcpt.map(Into::into);
+                                    rcpt.dsn_info = addr.orcpt;
                                 }
                                 Err(err) => {
                                     trc::event!(
@@ -537,7 +537,7 @@ impl From<Error> for Rejection {
     }
 }
 
-fn strip_brackets(addr: &str) -> CompactString {
+fn strip_brackets(addr: &str) -> String {
     let addr = addr.trim();
     if let Some(addr) = addr.strip_prefix('<') {
         if let Some((addr, _)) = addr.rsplit_once('>') {

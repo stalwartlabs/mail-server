@@ -13,7 +13,7 @@ use common::{
     listener::{SessionStream, limiter::InFlight},
     sharing::EffectiveAcl,
 };
-use compact_str::CompactString;
+
 use directory::backend::internal::manage::ManageDirectory;
 use email::{
     mailbox::{
@@ -60,7 +60,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Fetch shared mailboxes
         for &account_id in access_token.shared_accounts(Collection::Mailbox) {
-            let prefix: CompactString = format!(
+            let prefix: String = format!(
                 "{}/{}",
                 session.server.core.jmap.shared_folder,
                 session
@@ -69,9 +69,8 @@ impl<T: SessionStream> SessionData<T> {
                     .get_principal_name(account_id)
                     .await
                     .caused_by(trc::location!())?
-                    .unwrap_or_else(|| Id::from(account_id).to_string().into())
-            )
-            .into();
+                    .unwrap_or_else(|| Id::from(account_id).to_string())
+            );
             mailboxes.push(
                 session
                     .fetch_account_mailboxes(account_id, prefix.into(), &access_token, None)
@@ -89,7 +88,7 @@ impl<T: SessionStream> SessionData<T> {
     async fn fetch_account_mailboxes(
         &self,
         account_id: u32,
-        mailbox_prefix: Option<CompactString>,
+        mailbox_prefix: Option<String>,
         access_token: &AccessToken,
         current_state: Option<AccountState>,
     ) -> trc::Result<Option<Account>> {
@@ -153,7 +152,7 @@ impl<T: SessionStream> SessionData<T> {
 
             // Build mailbox path and map it to its effective id
             let mailbox_name = if let Some(prefix) = &account.prefix {
-                let mut name = CompactString::with_capacity(prefix.len() + mailbox.path.len() + 1);
+                let mut name = String::with_capacity(prefix.len() + mailbox.path.len() + 1);
                 name.push_str(prefix.as_str());
                 name.push('/');
                 name.push_str(mailbox.path.as_str());
@@ -167,7 +166,7 @@ impl<T: SessionStream> SessionData<T> {
                 .jmap
                 .default_folders
                 .iter()
-                .find(|f| f.name == mailbox_name || f.aliases.iter().any(|a| a == mailbox_name))
+                .find(|f| f.name == mailbox_name || f.aliases.iter().any(|a| a == &mailbox_name))
                 .and_then(|f| special_uses.get(&f.special_use))
                 .copied()
                 .unwrap_or(mailbox.document_id);
@@ -275,7 +274,7 @@ impl<T: SessionStream> SessionData<T> {
 
             // Fetch mailboxes for each new shared account
             for account_id in added_account_ids {
-                let prefix: CompactString = format!(
+                let prefix: String = format!(
                     "{}/{}",
                     self.server.core.jmap.shared_folder,
                     self.server
@@ -283,9 +282,8 @@ impl<T: SessionStream> SessionData<T> {
                         .get_principal_name(account_id)
                         .await
                         .caused_by(trc::location!())?
-                        .unwrap_or_else(|| Id::from(account_id).to_string().into())
-                )
-                .into();
+                        .unwrap_or_else(|| Id::from(account_id).to_string())
+                );
                 added_accounts.push(
                     self.fetch_account_mailboxes(account_id, prefix.into(), &access_token, None)
                         .await?

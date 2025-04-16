@@ -35,7 +35,7 @@
 
 use std::fmt::Display;
 
-use compact_str::CompactString;
+
 use jmap_proto::types::acl::Acl;
 
 use crate::utf7::utf7_encode;
@@ -72,28 +72,28 @@ pub enum ModRightsOp {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: CompactString,
-    pub mailbox_name: CompactString,
-    pub identifier: Option<CompactString>,
+    pub tag: String,
+    pub mailbox_name: String,
+    pub identifier: Option<String>,
     pub mod_rights: Option<ModRights>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetAclResponse {
-    pub mailbox_name: CompactString,
-    pub permissions: Vec<(CompactString, Vec<Rights>)>,
+    pub mailbox_name: String,
+    pub permissions: Vec<(String, Vec<Rights>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListRightsResponse {
-    pub mailbox_name: CompactString,
-    pub identifier: CompactString,
+    pub mailbox_name: String,
+    pub identifier: String,
     pub permissions: Vec<Vec<Rights>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MyRightsResponse {
-    pub mailbox_name: CompactString,
+    pub mailbox_name: String,
     pub rights: Vec<Rights>,
 }
 
@@ -249,14 +249,14 @@ impl From<Rights> for Acl {
 
 #[cfg(test)]
 mod tests {
-    use compact_str::CompactString;
+    
 
     use crate::protocol::acl::{GetAclResponse, ListRightsResponse, MyRightsResponse, Rights};
 
     #[test]
     fn serialize_acl() {
         assert_eq!(
-            CompactString::from_utf8(
+            String::from_utf8(
                 GetAclResponse {
                     mailbox_name: "INBOX".into(),
                     permissions: vec![
@@ -290,7 +290,7 @@ mod tests {
         );
 
         assert_eq!(
-            CompactString::from_utf8(
+            String::from_utf8(
                 ListRightsResponse {
                     mailbox_name: "Deleted Items".into(),
                     identifier: "Fred".into(),
@@ -307,7 +307,7 @@ mod tests {
         );
 
         assert_eq!(
-            CompactString::from_utf8(
+            String::from_utf8(
                 MyRightsResponse {
                     mailbox_name: "Important".into(),
                     rights: vec![Rights::Lookup, Rights::Read, Rights::DeleteMailbox]

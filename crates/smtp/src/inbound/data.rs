@@ -18,7 +18,7 @@ use common::{
     psl,
     scripts::ScriptModification,
 };
-use compact_str::CompactString;
+
 use mail_auth::{
     AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, ReceivedSpf,
     common::{headers::HeaderWriter, verify::VerifySignature},
@@ -170,7 +170,7 @@ impl<T: SessionStream> Session<T> {
             .unwrap_or(VerifyStrategy::Relaxed);
         let arc_sealer = self
             .server
-            .eval_if::<CompactString, _>(&ac.arc.seal, self, self.data.session_id)
+            .eval_if::<String, _>(&ac.arc.seal, self, self.data.session_id)
             .await
             .and_then(|name| self.server.get_arc_sealer(&name, self.data.session_id));
         let arc_output = if arc.verify() || arc_sealer.is_some() {
@@ -497,7 +497,7 @@ impl<T: SessionStream> Session<T> {
         // Sieve filtering
         if let Some((script, script_id)) = self
             .server
-            .eval_if::<CompactString, _>(&dc.script, self, self.data.session_id)
+            .eval_if::<String, _>(&dc.script, self, self.data.session_id)
             .await
             .and_then(|name| {
                 self.server
@@ -636,7 +636,7 @@ impl<T: SessionStream> Session<T> {
         let raw_message = edited_message.as_deref().unwrap_or(raw_message.as_slice());
         for signer in self
             .server
-            .eval_if::<Vec<CompactString>, _>(&ac.dkim.sign, self, self.data.session_id)
+            .eval_if::<Vec<String>, _>(&ac.dkim.sign, self, self.data.session_id)
             .await
             .unwrap_or_default()
         {

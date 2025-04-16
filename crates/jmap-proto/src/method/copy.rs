@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::format_compact;
 use serde::Serialize;
 use utils::map::vec_map::VecMap;
 
@@ -94,7 +95,7 @@ impl JsonObjectParser for CopyRequest<RequestArguments> {
                 _ => {
                     return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
-                        .details(format!("{}/copy", parser.ctx)));
+                        .details(format_compact!("{}/copy", parser.ctx)));
                 }
             },
             account_id: Id::default(),

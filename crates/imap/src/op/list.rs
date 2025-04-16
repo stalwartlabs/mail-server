@@ -11,7 +11,7 @@ use crate::{
     spawn_op,
 };
 use common::listener::SessionStream;
-use compact_str::CompactString;
+
 use directory::Permission;
 use imap_proto::{
     Command, StatusResponse,
@@ -163,7 +163,7 @@ impl<T: SessionStream> SessionData<T> {
         // Append reference name
         if !patterns.is_empty() && !reference_name.is_empty() {
             patterns.iter_mut().for_each(|item| {
-                *item = format!("{}{}", reference_name, item).into();
+                *item = format!("{}{}", reference_name, item);
             })
         }
 
@@ -321,7 +321,7 @@ impl<T: SessionStream> SessionData<T> {
 }
 
 #[allow(clippy::while_let_on_iterator)]
-pub fn matches_pattern(patterns: &[CompactString], mailbox_name: &str) -> bool {
+pub fn matches_pattern(patterns: &[String], mailbox_name: &str) -> bool {
     if patterns.is_empty() {
         return true;
     }

@@ -185,9 +185,9 @@ impl<T: SessionStream> SessionData<T> {
 
         // Build response
         let response = Response {
-            quota_root_items: vec![arguments.name, format!("#{account_id}").into()],
+            quota_root_items: vec![arguments.name, format!("#{account_id}")],
             quota_items: vec![QuotaItem {
-                name: format!("#{account_id}").into(),
+                name: format!("#{account_id}"),
                 resources: vec![QuotaResource {
                     resource: QuotaResourceName::Storage,
                     total: access_token.quota,

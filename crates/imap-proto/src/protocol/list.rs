@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 
 use crate::utf7::utf7_encode;
 
@@ -16,14 +16,14 @@ use super::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Arguments {
     Basic {
-        tag: CompactString,
-        reference_name: CompactString,
-        mailbox_name: CompactString,
+        tag: String,
+        reference_name: String,
+        mailbox_name: String,
     },
     Extended {
-        tag: CompactString,
-        reference_name: CompactString,
-        mailbox_name: Vec<CompactString>,
+        tag: String,
+        reference_name: String,
+        mailbox_name: Vec<String>,
         selection_options: Vec<SelectionOption>,
         return_options: Vec<ReturnOption>,
     },
@@ -82,12 +82,12 @@ pub enum ChildInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tag {
     ChildInfo(Vec<ChildInfo>),
-    OldName(CompactString),
+    OldName(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListItem {
-    pub mailbox_name: CompactString,
+    pub mailbox_name: String,
     pub attributes: Vec<Attribute>,
     pub tags: Vec<Tag>,
 }
@@ -108,7 +108,7 @@ impl Arguments {
         }
     }
 
-    pub fn unwrap_tag(self) -> CompactString {
+    pub fn unwrap_tag(self) -> String {
         match self {
             Arguments::Basic { tag, .. } => tag,
             Arguments::Extended { tag, .. } => tag,
@@ -196,7 +196,7 @@ impl Tag {
 }
 
 impl ListItem {
-    pub fn new(name: impl Into<CompactString>) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         ListItem {
             mailbox_name: name.into(),
             attributes: Vec::new(),
@@ -277,7 +277,7 @@ impl ImapResponse for Response {
 
 #[cfg(test)]
 mod tests {
-    use compact_str::CompactString;
+    
 
     use crate::protocol::{
         ImapResponse,
@@ -341,8 +341,8 @@ mod tests {
             response.serialize(&mut buf_1, false, false);
             response.serialize(&mut buf_2, true, false);
 
-            let response_v1 = CompactString::from_utf8(buf_1).unwrap();
-            let response_v2 = CompactString::from_utf8(buf_2).unwrap();
+            let response_v1 = String::from_utf8(buf_1).unwrap();
+            let response_v2 = String::from_utf8(buf_2).unwrap();
 
             assert_eq!(response_v2, expected_v2);
             assert_eq!(response_v1, expected_v1);
@@ -391,11 +391,11 @@ mod tests {
             "* LSUB () \"/\" \"foo\" (\"CHILDINFO\" (\"SUBSCRIBED\"))\r\n",
         );
 
-        let response_v2 = CompactString::from_utf8(response.clone().serialize()).unwrap();
+        let response_v2 = String::from_utf8(response.clone().serialize()).unwrap();
         response.is_rev2 = false;
         response.is_lsub = true;
         response.status_items.clear();
-        let response_v1 = CompactString::from_utf8(response.serialize()).unwrap();
+        let response_v1 = String::from_utf8(response.serialize()).unwrap();
 
         assert_eq!(response_v2, expected_v2);
         assert_eq!(response_v1, expected_v1);

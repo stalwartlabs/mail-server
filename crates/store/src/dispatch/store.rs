@@ -9,6 +9,7 @@ use std::{
     time::Instant,
 };
 
+use compact_str::ToCompactString;
 use roaring::RoaringBitmap;
 use trc::{AddContext, StoreEvent};
 
@@ -175,7 +176,7 @@ impl Store {
 
         trc::event!(
             Store(trc::StoreEvent::SqlQuery),
-            Details = query.to_string(),
+            Details = query.to_compact_string(),
             Value = params.as_slice(),
             Result = &result,
         );

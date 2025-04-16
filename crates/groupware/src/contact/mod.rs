@@ -7,6 +7,7 @@
 pub mod index;
 
 use calcard::vcard::VCard;
+
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
 use store::{SERIALIZE_ADDRESSBOOK_V1, SERIALIZE_CALENDAREVENT_V1, SerializedVersion};

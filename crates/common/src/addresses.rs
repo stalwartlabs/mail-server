@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
-use compact_str::CompactString;
 use directory::{Directory, backend::RcptType};
+use std::borrow::Cow;
 use utils::config::{Config, utils::AsKey};
 
 use crate::{
@@ -100,7 +98,7 @@ impl Server {
         directory: &Directory,
         address: &str,
         session_id: u64,
-    ) -> trc::Result<Vec<CompactString>> {
+    ) -> trc::Result<Vec<String>> {
         directory
             .vrfy(
                 self.core
@@ -120,7 +118,7 @@ impl Server {
         directory: &Directory,
         address: &str,
         session_id: u64,
-    ) -> trc::Result<Vec<CompactString>> {
+    ) -> trc::Result<Vec<String>> {
         directory
             .expn(
                 self.core
@@ -196,7 +194,7 @@ impl AddressMapping {
             }
             AddressMapping::Custom(if_block) => {
                 if let Some(result) = core
-                    .eval_if::<CompactString, _>(if_block, &Address(address), session_id)
+                    .eval_if::<String, _>(if_block, &Address(address), session_id)
                     .await
                 {
                     return result.into();
@@ -220,9 +218,9 @@ impl AddressMapping {
                 .map(|(_, domain_part)| format!("@{}", domain_part))
                 .map(Cow::Owned),
             AddressMapping::Custom(if_block) => core
-                .eval_if::<CompactString, _>(if_block, &Address(address), session_id)
+                .eval_if::<String, _>(if_block, &Address(address), session_id)
                 .await
-                .map(|s| Cow::Owned(s.into())),
+                .map(Cow::Owned),
             AddressMapping::Disable => None,
         }
     }

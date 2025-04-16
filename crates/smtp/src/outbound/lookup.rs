@@ -149,7 +149,7 @@ impl DnsLookup for Server {
                 } else {
                     Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
                         entity: remote_host.hostname().into(),
-                        details: format!("lookup error: {err}").into(),
+                        details: format!("lookup error: {err}"),
                     }))
                 }
             })?;
@@ -205,13 +205,10 @@ impl DnsLookup for Server {
 
             Ok(result)
         } else {
-            Err(Status::TemporaryFailure(Error::DnsError(
-                format!(
-                    "No IP addresses found for {:?}.",
-                    envelope.resolve_variable(V_MX).to_string()
-                )
-                .into(),
-            )))
+            Err(Status::TemporaryFailure(Error::DnsError(format!(
+                "No IP addresses found for {:?}.",
+                envelope.resolve_variable(V_MX).to_string()
+            ))))
         }
     }
 }

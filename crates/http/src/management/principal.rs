@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
 use common::{KV_BAYES_MODEL_USER, Server, auth::AccessToken};
-use compact_str::{CompactString, format_compact};
 use directory::{
     DirectoryInner, Permission, QueryBy, Type,
     backend::internal::{
@@ -19,35 +16,23 @@ use directory::{
         },
     },
 };
-
+use http_proto::{request::decode_path_element, *};
 use hyper::{Method, header};
 use serde_json::json;
+use std::future::Future;
+use std::sync::Arc;
 use trc::AddContext;
 use utils::url_params::UrlParams;
-
-use http_proto::{request::decode_path_element, *};
-use std::future::Future;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum AccountAuthRequest {
-    SetPassword {
-        password: CompactString,
-    },
-    EnableOtpAuth {
-        url: CompactString,
-    },
-    DisableOtpAuth {
-        url: Option<CompactString>,
-    },
-    AddAppPassword {
-        name: CompactString,
-        password: CompactString,
-    },
-    RemoveAppPassword {
-        name: Option<CompactString>,
-    },
+    SetPassword { password: String },
+    EnableOtpAuth { url: String },
+    DisableOtpAuth { url: Option<String> },
+    AddAppPassword { name: String, password: String },
+    RemoveAppPassword { name: Option<String> },
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -55,7 +40,7 @@ pub struct AccountAuthResponse {
     #[serde(rename = "otpEnabled")]
     pub otp_auth: bool,
     #[serde(rename = "appPasswords")]
-    pub app_passwords: Vec<CompactString>,
+    pub app_passwords: Vec<String>,
 }
 
 pub trait PrincipalManager: Sync + Send {
@@ -818,7 +803,7 @@ impl PrincipalManager for Server {
                     actions.push(PrincipalUpdate {
                         action: PrincipalAction::RemoveItem,
                         field: PrincipalField::Secrets,
-                        value: PrincipalValue::String(CompactString::new("")),
+                        value: PrincipalValue::String(String::new()),
                     });
 
                     (PrincipalAction::AddItem, password)
@@ -828,13 +813,12 @@ impl PrincipalManager for Server {
                     PrincipalAction::RemoveItem,
                     url.unwrap_or_else(|| "otpauth://".into()),
                 ),
-                AccountAuthRequest::AddAppPassword { name, password } => (
-                    PrincipalAction::AddItem,
-                    format_compact!("$app${name}${password}"),
-                ),
+                AccountAuthRequest::AddAppPassword { name, password } => {
+                    (PrincipalAction::AddItem, format!("$app${name}${password}"))
+                }
                 AccountAuthRequest::RemoveAppPassword { name } => (
                     PrincipalAction::RemoveItem,
-                    format_compact!("$app${}", name.unwrap_or_default()),
+                    format!("$app${}", name.unwrap_or_default()),
                 ),
             };
 

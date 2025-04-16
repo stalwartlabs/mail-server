@@ -101,7 +101,7 @@ impl Server {
                     .unwrap_or_default()
                 {
                     acl_obj.append(
-                        Property::_T(name.into()),
+                        Property::_T(name),
                         item.grants
                             .map(|acl_item| Value::Text(acl_item.to_string()))
                             .collect::<Vec<_>>(),

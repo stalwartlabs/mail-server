@@ -7,7 +7,7 @@
 use std::future::Future;
 
 use common::{Server, auth::AccessToken};
-use compact_str::CompactString;
+
 use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
 use hyper::Method;
 use mail_auth::report::{
@@ -52,7 +52,7 @@ impl ManageReports for Server {
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Limit to tenant domains
-        let mut tenant_domains: Option<Vec<CompactString>> = None;
+        let mut tenant_domains: Option<Vec<String>> = None;
         #[cfg(feature = "enterprise")]
         if self.core.is_enterprise_edition() {
             if let Some(tenant) = access_token.tenant {
@@ -297,7 +297,7 @@ async fn fetch_incoming_reports(
     server: &Server,
     class: &str,
     params: &UrlParams<'_>,
-    tenant_domains: &Option<Vec<CompactString>>,
+    tenant_domains: &Option<Vec<String>>,
 ) -> trc::Result<IncomingReports> {
     let filter = params.get("text");
     let page: usize = params.parse::<usize>("page").unwrap_or_default();

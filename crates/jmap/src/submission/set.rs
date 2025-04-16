@@ -11,7 +11,7 @@ use common::{
     listener::{ServerInstance, stream::NullIo},
     storage::index::ObjectIndexBuilder,
 };
-use compact_str::CompactString;
+
 use email::{
     identity::Identity,
     message::metadata::{ArchivedHeaderName, ArchivedHeaderValue, MessageMetadata},
@@ -39,7 +39,7 @@ use smtp::{
     core::{Session, SessionData},
     queue::spool::SmtpSpool,
 };
-use smtp_proto::{MailFrom, Mtrk, RcptTo, request::parser::Rfc5321Parser};
+use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
 use store::write::{BatchBuilder, now};
 use trc::AddContext;
 use utils::{BlobHash, map::vec_map::VecMap, sanitize_email};
@@ -317,8 +317,8 @@ impl EmailSubmissionSet for Server {
             thread_id: u32::MAX,
             ..Default::default()
         };
-        let mut mail_from = None;
-        let mut rcpt_to: Vec<RcptTo<CompactString>> = Vec::new();
+        let mut mail_from: Option<MailFrom<String>> = None;
+        let mut rcpt_to: Vec<RcptTo<String>> = Vec::new();
 
         for (property, value) in object.0 {
             let value = match response.eval_object_references(value) {
@@ -354,24 +354,7 @@ impl EmailSubmissionSet for Server {
                                                 email: addr.address.clone(),
                                                 parameters: params,
                                             };
-                                            mail_from = MailFrom {
-                                                address: CompactString::from(addr.address),
-                                                flags: addr.flags,
-                                                size: addr.size,
-                                                trans_id: addr.trans_id.map(Into::into),
-                                                by: addr.by,
-                                                env_id: addr.env_id.map(Into::into),
-                                                solicit: addr.solicit.map(Into::into),
-                                                mtrk: addr.mtrk.map(|m| Mtrk {
-                                                    certifier: m.certifier.into(),
-                                                    timeout: m.timeout,
-                                                }),
-                                                auth: addr.auth.map(Into::into),
-                                                hold_for: addr.hold_for,
-                                                hold_until: addr.hold_until,
-                                                mt_priority: addr.mt_priority,
-                                            }
-                                            .into();
+                                            mail_from = addr.into();
                                         }
                                         Err(err) => {
                                             return Ok(Err(SetError::invalid_properties()
@@ -407,14 +390,7 @@ impl EmailSubmissionSet for Server {
                                                             email: addr.address.clone(),
                                                             parameters: params,
                                                         });
-                                                        rcpt_to.push(RcptTo {
-                                                            address: CompactString::new(
-                                                                addr.address,
-                                                            ),
-                                                            orcpt: addr.orcpt.map(Into::into),
-                                                            rrvs: addr.rrvs,
-                                                            flags: addr.flags,
-                                                        });
+                                                        rcpt_to.push(addr);
                                                     }
                                                 }
                                                 Err(err) => {
@@ -494,7 +470,7 @@ impl EmailSubmissionSet for Server {
                 parameters: None,
             };
             MailFrom {
-                address: CompactString::new(identity_mail_from.as_str()),
+                address: identity_mail_from,
                 ..Default::default()
             }
         };
@@ -539,7 +515,7 @@ impl EmailSubmissionSet for Server {
                                         parameters: None,
                                     });
                                     rcpt_to.push(RcptTo {
-                                        address: CompactString::new(address.as_str()),
+                                        address,
                                         ..Default::default()
                                     });
                                 }

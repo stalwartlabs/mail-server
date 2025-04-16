@@ -5,7 +5,6 @@
  */
 
 use common::{Server, storage::index::ObjectIndexBuilder};
-use compact_str::format_compact;
 use directory::QueryBy;
 use email::identity::{ArchivedEmailAddress, Identity};
 use jmap_proto::{
@@ -182,7 +181,7 @@ impl IdentityGet for Server {
             let name = if name.is_empty() {
                 email.clone()
             } else if has_many {
-                format_compact!("{} <{}>", name, email)
+                format!("{} <{}>", name, email)
             } else {
                 name.clone()
             };

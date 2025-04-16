@@ -23,14 +23,14 @@ pub struct IfThen {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IfBlock {
-    pub key: CompactString,
+    pub key: String,
     pub if_then: Vec<IfThen>,
     pub default: Expression,
 }
 
 impl IfBlock {
     pub fn new<T: ConstantValue>(
-        key: impl Into<CompactString>,
+        key: impl Into<String>,
         if_thens: impl IntoIterator<Item = (&'static str, &'static str)>,
         default: impl AsRef<str>,
     ) -> Self {
@@ -51,7 +51,7 @@ impl IfBlock {
         }
     }
 
-    pub fn empty(key: impl Into<CompactString>) -> Self {
+    pub fn empty(key: impl Into<String>) -> Self {
         Self {
             key: key.into(),
             if_then: Default::default(),
@@ -102,7 +102,7 @@ impl IfBlock {
 
         // Parse conditions
         let mut if_block = IfBlock {
-            key: key.into(),
+            key,
             if_then: Default::default(),
             default: Expression {
                 items: Default::default(),
@@ -214,7 +214,7 @@ impl IfBlock {
         }
     }
 
-    pub fn into_default(self, key: impl Into<CompactString>) -> IfBlock {
+    pub fn into_default(self, key: impl Into<String>) -> IfBlock {
         IfBlock {
             key: key.into(),
             if_then: Default::default(),

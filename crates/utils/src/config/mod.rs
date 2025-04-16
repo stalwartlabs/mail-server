@@ -12,6 +12,7 @@ pub mod utils;
 use std::{collections::BTreeMap, time::Duration};
 
 use ahash::AHashMap;
+use compact_str::CompactString;
 use serde::Serialize;
 
 #[derive(Debug, Default, Serialize)]
@@ -190,7 +191,11 @@ impl Config {
                 ),
             };
 
-            trc::error!(trc::EventType::Config(cause).into_err().details(message));
+            trc::error!(
+                trc::EventType::Config(cause)
+                    .into_err()
+                    .details(CompactString::from(message))
+            );
         }
     }
 
@@ -222,7 +227,11 @@ impl Config {
                 ),
             };
 
-            trc::error!(trc::EventType::Config(cause).into_err().details(message));
+            trc::error!(
+                trc::EventType::Config(cause)
+                    .into_err()
+                    .details(CompactString::from(message))
+            );
         }
     }
 }

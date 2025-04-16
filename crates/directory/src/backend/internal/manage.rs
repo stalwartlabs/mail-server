@@ -13,6 +13,7 @@ use crate::{
     QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER, Type, backend::RcptType,
 };
 use ahash::{AHashMap, AHashSet};
+
 use compact_str::CompactString;
 use jmap_proto::types::collection::Collection;
 use store::{
@@ -61,7 +62,7 @@ pub trait ManageDirectory: Sized {
     async fn get_principal_info(&self, name: &str) -> trc::Result<Option<PrincipalInfo>>;
     async fn get_or_create_principal_id(&self, name: &str, typ: Type) -> trc::Result<u32>;
     async fn get_principal(&self, principal_id: u32) -> trc::Result<Option<Principal>>;
-    async fn get_principal_name(&self, principal_id: u32) -> trc::Result<Option<CompactString>>;
+    async fn get_principal_name(&self, principal_id: u32) -> trc::Result<Option<String>>;
     async fn get_member_of(&self, principal_id: u32) -> trc::Result<Vec<MemberOf>>;
     async fn get_members(&self, principal_id: u32) -> trc::Result<Vec<u32>>;
     async fn create_principal(
@@ -125,7 +126,7 @@ impl ManageDirectory for Store {
         }
     }
 
-    async fn get_principal_name(&self, principal_id: u32) -> trc::Result<Option<CompactString>> {
+    async fn get_principal_name(&self, principal_id: u32) -> trc::Result<Option<String>> {
         let archive = self
             .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::Principal(principal_id),
@@ -248,11 +249,11 @@ impl ManageDirectory for Store {
         allowed_permissions: Option<&Permissions>,
     ) -> trc::Result<CreatedPrincipal> {
         // Make sure the principal has a name
-        let name = CompactString::from_str_to_lowercase(principal_set.name());
+        let name = principal_set.name().to_lowercase();
         if name.is_empty() {
             return Err(err_missing(PrincipalField::Name));
         }
-        let mut valid_domains: AHashSet<CompactString> = AHashSet::new();
+        let mut valid_domains: AHashSet<String> = AHashSet::new();
 
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
@@ -1271,7 +1272,7 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(email),
                 ) => {
                     let email = email.to_lowercase();
-                    if let Some(idx) = principal.emails.iter().position(|v| v == email) {
+                    if let Some(idx) = principal.emails.iter().position(|v| v == &email) {
                         principal.emails.remove(idx);
                         batch.clear(ValueClass::Directory(DirectoryClass::EmailToId(
                             email.as_bytes().to_vec(),
@@ -1899,7 +1900,7 @@ impl ManageDirectory for Store {
                 {
                     let mut principal = Principal::new(pt.id, pt.typ);
                     principal.name =
-                        CompactString::from_utf8_lossy(key.get(1..).unwrap_or_default());
+                        String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned();
                     results.push(principal);
                 }
 

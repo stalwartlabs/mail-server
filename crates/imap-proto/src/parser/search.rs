@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use compact_str::CompactString;
+use compact_str::ToCompactString;
 use mail_parser::decoders::charsets::DecoderFnc;
 use mail_parser::decoders::charsets::map::charset_decoder;
 
@@ -38,14 +38,14 @@ impl Request<Command> {
                     tokens.next();
                     is_esearch = true;
                     result_options = parse_result_options(&mut tokens)
-                        .map_err(|v| bad(self.tag.to_string(), v))?;
+                        .map_err(|v| bad(self.tag.to_compact_string(), v))?;
                 }
                 Some(Token::Argument(value)) if value.eq_ignore_ascii_case(b"charset") => {
                     tokens.next();
                     decoder = charset_decoder(
                         &tokens
                             .next()
-                            .ok_or_else(|| bad(self.tag.to_string(), "Missing charset."))?
+                            .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing charset."))?
                             .unwrap_bytes(),
                     );
                 }
@@ -53,11 +53,14 @@ impl Request<Command> {
             }
         }
 
-        let filter =
-            parse_filters(&mut tokens, decoder).map_err(|v| bad(self.tag.to_string(), v))?;
+        let filter = parse_filters(&mut tokens, decoder)
+            .map_err(|v| bad(self.tag.to_compact_string(), v))?;
 
         match filter.len() {
-            0 => Err(bad(self.tag.to_string(), "No filters found in command.")),
+            0 => Err(bad(
+                self.tag.to_compact_string(),
+                "No filters found in command.",
+            )),
             _ => Ok(search::Arguments {
                 tag: self.tag,
                 result_options,
@@ -374,7 +377,7 @@ pub fn parse_filters(
                                 }
                                 Some(token) => {
                                     return Err(
-                                        format!("Unsupported MODSEQ parameter '{}'.", token.to_string()).into()
+                                        format!("Unsupported MODSEQ parameter '{}'.", token).into()
                                     );
                                 }
                                 None => {
@@ -500,16 +503,16 @@ pub fn parse_filters(
 pub fn decode_argument(
     tokens: &mut Peekable<IntoIter<Token>>,
     decoder: Option<DecoderFnc>,
-) -> super::Result<CompactString> {
+) -> super::Result<String> {
     let argument = tokens
         .next()
         .ok_or_else(|| Cow::from("Expected string."))?
         .unwrap_bytes();
 
     if let Some(decoder) = decoder {
-        Ok(decoder(&argument).into())
+        Ok(decoder(&argument))
     } else {
-        Ok(CompactString::from_utf8(argument).map_err(|_| Cow::from("Invalid UTF-8 argument."))?)
+        Ok(String::from_utf8(argument).map_err(|_| Cow::from("Invalid UTF-8 argument."))?)
     }
 }
 

@@ -10,7 +10,7 @@ use common::{
     CacheSwap, MailboxCache, MailboxStoreCache, Server, auth::AccessToken,
     config::jmap::settings::SpecialUse, sharing::EffectiveAcl,
 };
-use compact_str::CompactString;
+
 use jmap_proto::types::{acl::Acl, collection::Collection, value::AclGrant};
 use std::future::Future;
 use store::{
@@ -242,7 +242,7 @@ fn build_tree(cache: &mut MailboxStoreCache) {
         mailbox.path = if matches!(mailbox.role, SpecialUse::Inbox) {
             "INBOX".into()
         } else if mailbox.is_root() && mailbox.name.as_str().eq_ignore_ascii_case("inbox") {
-            format!("INBOX {}", idx + 1).into()
+            format!("INBOX {}", idx + 1)
         } else {
             mailbox.name.clone()
         };
@@ -264,7 +264,7 @@ fn build_tree(cache: &mut MailboxStoreCache) {
                     cache.by_id(&parent_id).map(|folder| (path, &folder.path))
                 })
             {
-                let mut new_path = CompactString::with_capacity(parent_path.len() + path.len() + 1);
+                let mut new_path = String::with_capacity(parent_path.len() + path.len() + 1);
                 new_path.push_str(parent_path.as_str());
                 new_path.push('/');
                 new_path.push_str(path.as_str());

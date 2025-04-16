@@ -8,7 +8,7 @@ use std::{future::Future, sync::atomic::Ordering};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use common::{Server, auth::AccessToken, ipc::QueueEvent};
-use compact_str::CompactString;
+
 use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
 use hyper::Method;
 use mail_auth::{
@@ -134,7 +134,7 @@ impl QueueManagement for Server {
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Limit to tenant domains
-        let mut tenant_domains: Option<Vec<CompactString>> = None;
+        let mut tenant_domains: Option<Vec<String>> = None;
         #[cfg(feature = "enterprise")]
         if self.core.is_enterprise_edition() {
             if let Some(tenant) = access_token.tenant {
@@ -466,7 +466,7 @@ impl QueueManagement for Server {
                     match report_id {
                         QueueClass::DmarcReportHeader(event)
                             if tenant_domains.as_ref().is_none_or(|domains| {
-                                domains.iter().any(|dd| dd == event.domain)
+                                domains.iter().any(|dd| dd == &event.domain)
                             }) =>
                         {
                             let mut rua = Vec::new();
@@ -479,7 +479,7 @@ impl QueueManagement for Server {
                         }
                         QueueClass::TlsReportHeader(event)
                             if tenant_domains.as_ref().is_none_or(|domains| {
-                                domains.iter().any(|dd| dd == event.domain)
+                                domains.iter().any(|dd| dd == &event.domain)
                             }) =>
                         {
                             let mut rua = Vec::new();
@@ -539,7 +539,7 @@ impl QueueManagement for Server {
                     let result = match report_id {
                         QueueClass::DmarcReportHeader(event)
                             if tenant_domains.as_ref().is_none_or(|domains| {
-                                domains.iter().any(|dd| dd == event.domain)
+                                domains.iter().any(|dd| dd == &event.domain)
                             }) =>
                         {
                             self.delete_dmarc_report(event).await;
@@ -547,7 +547,7 @@ impl QueueManagement for Server {
                         }
                         QueueClass::TlsReportHeader(event)
                             if tenant_domains.as_ref().is_none_or(|domains| {
-                                domains.iter().any(|dd| dd == event.domain)
+                                domains.iter().any(|dd| dd == &event.domain)
                             }) =>
                         {
                             self.delete_tls_report(vec![event]).await;
@@ -668,7 +668,7 @@ struct QueuedMessages {
 async fn fetch_queued_messages(
     server: &Server,
     params: &UrlParams<'_>,
-    tenant_domains: &Option<Vec<CompactString>>,
+    tenant_domains: &Option<Vec<String>>,
 ) -> trc::Result<QueuedMessages> {
     let text = params.get("text");
     let from = params.get("from");
@@ -774,7 +774,7 @@ struct QueuedReports {
 async fn fetch_queued_reports(
     server: &Server,
     params: &UrlParams<'_>,
-    tenant_domains: &Option<Vec<CompactString>>,
+    tenant_domains: &Option<Vec<String>>,
 ) -> trc::Result<QueuedReports> {
     let domain = params.get("domain").map(|d| d.to_lowercase());
     let type_ = params.get("type").and_then(|t| match t {
@@ -823,7 +823,7 @@ async fn fetch_queued_reports(
                     let event = ReportEvent::deserialize(key)?;
                     if tenant_domains
                         .as_ref()
-                        .is_none_or(|domains| domains.iter().any(|dd| dd == event.domain))
+                        .is_none_or(|domains| domains.iter().any(|dd| dd == &event.domain))
                         && event.seq_id != 0
                         && domain.as_ref().is_none_or(|d| event.domain.contains(d))
                     {
@@ -964,10 +964,10 @@ fn is_zero(num: &i16) -> bool {
 }
 
 trait IsTenantDomain {
-    fn is_tenant_domain(&self, tenant_domains: &Option<Vec<CompactString>>) -> bool;
+    fn is_tenant_domain(&self, tenant_domains: &Option<Vec<String>>) -> bool;
 }
 impl IsTenantDomain for ArchivedMessage {
-    fn is_tenant_domain(&self, tenant_domains: &Option<Vec<CompactString>>) -> bool {
+    fn is_tenant_domain(&self, tenant_domains: &Option<Vec<String>>) -> bool {
         tenant_domains
             .as_ref()
             .is_none_or(|domains| self.has_domain(domains))

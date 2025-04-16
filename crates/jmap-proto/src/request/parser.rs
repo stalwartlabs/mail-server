@@ -6,6 +6,8 @@
 
 use std::collections::HashMap;
 
+use compact_str::ToCompactString;
+
 use crate::{
     method::{
         changes::ChangesRequest,
@@ -177,7 +179,7 @@ impl Request {
                             }
                             _ => Err(trc::JmapEvent::UnknownMethod
                                 .into_err()
-                                .details(method_name.to_string())),
+                                .details(method_name.to_compact_string())),
                         };
 
                         let method = match method {

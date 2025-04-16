@@ -6,7 +6,7 @@
 
 use base64::{Engine, engine::general_purpose};
 use common::{Server, auth::AccessToken};
-use compact_str::CompactString;
+
 use email::push::{Keys, PushSubscription};
 use jmap_proto::{
     error::set::SetError,
@@ -101,7 +101,7 @@ impl PushSubscriptionSet for Server {
                 .sample_iter(Alphanumeric)
                 .take(VERIFICATION_CODE_LEN)
                 .map(char::from)
-                .collect::<CompactString>();
+                .collect::<String>();
 
             // Insert record
             let document_id = self
@@ -218,12 +218,12 @@ fn validate_push_value(
         (Property::DeviceClientId, MaybePatchValue::Value(Value::Text(value)))
             if is_create && value.len() < 255 =>
         {
-            push.device_client_id = value.into();
+            push.device_client_id = value;
         }
         (Property::Url, MaybePatchValue::Value(Value::Text(value)))
             if is_create && value.len() < 512 && value.starts_with("https://") =>
         {
-            push.url = value.into();
+            push.url = value;
         }
         (Property::Keys, MaybePatchValue::Value(Value::Object(value)))
             if is_create && value.0.len() == 2 =>

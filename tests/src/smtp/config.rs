@@ -14,7 +14,8 @@ use common::{
     },
     expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
 };
-use compact_str::{CompactString, ToCompactString};
+
+use compact_str::ToCompactString;
 use throttle::parse_queue_rate_limiter;
 use tokio::net::TcpSocket;
 
@@ -430,7 +431,7 @@ async fn eval_if() {
         assert_eq!(
             core.eval_if::<Variable, _>(
                 &IfBlock {
-                    key: key.to_compact_string(),
+                    key: key.to_string(),
                     if_then: vec![IfThen {
                         expr: Expression::try_parse(&mut config, key.as_str(), &token_map).unwrap(),
                         then: Expression::from(true),
@@ -487,12 +488,10 @@ async fn eval_dynvalue() {
         .unwrap();
         let expected = config
             .property_require::<Option<String>>(("eval", test_name.as_str(), "expect"))
-            .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"))
-            .map(Into::into);
+            .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"));
 
         assert_eq!(
-            core.eval_if::<CompactString, _>(&if_block, &envelope, 0)
-                .await,
+            core.eval_if::<String, _>(&if_block, &envelope, 0).await,
             expected,
             "failed for test {test_name:?}"
         );

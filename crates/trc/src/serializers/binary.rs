@@ -10,6 +10,8 @@
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+use compact_str::format_compact;
+
 use crate::*;
 
 const VERSION: u8 = 1;
@@ -51,7 +53,7 @@ pub fn deserialize_events(bytes: &[u8]) -> crate::Result<Vec<Event<EventDetails>
         events.push(Event::deserialize(&mut iter).ok_or_else(|| {
             StoreEvent::DataCorruption
                 .caused_by(crate::location!())
-                .details(format!("Failed to deserialize event {n}"))
+                .details(format_compact!("Failed to deserialize event {n}"))
         })?);
     }
     Ok(events)

@@ -5,7 +5,7 @@
  */
 
 use common::config::jmap::settings::SpecialUse;
-use compact_str::CompactString;
+
 use jmap_proto::types::value::AclGrant;
 use store::{SERIALIZE_MAILBOX_V1, SerializedVersion};
 
@@ -25,7 +25,7 @@ pub const TOMBSTONE_ID: u32 = u32::MAX - 1;
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
 #[rkyv(derive(Debug))]
 pub struct Mailbox {
-    pub name: CompactString,
+    pub name: String,
     pub role: SpecialUse,
     pub parent_id: u32,
     pub sort_order: Option<u32>,
@@ -48,7 +48,7 @@ impl SerializedVersion for Mailbox {
 }
 
 impl Mailbox {
-    pub fn new(name: impl Into<CompactString>) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Mailbox {
             name: name.into(),
             role: SpecialUse::None,

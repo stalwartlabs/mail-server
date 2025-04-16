@@ -9,7 +9,7 @@ pub mod manage;
 
 use crate::Type;
 use ahash::AHashMap;
-use compact_str::CompactString;
+
 use std::fmt::Display;
 use store::{Deserialize, SerializeInfallible, U32_LEN, write::key::KeySerializer};
 use utils::codec::leb128::Leb128Iterator;
@@ -140,8 +140,8 @@ pub enum PrincipalAction {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
 pub enum PrincipalValue {
-    String(CompactString),
-    StringList(Vec<CompactString>),
+    String(String),
+    StringList(Vec<String>),
     Integer(u64),
     IntegerList(Vec<u64>),
 }

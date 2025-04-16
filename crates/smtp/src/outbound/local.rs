@@ -71,7 +71,7 @@ impl Message {
                     rcpt.status = Status::TemporaryFailure(HostResponse {
                         hostname: ErrorDetails {
                             entity: "localhost".into(),
-                            details: format!("RCPT TO:<{}>", rcpt.address).into(),
+                            details: format!("RCPT TO:<{}>", rcpt.address),
                         },
                         response: Response {
                             code: 451,
@@ -85,7 +85,7 @@ impl Message {
                     rcpt.status = Status::PermanentFailure(HostResponse {
                         hostname: ErrorDetails {
                             entity: "localhost".into(),
-                            details: format!("RCPT TO:<{}>", rcpt.address).into(),
+                            details: format!("RCPT TO:<{}>", rcpt.address),
                         },
                         response: Response {
                             code: 550,

@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+use std::fmt::Display;
+
+use compact_str::{CompactString, format_compact};
 
 use super::{ResponseCode, ResponseType};
 
@@ -17,7 +19,7 @@ pub enum Error {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request<T: CommandParser> {
-    pub tag: CompactString,
+    pub tag: String,
     pub command: T,
     pub tokens: Vec<Token>,
 }
@@ -43,7 +45,7 @@ pub enum Token {
 impl<T: CommandParser> Default for Request<T> {
     fn default() -> Self {
         Self {
-            tag: CompactString::new(""),
+            tag: String::new(),
             command: T::default(),
             tokens: Vec::new(),
         }
@@ -112,7 +114,7 @@ impl<T: CommandParser> Receiver<T> {
         if !self.buf.is_empty() {
             self.current_request_size += self.buf.len();
             if self.current_request_size > self.max_request_size {
-                return Err(self.error_reset(format!(
+                return Err(self.error_reset(format_compact!(
                     "Request exceeds maximum limit of {} bytes.",
                     self.max_request_size
                 )));
@@ -128,7 +130,7 @@ impl<T: CommandParser> Receiver<T> {
     fn push_token(&mut self, token: Token) -> Result<(), Error> {
         self.current_request_size += 1;
         if self.current_request_size > self.max_request_size {
-            return Err(self.error_reset(format!(
+            return Err(self.error_reset(format_compact!(
                 "Request exceeds maximum limit of {} bytes.",
                 self.max_request_size
             )));
@@ -150,7 +152,7 @@ impl<T: CommandParser> Receiver<T> {
                 State::Tag => match ch {
                     b' ' => {
                         if !self.buf.is_empty() {
-                            self.request.tag = CompactString::from_utf8(std::mem::replace(
+                            self.request.tag = String::from_utf8(std::mem::replace(
                                 &mut self.buf,
                                 Vec::with_capacity(10),
                             ))
@@ -160,7 +162,7 @@ impl<T: CommandParser> Receiver<T> {
                     }
                     b'\t' | b'\r' => {}
                     b'\n' => {
-                        return Err(self.error_reset(format!(
+                        return Err(self.error_reset(format_compact!(
                             "Missing command after tag {:?}, found CRLF instead.",
                             std::str::from_utf8(&self.buf).unwrap_or_default()
                         )));
@@ -187,7 +189,7 @@ impl<T: CommandParser> Receiver<T> {
                                     T::parse(&self.buf, is_uid).ok_or_else(|| {
                                         let command =
                                             String::from_utf8_lossy(&self.buf).into_owned();
-                                        self.error_reset(format!(
+                                        self.error_reset(format_compact!(
                                             "Unrecognized command '{}'.",
                                             command
                                         ))
@@ -206,7 +208,7 @@ impl<T: CommandParser> Receiver<T> {
                             }
                         }
                     } else {
-                        return Err(self.error_reset(format!(
+                        return Err(self.error_reset(format_compact!(
                             "Invalid character {:?} in command name.",
                             ch as char
                         )));
@@ -315,7 +317,7 @@ impl<T: CommandParser> Receiver<T> {
                                 })?;
                                 if self.current_request_size + size as usize > self.max_request_size
                                 {
-                                    return Err(self.error_reset(format!(
+                                    return Err(self.error_reset(format_compact!(
                                         "Literal exceeds the maximum request size of {} bytes.",
                                         self.max_request_size
                                     )));
@@ -343,7 +345,7 @@ impl<T: CommandParser> Receiver<T> {
                             }
                         }
                         _ => {
-                            return Err(self.error_reset(format!(
+                            return Err(self.error_reset(format_compact!(
                                 "Invalid character {:?} in literal.",
                                 ch as char
                             )));
@@ -386,10 +388,10 @@ impl<T: CommandParser> Receiver<T> {
 }
 
 impl Token {
-    pub fn unwrap_string(self) -> crate::parser::Result<CompactString> {
+    pub fn unwrap_string(self) -> crate::parser::Result<String> {
         match self {
             Token::Argument(value) => {
-                CompactString::from_utf8(value).map_err(|_| "Invalid UTF-8 in argument.".into())
+                String::from_utf8(value).map_err(|_| "Invalid UTF-8 in argument.".into())
             }
             other => Ok(other.to_string()),
         }
@@ -445,6 +447,12 @@ impl Token {
     }
 }
 
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(&String::from_utf8_lossy(self.as_bytes()))
+    }
+}
+
 impl Token {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
@@ -459,17 +467,14 @@ impl Token {
             Token::Nil => b"",
         }
     }
-    pub fn to_string(&self) -> CompactString {
-        CompactString::from_utf8_lossy(self.as_bytes())
-    }
 }
 
 impl Error {
-    pub fn err(tag: Option<CompactString>, message: impl Into<trc::Value>) -> Self {
+    pub fn err(tag: Option<impl Into<CompactString>>, message: impl Into<trc::Value>) -> Self {
         Error::Error {
             response: trc::ImapEvent::Error
                 .ctx(trc::Key::Details, message)
-                .ctx_opt(trc::Key::Id, tag)
+                .ctx_opt(trc::Key::Id, tag.map(Into::into))
                 .ctx(trc::Key::Type, ResponseType::Bad)
                 .code(ResponseCode::Parse),
         }
@@ -493,13 +498,13 @@ impl<T: CommandParser> Request<T> {
     pub fn into_error(self, message: impl Into<trc::Value>) -> trc::Error {
         trc::ImapEvent::Error
             .ctx(trc::Key::Details, message)
-            .ctx(trc::Key::Id, self.tag)
+            .ctx(trc::Key::Id, CompactString::from_string_buffer(self.tag))
     }
 
     pub fn into_parse_error(self, message: impl Into<trc::Value>) -> trc::Error {
         trc::ImapEvent::Error
             .ctx(trc::Key::Details, message)
-            .ctx(trc::Key::Id, self.tag)
+            .ctx(trc::Key::Id, CompactString::from_string_buffer(self.tag))
             .ctx(trc::Key::Code, ResponseCode::Parse)
             .ctx(trc::Key::Type, ResponseType::Bad)
     }

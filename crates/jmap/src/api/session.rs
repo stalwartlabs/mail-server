@@ -59,7 +59,6 @@ impl SessionHandler for Server {
                     .get_principal_name(*id)
                     .await
                     .caused_by(trc::location!())?
-                    .map(Into::into)
                     .unwrap_or_else(|| Id::from(*id).to_string()),
                 is_personal,
                 is_readonly,

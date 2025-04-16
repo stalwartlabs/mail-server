@@ -14,7 +14,7 @@ use common::auth::oauth::{
     oidc::StandardClaims,
     registration::{ClientRegistrationRequest, ClientRegistrationResponse},
 };
-use compact_str::ToCompactString;
+
 use http::auth::oauth::{
     DeviceAuthResponse, ErrorType, OAuthCodeRequest, TokenResponse, auth::OAuthMetadata,
     openid::OpenIdMetadata,
@@ -82,7 +82,7 @@ pub async fn test(params: &mut JMAPTest) {
         &metadata.registration_endpoint,
         None,
         &ClientRegistrationRequest {
-            redirect_uris: vec!["https://localhost".to_compact_string()],
+            redirect_uris: vec!["https://localhost".to_string()],
             ..Default::default()
         },
     )
@@ -165,7 +165,7 @@ pub async fn test(params: &mut JMAPTest) {
     let claims = id_token.payload().unwrap();
     let registered_claims = &claims.registered;
     let private_claims = &claims.private;
-    assert_eq!(registered_claims.issuer, Some(oidc_metadata.issuer.into()));
+    assert_eq!(registered_claims.issuer, Some(oidc_metadata.issuer));
     assert_eq!(registered_claims.subject, Some(john_int_id.to_string()));
     assert_eq!(
         registered_claims.audience,

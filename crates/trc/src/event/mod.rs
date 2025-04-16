@@ -9,6 +9,7 @@ pub mod description;
 pub mod level;
 pub mod metrics;
 
+use compact_str::ToCompactString;
 use std::fmt::Display;
 
 use crate::*;
@@ -131,7 +132,7 @@ impl Error {
 
     #[inline(always)]
     pub fn reason(self, error: impl Display) -> Self {
-        self.ctx(Key::Reason, error.to_string())
+        self.ctx(Key::Reason, error.to_compact_string())
     }
 
     #[inline(always)]

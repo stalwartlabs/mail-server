@@ -8,7 +8,7 @@ pub mod client;
 pub mod message;
 
 use ahash::AHashMap;
-use compact_str::CompactString;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -36,46 +36,46 @@ pub struct Context {
 
 #[derive(Serialize, Deserialize)]
 pub struct Sasl {
-    pub login: CompactString,
+    pub login: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub method: Option<CompactString>,
+    pub method: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Client {
-    pub ip: CompactString,
+    pub ip: String,
     pub port: u16,
-    pub ptr: Option<CompactString>,
-    pub helo: Option<CompactString>,
+    pub ptr: Option<String>,
+    pub helo: Option<String>,
     #[serde(rename = "activeConnections")]
     pub active_connections: u32,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Tls {
-    pub version: CompactString,
-    pub cipher: CompactString,
+    pub version: String,
+    pub cipher: String,
     #[serde(rename = "cipherBits")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bits: Option<u16>,
     #[serde(rename = "certIssuer")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub issuer: Option<CompactString>,
+    pub issuer: Option<String>,
     #[serde(rename = "certSubject")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub subject: Option<CompactString>,
+    pub subject: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Server {
-    pub name: Option<CompactString>,
+    pub name: Option<String>,
     pub port: u16,
-    pub ip: Option<CompactString>,
+    pub ip: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Queue {
-    pub id: CompactString,
+    pub id: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -101,9 +101,9 @@ pub enum Stage {
 
 #[derive(Serialize, Deserialize)]
 pub struct Address {
-    pub address: CompactString,
+    pub address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parameters: Option<AHashMap<CompactString, CompactString>>,
+    pub parameters: Option<AHashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -114,12 +114,12 @@ pub struct Envelope {
 
 #[derive(Serialize, Deserialize)]
 pub struct Message {
-    pub headers: Vec<(CompactString, CompactString)>,
+    pub headers: Vec<(String, String)>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "serverHeaders")]
     #[serde(default)]
-    pub server_headers: Vec<(CompactString, CompactString)>,
-    pub contents: CompactString,
+    pub server_headers: Vec<(String, String)>,
+    pub contents: String,
     pub size: usize,
 }
 
@@ -149,9 +149,9 @@ pub struct SmtpResponse {
     #[serde(default)]
     pub status: Option<u16>,
     #[serde(default)]
-    pub enhanced_status: Option<CompactString>,
+    pub enhanced_status: Option<String>,
     #[serde(default)]
-    pub message: Option<CompactString>,
+    pub message: Option<String>,
     #[serde(default)]
     pub disconnect: bool,
 }
@@ -161,39 +161,39 @@ pub struct SmtpResponse {
 pub enum Modification {
     #[serde(rename = "changeFrom")]
     ChangeFrom {
-        value: CompactString,
+        value: String,
         #[serde(default)]
-        parameters: AHashMap<CompactString, Option<CompactString>>,
+        parameters: AHashMap<String, Option<String>>,
     },
     #[serde(rename = "addRecipient")]
     AddRecipient {
-        value: CompactString,
+        value: String,
         #[serde(default)]
-        parameters: AHashMap<CompactString, Option<CompactString>>,
+        parameters: AHashMap<String, Option<String>>,
     },
     #[serde(rename = "deleteRecipient")]
-    DeleteRecipient { value: CompactString },
+    DeleteRecipient { value: String },
     #[serde(rename = "replaceContents")]
-    ReplaceContents { value: CompactString },
+    ReplaceContents { value: String },
     #[serde(rename = "addHeader")]
     AddHeader {
-        name: CompactString,
-        value: CompactString,
+        name: String,
+        value: String,
     },
     #[serde(rename = "insertHeader")]
     InsertHeader {
         index: u32,
-        name: CompactString,
-        value: CompactString,
+        name: String,
+        value: String,
     },
     #[serde(rename = "changeHeader")]
     ChangeHeader {
         index: u32,
-        name: CompactString,
-        value: CompactString,
+        name: String,
+        value: String,
     },
     #[serde(rename = "deleteHeader")]
-    DeleteHeader { index: u32, name: CompactString },
+    DeleteHeader { index: u32, name: String },
 }
 
 impl From<common::config::smtp::session::Stage> for Stage {

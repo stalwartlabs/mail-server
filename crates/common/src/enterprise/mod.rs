@@ -17,7 +17,7 @@ pub mod undelete;
 use std::{sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
-use compact_str::CompactString;
+
 use directory::{QueryBy, Type, backend::internal::lookup::DirectoryStore};
 use license::LicenseKey;
 use llm::AiApiConfig;
@@ -233,7 +233,7 @@ impl Server {
         }
     }
 
-    fn default_logo_url(&self) -> Option<CompactString> {
+    fn default_logo_url(&self) -> Option<String> {
         self.core
             .enterprise
             .as_ref()

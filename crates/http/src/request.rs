@@ -233,10 +233,7 @@ impl ParseHttp for Server {
                         self.authenticate_headers(&req, &session, false).await?;
 
                     return self
-                        .handle_session_resource(
-                            ctx.resolve_response_url(self).await.into(),
-                            access_token,
-                        )
+                        .handle_session_resource(ctx.resolve_response_url(self).await, access_token)
                         .await
                         .map(|s| s.into_http_response());
                 }

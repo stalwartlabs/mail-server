@@ -14,7 +14,7 @@ use crate::{
 use common::{
     config::jmap::settings::SpecialUse, listener::SessionStream, storage::index::ObjectIndexBuilder,
 };
-use compact_str::CompactString;
+
 use directory::Permission;
 use email::mailbox::cache::{MailboxCacheAccess, MessageMailboxCache};
 use imap_proto::{
@@ -177,7 +177,7 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Validate special folders
-        let full_path: CompactString = path.join("/").into();
+        let full_path: String = path.join("/");
         let mut parent_mailbox_id = None;
         let mut parent_mailbox_name = None;
         let (account_id, path) = {
@@ -190,11 +190,7 @@ impl<T: SessionStream> SessionData<T> {
                         .details("Mailboxes under root shared folders are not allowed.")
                         .code(ResponseCode::Cannot));
                 }
-                let prefix = Some(CompactString::from(format!(
-                    "{}/{}",
-                    path.remove(0),
-                    path.remove(0)
-                )));
+                let prefix = Some(format!("{}/{}", path.remove(0), path.remove(0)));
 
                 // Locate account
                 if let Some(account) = mailboxes
@@ -232,7 +228,7 @@ impl<T: SessionStream> SessionData<T> {
                 if path.len() > 1 {
                     let mut create_path = Vec::with_capacity(path.len());
                     while !path.is_empty() {
-                        let mailbox_name: CompactString = path.join("/").into();
+                        let mailbox_name: String = path.join("/");
                         if let Some(&mailbox_id) = account.mailbox_names.get(&mailbox_name) {
                             parent_mailbox_id = mailbox_id.into();
                             parent_mailbox_name = mailbox_name.into();
@@ -311,9 +307,9 @@ impl<T: SessionStream> SessionData<T> {
 pub struct CreateParams<'x> {
     pub account_id: u32,
     pub path: Vec<&'x str>,
-    pub full_path: CompactString,
+    pub full_path: String,
     pub parent_mailbox_id: Option<u32>,
-    pub parent_mailbox_name: Option<CompactString>,
+    pub parent_mailbox_name: Option<String>,
     pub special_use: Option<Attribute>,
     pub is_rename: bool,
 }

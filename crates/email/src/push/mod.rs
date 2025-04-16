@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
 use jmap_proto::types::type_state::DataType;
 use store::{SERIALIZE_PUSH_V1, SerializedVersion};
 use utils::map::bitmap::Bitmap;
@@ -13,10 +12,10 @@ use utils::map::bitmap::Bitmap;
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Default, Debug, Clone, PartialEq, Eq,
 )]
 pub struct PushSubscription {
-    pub url: CompactString,
-    pub device_client_id: CompactString,
+    pub url: String,
+    pub device_client_id: String,
     pub expires: u64,
-    pub verification_code: CompactString,
+    pub verification_code: String,
     pub verified: bool,
     pub types: Bitmap<DataType>,
     pub keys: Option<Keys>,

@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 use store::fts::{FilterItem, FilterType};
 
 use super::{Flag, Sequence, quoted_string, serialize_sequence};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: CompactString,
+    pub tag: String,
     pub is_esearch: bool,
     pub sort: Option<Vec<Comparator>>,
     pub result_options: Vec<ResultOption>,
@@ -64,15 +64,15 @@ pub enum Filter {
     Sequence(Sequence, bool),
     All,
     Answered,
-    Bcc(CompactString),
+    Bcc(String),
     Before(i64),
-    Body(CompactString),
-    Cc(CompactString),
+    Body(String),
+    Cc(String),
     Deleted,
     Draft,
     Flagged,
-    From(CompactString),
-    Header(CompactString, CompactString),
+    From(String),
+    Header(String, String),
     Keyword(Flag),
     Larger(u32),
     On(i64),
@@ -82,9 +82,9 @@ pub enum Filter {
     SentSince(i64),
     Since(i64),
     Smaller(u32),
-    Subject(CompactString),
-    Text(CompactString),
-    To(CompactString),
+    Subject(String),
+    Text(String),
+    To(String),
     Unanswered,
     Undeleted,
     Undraft,
@@ -111,8 +111,8 @@ pub enum Filter {
     ModSeq((u64, ModSeqEntry)),
 
     // RFC 8474 - ObjectID
-    EmailId(CompactString),
-    ThreadId(CompactString),
+    EmailId(String),
+    ThreadId(String),
 }
 
 impl FilterItem for Filter {

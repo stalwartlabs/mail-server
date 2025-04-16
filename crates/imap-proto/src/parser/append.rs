@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::ToCompactString;
+
 use crate::{
     Command,
     protocol::{
@@ -35,7 +37,7 @@ impl Request<Command> {
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| bad(self.tag.to_string(), v))?,
+                        .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                     version,
                 );
                 let mut messages = Vec::new();
@@ -61,7 +63,7 @@ impl Request<Command> {
                                     State::UTF8 => State::UTF8Data,
                                     _ => {
                                         return Err(bad(
-                                            self.tag.to_string(),
+                                            self.tag.to_compact_string(),
                                             "Invalid opening parenthesis found.",
                                         ));
                                     }
@@ -70,7 +72,7 @@ impl Request<Command> {
                             Token::ParenthesisClose => match state {
                                 State::None | State::UTF8 => {
                                     return Err(bad(
-                                        self.tag.to_string(),
+                                        self.tag.to_compact_string(),
                                         "Invalid closing parenthesis found.",
                                     ));
                                 }
@@ -93,7 +95,7 @@ impl Request<Command> {
                                             message.received_at = Some(date_time);
                                         } else {
                                             return Err(bad(
-                                                self.tag.to_string(),
+                                                self.tag.to_compact_string(),
                                                 "Failed to parse received time.",
                                             ));
                                         }
@@ -105,12 +107,12 @@ impl Request<Command> {
                                 State::Flags => {
                                     message.flags.push(
                                         Flag::parse_imap(value)
-                                            .map_err(|v| bad(self.tag.to_string(), v))?,
+                                            .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                                     );
                                 }
                                 State::UTF8 => {
                                     return Err(bad(
-                                        self.tag.to_string(),
+                                        self.tag.to_compact_string(),
                                         "Expected parenthesis after UTF8.",
                                     ));
                                 }
@@ -119,13 +121,13 @@ impl Request<Command> {
                                         message.message = value;
                                     } else {
                                         return Err(bad(
-                                            self.tag.to_string(),
+                                            self.tag.to_compact_string(),
                                             "Invalid parameter after message literal.",
                                         ));
                                     }
                                 }
                             },
-                            _ => return Err(bad(self.tag.to_string(), "Invalid arguments.")),
+                            _ => return Err(bad(self.tag.to_compact_string(), "Invalid arguments.")),
                         }
                     }
 

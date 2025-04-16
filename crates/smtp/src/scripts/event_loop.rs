@@ -7,7 +7,7 @@
 use std::{borrow::Cow, future::Future, sync::Arc, time::Instant};
 
 use common::{Server, scripts::plugins::PluginContext};
-use compact_str::CompactString;
+
 use mail_auth::common::headers::HeaderWriter;
 use mail_parser::{Encoding, Message, MessagePart, PartType};
 use sieve::{
@@ -30,7 +30,7 @@ use super::{ScriptModification, ScriptParameters, ScriptResult};
 pub trait RunScript: Sync + Send {
     fn run_script(
         &self,
-        script_id: CompactString,
+        script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
     ) -> impl Future<Output = ScriptResult> + Send;
@@ -39,7 +39,7 @@ pub trait RunScript: Sync + Send {
 impl RunScript for Server {
     async fn run_script(
         &self,
-        script_id: CompactString,
+        script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
     ) -> ScriptResult {
@@ -346,7 +346,7 @@ impl RunScript for Server {
                     Event::SetEnvelope { envelope, value } => {
                         modifications.push(ScriptModification::SetEnvelope {
                             name: envelope,
-                            value: value.into(),
+                            value,
                         });
                         input = true.into();
                     }
@@ -405,9 +405,9 @@ impl RunScript for Server {
                 && matches!(reject_bytes.next(), Some(ch) if ch.is_ascii_digit())
                 && matches!(reject_bytes.next(), Some(ch) if ch == &b' ' )
             {
-                ScriptResult::Reject(reject_reason.into())
+                ScriptResult::Reject(reject_reason)
             } else {
-                ScriptResult::Reject(format!("503 5.5.3 {reject_reason}").into())
+                ScriptResult::Reject(format!("503 5.5.3 {reject_reason}"))
             }
         } else if keep_id != usize::MAX - 1 {
             if let Some(message) = messages.into_iter().nth(keep_id - 1) {

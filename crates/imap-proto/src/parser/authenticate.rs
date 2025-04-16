@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::ToCompactString;
+
 use crate::{
     Command,
     protocol::authenticate::{self, Mechanism},
@@ -16,7 +18,7 @@ impl Request<Command> {
             let mut tokens = self.tokens.into_iter();
             Ok(authenticate::Arguments {
                 mechanism: Mechanism::parse(&tokens.next().unwrap().unwrap_bytes())
-                    .map_err(|v| bad(self.tag.to_string(), v))?,
+                    .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                 params: tokens
                     .filter_map(|token| token.unwrap_string().ok())
                     .collect(),

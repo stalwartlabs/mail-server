@@ -11,7 +11,6 @@ use std::{
     time::Duration,
 };
 
-use compact_str::CompactString;
 use mail_auth::{
     IpLookupStrategy,
     common::crypto::{Algorithm, HashAlgorithm},
@@ -630,26 +629,6 @@ pub trait AsKey: Clone {
 }
 
 impl AsKey for &str {
-    fn as_key(&self) -> String {
-        self.to_string()
-    }
-
-    fn as_prefix(&self) -> String {
-        format!("{self}.")
-    }
-}
-
-impl AsKey for CompactString {
-    fn as_key(&self) -> String {
-        self.to_string()
-    }
-
-    fn as_prefix(&self) -> String {
-        format!("{self}.")
-    }
-}
-
-impl AsKey for &CompactString {
     fn as_key(&self) -> String {
         self.to_string()
     }

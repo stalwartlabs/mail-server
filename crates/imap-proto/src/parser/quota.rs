@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::ToCompactString;
+
 use crate::{
     Command,
     protocol::{ProtocolVersion, quota},
@@ -21,7 +23,7 @@ impl Request<Command> {
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| bad(self.tag.clone(), v))?,
+                        .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                     version,
                 ),
                 tag: self.tag,
@@ -40,7 +42,7 @@ impl Request<Command> {
                     .next()
                     .unwrap()
                     .unwrap_string()
-                    .map_err(|v| bad(self.tag.clone(), v))?,
+                    .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                 tag: self.tag,
             }),
             0 => Err(self.into_error("Missing quota root.")),

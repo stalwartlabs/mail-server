@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::ToCompactString;
 use mail_parser::decoders::charsets::map::charset_decoder;
 
 use crate::{
@@ -25,22 +26,25 @@ impl Request<Command> {
         let algorithm = Algorithm::parse(
             &tokens
                 .next()
-                .ok_or_else(|| bad(self.tag.to_string(), "Missing threading algorithm."))?
+                .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing threading algorithm."))?
                 .unwrap_bytes(),
         )
-        .map_err(|v| bad(self.tag.to_string(), v))?;
+        .map_err(|v| bad(self.tag.to_compact_string(), v))?;
 
         let decoder = charset_decoder(
             &tokens
                 .next()
-                .ok_or_else(|| bad(self.tag.to_string(), "Missing charset."))?
+                .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing charset."))?
                 .unwrap_bytes(),
         );
 
-        let filter =
-            parse_filters(&mut tokens, decoder).map_err(|v| bad(self.tag.to_string(), v))?;
+        let filter = parse_filters(&mut tokens, decoder)
+            .map_err(|v| bad(self.tag.to_compact_string(), v))?;
         match filter.len() {
-            0 => Err(bad(self.tag.to_string(), "No filters found in command.")),
+            0 => Err(bad(
+                self.tag.to_compact_string(),
+                "No filters found in command.",
+            )),
             _ => Ok(thread::Arguments {
                 algorithm,
                 filter,

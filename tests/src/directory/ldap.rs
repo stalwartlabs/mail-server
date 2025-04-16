@@ -6,7 +6,6 @@
 
 use std::fmt::Debug;
 
-use compact_str::{CompactString, ToCompactString};
 use directory::{
     QueryBy, ROLE_USER, Type,
     backend::{RcptType, internal::manage::ManageDirectory},
@@ -57,10 +56,10 @@ async fn ldap_directory() {
             member_of: map_account_ids(base_store, vec!["sales"])
                 .await
                 .into_iter()
-                .map(|v| v.to_compact_string())
+                .map(|v| v.to_string())
                 .collect(),
             emails: vec!["john@example.org".into(), "john.doe@example.org".into()],
-            roles: vec![ROLE_USER.to_compact_string()],
+            roles: vec![ROLE_USER.to_string()],
             ..Default::default()
         }
         .into_sorted()
@@ -87,7 +86,7 @@ async fn ldap_directory() {
             typ: Type::Individual,
             quota: 500000,
             emails: vec!["bill@example.org".into(),],
-            roles: vec![ROLE_USER.to_compact_string()],
+            roles: vec![ROLE_USER.to_string()],
             ..Default::default()
         }
         .into_sorted()
@@ -124,10 +123,10 @@ async fn ldap_directory() {
             member_of: map_account_ids(base_store, vec!["sales", "support"])
                 .await
                 .into_iter()
-                .map(|v| v.to_compact_string())
+                .map(|v| v.to_string())
                 .collect(),
             emails: vec!["jane@example.org".into(),],
-            roles: vec![ROLE_USER.to_compact_string()],
+            roles: vec![ROLE_USER.to_string()],
             ..Default::default()
         }
         .into_sorted()
@@ -146,7 +145,7 @@ async fn ldap_directory() {
             name: "sales".into(),
             description: Some("sales".into()),
             typ: Type::Group,
-            roles: vec![ROLE_USER.to_compact_string()],
+            roles: vec![ROLE_USER.to_string()],
             ..Default::default()
         }
     );
@@ -228,11 +227,11 @@ async fn ldap_directory() {
     );
     compare_sorted(
         core.vrfy(&handle, "info", 0).await.unwrap(),
-        Vec::<CompactString>::new(),
+        Vec::<String>::new(),
     );
     compare_sorted(
         core.vrfy(&handle, "invalid", 0).await.unwrap(),
-        Vec::<CompactString>::new(),
+        Vec::<String>::new(),
     );
 
     // EXPN

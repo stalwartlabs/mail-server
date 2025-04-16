@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use calcard::icalendar::ICalendar;
-use compact_str::CompactString;
+
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
 use store::{SERIALIZE_CALENDAR_V1, SERIALIZE_CALENDAREVENT_V1, SerializedVersion, ahash};
@@ -19,7 +19,7 @@ use crate::DavName;
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct Calendar {
-    pub name: CompactString,
+    pub name: String,
     pub preferences: HashMap<u32, CalendarPreferences, ahash::RandomState>,
     pub acls: Vec<AclGrant>,
     pub dead_properties: DeadProperty,
@@ -31,16 +31,16 @@ pub struct Calendar {
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct CalendarPreferences {
-    pub name: CompactString,
-    pub description: Option<CompactString>,
+    pub name: String,
+    pub description: Option<String>,
     pub sort_order: u32,
-    pub color: Option<CompactString>,
+    pub color: Option<String>,
     pub is_subscribed: bool,
     pub is_default: bool,
     pub is_visible: bool,
     pub include_in_availability: IncludeInAvailability,
-    pub default_alerts_with_time: HashMap<CompactString, ICalendar, ahash::RandomState>,
-    pub default_alerts_without_time: HashMap<CompactString, ICalendar, ahash::RandomState>,
+    pub default_alerts_with_time: HashMap<String, ICalendar, ahash::RandomState>,
+    pub default_alerts_without_time: HashMap<String, ICalendar, ahash::RandomState>,
     pub time_zone: Timezone,
 }
 
@@ -49,7 +49,7 @@ pub struct CalendarPreferences {
 )]
 pub struct CalendarEvent {
     pub names: Vec<DavName>,
-    pub display_name: Option<CompactString>,
+    pub display_name: Option<String>,
     pub event: ICalendar,
     pub user_properties: VecMap<u32, ICalendar>,
     pub may_invite_self: bool,
@@ -66,7 +66,7 @@ pub struct CalendarEvent {
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub enum Timezone {
-    IANA(CompactString),
+    IANA(String),
     Custom(ICalendar),
     #[default]
     Default,

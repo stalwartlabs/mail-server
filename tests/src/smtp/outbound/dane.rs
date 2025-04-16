@@ -343,7 +343,7 @@ async fn dane_test() {
         assert_eq!(
             tlsa.verify(0, &host, Some(&certs)),
             Err(Status::PermanentFailure(Error::DaneError(ErrorDetails {
-                entity: host.into(),
+                entity: host,
                 details: "No matching certificates found in TLSA records".into()
             })))
         );

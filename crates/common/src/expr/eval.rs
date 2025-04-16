@@ -701,6 +701,21 @@ impl<'x> TryFrom<Variable<'x>> for CompactString {
     }
 }
 
+impl<'x> TryFrom<Variable<'x>> for String {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        if let Variable::String(s) = value {
+            Ok(match s {
+                StringCow::Borrowed(v) => v.to_string(),
+                StringCow::Owned(v) => v.into_string(),
+            })
+        } else {
+            Err(())
+        }
+    }
+}
+
 impl<'x> From<Variable<'x>> for bool {
     fn from(val: Variable<'x>) -> Self {
         val.to_bool()

@@ -7,7 +7,7 @@
 use std::fmt::Write;
 
 use common::{Server, manager::webadmin::Resource};
-use compact_str::CompactString;
+
 use directory::QueryBy;
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -29,7 +29,7 @@ pub trait Autoconfig: Sync + Send {
     fn autoconfig_parameters<'x>(
         &self,
         emailaddress: &'x str,
-    ) -> impl Future<Output = trc::Result<(CompactString, CompactString, &'x str)>> + Send;
+    ) -> impl Future<Output = trc::Result<(String, String, &'x str)>> + Send;
 }
 
 impl Autoconfig for Server {
@@ -177,7 +177,7 @@ impl Autoconfig for Server {
     async fn autoconfig_parameters<'x>(
         &self,
         emailaddress: &'x str,
-    ) -> trc::Result<(CompactString, CompactString, &'x str)> {
+    ) -> trc::Result<(String, String, &'x str)> {
         let (_, domain) = emailaddress.rsplit_once('@').ok_or_else(|| {
             trc::ResourceEvent::BadParameters
                 .into_err()

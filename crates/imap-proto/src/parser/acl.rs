@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::ToCompactString;
+
 use crate::{
     Command,
     protocol::{
@@ -43,17 +45,17 @@ impl Request<Command> {
         let mailbox_name = utf7_maybe_decode(
             tokens
                 .next()
-                .ok_or_else(|| bad(self.tag.to_string(), "Missing mailbox name."))?
+                .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing mailbox name."))?
                 .unwrap_string()
-                .map_err(|v| bad(self.tag.to_string(), v))?,
+                .map_err(|v| bad(self.tag.to_compact_string(), v))?,
             version,
         );
         let identifier = if has_identifier {
             tokens
                 .next()
-                .ok_or_else(|| bad(self.tag.to_string(), "Missing identifier."))?
+                .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing identifier."))?
                 .unwrap_string()
-                .map_err(|v| bad(self.tag.to_string(), v))?
+                .map_err(|v| bad(self.tag.to_compact_string(), v))?
                 .into()
         } else {
             None
@@ -62,10 +64,10 @@ impl Request<Command> {
             ModRights::parse(
                 &tokens
                     .next()
-                    .ok_or_else(|| bad(self.tag.to_string(), "Missing rights."))?
+                    .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing rights."))?
                     .unwrap_bytes(),
             )
-            .map_err(|v| bad(self.tag.to_string(), v))?
+            .map_err(|v| bad(self.tag.to_compact_string(), v))?
             .into()
         } else {
             None

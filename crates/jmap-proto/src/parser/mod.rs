@@ -6,6 +6,8 @@
 
 use std::fmt::Display;
 
+use compact_str::format_compact;
+
 use self::json::Parser;
 
 pub mod base32;
@@ -117,18 +119,24 @@ impl<T: Eq> Token<T> {
         if self == token {
             Ok(())
         } else {
-            Err(trc::JmapEvent::NotRequest.into_err().details(format!(
-                "Invalid JMAP request: expected '{token}', got '{self}'."
-            )))
+            Err(trc::JmapEvent::NotRequest
+                .into_err()
+                .details(format_compact!(
+                    "Invalid JMAP request: expected '{token}', got '{self}'."
+                )))
         }
     }
 
     pub fn error(&self, property: &str, expected: &str) -> trc::Error {
-        trc::JmapEvent::InvalidArguments.into_err().details(if !property.is_empty() {
-            format!("Invalid argument for '{property:?}': expected '{expected}', got '{self}'.",)
-        } else {
-            format!("Invalid argument: expected '{expected}', got '{self}'.")
-        })
+        trc::JmapEvent::InvalidArguments
+            .into_err()
+            .details(if !property.is_empty() {
+                format_compact!(
+                    "Invalid argument for '{property:?}': expected '{expected}', got '{self}'.",
+                )
+            } else {
+                format_compact!("Invalid argument: expected '{expected}', got '{self}'.")
+            })
     }
 }
 

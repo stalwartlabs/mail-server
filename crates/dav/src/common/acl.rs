@@ -493,7 +493,7 @@ impl DavAclHandler for Server {
                     .get_principal_name(grant_account_id)
                     .await
                     .caused_by(trc::location!())?
-                    .unwrap_or_else(|| format_compact!("_{grant_account_id}"));
+                    .unwrap_or_else(|| format!("_{grant_account_id}"));
 
                 aces.push(Ace::new(
                     Principal::Href(Href(format!(

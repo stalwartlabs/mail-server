@@ -10,7 +10,7 @@ use common::{
     Server,
     auth::oauth::registration::{ClientRegistrationRequest, ClientRegistrationResponse},
 };
-use compact_str::CompactString;
+
 use directory::{
     Permission, QueryBy, Type,
     backend::internal::{
@@ -70,7 +70,7 @@ impl ClientRegistrationHandler for Server {
             .sample_iter(Alphanumeric)
             .take(20)
             .map(|ch| char::from(ch.to_ascii_lowercase()))
-            .collect::<CompactString>();
+            .collect::<String>();
         self.store()
             .create_principal(
                 PrincipalSet::new(u32::MAX, Type::OauthClient)

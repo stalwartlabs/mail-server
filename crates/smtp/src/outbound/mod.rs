@@ -10,7 +10,7 @@ use common::config::{
     server::ServerProtocol,
     smtp::queue::{RelayHost, RequireOptional},
 };
-use compact_str::ToCompactString;
+
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
 
@@ -45,7 +45,7 @@ impl Status<(), Error> {
             | mail_send::Error::Timeout => {
                 Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
                     entity: hostname.into(),
-                    details: err.to_compact_string(),
+                    details: err.to_string(),
                 }))
             }
 
@@ -73,7 +73,7 @@ impl Status<(), Error> {
             | mail_send::Error::MissingStartTls => {
                 Status::PermanentFailure(Error::ConnectionError(ErrorDetails {
                     entity: hostname.into(),
-                    details: err.to_compact_string(),
+                    details: err.to_string(),
                 }))
             }
         }
@@ -120,11 +120,11 @@ impl Status<(), Error> {
             })),
             mail_send::Error::Tls(err) => Status::TemporaryFailure(Error::TlsError(ErrorDetails {
                 entity: hostname.into(),
-                details: format!("Handshake failed: {err}").into(),
+                details: format!("Handshake failed: {err}"),
             })),
             mail_send::Error::Io(err) => Status::TemporaryFailure(Error::TlsError(ErrorDetails {
                 entity: hostname.into(),
-                details: format!("I/O error: {err}").into(),
+                details: format!("I/O error: {err}"),
             })),
             _ => Status::PermanentFailure(Error::TlsError(ErrorDetails {
                 entity: hostname.into(),
@@ -136,7 +136,7 @@ impl Status<(), Error> {
     pub fn timeout(hostname: &str, stage: &str) -> Self {
         Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
             entity: hostname.into(),
-            details: format!("Timeout while {stage}").into(),
+            details: format!("Timeout while {stage}"),
         }))
     }
 
@@ -151,10 +151,10 @@ impl Status<(), Error> {
 impl From<mail_auth::Error> for Status<(), Error> {
     fn from(err: mail_auth::Error) -> Self {
         match &err {
-            mail_auth::Error::DnsRecordNotFound(code) => Status::PermanentFailure(Error::DnsError(
-                format!("Domain not found: {code:?}").into(),
-            )),
-            _ => Status::TemporaryFailure(Error::DnsError(err.to_compact_string())),
+            mail_auth::Error::DnsRecordNotFound(code) => {
+                Status::PermanentFailure(Error::DnsError(format!("Domain not found: {code:?}")))
+            }
+            _ => Status::TemporaryFailure(Error::DnsError(err.to_string())),
         }
     }
 }
@@ -164,14 +164,14 @@ impl From<mta_sts::Error> for Status<(), Error> {
         match &err {
             mta_sts::Error::Dns(err) => match err {
                 mail_auth::Error::DnsRecordNotFound(code) => Status::PermanentFailure(
-                    Error::MtaStsError(format!("Record not found: {code:?}").into()),
+                    Error::MtaStsError(format!("Record not found: {code:?}")),
                 ),
                 mail_auth::Error::InvalidRecordType => Status::PermanentFailure(
                     Error::MtaStsError("Failed to parse MTA-STS DNS record.".into()),
                 ),
-                _ => Status::TemporaryFailure(Error::MtaStsError(
-                    format!("DNS lookup error: {err}").into(),
-                )),
+                _ => {
+                    Status::TemporaryFailure(Error::MtaStsError(format!("DNS lookup error: {err}")))
+                }
             },
             mta_sts::Error::Http(err) => {
                 if err.is_timeout() {
@@ -191,7 +191,7 @@ impl From<mta_sts::Error> for Status<(), Error> {
                 }
             }
             mta_sts::Error::InvalidPolicy(err) => Status::PermanentFailure(Error::MtaStsError(
-                format!("Failed to parse policy: {err}").into(),
+                format!("Failed to parse policy: {err}"),
             )),
         }
     }

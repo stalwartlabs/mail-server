@@ -5,7 +5,7 @@
  */
 
 use common::listener::SessionStream;
-use compact_str::CompactString;
+
 use trc::SmtpEvent;
 
 use crate::core::Session;
@@ -15,7 +15,7 @@ impl<T: SessionStream> Session<T> {
     pub async fn handle_vrfy(&mut self, address: String) -> Result<(), ()> {
         match self
             .server
-            .eval_if::<CompactString, _>(
+            .eval_if::<String, _>(
                 &self.server.core.smtp.session.rcpt.directory,
                 self,
                 self.data.session_id,
@@ -88,7 +88,7 @@ impl<T: SessionStream> Session<T> {
     pub async fn handle_expn(&mut self, address: String) -> Result<(), ()> {
         match self
             .server
-            .eval_if::<CompactString, _>(
+            .eval_if::<String, _>(
                 &self.server.core.smtp.session.rcpt.directory,
                 self,
                 self.data.session_id,

@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
-use compact_str::CompactString;
+
 use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult, spf::verify::SpfParameters};
 use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS, MailFrom, MtPriority};
 use trc::SmtpEvent;
@@ -20,7 +20,7 @@ use crate::{
 };
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_mail_from(&mut self, from: MailFrom<CompactString>) -> Result<(), ()> {
+    pub async fn handle_mail_from(&mut self, from: MailFrom<String>) -> Result<(), ()> {
         if self.data.helo_domain.is_empty()
             && (self.params.ehlo_require
                 || self.params.spf_ehlo.verify()
@@ -113,11 +113,7 @@ impl<T: SessionStream> Session<T> {
             let domain = address_lcase.domain_part().into();
             (from.address, address_lcase, domain)
         } else {
-            (
-                CompactString::new(""),
-                CompactString::new(""),
-                CompactString::new(""),
-            )
+            (String::new(), String::new(), String::new())
         };
 
         let has_dsn = from.env_id.is_some();
@@ -155,7 +151,7 @@ impl<T: SessionStream> Session<T> {
         // Sieve filtering
         if let Some((script, script_id)) = self
             .server
-            .eval_if::<CompactString, _>(
+            .eval_if::<String, _>(
                 &self.server.core.smtp.session.mail.script,
                 self,
                 self.data.session_id,
@@ -207,7 +203,7 @@ impl<T: SessionStream> Session<T> {
         // Address rewriting
         if let Some(new_address) = self
             .server
-            .eval_if::<CompactString, _>(
+            .eval_if::<String, _>(
                 &self.server.core.smtp.session.mail.rewrite,
                 self,
                 self.data.session_id,
@@ -263,7 +259,7 @@ impl<T: SessionStream> Session<T> {
                             .chain(
                                 self.authenticated_emails()
                                     .iter()
-                                    .map(|e| trc::Value::String(e.clone()))
+                                    .map(|e| trc::Value::String(e.as_str().into()))
                             )
                             .collect::<Vec<_>>()
                     );

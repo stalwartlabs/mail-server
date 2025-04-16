@@ -7,8 +7,6 @@
 // Ported from https://github.com/jstedfast/MailKit/blob/master/MailKit/Net/Imap/ImapEncoding.cs
 // Author: Jeffrey Stedfast <jestedfa@microsoft.com>
 
-use compact_str::CompactString;
-
 use crate::protocol::ProtocolVersion;
 
 static UTF_7_RANK: &[u8] = &[
@@ -22,7 +20,7 @@ static UTF_7_RANK: &[u8] = &[
 
 static UTF_7_MAP: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+,";
 
-pub fn utf7_decode(text: &str) -> Option<CompactString> {
+pub fn utf7_decode(text: &str) -> Option<String> {
     let mut bytes: Vec<u16> = Vec::with_capacity(text.len());
     let mut bits = 0;
     let mut v: u32 = 0;
@@ -70,11 +68,11 @@ pub fn utf7_decode(text: &str) -> Option<CompactString> {
         }
     }
 
-    CompactString::from_utf16(&bytes).ok()
+    String::from_utf16(&bytes).ok()
 }
 
-pub fn utf7_encode(text: &str) -> CompactString {
-    let mut result = CompactString::with_capacity(text.len());
+pub fn utf7_encode(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
     let mut shifted = false;
     let mut bits = 0;
     let mut u: u32 = 0;
@@ -124,7 +122,7 @@ pub fn utf7_encode(text: &str) -> CompactString {
 }
 
 #[inline(always)]
-pub fn utf7_maybe_decode(text: CompactString, version: ProtocolVersion) -> CompactString {
+pub fn utf7_maybe_decode(text: String, version: ProtocolVersion) -> String {
     if version.is_rev2() {
         text
     } else {

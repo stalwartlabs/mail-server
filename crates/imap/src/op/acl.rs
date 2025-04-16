@@ -10,6 +10,7 @@ use common::{
     auth::AccessToken, listener::SessionStream, sharing::EffectiveAcl,
     storage::index::ObjectIndexBuilder,
 };
+
 use compact_str::ToCompactString;
 use directory::{
     Permission, QueryBy, Type,
@@ -124,7 +125,7 @@ impl<T: SessionStream> Session<T> {
                     .with_tag(arguments.tag)
                     .serialize(
                         GetAclResponse {
-                            mailbox_name: arguments.mailbox_name,
+                            mailbox_name: arguments.mailbox_name.to_string(),
                             permissions,
                         }
                         .into_bytes(is_rev2),
@@ -212,7 +213,7 @@ impl<T: SessionStream> Session<T> {
                     .with_tag(arguments.tag)
                     .serialize(
                         MyRightsResponse {
-                            mailbox_name: arguments.mailbox_name,
+                            mailbox_name: arguments.mailbox_name.to_string(),
                             rights,
                         }
                         .into_bytes(is_rev2),

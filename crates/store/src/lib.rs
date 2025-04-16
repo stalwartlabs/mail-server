@@ -15,7 +15,7 @@ pub mod write;
 
 pub use ahash;
 pub use blake3;
-use compact_str::CompactString;
+
 pub use gxhash;
 pub use parking_lot;
 pub use rand;
@@ -657,30 +657,30 @@ impl From<Vec<u8>> for Value<'_> {
 }
 
 impl Value<'_> {
-    pub fn into_string(self) -> CompactString {
+    pub fn into_string(self) -> String {
         match self {
-            Value::Text(s) => s.as_ref().into(),
-            Value::Integer(i) => i.to_string().into(),
-            Value::Bool(b) => b.to_string().into(),
-            Value::Float(f) => f.to_string().into(),
-            Value::Blob(b) => CompactString::from_utf8_lossy(b.as_ref()),
+            Value::Text(s) => s.into_owned(),
+            Value::Integer(i) => i.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Blob(b) => String::from_utf8_lossy(b.as_ref()).into_owned(),
             Value::Null => "".into(),
         }
     }
 
-    pub fn into_lower_string(self) -> CompactString {
+    pub fn into_lower_string(self) -> String {
         match self {
-            Value::Text(s) => CompactString::from_str_to_lowercase(s.as_ref()),
-            Value::Integer(i) => i.to_string().into(),
-            Value::Bool(b) => b.to_string().into(),
-            Value::Float(f) => f.to_string().into(),
-            Value::Blob(b) => CompactString::from_utf8_lossy(b.as_ref()).to_lowercase(),
+            Value::Text(s) => s.as_ref().to_lowercase(),
+            Value::Integer(i) => i.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Blob(b) => String::from_utf8_lossy(b.as_ref()).to_lowercase(),
             Value::Null => "".into(),
         }
     }
 }
 
-impl From<Row> for Vec<CompactString> {
+impl From<Row> for Vec<String> {
     fn from(value: Row) -> Self {
         value.values.into_iter().map(|v| v.into_string()).collect()
     }
@@ -702,7 +702,7 @@ impl From<Row> for Vec<u32> {
     }
 }
 
-impl From<Rows> for Vec<CompactString> {
+impl From<Rows> for Vec<String> {
     fn from(value: Rows) -> Self {
         value
             .rows

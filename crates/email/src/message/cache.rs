@@ -9,7 +9,7 @@ use common::{
     CacheSwap, MailboxStoreCache, MessageCache, MessageStoreCache, MessageUidCache, Server,
     auth::AccessToken, sharing::EffectiveAcl,
 };
-use compact_str::CompactString;
+
 use jmap_proto::types::{
     acl::Acl,
     collection::Collection,
@@ -227,7 +227,7 @@ fn insert_item(cache: &mut MessageStoreCache, document_id: u32, message: &Archiv
                 if let Some(idx) = cache.keywords.iter().position(|k| k == custom) {
                     item.keywords |= 1 << (OTHER + idx);
                 } else if cache.keywords.len() < (128 - OTHER) {
-                    cache.keywords.push(CompactString::from(custom));
+                    cache.keywords.push(String::from(custom));
                     item.keywords |= 1 << (OTHER + cache.keywords.len() - 1);
                 }
             }

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 
 use crate::{ResponseCode, StatusResponse};
 
@@ -12,8 +12,8 @@ use super::{ImapResponse, Sequence, list::ListItem};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: CompactString,
-    pub mailbox_name: CompactString,
+    pub tag: String,
+    pub mailbox_name: String,
     pub condstore: bool,
     pub qresync: Option<QResync>,
 }
@@ -40,7 +40,7 @@ pub struct Response {
     pub is_rev2: bool,
     pub closed_previous: bool,
     pub highest_modseq: Option<HighestModSeq>,
-    pub mailbox_id: CompactString,
+    pub mailbox_id: String,
 }
 
 #[derive(Debug, Clone)]

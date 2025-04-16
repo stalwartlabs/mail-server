@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 use store::Store;
 use utils::config::{Config, utils::AsKey};
 
@@ -119,7 +119,7 @@ impl MemoryDirectory {
 
                 principal
                     .emails
-                    .push(CompactString::from_str_to_lowercase(email));
+                    .push(email.to_lowercase());
             }
 
             // Parse mailing lists

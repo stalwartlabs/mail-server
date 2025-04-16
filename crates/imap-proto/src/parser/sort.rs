@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::ToCompactString;
 use mail_parser::decoders::charsets::map::charset_decoder;
 
 use crate::{
@@ -28,7 +29,8 @@ impl Request<Command> {
             Some(Token::Argument(value)) if value.eq_ignore_ascii_case(b"return") => {
                 tokens.next();
                 (
-                    parse_result_options(&mut tokens).map_err(|v| bad(self.tag.to_string(), v))?,
+                    parse_result_options(&mut tokens)
+                        .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                     true,
                 )
             }
@@ -40,7 +42,7 @@ impl Request<Command> {
             .is_none_or(|token| !token.is_parenthesis_open())
         {
             return Err(bad(
-                self.tag.to_string(),
+                self.tag.to_compact_string(),
                 "Expected sort criteria between parentheses.",
             ));
         }
@@ -54,31 +56,40 @@ impl Request<Command> {
                         is_ascending = false;
                     } else {
                         sort.push(Comparator {
-                            sort: Sort::parse(&value).map_err(|v| bad(self.tag.to_string(), v))?,
+                            sort: Sort::parse(&value)
+                                .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                             ascending: is_ascending,
                         });
                         is_ascending = true;
                     }
                 }
-                _ => return Err(bad(self.tag.to_string(), "Invalid result option argument.")),
+                _ => {
+                    return Err(bad(
+                        self.tag.to_compact_string(),
+                        "Invalid result option argument.",
+                    ));
+                }
             }
         }
 
         if sort.is_empty() {
-            return Err(bad(self.tag.to_string(), "Missing sort criteria."));
+            return Err(bad(self.tag.to_compact_string(), "Missing sort criteria."));
         }
 
         let decoder = charset_decoder(
             &tokens
                 .next()
-                .ok_or_else(|| bad(self.tag.to_string(), "Missing charset."))?
+                .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing charset."))?
                 .unwrap_bytes(),
         );
 
-        let filter =
-            parse_filters(&mut tokens, decoder).map_err(|v| bad(self.tag.to_string(), v))?;
+        let filter = parse_filters(&mut tokens, decoder)
+            .map_err(|v| bad(self.tag.to_compact_string(), v))?;
         match filter.len() {
-            0 => Err(bad(self.tag.to_string(), "No filters found in command.")),
+            0 => Err(bad(
+                self.tag.to_compact_string(),
+                "No filters found in command.",
+            )),
             _ => Ok(Arguments {
                 sort: sort.into(),
                 result_options,

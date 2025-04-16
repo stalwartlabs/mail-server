@@ -11,7 +11,8 @@ use std::{
 };
 
 use common::expr::{self, functions::ResolveVariable, *};
-use compact_str::{CompactString, ToCompactString};
+
+use compact_str::ToCompactString;
 use smtp_proto::{ArchivedResponse, Response};
 use store::{SERIALIZE_QUEUEMSG_V1, SerializedVersion, write::now};
 use utils::BlobHash;
@@ -51,14 +52,14 @@ pub struct Message {
     pub created: u64,
     pub blob_hash: BlobHash,
 
-    pub return_path: CompactString,
-    pub return_path_lcase: CompactString,
-    pub return_path_domain: CompactString,
+    pub return_path: String,
+    pub return_path_lcase: String,
+    pub return_path_domain: String,
     pub recipients: Vec<Recipient>,
     pub domains: Vec<Domain>,
 
     pub flags: u64,
-    pub env_id: Option<CompactString>,
+    pub env_id: Option<String>,
     pub priority: i16,
 
     pub size: u64,
@@ -82,7 +83,7 @@ pub enum QuotaKey {
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone, PartialEq, Eq)]
 pub struct Domain {
-    pub domain: CompactString,
+    pub domain: String,
     pub retry: Schedule<u32>,
     pub notify: Schedule<u32>,
     pub expires: u64,
@@ -92,11 +93,11 @@ pub struct Domain {
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone, PartialEq, Eq)]
 pub struct Recipient {
     pub domain_idx: u32,
-    pub address: CompactString,
-    pub address_lcase: CompactString,
+    pub address: String,
+    pub address_lcase: String,
     pub status: Status<HostResponse<String>, HostResponse<ErrorDetails>>,
     pub flags: u64,
-    pub orcpt: Option<CompactString>,
+    pub orcpt: Option<String>,
 }
 
 pub const RCPT_DSN_SENT: u64 = 1 << 32;
@@ -132,23 +133,23 @@ pub struct HostResponse<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 pub enum Error {
-    DnsError(CompactString),
+    DnsError(String),
     UnexpectedResponse(HostResponse<ErrorDetails>),
     ConnectionError(ErrorDetails),
     TlsError(ErrorDetails),
     DaneError(ErrorDetails),
-    MtaStsError(CompactString),
+    MtaStsError(String),
     RateLimited,
     ConcurrencyLimited,
-    Io(CompactString),
+    Io(String),
 }
 
 #[derive(
     Debug, Clone, PartialEq, Eq, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Default,
 )]
 pub struct ErrorDetails {
-    pub entity: CompactString,
-    pub details: CompactString,
+    pub entity: String,
+    pub details: String,
 }
 
 impl<T> Ord for Schedule<T> {
@@ -495,7 +496,7 @@ impl Display for Status<(), Error> {
     }
 }
 
-impl Display for Status<HostResponse<CompactString>, HostResponse<ErrorDetails>> {
+impl Display for Status<HostResponse<String>, HostResponse<ErrorDetails>> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Status::Scheduled => write!(f, "Scheduled"),

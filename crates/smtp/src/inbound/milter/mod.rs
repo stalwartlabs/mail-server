@@ -7,7 +7,7 @@
 use std::{borrow::Cow, fmt::Display, net::IpAddr, sync::Arc, time::Duration};
 
 use common::config::smtp::session::MilterVersion;
-use compact_str::CompactString;
+
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -30,7 +30,7 @@ pub struct MilterClient<T: AsyncRead + AsyncWrite> {
     options: u32,
     flags_actions: u32,
     flags_protocol: u32,
-    id: Arc<CompactString>,
+    id: Arc<String>,
     session_id: u64,
 }
 
@@ -104,7 +104,7 @@ pub enum Action {
     Discard,
     Reject,
     TempFail,
-    ReplyCode { code: [u8; 3], text: CompactString },
+    ReplyCode { code: [u8; 3], text: String },
     Shutdown,
     ConnectionFailure,
 }
@@ -112,35 +112,35 @@ pub enum Action {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Modification {
     ChangeFrom {
-        sender: CompactString,
-        args: CompactString,
+        sender: String,
+        args: String,
     },
     AddRcpt {
-        recipient: CompactString,
-        args: CompactString,
+        recipient: String,
+        args: String,
     },
     DeleteRcpt {
-        recipient: CompactString,
+        recipient: String,
     },
     ReplaceBody {
         value: Vec<u8>,
     },
     AddHeader {
-        name: CompactString,
-        value: CompactString,
+        name: String,
+        value: String,
     },
     InsertHeader {
         index: u32,
-        name: CompactString,
-        value: CompactString,
+        name: String,
+        value: String,
     },
     ChangeHeader {
         index: u32,
-        name: CompactString,
-        value: CompactString,
+        name: String,
+        value: String,
     },
     Quarantine {
-        reason: CompactString,
+        reason: String,
     },
 }
 

@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::{CompactString, ToCompactString};
 use directory::{
     QueryBy, ROLE_USER, Type,
     backend::{RcptType, internal::manage::ManageDirectory},
@@ -133,14 +132,14 @@ async fn sql_directory() {
                 member_of: map_account_ids(base_store, vec!["sales"])
                     .await
                     .into_iter()
-                    .map(|v| v.to_compact_string())
+                    .map(|v| v.to_string())
                     .collect(),
                 emails: vec![
                     "john@example.org".into(),
                     "jdoe@example.org".into(),
                     "john.doe@example.org".into()
                 ],
-                roles: vec![ROLE_USER.to_compact_string()],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -167,7 +166,7 @@ async fn sql_directory() {
                 typ: Type::Individual,
                 quota: 500000,
                 emails: vec!["bill@example.org".into(),],
-                roles: vec![ROLE_USER.to_compact_string()],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -190,7 +189,7 @@ async fn sql_directory() {
                 description: Some("Administrator".into()),
                 secrets: vec!["very_secret".into()],
                 typ: Type::Individual,
-                roles: vec![ROLE_USER.to_compact_string()],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -225,10 +224,10 @@ async fn sql_directory() {
                 member_of: map_account_ids(base_store, vec!["sales", "support"])
                     .await
                     .into_iter()
-                    .map(|v| v.to_compact_string())
+                    .map(|v| v.to_string())
                     .collect(),
                 emails: vec!["jane@example.org".into(),],
-                roles: vec![ROLE_USER.to_compact_string()],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -246,7 +245,7 @@ async fn sql_directory() {
                 name: "sales".into(),
                 description: Some("Sales Team".into()),
                 typ: Type::Group,
-                roles: vec![ROLE_USER.to_compact_string()],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -316,26 +315,26 @@ async fn sql_directory() {
         // VRFY
         assert_eq!(
             core.vrfy(&handle, "jane", 0).await.unwrap(),
-            vec!["jane@example.org".to_compact_string()]
+            vec!["jane@example.org".to_string()]
         );
         assert_eq!(
             core.vrfy(&handle, "john", 0).await.unwrap(),
             vec![
-                "john.doe@example.org".to_compact_string(),
-                "john@example.org".to_compact_string(),
+                "john.doe@example.org".to_string(),
+                "john@example.org".to_string(),
             ]
         );
         assert_eq!(
             core.vrfy(&handle, "jane+alias@example", 0).await.unwrap(),
-            vec!["jane@example.org".to_compact_string()]
+            vec!["jane@example.org".to_string()]
         );
         assert_eq!(
             core.vrfy(&handle, "info", 0).await.unwrap(),
-            Vec::<CompactString>::new()
+            Vec::<String>::new()
         );
         assert_eq!(
             core.vrfy(&handle, "invalid", 0).await.unwrap(),
-            Vec::<CompactString>::new()
+            Vec::<String>::new()
         );
 
         // EXPN (now handled by the internal store)

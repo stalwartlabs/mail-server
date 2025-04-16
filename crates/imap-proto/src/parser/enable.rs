@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::ToCompactString;
+
 use crate::{
     Command,
     protocol::{capability::Capability, enable},
@@ -18,7 +20,7 @@ impl Request<Command> {
             for capability in self.tokens {
                 capabilities.push(
                     Capability::parse(&capability.unwrap_bytes())
-                        .map_err(|v| bad(self.tag.to_string(), v))?,
+                        .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                 );
             }
             Ok(enable::Arguments {

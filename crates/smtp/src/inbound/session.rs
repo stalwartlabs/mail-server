@@ -9,6 +9,7 @@ use common::{
     expr::{self, functions::ResolveVariable, *},
     listener::SessionStream,
 };
+
 use compact_str::ToCompactString;
 use smtp_proto::{
     request::receiver::{
@@ -35,37 +36,14 @@ impl<T: SessionStream> Session<T> {
                     match receiver.ingest(&mut iter, bytes) {
                         Ok(request) => match request {
                             Request::Rcpt { to } => {
-                                self.handle_rcpt_to(RcptTo {
-                                    address: to.address.into(),
-                                    orcpt: to.orcpt.map(Into::into),
-                                    rrvs: to.rrvs,
-                                    flags: to.flags,
-                                })
-                                .await?;
+                                self.handle_rcpt_to(to).await?;
                             }
                             Request::Mail { from } => {
-                                self.handle_mail_from(MailFrom {
-                                    address: from.address.into(),
-                                    flags: from.flags,
-                                    size: from.size,
-                                    trans_id: from.trans_id.map(Into::into),
-                                    by: from.by,
-                                    env_id: from.env_id.map(Into::into),
-                                    solicit: from.solicit.map(Into::into),
-                                    mtrk: from.mtrk.map(|m| Mtrk {
-                                        certifier: m.certifier.into(),
-                                        timeout: m.timeout,
-                                    }),
-                                    auth: from.auth.map(Into::into),
-                                    hold_for: from.hold_for,
-                                    hold_until: from.hold_until,
-                                    mt_priority: from.mt_priority,
-                                })
-                                .await?;
+                                self.handle_mail_from(from).await?;
                             }
                             Request::Ehlo { host } => {
                                 if self.instance.protocol == ServerProtocol::Smtp {
-                                    self.handle_ehlo(host.into(), true).await?;
+                                    self.handle_ehlo(host, true).await?;
                                 } else {
                                     trc::event!(
                                         Smtp(SmtpEvent::LhloExpected),
@@ -220,7 +198,7 @@ impl<T: SessionStream> Session<T> {
                             }
                             Request::Helo { host } => {
                                 if self.instance.protocol == ServerProtocol::Smtp {
-                                    self.handle_ehlo(host.into(), false).await?;
+                                    self.handle_ehlo(host, false).await?;
                                 } else {
                                     trc::event!(
                                         Smtp(SmtpEvent::LhloExpected),
@@ -233,7 +211,7 @@ impl<T: SessionStream> Session<T> {
                             }
                             Request::Lhlo { host } => {
                                 if self.instance.protocol == ServerProtocol::Lmtp {
-                                    self.handle_ehlo(host.into(), true).await?;
+                                    self.handle_ehlo(host, true).await?;
                                 } else {
                                     trc::event!(
                                         Smtp(SmtpEvent::EhloExpected),

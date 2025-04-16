@@ -6,25 +6,25 @@
 
 pub mod index;
 
-use compact_str::CompactString;
+
 use store::{SERIALIZE_IDENTITY_V1, SerializedVersion};
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct Identity {
-    pub name: CompactString,
-    pub email: CompactString,
+    pub name: String,
+    pub email: String,
     pub reply_to: Option<Vec<EmailAddress>>,
     pub bcc: Option<Vec<EmailAddress>>,
-    pub text_signature: CompactString,
-    pub html_signature: CompactString,
+    pub text_signature: String,
+    pub html_signature: String,
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct EmailAddress {
-    pub name: Option<CompactString>,
-    pub email: CompactString,
+    pub name: Option<String>,
+    pub email: String,
 }
 
 impl SerializedVersion for Identity {

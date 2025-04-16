@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 use mail_send::{Credentials, smtp::AssertReply};
 use smtp_proto::Severity;
 
@@ -67,7 +67,7 @@ impl SmtpDirectory {
         }
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         self.pool
             .get()
             .await
@@ -76,7 +76,7 @@ impl SmtpDirectory {
             .await
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         self.pool
             .get()
             .await
@@ -111,7 +111,7 @@ impl SmtpClient {
         }
     }
 
-    async fn expand(&mut self, command: &str) -> trc::Result<Vec<CompactString>> {
+    async fn expand(&mut self, command: &str) -> trc::Result<Vec<String>> {
         let reply = self
             .client
             .cmd(command.as_bytes())
@@ -122,7 +122,7 @@ impl SmtpClient {
                 .message()
                 .split('\n')
                 .map(|p| p.into())
-                .collect::<Vec<CompactString>>()),
+                .collect::<Vec<String>>()),
             code @ (550 | 551 | 553 | 500 | 502) => {
                 Err(trc::StoreEvent::NotSupported.ctx(trc::Key::Code, code))
             }

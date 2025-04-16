@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 use serde::{Deserialize, Serialize};
 use trc::{AddContext, AuthEvent, EventType};
 
@@ -17,19 +17,19 @@ pub struct OAuthIntrospect {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<CompactString>,
+    pub scope: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<CompactString>,
+    pub client_id: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub username: Option<CompactString>,
+    pub username: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub token_type: Option<CompactString>,
+    pub token_type: Option<String>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,7 +45,7 @@ pub struct OAuthIntrospect {
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sub: Option<CompactString>,
+    pub sub: Option<String>,
 }
 
 impl Server {

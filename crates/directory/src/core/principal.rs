@@ -6,7 +6,6 @@
 
 use std::{collections::hash_map::Entry, fmt, str::FromStr};
 
-use compact_str::CompactString;
 use serde::{
     Deserializer, Serializer,
     de::{self, IgnoredAny, Visitor},
@@ -76,7 +75,7 @@ impl Principal {
     // SPDX-SnippetEnd
 
     pub fn description(&self) -> Option<&str> {
-        self.description.as_ref().map(|d| d.as_str())
+        self.description.as_deref()
     }
 
     pub fn member_of(&self) -> &[u32] {
@@ -128,7 +127,7 @@ impl Principal {
             .unwrap_or_default()
     }
 
-    pub fn urls(&self) -> &[CompactString] {
+    pub fn urls(&self) -> &[String] {
         self.data
             .iter()
             .find_map(|item| {
@@ -164,7 +163,7 @@ impl Principal {
             .unwrap_or_default()
     }
 
-    pub fn picture(&self) -> Option<&CompactString> {
+    pub fn picture(&self) -> Option<&String> {
         self.data.iter().find_map(|item| {
             if let PrincipalData::Picture(picture) = item {
                 picture.into()
@@ -174,7 +173,7 @@ impl Principal {
         })
     }
 
-    pub fn picture_mut(&mut self) -> Option<&mut CompactString> {
+    pub fn picture_mut(&mut self) -> Option<&mut String> {
         self.data.iter_mut().find_map(|item| {
             if let PrincipalData::Picture(picture) = item {
                 picture.into()
@@ -299,7 +298,7 @@ impl Principal {
         updates
     }
 
-    pub fn fallback_admin(fallback_pass: impl Into<CompactString>) -> Self {
+    pub fn fallback_admin(fallback_pass: impl Into<String>) -> Self {
         Principal {
             id: u32::MAX,
             typ: Type::Individual,
@@ -363,7 +362,7 @@ impl PrincipalSet {
         self.fields.get(&key).and_then(|v| v.as_int())
     }
 
-    pub fn get_str_array(&self, key: PrincipalField) -> Option<&[CompactString]> {
+    pub fn get_str_array(&self, key: PrincipalField) -> Option<&[String]> {
         self.fields.get(&key).and_then(|v| match v {
             PrincipalValue::StringList(v) => Some(v.as_slice()),
             PrincipalValue::String(v) => Some(std::slice::from_ref(v)),
@@ -383,12 +382,12 @@ impl PrincipalSet {
         self.fields.remove(&key)
     }
 
-    pub fn take_str(&mut self, key: PrincipalField) -> Option<CompactString> {
+    pub fn take_str(&mut self, key: PrincipalField) -> Option<String> {
         self.take(key).and_then(|v| match v {
             PrincipalValue::String(s) => Some(s),
             PrincipalValue::StringList(l) => l.into_iter().next(),
-            PrincipalValue::Integer(i) => Some(i.to_string().into()),
-            PrincipalValue::IntegerList(l) => l.into_iter().next().map(|i| i.to_string().into()),
+            PrincipalValue::Integer(i) => Some(i.to_string()),
+            PrincipalValue::IntegerList(l) => l.into_iter().next().map(|i| i.to_string()),
         })
     }
 
@@ -401,7 +400,7 @@ impl PrincipalSet {
         })
     }
 
-    pub fn take_str_array(&mut self, key: PrincipalField) -> Option<Vec<CompactString>> {
+    pub fn take_str_array(&mut self, key: PrincipalField) -> Option<Vec<String>> {
         self.take(key).map(|v| v.into_str_array())
     }
 
@@ -412,7 +411,7 @@ impl PrincipalSet {
     pub fn iter_str(
         &self,
         key: PrincipalField,
-    ) -> Box<dyn Iterator<Item = &CompactString> + Sync + Send + '_> {
+    ) -> Box<dyn Iterator<Item = &String> + Sync + Send + '_> {
         self.fields
             .get(&key)
             .map(|v| v.iter_str())
@@ -422,7 +421,7 @@ impl PrincipalSet {
     pub fn iter_mut_str(
         &mut self,
         key: PrincipalField,
-    ) -> Box<dyn Iterator<Item = &mut CompactString> + Sync + Send + '_> {
+    ) -> Box<dyn Iterator<Item = &mut String> + Sync + Send + '_> {
         self.fields
             .get_mut(&key)
             .map(|v| v.iter_mut_str())
@@ -488,11 +487,7 @@ impl PrincipalSet {
         self
     }
 
-    pub fn append_str(
-        &mut self,
-        key: PrincipalField,
-        value: impl Into<CompactString>,
-    ) -> &mut Self {
+    pub fn append_str(&mut self, key: PrincipalField, value: impl Into<String>) -> &mut Self {
         let value = value.into();
         match self.fields.entry(key) {
             Entry::Occupied(v) => {
@@ -510,12 +505,12 @@ impl PrincipalSet {
                         }
                     }
                     PrincipalValue::Integer(i) => {
-                        *v = PrincipalValue::StringList(vec![i.to_string().into(), value]);
+                        *v = PrincipalValue::StringList(vec![i.to_string(), value]);
                     }
                     PrincipalValue::IntegerList(l) => {
                         *v = PrincipalValue::StringList(
                             l.iter()
-                                .map(|i| i.to_string().into())
+                                .map(|i| i.to_string())
                                 .chain(std::iter::once(value))
                                 .collect(),
                         );
@@ -529,11 +524,7 @@ impl PrincipalSet {
         self
     }
 
-    pub fn prepend_str(
-        &mut self,
-        key: PrincipalField,
-        value: impl Into<CompactString>,
-    ) -> &mut Self {
+    pub fn prepend_str(&mut self, key: PrincipalField, value: impl Into<String>) -> &mut Self {
         let value = value.into();
         match self.fields.entry(key) {
             Entry::Occupied(v) => {
@@ -551,12 +542,12 @@ impl PrincipalSet {
                         }
                     }
                     PrincipalValue::Integer(i) => {
-                        *v = PrincipalValue::StringList(vec![value, i.to_string().into()]);
+                        *v = PrincipalValue::StringList(vec![value, i.to_string()]);
                     }
                     PrincipalValue::IntegerList(l) => {
                         *v = PrincipalValue::StringList(
                             std::iter::once(value)
-                                .chain(l.iter().map(|i| i.to_string().into()))
+                                .chain(l.iter().map(|i| i.to_string()))
                                 .collect(),
                         );
                     }
@@ -629,7 +620,7 @@ impl PrincipalSet {
 
     pub fn retain_str<F>(&mut self, key: PrincipalField, mut f: F)
     where
-        F: FnMut(&CompactString) -> bool,
+        F: FnMut(&String) -> bool,
     {
         if let Some(value) = self.fields.get_mut(&key) {
             match value {
@@ -689,7 +680,7 @@ impl PrincipalValue {
         }
     }
 
-    pub fn iter_str(&self) -> Box<dyn Iterator<Item = &CompactString> + Sync + Send + '_> {
+    pub fn iter_str(&self) -> Box<dyn Iterator<Item = &String> + Sync + Send + '_> {
         match self {
             PrincipalValue::String(v) => Box::new(std::iter::once(v)),
             PrincipalValue::StringList(v) => Box::new(v.iter()),
@@ -697,9 +688,7 @@ impl PrincipalValue {
         }
     }
 
-    pub fn iter_mut_str(
-        &mut self,
-    ) -> Box<dyn Iterator<Item = &mut CompactString> + Sync + Send + '_> {
+    pub fn iter_mut_str(&mut self) -> Box<dyn Iterator<Item = &mut String> + Sync + Send + '_> {
         match self {
             PrincipalValue::String(v) => Box::new(std::iter::once(v)),
             PrincipalValue::StringList(v) => Box::new(v.iter_mut()),
@@ -731,12 +720,12 @@ impl PrincipalValue {
         }
     }
 
-    pub fn into_str_array(self) -> Vec<CompactString> {
+    pub fn into_str_array(self) -> Vec<String> {
         match self {
             PrincipalValue::StringList(v) => v,
             PrincipalValue::String(v) => vec![v],
-            PrincipalValue::Integer(v) => vec![v.to_string().into()],
-            PrincipalValue::IntegerList(v) => v.into_iter().map(|v| v.to_string().into()).collect(),
+            PrincipalValue::Integer(v) => vec![v.to_string()],
+            PrincipalValue::IntegerList(v) => v.into_iter().map(|v| v.to_string()).collect(),
         }
     }
 
@@ -776,8 +765,8 @@ impl From<u64> for PrincipalValue {
     }
 }
 
-impl From<CompactString> for PrincipalValue {
-    fn from(v: CompactString) -> Self {
+impl From<String> for PrincipalValue {
+    fn from(v: String) -> Self {
         Self::String(v)
     }
 }
@@ -788,8 +777,8 @@ impl From<&str> for PrincipalValue {
     }
 }
 
-impl From<Vec<CompactString>> for PrincipalValue {
-    fn from(v: Vec<CompactString>) -> Self {
+impl From<Vec<String>> for PrincipalValue {
+    fn from(v: Vec<String>) -> Self {
         Self::StringList(v)
     }
 }
@@ -956,7 +945,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
                 E: de::Error,
             {
                 if value.len() <= MAX_STRING_LEN {
-                    Ok(PrincipalValue::String(value.into()))
+                    Ok(PrincipalValue::String(value))
                 } else {
                     Err(serde::de::Error::custom("string too long"))
                 }
@@ -984,7 +973,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
                     match value {
                         StringOrU64::String(s) => {
                             if s.len() <= MAX_STRING_LEN {
-                                vec_string.push(s.into());
+                                vec_string.push(s);
                             } else {
                                 return Err(serde::de::Error::custom("string too long"));
                             }
@@ -1042,19 +1031,19 @@ impl<'de> serde::Deserialize<'de> for PrincipalSet {
                         })?;
 
                     let value = match key {
-                        PrincipalField::Name => PrincipalValue::String(
-                            map.next_value::<CompactString>().and_then(|v| {
+                        PrincipalField::Name => {
+                            PrincipalValue::String(map.next_value::<String>().and_then(|v| {
                                 if v.len() <= MAX_STRING_LEN {
                                     Ok(v)
                                 } else {
                                     Err(serde::de::Error::custom("string too long"))
                                 }
-                            })?,
-                        ),
+                            })?)
+                        }
                         PrincipalField::Description
                         | PrincipalField::Tenant
                         | PrincipalField::Picture => {
-                            if let Some(v) = map.next_value::<Option<CompactString>>()? {
+                            if let Some(v) = map.next_value::<Option<String>>()? {
                                 if v.len() <= MAX_STRING_LEN {
                                     PrincipalValue::String(v)
                                 } else {
@@ -1166,8 +1155,8 @@ impl<'de> serde::Deserialize<'de> for StringOrU64 {
 
 #[derive(Debug)]
 enum StringOrMany {
-    One(CompactString),
-    Many(Vec<CompactString>),
+    One(String),
+    Many(Vec<String>),
 }
 
 impl<'de> serde::Deserialize<'de> for StringOrMany {
@@ -1200,7 +1189,7 @@ impl<'de> serde::Deserialize<'de> for StringOrMany {
                 E: de::Error,
             {
                 if v.len() <= MAX_STRING_LEN {
-                    Ok(StringOrMany::One(v.into()))
+                    Ok(StringOrMany::One(v))
                 } else {
                     Err(serde::de::Error::custom("string too long"))
                 }
@@ -1212,7 +1201,7 @@ impl<'de> serde::Deserialize<'de> for StringOrMany {
             {
                 let mut vec = Vec::new();
 
-                while let Some(value) = seq.next_element::<CompactString>()? {
+                while let Some(value) = seq.next_element::<String>()? {
                     vec.push(value);
                 }
 

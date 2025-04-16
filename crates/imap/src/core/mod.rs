@@ -16,7 +16,7 @@ use common::{
     auth::AccessToken,
     listener::{ServerInstance, SessionStream, limiter::InFlight},
 };
-use compact_str::CompactString;
+
 use imap_proto::{
     Command,
     protocol::{ProtocolVersion, list::Attribute},
@@ -94,8 +94,8 @@ pub struct MailboxId {
 #[derive(Debug, Clone, Default)]
 pub struct Account {
     pub account_id: u32,
-    pub prefix: Option<CompactString>,
-    pub mailbox_names: BTreeMap<CompactString, u32>,
+    pub prefix: Option<String>,
+    pub mailbox_names: BTreeMap<String, u32>,
     pub mailbox_state: AHashMap<u32, Mailbox>,
     pub state: AccountState,
 }
@@ -144,9 +144,9 @@ pub struct ImapId {
 
 #[derive(Debug, Default)]
 pub struct MailboxSync {
-    pub added: Vec<CompactString>,
-    pub changed: Vec<CompactString>,
-    pub deleted: Vec<CompactString>,
+    pub added: Vec<String>,
+    pub changed: Vec<String>,
+    pub deleted: Vec<String>,
 }
 
 pub enum SavedSearch {

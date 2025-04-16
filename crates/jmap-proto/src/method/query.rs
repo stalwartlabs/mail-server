@@ -6,6 +6,7 @@
 
 use std::fmt::Display;
 
+use compact_str::format_compact;
 use store::fts::{FilterItem, FilterType, FtsFilter};
 
 use crate::{
@@ -165,7 +166,7 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                 _ => {
                     return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
-                        .details(format!("{}/query", parser.ctx)));
+                        .details(format_compact!("{}/query", parser.ctx)));
                 }
             },
             filter: vec![],

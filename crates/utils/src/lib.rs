@@ -17,7 +17,7 @@ pub mod snowflake;
 pub mod topological;
 pub mod url_params;
 
-use compact_str::CompactString;
+use compact_str::ToCompactString;
 use futures::StreamExt;
 use reqwest::Response;
 use rustls::{
@@ -215,7 +215,7 @@ impl<T> UnwrapFailure<T> for Option<T> {
             None => {
                 trc::event!(
                     Server(trc::ServerEvent::StartupError),
-                    Details = message.to_string()
+                    Details = message.to_compact_string()
                 );
                 eprintln!("{message}");
                 std::process::exit(1);
@@ -231,8 +231,8 @@ impl<T, E: std::fmt::Display> UnwrapFailure<T> for Result<T, E> {
             Err(err) => {
                 trc::event!(
                     Server(trc::ServerEvent::StartupError),
-                    Details = message.to_string(),
-                    Reason = err.to_string()
+                    Details = message.to_compact_string(),
+                    Reason = err.to_compact_string()
                 );
 
                 #[cfg(feature = "test_mode")]
@@ -251,7 +251,7 @@ impl<T, E: std::fmt::Display> UnwrapFailure<T> for Result<T, E> {
 pub fn failed(message: &str) -> ! {
     trc::event!(
         Server(trc::ServerEvent::StartupError),
-        Details = message.to_string(),
+        Details = message.to_compact_string(),
     );
     eprintln!("{message}");
     std::process::exit(1);
@@ -365,8 +365,8 @@ impl ServerCertVerifier for DummyVerifier {
 }
 
 // Basic email sanitizer
-pub fn sanitize_email(email: &str) -> Option<CompactString> {
-    let mut result = CompactString::with_capacity(email.len());
+pub fn sanitize_email(email: &str) -> Option<String> {
+    let mut result = String::with_capacity(email.len());
     let mut found_local = false;
     let mut found_domain = false;
     let mut last_ch = char::from(0);

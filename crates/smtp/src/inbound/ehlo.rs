@@ -11,7 +11,7 @@ use common::{
     config::smtp::session::{Mechanism, Stage},
     listener::SessionStream,
 };
-use compact_str::CompactString;
+
 use mail_auth::{
     SpfResult,
     spf::verify::{HasValidLabels, SpfParameters},
@@ -22,7 +22,7 @@ use trc::SmtpEvent;
 impl<T: SessionStream> Session<T> {
     pub async fn handle_ehlo(
         &mut self,
-        domain: CompactString,
+        domain: String,
         is_extended: bool,
     ) -> Result<(), ()> {
         // Set EHLO domain
@@ -91,7 +91,7 @@ impl<T: SessionStream> Session<T> {
             // Sieve filtering
             if let Some((script, script_id)) = self
                 .server
-                .eval_if::<CompactString, _>(
+                .eval_if::<String, _>(
                     &self.server.core.smtp.session.ehlo.script,
                     self,
                     self.data.session_id,
@@ -277,7 +277,7 @@ impl<T: SessionStream> Session<T> {
         // No soliciting
         if let Some(value) = self
             .server
-            .eval_if::<CompactString, _>(&ec.no_soliciting, self, self.data.session_id)
+            .eval_if::<String, _>(&ec.no_soliciting, self, self.data.session_id)
             .await
         {
             response.capabilities |= EXT_NO_SOLICITING;

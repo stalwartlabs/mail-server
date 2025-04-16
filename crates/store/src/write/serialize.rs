@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::format_compact;
 use rkyv::util::AlignedVec;
 
 use crate::{Deserialize, Serialize, SerializeInfallible, SerializedVersion, U32_LEN, Value};
@@ -218,7 +219,7 @@ impl Archive<AlignedBytes> {
         } else {
             Err(trc::StoreEvent::DataCorruption
                 .into_err()
-                .details(format!(
+                .details(format_compact!(
                     "Archive version mismatch, expected {} ({} bytes) but got {} ({} bytes)",
                     T::serialize_version(),
                     std::mem::size_of::<T::Archived>(),
@@ -251,7 +252,7 @@ impl Archive<AlignedBytes> {
         } else {
             Err(trc::StoreEvent::DataCorruption
                 .into_err()
-                .details(format!(
+                .details(format_compact!(
                     "Archive version mismatch, expected {} ({} bytes) but got {} ({} bytes)",
                     T::serialize_version(),
                     std::mem::size_of::<T::Archived>(),

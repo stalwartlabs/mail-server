@@ -5,6 +5,7 @@
  */
 
 use argon2::Argon2;
+use compact_str::ToCompactString;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
 use password_hash::PasswordHash;
@@ -57,7 +58,7 @@ impl Principal {
                         .map_err(|err| {
                             trc::AuthEvent::Error
                                 .reason(err)
-                                .details(secret.to_string())
+                                .details(secret.to_compact_string())
                         })?
                         .check_current(totp_token)
                         .unwrap_or(false);

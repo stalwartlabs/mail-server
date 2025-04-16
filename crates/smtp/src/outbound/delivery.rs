@@ -20,7 +20,8 @@ use common::config::{
     smtp::{queue::RequireOptional, report::AggregateFrequency},
 };
 use common::ipc::{PolicyType, QueueEvent, QueueEventStatus, TlsEvent};
-use compact_str::{CompactString, ToCompactString};
+
+use compact_str::ToCompactString;
 use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, ResultType},
@@ -239,7 +240,7 @@ impl QueuedMessage {
 
             // Obtain next hop
             let (mut remote_hosts, is_smtp) = match server
-                .eval_if::<CompactString, _>(&queue_config.next_hop, &envelope, message.span_id)
+                .eval_if::<String, _>(&queue_config.next_hop, &envelope, message.span_id)
                 .await
                 .and_then(|name| server.get_relay_host(&name, message.span_id))
             {
@@ -618,9 +619,10 @@ impl QueuedMessage {
                         );
 
                         if strict {
-                            last_status = Status::PermanentFailure(Error::MtaStsError(
-                                format!("MX {:?} not authorized by policy.", envelope.mx).into(),
-                            ));
+                            last_status = Status::PermanentFailure(Error::MtaStsError(format!(
+                                "MX {:?} not authorized by policy.",
+                                envelope.mx
+                            )));
                             continue 'next_host;
                         }
                     } else {
@@ -930,11 +932,7 @@ impl QueuedMessage {
 
                     // Obtain session parameters
                     let local_hostname = server
-                        .eval_if::<CompactString, _>(
-                            &queue_config.hostname,
-                            &envelope,
-                            message.span_id,
-                        )
+                        .eval_if::<String, _>(&queue_config.hostname, &envelope, message.span_id)
                         .await
                         .filter(|s| !s.is_empty())
                         .unwrap_or_else(|| {

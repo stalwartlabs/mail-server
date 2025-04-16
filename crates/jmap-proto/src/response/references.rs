@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use compact_str::format_compact;
 use utils::map::vec_map::VecMap;
 
 use crate::{
@@ -51,7 +52,7 @@ impl Response {
                                 } else {
                                     return Err(trc::JmapEvent::InvalidResultReference
                                         .into_err()
-                                        .details(format!(
+                                        .details(format_compact!(
                                             "Id reference {reference:?} does not exist."
                                         )));
                                 }
@@ -152,7 +153,7 @@ impl Response {
                                     Some(_) => {
                                         return Err(trc::JmapEvent::InvalidResultReference
                                             .into_err()
-                                            .details(format!(
+                                            .details(format_compact!(
                                                 "Id reference {parent_id:?} points to invalid type."
                                             )));
                                     }
@@ -255,7 +256,7 @@ impl Response {
         } else {
             Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
-                .details(format!("Id reference {ir:?} not found.")))
+                .details(format_compact!("Id reference {ir:?} not found.")))
         }
     }
 
@@ -277,7 +278,7 @@ impl Response {
                     } else {
                         return Err(trc::JmapEvent::InvalidResultReference
                             .into_err()
-                            .details(format!("Id reference {parent_id:?} not found.")));
+                            .details(format_compact!("Id reference {parent_id:?} not found.")));
                     }
                 }
                 SetValue::IdReferences(id_refs) => {
@@ -293,7 +294,9 @@ impl Response {
                             } else {
                                 return Err(trc::JmapEvent::InvalidResultReference
                                     .into_err()
-                                    .details(format!("Id reference {parent_id:?} not found.")));
+                                    .details(format_compact!(
+                                        "Id reference {parent_id:?} not found."
+                                    )));
                             }
                         }
                     }
@@ -318,11 +321,11 @@ fn topological_sort<T>(
     for (from_id, to_ids) in graph.iter() {
         for to_id in to_ids {
             if !create.contains_key(to_id) {
-                return Err(trc::JmapEvent::InvalidResultReference
-                    .into_err()
-                    .details(format!(
+                return Err(trc::JmapEvent::InvalidResultReference.into_err().details(
+                    format_compact!(
                         "Invalid reference to non-existing object {to_id:?} from {from_id:?}"
-                    )));
+                    ),
+                ));
             }
         }
     }
@@ -339,7 +342,7 @@ fn topological_sort<T>(
                 if it_stack.len() > 1000 {
                     return Err(trc::JmapEvent::InvalidArguments
                         .into_err()
-                        .details("Cyclical references are not allowed.".to_string()));
+                        .details("Cyclical references are not allowed."));
                 }
                 it = to_ids.iter();
                 continue;
@@ -455,7 +458,7 @@ impl EvalResult {
                                 _ => {
                                     return Err(trc::JmapEvent::InvalidResultReference
                                         .into_err()
-                                        .details(format!(
+                                        .details(format_compact!(
                                             "Failed to evaluate {rr} result reference."
                                         )));
                                 }
@@ -463,9 +466,9 @@ impl EvalResult {
                         }
                     }
                     _ => {
-                        return Err(trc::JmapEvent::InvalidResultReference
-                            .into_err()
-                            .details(format!("Failed to evaluate {rr} result reference.")));
+                        return Err(trc::JmapEvent::InvalidResultReference.into_err().details(
+                            format_compact!("Failed to evaluate {rr} result reference."),
+                        ));
                     }
                 }
             }
@@ -473,7 +476,7 @@ impl EvalResult {
         } else {
             Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
-                .details(format!("Failed to evaluate {rr} result reference.")))
+                .details(format_compact!("Failed to evaluate {rr} result reference.")))
         }
     }
 
@@ -497,7 +500,7 @@ impl EvalResult {
                                 _ => {
                                     return Err(trc::JmapEvent::InvalidResultReference
                                         .into_err()
-                                        .details(format!(
+                                        .details(format_compact!(
                                             "Failed to evaluate {rr} result reference."
                                         )));
                                 }
@@ -505,9 +508,9 @@ impl EvalResult {
                         }
                     }
                     _ => {
-                        return Err(trc::JmapEvent::InvalidResultReference
-                            .into_err()
-                            .details(format!("Failed to evaluate {rr} result reference.")));
+                        return Err(trc::JmapEvent::InvalidResultReference.into_err().details(
+                            format_compact!("Failed to evaluate {rr} result reference."),
+                        ));
                     }
                 }
             }
@@ -515,7 +518,7 @@ impl EvalResult {
         } else {
             Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
-                .details(format!("Failed to evaluate {rr} result reference.")))
+                .details(format_compact!("Failed to evaluate {rr} result reference.")))
         }
     }
 
@@ -525,7 +528,7 @@ impl EvalResult {
         } else {
             Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
-                .details(format!("Failed to evaluate {rr} result reference.")))
+                .details(format_compact!("Failed to evaluate {rr} result reference.")))
         }
     }
 }

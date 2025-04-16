@@ -11,7 +11,7 @@ use common::{
     expr::{tokenizer::TokenMap, *},
 };
 
-use compact_str::{CompactString, ToCompactString};
+
 use directory::{
     QueryBy, Type,
     backend::internal::{PrincipalField, PrincipalSet, PrincipalValue, manage::ManageDirectory},
@@ -175,7 +175,7 @@ async fn lookup_sql() {
                 .with_field(PrincipalField::Emails, "support@foobar.org")
                 .with_field(
                     PrincipalField::ExternalMembers,
-                    PrincipalValue::StringList(vec!["mike@foobar.net".to_compact_string()]),
+                    PrincipalValue::StringList(vec!["mike@foobar.net".to_string()]),
                 ),
             None,
             None,
@@ -190,9 +190,9 @@ async fn lookup_sql() {
                 .with_field(
                     PrincipalField::ExternalMembers,
                     PrincipalValue::StringList(vec![
-                        "jane@foobar.org".to_compact_string(),
-                        "john@foobar.org".to_compact_string(),
-                        "bill@foobar.org".to_compact_string(),
+                        "jane@foobar.org".to_string(),
+                        "john@foobar.org".to_string(),
+                        "bill@foobar.org".to_string(),
                     ]),
                 ),
             None,
@@ -220,7 +220,7 @@ async fn lookup_sql() {
             Expression::try_parse(&mut config, ("test", test_name, "expr"), &token_map).unwrap();
         assert_eq!(
             test.server
-                .eval_expr::<CompactString, _>(&e, &RecipientDomain::new("test.org"), "text", 0)
+                .eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text", 0)
                 .await
                 .unwrap(),
             config.value(("test", test_name, "expect")).unwrap(),

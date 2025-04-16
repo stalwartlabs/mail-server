@@ -13,7 +13,8 @@ use common::{
     ipc::{DmarcEvent, ToHash},
     listener::SessionStream,
 };
-use compact_str::{CompactString, ToCompactString};
+
+use compact_str::ToCompactString;
 use mail_auth::{
     ArcOutput, AuthenticatedMessage, AuthenticationResults, DkimOutput, DkimResult, DmarcOutput,
     SpfResult,
@@ -497,7 +498,7 @@ impl DmarcReporting for Server {
                 .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_compact_string()),
             );
         if let Some(org_name) = self
-            .eval_if::<CompactString, _>(
+            .eval_if::<String, _>(
                 &config.org_name,
                 &RecipientDomain::new(event.domain.as_str()),
                 span_id,
@@ -507,7 +508,7 @@ impl DmarcReporting for Server {
             report = report.with_org_name(org_name);
         }
         if let Some(contact_info) = self
-            .eval_if::<CompactString, _>(
+            .eval_if::<String, _>(
                 &config.contact_info,
                 &RecipientDomain::new(event.domain.as_str()),
                 span_id,

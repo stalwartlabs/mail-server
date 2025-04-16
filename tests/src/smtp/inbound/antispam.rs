@@ -18,6 +18,7 @@ use common::{
         },
     },
 };
+
 use compact_str::{CompactString, ToCompactString};
 use http_proto::{JsonResponse, ToHttpResponse};
 use hyper::Method;
@@ -377,15 +378,15 @@ async fn antispam() {
                     let value = value.trim();
                     match param {
                         "remote_ip" => {
-                            session.data.remote_ip_str = value.to_compact_string();
+                            session.data.remote_ip_str = value.to_string();
                             session.data.remote_ip = value.parse().unwrap();
                         }
                         "helo_domain" => {
-                            session.data.helo_domain = value.to_compact_string();
+                            session.data.helo_domain = value.to_string();
                         }
                         "authenticated_as" => {
                             session.data.authenticated_as = Some(Arc::new(AccessToken {
-                                name: value.to_compact_string(),
+                                name: value.to_string(),
                                 ..Default::default()
                             }));
                         }
@@ -429,14 +430,13 @@ async fn antispam() {
                                 .collect();
                         }
                         "envelope_from" => {
-                            session.data.mail_from =
-                                Some(SessionAddress::new(value.to_compact_string()));
+                            session.data.mail_from = Some(SessionAddress::new(value.to_string()));
                         }
                         "envelope_to" => {
                             session
                                 .data
                                 .rcpt_to
-                                .push(SessionAddress::new(value.to_compact_string()));
+                                .push(SessionAddress::new(value.to_string()));
                         }
                         "iprev.ptr" => {
                             session
@@ -506,7 +506,7 @@ async fn antispam() {
                 session
                     .data
                     .mail_from
-                    .get_or_insert_with(|| SessionAddress::new("".to_compact_string()))
+                    .get_or_insert_with(|| SessionAddress::new("".to_string()))
                     .flags = body_params;
             }
 

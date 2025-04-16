@@ -5,6 +5,7 @@
  */
 
 use ahash::AHashMap;
+use compact_str::format_compact;
 use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 use crate::{
@@ -111,7 +112,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                 _ => {
                     return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
-                        .details(format!("{}/set", parser.ctx)));
+                        .details(format_compact!("{}/set", parser.ctx)));
                 }
             },
             account_id: Id::default(),

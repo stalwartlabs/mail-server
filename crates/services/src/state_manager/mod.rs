@@ -12,7 +12,7 @@ pub mod push;
 use std::time::{Duration, Instant};
 
 use common::ipc::EncryptionKeys;
-use compact_str::CompactString;
+
 use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
 use tokio::sync::mpsc;
 use utils::map::bitmap::Bitmap;
@@ -31,7 +31,7 @@ pub enum SubscriberType {
 
 #[derive(Debug)]
 pub struct PushServer {
-    url: CompactString,
+    url: String,
     keys: Option<EncryptionKeys>,
     num_attempts: u32,
     last_request: Instant,
@@ -63,13 +63,13 @@ pub enum PushUpdate {
     Verify {
         id: u32,
         account_id: u32,
-        url: CompactString,
-        code: CompactString,
+        url: String,
+        code: String,
         keys: Option<EncryptionKeys>,
     },
     Register {
         id: Id,
-        url: CompactString,
+        url: String,
         keys: Option<EncryptionKeys>,
     },
     Unregister {

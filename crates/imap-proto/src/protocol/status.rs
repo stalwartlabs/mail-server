@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 
 use crate::utf7::utf7_encode;
 
@@ -12,8 +12,8 @@ use super::quoted_string;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
-    pub tag: CompactString,
-    pub mailbox_name: CompactString,
+    pub tag: String,
+    pub mailbox_name: String,
     pub items: Vec<Status>,
 }
 
@@ -33,14 +33,14 @@ pub enum Status {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusItem {
-    pub mailbox_name: CompactString,
+    pub mailbox_name: String,
     pub items: Vec<(Status, StatusItemType)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatusItemType {
     Number(u64),
-    String(CompactString),
+    String(String),
 }
 
 impl StatusItem {

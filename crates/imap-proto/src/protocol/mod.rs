@@ -8,6 +8,7 @@ use std::{cmp::Ordering, fmt::Display};
 
 use ahash::AHashSet;
 use chrono::{DateTime, Utc};
+
 use compact_str::CompactString;
 use jmap_proto::types::keyword::{ArchivedKeyword, Keyword};
 
@@ -240,7 +241,7 @@ pub enum Flag {
     Deleted,
     Forwarded,
     MDNSent,
-    Keyword(CompactString),
+    Keyword(String),
 }
 
 impl Flag {

@@ -132,8 +132,7 @@ impl<T: SessionStream> Session<T> {
                 is_rev2,
                 highest_modseq,
                 mailbox_id: Id::from_parts(mailbox.id.account_id, mailbox.id.mailbox_id)
-                    .to_string()
-                    .into(),
+                    .to_string(),
             };
 
             // Update state

@@ -15,7 +15,7 @@ use crate::{
         },
     },
 };
-use compact_str::CompactString;
+
 use mail_send::Credentials;
 use store::{NamedRows, Rows, Value};
 use trc::AddContext;
@@ -250,11 +250,11 @@ impl SqlDirectory {
         }
     }
 
-    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         self.data_store.vrfy(address).await
     }
 
-    pub async fn expn(&self, address: &str) -> trc::Result<Vec<CompactString>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         self.data_store.expn(address).await
     }
 
@@ -298,7 +298,7 @@ impl SqlMappings {
                     if let Value::Text(text) = value {
                         principal
                             .emails
-                            .push(CompactString::from_str_to_lowercase(text.as_ref()));
+                            .push(text.to_lowercase());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_quota) {
                     if let Value::Integer(quota) = value {

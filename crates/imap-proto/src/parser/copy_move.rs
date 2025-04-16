@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::ToCompactString;
+
 use crate::{
     Command,
     protocol::{ProtocolVersion, copy_move},
@@ -22,16 +24,16 @@ impl Request<Command> {
                 sequence_set: parse_sequence_set(
                     &tokens
                         .next()
-                        .ok_or_else(|| bad(self.tag.to_string(), "Missing sequence set."))?
+                        .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing sequence set."))?
                         .unwrap_bytes(),
                 )
-                .map_err(|v| bad(self.tag.to_string(), v))?,
+                .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                 mailbox_name: utf7_maybe_decode(
                     tokens
                         .next()
-                        .ok_or_else(|| bad(self.tag.to_string(), "Missing mailbox name."))?
+                        .ok_or_else(|| bad(self.tag.to_compact_string(), "Missing mailbox name."))?
                         .unwrap_string()
-                        .map_err(|v| bad(self.tag.to_string(), v))?,
+                        .map_err(|v| bad(self.tag.to_compact_string(), v))?,
                     version,
                 ),
                 tag: self.tag,
