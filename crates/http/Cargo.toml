@@ -13,6 +13,7 @@ email = { path = "../email" }
 smtp = { path = "../smtp" }
 jmap = { path = "../jmap" }
 dav = { path = "../dav" }
+groupware = { path = "../groupware" }
 spam-filter = { path = "../spam-filter" }
 http_proto = { path = "../http-proto" }
 jmap_proto = { path = "../jmap-proto" }

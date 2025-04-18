@@ -16,6 +16,10 @@ pub struct DavConfig {
     pub max_changes: usize,
     pub max_match_results: usize,
     pub max_vcard_size: usize,
+    pub default_calendar_name: Option<String>,
+    pub default_addressbook_name: Option<String>,
+    pub default_calendar_display_name: Option<String>,
+    pub default_addressbook_display_name: Option<String>,
 }
 
 impl DavConfig {
@@ -41,6 +45,24 @@ impl DavConfig {
             max_vcard_size: config
                 .property("dav.limits.size.vcard")
                 .unwrap_or(512 * 1024),
+            default_calendar_name: config
+                .property_or_default::<Option<String>>("dav.default.calendar.name", "default")
+                .unwrap_or_default(),
+            default_addressbook_name: config
+                .property_or_default::<Option<String>>("dav.default.addressbook.name", "default")
+                .unwrap_or_default(),
+            default_calendar_display_name: config
+                .property_or_default::<Option<String>>(
+                    "dav.default.calendar.display-name",
+                    "Default Calendar",
+                )
+                .unwrap_or_default(),
+            default_addressbook_display_name: config
+                .property_or_default::<Option<String>>(
+                    "dav.default.addressbook.display-name",
+                    "Default Address Book",
+                )
+                .unwrap_or_default(),
         }
     }
 }

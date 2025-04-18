@@ -38,10 +38,9 @@ pub mod lock;
 pub mod propfind;
 pub mod uri;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct DavQuery<'x> {
     pub resource: DavQueryResource<'x>,
-    pub base_uri: &'x str,
     pub propfind: PropFind,
     pub from_change_id: Option<u64>,
     pub depth: usize,
@@ -50,7 +49,7 @@ pub(crate) struct DavQuery<'x> {
     pub depth_no_root: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) enum DavQueryResource<'x> {
     Uri(OwnedUri<'x>),
     Multiget {
@@ -70,6 +69,7 @@ pub(crate) type AddressbookFilter = Vec<Filter<(), VCardPropertyWithGroup, VCard
 pub(crate) type CalendarFilter =
     Vec<Filter<Vec<ICalendarComponentType>, ICalendarProperty, ICalendarParameterName>>;
 
+#[derive(Debug)]
 pub(crate) enum DavQueryFilter {
     Addressbook(AddressbookFilter),
     Calendar {
@@ -136,7 +136,6 @@ impl<'x> DavQuery<'x> {
         Self {
             resource: DavQueryResource::Uri(resource),
             propfind,
-            base_uri: headers.base_uri.unwrap_or_default(),
             depth: match headers.depth {
                 Depth::Zero => 0,
                 _ => 1,
@@ -158,7 +157,6 @@ impl<'x> DavQuery<'x> {
                 parent_collection: collection,
             },
             propfind: multiget.properties,
-            base_uri: headers.base_uri.unwrap_or_default(),
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             ..Default::default()
@@ -177,7 +175,6 @@ impl<'x> DavQuery<'x> {
                 items,
             },
             propfind: query.properties,
-            base_uri: headers.base_uri.unwrap_or_default(),
             limit: query.limit,
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
@@ -200,7 +197,6 @@ impl<'x> DavQuery<'x> {
                 items,
             },
             propfind: query.properties,
-            base_uri: headers.base_uri.unwrap_or_default(),
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             ..Default::default()
@@ -215,7 +211,6 @@ impl<'x> DavQuery<'x> {
         Self {
             resource: DavQueryResource::Uri(resource),
             propfind: changes.properties,
-            base_uri: headers.base_uri.unwrap_or_default(),
             from_change_id: changes
                 .sync_token
                 .as_deref()
@@ -227,12 +222,7 @@ impl<'x> DavQuery<'x> {
             limit: changes.limit,
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
-            ..Default::default()
         }
-    }
-
-    pub fn format_to_base_uri(&self, path: &str) -> String {
-        format!("{}/{}", self.base_uri, path)
     }
 
     pub fn is_minimal(&self) -> bool {

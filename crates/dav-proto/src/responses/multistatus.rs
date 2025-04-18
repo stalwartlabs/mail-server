@@ -13,12 +13,12 @@ use crate::schema::{
         Condition, Href, List, Location, MultiStatus, PropStat, Response, ResponseDescription,
         ResponseType, Status, SyncToken,
     },
-    Namespace,
+    Namespace, Namespaces,
 };
 
 impl Display for MultiStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<D:multistatus {}>{}", self.namespace, self.response)?;
+        write!(f, "<D:multistatus {}>{}", self.namespaces, self.response)?;
         if let Some(response_description) = &self.response_description {
             write!(f, "{response_description}")?;
         }
@@ -64,7 +64,7 @@ impl Display for ResponseType {
 impl MultiStatus {
     pub fn new(response: Vec<Response>) -> Self {
         MultiStatus {
-            namespace: Namespace::Dav,
+            namespaces: Namespaces::default(),
             response: List(response),
             response_description: None,
             sync_token: None,
@@ -86,12 +86,12 @@ impl MultiStatus {
     }
 
     pub fn with_namespace(mut self, namespace: Namespace) -> Self {
-        self.namespace = namespace;
+        self.namespaces.set(namespace);
         self
     }
 
     pub fn set_namespace(&mut self, namespace: Namespace) {
-        self.namespace = namespace;
+        self.namespaces.set(namespace);
     }
 
     pub fn with_sync_token(mut self, sync_token: impl Into<String>) -> Self {

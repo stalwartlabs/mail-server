@@ -5,6 +5,7 @@
  */
 
 pub mod index;
+pub mod storage;
 
 use calcard::vcard::VCard;
 

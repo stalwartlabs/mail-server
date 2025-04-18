@@ -27,13 +27,11 @@ use trc::AddContext;
 use crate::{
     DavError, DavMethod,
     common::{
-        ETag,
+        ETag, ExtractETag,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
 };
-
-use super::{update_addressbook, update_card};
 
 pub(crate) trait CardPropPatchRequestHandler: Sync + Send {
     fn handle_card_proppatch_request(
@@ -75,7 +73,7 @@ impl CardPropPatchRequestHandler for Server {
         let uri = headers.uri;
         let account_id = resource_.account_id;
         let resources = self
-            .fetch_dav_resources(account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
             .await
             .caused_by(trc::location!())?;
         let resource = resource_
@@ -172,16 +170,10 @@ impl CardPropPatchRequestHandler for Server {
             }
 
             if is_success {
-                update_addressbook(
-                    access_token,
-                    book,
-                    new_book,
-                    account_id,
-                    document_id,
-                    true,
-                    &mut batch,
-                )
-                .caused_by(trc::location!())?
+                new_book
+                    .update(access_token, book, account_id, document_id, &mut batch)
+                    .caused_by(trc::location!())?
+                    .etag()
             } else {
                 book.etag().into()
             }
@@ -212,16 +204,10 @@ impl CardPropPatchRequestHandler for Server {
             }
 
             if is_success {
-                update_card(
-                    access_token,
-                    card,
-                    new_card,
-                    account_id,
-                    document_id,
-                    true,
-                    &mut batch,
-                )
-                .caused_by(trc::location!())?
+                new_card
+                    .update(access_token, card, account_id, document_id, &mut batch)
+                    .caused_by(trc::location!())?
+                    .etag()
             } else {
                 card.etag().into()
             }

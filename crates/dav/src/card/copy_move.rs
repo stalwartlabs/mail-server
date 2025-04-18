@@ -7,7 +7,7 @@
 use common::{Server, auth::AccessToken};
 use dav_proto::{Depth, RequestHeaders, schema::response::CardCondition};
 use groupware::{
-    DavName,
+    DavName, DestroyArchive,
     contact::{AddressBook, ContactCard},
     hierarchy::DavHierarchy,
 };
@@ -17,18 +17,9 @@ use jmap_proto::types::{acl::Acl, collection::Collection};
 use store::write::BatchBuilder;
 use trc::AddContext;
 
-use crate::{
-    DavError, DavErrorCondition,
-    card::{delete::delete_address_book, insert_addressbook, insert_card, update_card},
-    common::uri::DavUriResource,
-    file::DavFileResource,
-};
+use crate::{DavError, DavErrorCondition, common::uri::DavUriResource, file::DavFileResource};
 
-use super::{
-    assert_is_unique_uid,
-    delete::{delete_address_book_and_cards, delete_card},
-    update_addressbook,
-};
+use super::assert_is_unique_uid;
 
 pub(crate) trait CardCopyMoveRequestHandler: Sync + Send {
     fn handle_card_copy_move_request(
@@ -53,7 +44,7 @@ impl CardCopyMoveRequestHandler for Server {
             .into_owned_uri()?;
         let from_account_id = from_resource_.account_id;
         let from_resources = self
-            .fetch_dav_resources(from_account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, from_account_id, Collection::AddressBook)
             .await
             .caused_by(trc::location!())?;
         let from_resource_name = from_resource_
@@ -102,7 +93,7 @@ impl CardCopyMoveRequestHandler for Server {
         let to_resources = if to_account_id == from_account_id {
             from_resources.clone()
         } else {
-            self.fetch_dav_resources(to_account_id, Collection::AddressBook)
+            self.fetch_dav_resources(access_token, to_account_id, Collection::AddressBook)
                 .await
                 .caused_by(trc::location!())?
         };
@@ -174,12 +165,6 @@ impl CardCopyMoveRequestHandler for Server {
                     // Overwrite card
                     let from_addressbook_id = from_resource.parent_id.unwrap();
                     let to_addressbook_id = to_resource.parent_id.unwrap();
-                    let to_base_path = headers.format_to_base_uri(
-                        destination_resource_name
-                            .rsplit_once('/')
-                            .map(|(base, _)| base)
-                            .unwrap_or(destination_resource_name),
-                    );
 
                     // Validate ACL
                     if (!access_token.is_member(from_account_id)
@@ -212,6 +197,12 @@ impl CardCopyMoveRequestHandler for Server {
                         return Err(DavError::Code(StatusCode::FORBIDDEN));
                     }
 
+                    let to_base_path = to_resources
+                        .format_resource(to_resource)
+                        .rsplit_once('/')
+                        .unwrap()
+                        .0
+                        .to_string();
                     if is_move {
                         move_card(
                             self,
@@ -300,7 +291,7 @@ impl CardCopyMoveRequestHandler for Server {
                             to_account_id,
                             None,
                             to_addressbook_id,
-                            headers.format_to_base_uri(&parent_resource.name),
+                            to_resources.format_resource(parent_resource),
                             new_name,
                         )
                         .await
@@ -324,7 +315,7 @@ impl CardCopyMoveRequestHandler for Server {
                         from_addressbook_id,
                         None,
                         to_addressbook_id,
-                        headers.format_to_base_uri(&parent_resource.name),
+                        to_resources.format_resource(parent_resource),
                         new_name,
                     )
                     .await
@@ -453,7 +444,7 @@ async fn copy_card(
         {
             return Err(DavError::Condition(DavErrorCondition::new(
                 StatusCode::PRECONDITION_FAILED,
-                CardCondition::NoUidConflict(format!("{}/{}", to_base_path, name.name).into()),
+                CardCondition::NoUidConflict(format!("{}{}", to_base_path, name.name).into()),
             )));
         }
         let mut new_card = card
@@ -463,29 +454,27 @@ async fn copy_card(
             name: new_name.to_string(),
             parent_id: to_addressbook_id,
         });
-        update_card(
-            access_token,
-            card,
-            new_card,
-            from_account_id,
-            from_document_id,
-            false,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        new_card
+            .update(
+                access_token,
+                card,
+                from_account_id,
+                from_document_id,
+                &mut batch,
+            )
+            .caused_by(trc::location!())?;
     } else {
         // Validate UID
         assert_is_unique_uid(
             server,
             server
-                .fetch_dav_resources(to_account_id, Collection::AddressBook)
+                .fetch_dav_resources(access_token, to_account_id, Collection::AddressBook)
                 .await
                 .caused_by(trc::location!())?
                 .as_ref(),
             to_account_id,
             to_addressbook_id,
             card.inner.card.uid(),
-            &to_base_path,
         )
         .await?;
 
@@ -501,15 +490,9 @@ async fn copy_card(
             .assign_document_ids(to_account_id, Collection::ContactCard, 1)
             .await
             .caused_by(trc::location!())?;
-        insert_card(
-            access_token,
-            new_card,
-            to_account_id,
-            to_document_id,
-            false,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        new_card
+            .insert(access_token, to_account_id, to_document_id, &mut batch)
+            .caused_by(trc::location!())?;
     }
 
     let response = if let Some(to_document_id) = to_document_id {
@@ -523,15 +506,15 @@ async fn copy_card(
                 .to_unarchived::<ContactCard>()
                 .caused_by(trc::location!())?;
 
-            delete_card(
-                access_token,
-                to_account_id,
-                to_document_id,
-                to_addressbook_id,
-                card,
-                &mut batch,
-            )
-            .caused_by(trc::location!())?;
+            DestroyArchive(card)
+                .delete(
+                    access_token,
+                    to_account_id,
+                    to_document_id,
+                    to_addressbook_id,
+                    &mut batch,
+                )
+                .caused_by(trc::location!())?;
         }
 
         Ok(HttpResponse::new(StatusCode::NO_CONTENT))
@@ -577,7 +560,7 @@ async fn move_card(
             if name.parent_id == to_addressbook_id {
                 return Err(DavError::Condition(DavErrorCondition::new(
                     StatusCode::PRECONDITION_FAILED,
-                    CardCondition::NoUidConflict(format!("{}/{}", to_base_path, name.name).into()),
+                    CardCondition::NoUidConflict(format!("{}{}", to_base_path, name.name).into()),
                 )));
             } else if name.parent_id == from_addressbook_id {
                 name_idx = Some(idx);
@@ -599,29 +582,27 @@ async fn move_card(
             name: new_name.to_string(),
             parent_id: to_addressbook_id,
         });
-        update_card(
-            access_token,
-            card.clone(),
-            new_card,
-            from_account_id,
-            from_document_id,
-            false,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        new_card
+            .update(
+                access_token,
+                card.clone(),
+                from_account_id,
+                from_document_id,
+                &mut batch,
+            )
+            .caused_by(trc::location!())?;
     } else {
         // Validate UID
         assert_is_unique_uid(
             server,
             server
-                .fetch_dav_resources(to_account_id, Collection::AddressBook)
+                .fetch_dav_resources(access_token, to_account_id, Collection::AddressBook)
                 .await
                 .caused_by(trc::location!())?
                 .as_ref(),
             to_account_id,
             to_addressbook_id,
             card.inner.card.uid(),
-            &to_base_path,
         )
         .await?;
 
@@ -633,30 +614,24 @@ async fn move_card(
             parent_id: to_addressbook_id,
         }];
 
-        delete_card(
-            access_token,
-            from_account_id,
-            from_document_id,
-            from_addressbook_id,
-            card,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        DestroyArchive(card)
+            .delete(
+                access_token,
+                from_account_id,
+                from_document_id,
+                from_addressbook_id,
+                &mut batch,
+            )
+            .caused_by(trc::location!())?;
 
         let to_document_id = server
             .store()
             .assign_document_ids(to_account_id, Collection::ContactCard, 1)
             .await
             .caused_by(trc::location!())?;
-        insert_card(
-            access_token,
-            new_card,
-            to_account_id,
-            to_document_id,
-            false,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        new_card
+            .insert(access_token, to_account_id, to_document_id, &mut batch)
+            .caused_by(trc::location!())?;
     }
 
     let response = if let Some(to_document_id) = to_document_id {
@@ -670,15 +645,15 @@ async fn move_card(
                 .to_unarchived::<ContactCard>()
                 .caused_by(trc::location!())?;
 
-            delete_card(
-                access_token,
-                to_account_id,
-                to_document_id,
-                to_addressbook_id,
-                card,
-                &mut batch,
-            )
-            .caused_by(trc::location!())?;
+            DestroyArchive(card)
+                .delete(
+                    access_token,
+                    to_account_id,
+                    to_document_id,
+                    to_addressbook_id,
+                    &mut batch,
+                )
+                .caused_by(trc::location!())?;
         }
 
         Ok(HttpResponse::new(StatusCode::NO_CONTENT))
@@ -725,16 +700,9 @@ async fn rename_card(
     new_card.names[name_idx].name = new_name.to_string();
 
     let mut batch = BatchBuilder::new();
-    update_card(
-        access_token,
-        card,
-        new_card,
-        account_id,
-        document_id,
-        false,
-        &mut batch,
-    )
-    .caused_by(trc::location!())?;
+    new_card
+        .update(access_token, card, account_id, document_id, &mut batch)
+        .caused_by(trc::location!())?;
     server
         .commit_batch(batch)
         .await
@@ -773,14 +741,9 @@ async fn copy_container(
     let mut batch = BatchBuilder::new();
 
     if remove_source {
-        delete_address_book(
-            access_token,
-            from_account_id,
-            from_document_id,
-            old_book,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        DestroyArchive(old_book)
+            .delete(access_token, from_account_id, from_document_id, &mut batch)
+            .caused_by(trc::location!())?;
     }
 
     book.name = new_name.to_string();
@@ -800,17 +763,17 @@ async fn copy_container(
                 .to_unarchived::<AddressBook>()
                 .caused_by(trc::location!())?;
 
-            delete_address_book_and_cards(
-                server,
-                access_token,
-                to_account_id,
-                to_document_id,
-                to_children_ids,
-                book,
-                &mut batch,
-            )
-            .await
-            .caused_by(trc::location!())?;
+            DestroyArchive(book)
+                .delete_with_cards(
+                    server,
+                    access_token,
+                    to_account_id,
+                    to_document_id,
+                    to_children_ids,
+                    &mut batch,
+                )
+                .await
+                .caused_by(trc::location!())?;
         }
 
         to_document_id
@@ -821,15 +784,8 @@ async fn copy_container(
             .await
             .caused_by(trc::location!())?
     };
-    insert_addressbook(
-        access_token,
-        book,
-        to_account_id,
-        to_document_id,
-        false,
-        &mut batch,
-    )
-    .caused_by(trc::location!())?;
+    book.insert(access_token, to_account_id, to_document_id, &mut batch)
+        .caused_by(trc::location!())?;
 
     // Copy children
     let mut required_space = 0;
@@ -877,27 +833,26 @@ async fn copy_container(
                 }
 
                 new_card.names.push(new_name);
-                update_card(
-                    access_token,
-                    card,
-                    new_card,
-                    from_account_id,
-                    from_document_id,
-                    false,
-                    &mut batch,
-                )
-                .caused_by(trc::location!())?;
-            } else {
-                if remove_source {
-                    delete_card(
+                new_card
+                    .update(
                         access_token,
-                        from_account_id,
-                        from_child_document_id,
-                        from_document_id,
                         card,
+                        from_account_id,
+                        from_document_id,
                         &mut batch,
                     )
                     .caused_by(trc::location!())?;
+            } else {
+                if remove_source {
+                    DestroyArchive(card)
+                        .delete(
+                            access_token,
+                            from_account_id,
+                            from_child_document_id,
+                            from_document_id,
+                            &mut batch,
+                        )
+                        .caused_by(trc::location!())?;
                 }
 
                 let to_document_id = server
@@ -907,15 +862,9 @@ async fn copy_container(
                     .caused_by(trc::location!())?;
                 new_card.names = vec![new_name];
                 required_space += new_card.size as u64;
-                insert_card(
-                    access_token,
-                    new_card,
-                    to_account_id,
-                    to_document_id,
-                    false,
-                    &mut batch,
-                )
-                .caused_by(trc::location!())?;
+                new_card
+                    .insert(access_token, to_account_id, to_document_id, &mut batch)
+                    .caused_by(trc::location!())?;
             }
         }
     }
@@ -966,16 +915,9 @@ async fn rename_container(
     new_book.name = new_name.to_string();
 
     let mut batch = BatchBuilder::new();
-    update_addressbook(
-        access_token,
-        book,
-        new_book,
-        account_id,
-        document_id,
-        false,
-        &mut batch,
-    )
-    .caused_by(trc::location!())?;
+    new_book
+        .update(access_token, book, account_id, document_id, &mut batch)
+        .caused_by(trc::location!())?;
     server
         .commit_batch(batch)
         .await

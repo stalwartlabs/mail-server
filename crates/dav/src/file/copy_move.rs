@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use common::{DavResources, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use dav_proto::{Depth, RequestHeaders};
-use groupware::{file::FileNode, hierarchy::DavHierarchy};
+use groupware::{DestroyArchive, file::FileNode, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
@@ -22,14 +22,15 @@ use utils::map::bitmap::Bitmap;
 use crate::{
     DavError, DavMethod,
     common::{
+        ExtractETag,
         acl::DavAclHandler,
         lock::{LockRequestHandler, ResourceState},
         uri::{DavUriResource, UriResource},
     },
-    file::{DavFileResource, FileItemId, insert_file_node, update_file_node},
+    file::{DavFileResource, FileItemId},
 };
 
-use super::{FromDavResource, delete::delete_files, delete_file_node};
+use super::FromDavResource;
 
 pub(crate) trait FileCopyMoveRequestHandler: Sync + Send {
     fn handle_file_copy_move_request(
@@ -54,7 +55,7 @@ impl FileCopyMoveRequestHandler for Server {
             .into_owned_uri()?;
         let from_account_id = from_resource_.account_id;
         let from_files = self
-            .fetch_dav_resources(from_account_id, Collection::FileNode)
+            .fetch_dav_resources(access_token, from_account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let from_resource = from_files.map_resource::<FileItemId>(&from_resource_)?;
@@ -100,7 +101,7 @@ impl FileCopyMoveRequestHandler for Server {
         let to_files = if to_account_id == from_account_id {
             from_files.clone()
         } else {
-            self.fetch_dav_resources(to_account_id, Collection::FileNode)
+            self.fetch_dav_resources(access_token, to_account_id, Collection::FileNode)
                 .await
                 .caused_by(trc::location!())?
         };
@@ -234,7 +235,8 @@ impl FileCopyMoveRequestHandler for Server {
                 ids.sort_unstable_by(|a, b| b.hierarchy_sequence.cmp(&a.hierarchy_sequence));
                 let mut sorted_ids = Vec::with_capacity(ids.len());
                 sorted_ids.extend(ids.into_iter().map(|a| a.document_id));
-                delete_files(self, access_token, destination.account_id, sorted_ids)
+                DestroyArchive(sorted_ids)
+                    .delete(self, access_token, destination.account_id)
                     .await
                     .caused_by(trc::location!())?;
             }
@@ -340,22 +342,22 @@ async fn move_container(
         let node = node_
             .to_unarchived::<FileNode>()
             .caused_by(trc::location!())?;
-        let mut new_node = node.deserialize().caused_by(trc::location!())?;
+        let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
         new_node.parent_id = parent_id;
         if let Some(new_name) = destination.new_name {
             new_node.name = new_name;
         }
         let mut batch = BatchBuilder::new();
-        let etag = update_file_node(
-            access_token,
-            node,
-            new_node,
-            from_account_id,
-            from_document_id,
-            true,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        let etag = new_node
+            .update(
+                access_token,
+                node,
+                from_account_id,
+                from_document_id,
+                &mut batch,
+            )
+            .caused_by(trc::location!())?
+            .etag();
         server
             .commit_batch(batch)
             .await
@@ -536,7 +538,9 @@ async fn overwrite_and_delete_item(
     let source_node_ = source_node__
         .to_unarchived::<FileNode>()
         .caused_by(trc::location!())?;
-    let mut source_node = source_node_.deserialize().caused_by(trc::location!())?;
+    let mut source_node = source_node_
+        .deserialize::<FileNode>()
+        .caused_by(trc::location!())?;
     source_node.name = if let Some(new_name) = destination.new_name {
         new_name
     } else {
@@ -545,25 +549,19 @@ async fn overwrite_and_delete_item(
     source_node.parent_id = dest_node.inner.parent_id.into();
 
     let mut batch = BatchBuilder::new();
-    let etag = update_file_node(
-        access_token,
-        dest_node,
-        source_node,
-        to_account_id,
-        to_document_id,
-        true,
-        &mut batch,
-    )
-    .caused_by(trc::location!())?;
-
-    delete_file_node(
-        access_token,
-        source_node_,
-        from_account_id,
-        from_document_id,
-        &mut batch,
-    )
-    .caused_by(trc::location!())?;
+    let etag = source_node
+        .update(
+            access_token,
+            dest_node,
+            to_account_id,
+            to_document_id,
+            &mut batch,
+        )
+        .caused_by(trc::location!())?
+        .etag();
+    DestroyArchive(source_node_)
+        .delete(access_token, from_account_id, from_document_id, &mut batch)
+        .caused_by(trc::location!())?;
     server
         .commit_batch(batch)
         .await
@@ -610,16 +608,16 @@ async fn overwrite_item(
     };
     source_node.parent_id = dest_node.inner.parent_id.into();
     let mut batch = BatchBuilder::new();
-    let etag = update_file_node(
-        access_token,
-        dest_node,
-        source_node,
-        to_account_id,
-        to_document_id,
-        true,
-        &mut batch,
-    )
-    .caused_by(trc::location!())?;
+    let etag = source_node
+        .update(
+            access_token,
+            dest_node,
+            to_account_id,
+            to_document_id,
+            &mut batch,
+        )
+        .caused_by(trc::location!())?
+        .etag();
     server
         .commit_batch(batch)
         .await
@@ -648,7 +646,7 @@ async fn move_item(
     let node = node_
         .to_unarchived::<FileNode>()
         .caused_by(trc::location!())?;
-    let mut new_node = node.deserialize().caused_by(trc::location!())?;
+    let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
     new_node.parent_id = parent_id;
     if let Some(new_name) = destination.new_name {
         new_node.name = new_name;
@@ -657,16 +655,16 @@ async fn move_item(
     let mut batch = BatchBuilder::new();
     let etag = if from_account_id == to_account_id {
         // Destination is in the same account: just update the parent id
-        update_file_node(
-            access_token,
-            node,
-            new_node,
-            from_account_id,
-            from_document_id,
-            true,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?
+        new_node
+            .update(
+                access_token,
+                node,
+                from_account_id,
+                from_document_id,
+                &mut batch,
+            )
+            .caused_by(trc::location!())?
+            .etag()
     } else {
         // Destination is in a different account: insert a new node, then delete the old one
         let to_document_id = server
@@ -674,23 +672,13 @@ async fn move_item(
             .assign_document_ids(to_account_id, Collection::FileNode, 1)
             .await
             .caused_by(trc::location!())?;
-        let etag = insert_file_node(
-            access_token,
-            new_node,
-            to_account_id,
-            to_document_id,
-            true,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
-        delete_file_node(
-            access_token,
-            node,
-            from_account_id,
-            from_document_id,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        let etag = new_node
+            .insert(access_token, to_account_id, to_document_id, &mut batch)
+            .caused_by(trc::location!())?
+            .etag();
+        DestroyArchive(node)
+            .delete(access_token, from_account_id, from_document_id, &mut batch)
+            .caused_by(trc::location!())?;
         etag
     };
     server
@@ -730,15 +718,10 @@ async fn copy_item(
         .assign_document_ids(to_account_id, Collection::FileNode, 1)
         .await
         .caused_by(trc::location!())?;
-    let etag = insert_file_node(
-        access_token,
-        node,
-        to_account_id,
-        to_document_id,
-        true,
-        &mut batch,
-    )
-    .caused_by(trc::location!())?;
+    let etag = node
+        .insert(access_token, to_account_id, to_document_id, &mut batch)
+        .caused_by(trc::location!())?
+        .etag();
     server
         .commit_batch(batch)
         .await
@@ -765,21 +748,21 @@ async fn rename_item(
     let node = node_
         .to_unarchived::<FileNode>()
         .caused_by(trc::location!())?;
-    let mut new_node = node.deserialize().caused_by(trc::location!())?;
+    let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
     if let Some(new_name) = destination.new_name {
         new_node.name = new_name;
     }
     let mut batch = BatchBuilder::new();
-    let etag = update_file_node(
-        access_token,
-        node,
-        new_node,
-        from_account_id,
-        from_document_id,
-        true,
-        &mut batch,
-    )
-    .caused_by(trc::location!())?;
+    let etag = new_node
+        .update(
+            access_token,
+            node,
+            from_account_id,
+            from_document_id,
+            &mut batch,
+        )
+        .caused_by(trc::location!())?
+        .etag();
     server
         .commit_batch(batch)
         .await

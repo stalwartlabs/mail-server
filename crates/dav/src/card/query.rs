@@ -50,7 +50,7 @@ impl CardQueryRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource_.account_id;
         let resources = self
-            .fetch_dav_resources(account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
             .await
             .caused_by(trc::location!())?;
         let resource = resources
@@ -82,13 +82,16 @@ impl CardQueryRequestHandler for Server {
 
         // Obtain document ids in folder
         let mut items = Vec::with_capacity(16);
-        let base_uri = headers.base_uri.unwrap_or_default();
         for resource in resources.children(resource.document_id) {
             if shared_ids
                 .as_ref()
                 .is_none_or(|ids| ids.contains(resource.document_id))
             {
-                items.push(PropFindItem::new(base_uri, account_id, resource));
+                items.push(PropFindItem::new(
+                    resources.format_resource(resource),
+                    account_id,
+                    resource,
+                ));
             }
         }
 

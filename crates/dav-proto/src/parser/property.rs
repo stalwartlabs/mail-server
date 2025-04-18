@@ -542,6 +542,9 @@ impl DavProperty {
             (Namespace::CalDav, Element::CalendarTimezoneId) => {
                 Some(DavProperty::CalDav(CalDavProperty::TimezoneId))
             }
+            (Namespace::CalendarServer, Element::Getctag) => {
+                Some(DavProperty::WebDav(WebDavProperty::GetCTag))
+            }
             _ => None,
         }
     }

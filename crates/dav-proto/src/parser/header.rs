@@ -10,7 +10,6 @@ impl<'x> RequestHeaders<'x> {
     pub fn new(uri: &'x str) -> Self {
         RequestHeaders {
             uri,
-            base_uri: base_uri(uri),
             ..Default::default()
         }
     }
@@ -87,11 +86,6 @@ impl<'x> RequestHeaders<'x> {
         );
 
         false
-    }
-
-    pub fn format_to_base_uri(&self, path: &str) -> String {
-        let base_uri = self.base_uri.unwrap_or_default();
-        format!("{base_uri}/{path}")
     }
 
     pub fn has_if(&self) -> bool {
@@ -260,9 +254,13 @@ impl<'x> RequestHeaders<'x> {
             });
         }
     }
+
+    pub fn base_uri(&self) -> Option<&str> {
+        dav_base_uri(self.uri)
+    }
 }
 
-fn base_uri(uri: &str) -> Option<&str> {
+pub fn dav_base_uri(uri: &str) -> Option<&str> {
     // From a path ../dav/collection/account/..
     // returns ../dav/collection/account without the trailing slash
 
@@ -359,7 +357,7 @@ mod tests {
             ("/dav/collection/account/", Some("/dav/collection/account")),
             ("/dav/collection/account", Some("/dav/collection/account")),
         ] {
-            assert_eq!(RequestHeaders::new(uri).base_uri, expected_base);
+            assert_eq!(RequestHeaders::new(uri).base_uri(), expected_base);
         }
     }
 

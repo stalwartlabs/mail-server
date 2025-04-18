@@ -4,19 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{DavResource, DavResources, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{DavResource, DavResources};
 use dav_proto::schema::property::{DavProperty, WebDavProperty};
-use groupware::file::{ArchivedFileNode, FileNode};
 use hyper::StatusCode;
-use jmap_proto::types::collection::Collection;
-use store::write::{Archive, BatchBuilder, now};
 
 use crate::{
     DavError,
-    common::{
-        ExtractETag,
-        uri::{OwnedUri, UriResource},
-    },
+    common::uri::{OwnedUri, UriResource},
 };
 
 pub mod copy_move;
@@ -177,79 +171,4 @@ impl FromDavResource for FileItemId {
             is_container: item.is_container,
         }
     }
-}
-
-pub(crate) fn update_file_node(
-    access_token: &AccessToken,
-    node: Archive<&ArchivedFileNode>,
-    mut new_node: FileNode,
-    account_id: u32,
-    document_id: u32,
-    with_etag: bool,
-    batch: &mut BatchBuilder,
-) -> trc::Result<Option<String>> {
-    // Build node
-    new_node.modified = now() as i64;
-    batch
-        .with_account_id(account_id)
-        .with_collection(Collection::FileNode)
-        .update_document(document_id)
-        .custom(
-            ObjectIndexBuilder::new()
-                .with_current(node)
-                .with_changes(new_node)
-                .with_tenant_id(access_token),
-        )?
-        .commit_point();
-
-    Ok(if with_etag { batch.etag() } else { None })
-}
-
-pub(crate) fn insert_file_node(
-    access_token: &AccessToken,
-    mut node: FileNode,
-    account_id: u32,
-    document_id: u32,
-    with_etag: bool,
-    batch: &mut BatchBuilder,
-) -> trc::Result<Option<String>> {
-    // Build node
-    let now = now() as i64;
-    node.modified = now;
-    node.created = now;
-
-    // Prepare write batch
-    batch
-        .with_account_id(account_id)
-        .with_collection(Collection::FileNode)
-        .create_document(document_id)
-        .custom(
-            ObjectIndexBuilder::<(), _>::new()
-                .with_changes(node)
-                .with_tenant_id(access_token),
-        )?
-        .commit_point();
-
-    Ok(if with_etag { batch.etag() } else { None })
-}
-
-pub(crate) fn delete_file_node(
-    access_token: &AccessToken,
-    node: Archive<&ArchivedFileNode>,
-    account_id: u32,
-    document_id: u32,
-    batch: &mut BatchBuilder,
-) -> trc::Result<()> {
-    // Prepare write batch
-    batch
-        .with_account_id(account_id)
-        .with_collection(Collection::FileNode)
-        .delete_document(document_id)
-        .custom(
-            ObjectIndexBuilder::<_, ()>::new()
-                .with_current(node)
-                .with_tenant_id(access_token),
-        )?
-        .commit_point();
-    Ok(())
 }

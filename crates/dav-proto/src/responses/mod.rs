@@ -18,7 +18,7 @@ use crate::schema::{
     property::{Comp, ResourceType, SupportedCollation},
     request::{DeadProperty, DeadPropertyTag},
     response::{Href, List, Location, ResponseDescription, Status, SyncToken},
-    Namespace,
+    Namespaces,
 };
 
 trait XmlEscape {
@@ -44,19 +44,19 @@ impl<T: AsRef<str>> XmlEscape for T {
     }
 }
 
-impl Namespace {
-    pub(crate) fn write_to(&self, out: &mut impl Write) -> std::fmt::Result {
-        out.write_str(match self {
-            Namespace::Dav => "xmlns:D=\"DAV:\"",
-            Namespace::CalDav => "xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\"",
-            Namespace::CardDav => "xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:carddav\"",
-        })
-    }
-}
-
-impl Display for Namespace {
+impl Display for Namespaces {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.write_to(f)
+        f.write_str("xmlns:D=\"DAV:\"")?;
+        if self.cal {
+            f.write_str(" xmlns:A=\"urn:ietf:params:xml:ns:caldav\"")?;
+        }
+        if self.card {
+            f.write_str(" xmlns:B=\"urn:ietf:params:xml:ns:carddav\"")?;
+        }
+        if self.cs {
+            f.write_str(" xmlns:C=\"http://calendarserver.org/ns/\"")?;
+        }
+        Ok(())
     }
 }
 
@@ -112,7 +112,7 @@ impl Display for SyncToken {
 
 impl Display for Comp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<C:comp name=\"{}\">", self.0.as_str())
+        write!(f, "<A:comp name=\"{}\">", self.0.as_str())
     }
 }
 
@@ -121,18 +121,19 @@ impl Display for ResourceType {
         match self {
             ResourceType::Collection => write!(f, "<D:collection/>"),
             ResourceType::Principal => write!(f, "<D:principal/>"),
-            ResourceType::AddressBook => write!(f, "<C:addressbook/>"),
-            ResourceType::Calendar => write!(f, "<C:calendar/>"),
+            ResourceType::AddressBook => write!(f, "<B:addressbook/>"),
+            ResourceType::Calendar => write!(f, "<A:calendar/>"),
         }
     }
 }
 
 impl Display for SupportedCollation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ns = self.namespace.prefix();
         write!(
             f,
-            "<C:supported-collation>{}</C:supported-collation>",
-            self.0.as_str()
+            "<{ns}:supported-collation>{}</{ns}:supported-collation>",
+            self.collation.as_str()
         )
     }
 }

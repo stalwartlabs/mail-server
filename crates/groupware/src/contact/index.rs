@@ -7,7 +7,7 @@
 use common::storage::index::{
     IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
 };
-use jmap_proto::types::value::AclGrant;
+use jmap_proto::types::{collection::Collection, value::AclGrant};
 use store::SerializeInfallible;
 
 use crate::{IDX_CARD_UID, IDX_NAME};
@@ -89,6 +89,10 @@ impl IndexableObject for ContactCard {
                     + self.size,
             },
             IndexValue::LogChild { prefix: None },
+            IndexValue::LogParent {
+                collection: Collection::AddressBook.into(),
+                ids: self.names.iter().map(|n| n.parent_id).collect(),
+            },
         ]
         .into_iter()
     }
@@ -116,6 +120,10 @@ impl IndexableObject for &ArchivedContactCard {
                     + self.size,
             },
             IndexValue::LogChild { prefix: None },
+            IndexValue::LogParent {
+                collection: Collection::AddressBook.into(),
+                ids: self.names.iter().map(|n| n.parent_id.to_native()).collect(),
+            },
         ]
         .into_iter()
     }

@@ -9,10 +9,29 @@ pub mod requests;
 pub mod responses;
 pub mod schema;
 
+pub fn xml_pretty_print(xml_string: &str) -> String {
+    // Create a reader
+    let mut reader = quick_xml::Reader::from_str(xml_string);
+    let mut writer = quick_xml::Writer::new_with_indent(std::io::Cursor::new(Vec::new()), b' ', 2);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(quick_xml::events::Event::Eof) => break,
+            Ok(event) => {
+                writer.write_event(event).unwrap();
+            }
+            Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
+        }
+        buf.clear();
+    }
+
+    let result = writer.into_inner().into_inner();
+    String::from_utf8(result).unwrap()
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct RequestHeaders<'x> {
     pub uri: &'x str,
-    pub base_uri: Option<&'x str>,
     pub depth: Depth,
     pub timeout: Timeout,
     pub content_type: Option<&'x str>,

@@ -72,6 +72,13 @@ impl NamedElement {
             element,
         }
     }
+
+    pub fn calendarserver(element: Element) -> NamedElement {
+        NamedElement {
+            ns: Namespace::CalendarServer,
+            element,
+        }
+    }
 }
 
 impl Token<'_> {

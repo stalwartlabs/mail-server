@@ -8,12 +8,12 @@ use std::fmt::Display;
 
 use crate::schema::{
     response::{BaseCondition, CalCondition, CardCondition, Condition, ErrorResponse},
-    Namespace,
+    Namespace, Namespaces,
 };
 
 impl Display for ErrorResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<D:error {}>", self.namespace)?;
+        write!(f, "<D:error {}>", self.namespaces)?;
 
         match &self.error {
             Condition::Base(e) => e.fmt(f)?,
@@ -88,31 +88,31 @@ impl Display for CalCondition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CalCondition::CalendarCollectionLocationOk => {
-                write!(f, "<C:calendar-collection-location-ok/>")
+                write!(f, "<A:calendar-collection-location-ok/>")
             }
-            CalCondition::ValidCalendarData => write!(f, "<C:valid-calendar-data/>"),
-            CalCondition::ValidFilter => write!(f, "<C:valid-filter/>"),
+            CalCondition::ValidCalendarData => write!(f, "<A:valid-calendar-data/>"),
+            CalCondition::ValidFilter => write!(f, "<A:valid-filter/>"),
             CalCondition::ValidCalendarObjectResource => {
-                write!(f, "<C:valid-calendar-object-resource/>")
+                write!(f, "<A:valid-calendar-object-resource/>")
             }
             CalCondition::NoUidConflict(uid) => {
-                write!(f, "<C:no-uid-conflict>{uid}</C:no-uid-conflict>")
+                write!(f, "<A:no-uid-conflict>{uid}</A:no-uid-conflict>")
             }
             CalCondition::InitializeCalendarCollection => {
-                write!(f, "<C:initialize-calendar-collection/>")
+                write!(f, "<A:initialize-calendar-collection/>")
             }
-            CalCondition::SupportedCalendarData => write!(f, "<C:supported-calendar-data/>"),
-            CalCondition::SupportedFilter(_) => write!(f, "<C:supported-filter/>"),
+            CalCondition::SupportedCalendarData => write!(f, "<A:supported-calendar-data/>"),
+            CalCondition::SupportedFilter(_) => write!(f, "<A:supported-filter/>"),
             CalCondition::SupportedCollation(c) => {
-                write!(f, "<C:supported-collation>{c}</C:supported-collation>")
+                write!(f, "<A:supported-collation>{c}</A:supported-collation>")
             }
-            CalCondition::MinDateTime => write!(f, "<C:min-date-time/>"),
-            CalCondition::MaxDateTime => write!(f, "<C:max-date-time/>"),
+            CalCondition::MinDateTime => write!(f, "<A:min-date-time/>"),
+            CalCondition::MaxDateTime => write!(f, "<A:max-date-time/>"),
             CalCondition::MaxResourceSize(l) => {
-                write!(f, "<C:max-resource-size>{l}</C:max-resource-size>")
+                write!(f, "<A:max-resource-size>{l}</A:max-resource-size>")
             }
-            CalCondition::MaxInstances => write!(f, "<C:max-instances/>"),
-            CalCondition::MaxAttendeesPerInstance => write!(f, "<C:max-attendees-per-instance/>"),
+            CalCondition::MaxInstances => write!(f, "<A:max-instances/>"),
+            CalCondition::MaxAttendeesPerInstance => write!(f, "<A:max-attendees-per-instance/>"),
         }
     }
 }
@@ -120,23 +120,23 @@ impl Display for CalCondition {
 impl Display for CardCondition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CardCondition::SupportedAddressData => write!(f, "<C:supported-address-data/>"),
+            CardCondition::SupportedAddressData => write!(f, "<B:supported-address-data/>"),
             CardCondition::SupportedAddressDataConversion => {
-                write!(f, "<C:supported-address-data-conversion/>")
+                write!(f, "<B:supported-address-data-conversion/>")
             }
-            CardCondition::SupportedFilter(_) => write!(f, "<C:supported-filter/>"),
+            CardCondition::SupportedFilter(_) => write!(f, "<B:supported-filter/>"),
             CardCondition::SupportedCollation(c) => {
-                write!(f, "<C:supported-collation>{c}</C:supported-collation>")
+                write!(f, "<B:supported-collation>{c}</B:supported-collation>")
             }
-            CardCondition::ValidAddressData => write!(f, "<C:valid-address-data/>"),
+            CardCondition::ValidAddressData => write!(f, "<B:valid-address-data/>"),
             CardCondition::NoUidConflict(uid) => {
-                write!(f, "<C:no-uid-conflict>{uid}</C:no-uid-conflict>")
+                write!(f, "<B:no-uid-conflict>{uid}</B:no-uid-conflict>")
             }
             CardCondition::MaxResourceSize(l) => {
-                write!(f, "<C:max-resource-size>{l}</C:max-resource-size>")
+                write!(f, "<B:max-resource-size>{l}</B:max-resource-size>")
             }
             CardCondition::AddressBookCollectionLocationOk => {
-                write!(f, "<C:addressbook-collection-location-ok/>")
+                write!(f, "<B:addressbook-collection-location-ok/>")
             }
         }
     }
@@ -163,13 +163,13 @@ impl From<BaseCondition> for Condition {
 impl ErrorResponse {
     pub fn new(error: impl Into<Condition>) -> Self {
         ErrorResponse {
-            namespace: Namespace::Dav,
+            namespaces: Namespaces::default(),
             error: error.into(),
         }
     }
 
     pub fn with_namespace(mut self, namespace: impl Into<Namespace>) -> Self {
-        self.namespace = namespace.into();
+        self.namespaces.set(namespace.into());
         self
     }
 }

@@ -5,7 +5,6 @@
  */
 
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
-use compact_str::format_compact;
 use dav_proto::{
     RequestHeaders,
     schema::{
@@ -25,14 +24,15 @@ use jmap_proto::types::{
     collection::Collection,
     value::{AclGrant, ArchivedAclGrant},
 };
+use percent_encoding::NON_ALPHANUMERIC;
 use rkyv::vec::ArchivedVec;
 use store::{ahash::AHashSet, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    DavError, DavErrorCondition, DavResource, card::update_addressbook,
-    common::uri::DavUriResource, file::update_file_node, principal::propfind::PrincipalPropFind,
+    DavError, DavErrorCondition, DavResourceName, common::uri::DavUriResource,
+    principal::propfind::PrincipalPropFind,
 };
 
 use super::ArchivedResource;
@@ -108,7 +108,7 @@ impl DavAclHandler for Server {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
         let resources = self
-            .fetch_dav_resources(account_id, collection)
+            .fetch_dav_resources(access_token, account_id, collection)
             .await
             .caused_by(trc::location!())?;
         let resource = resource_
@@ -152,31 +152,29 @@ impl DavAclHandler for Server {
                         .deserialize::<AddressBook>()
                         .caused_by(trc::location!())?;
                     new_book.acls = grants;
-                    update_addressbook(
-                        access_token,
-                        book,
-                        new_book,
-                        account_id,
-                        resource.document_id,
-                        false,
-                        &mut batch,
-                    )
-                    .caused_by(trc::location!())?;
+                    new_book
+                        .update(
+                            access_token,
+                            book,
+                            account_id,
+                            resource.document_id,
+                            &mut batch,
+                        )
+                        .caused_by(trc::location!())?;
                 }
                 ArchivedResource::FileNode(node) => {
                     let mut new_node =
                         node.deserialize::<FileNode>().caused_by(trc::location!())?;
                     new_node.acls = grants;
-                    update_file_node(
-                        access_token,
-                        node,
-                        new_node,
-                        account_id,
-                        resource.document_id,
-                        false,
-                        &mut batch,
-                    )
-                    .caused_by(trc::location!())?;
+                    new_node
+                        .update(
+                            access_token,
+                            node,
+                            account_id,
+                            resource.document_id,
+                            &mut batch,
+                        )
+                        .caused_by(trc::location!())?;
                 }
                 _ => unreachable!(),
             }
@@ -198,7 +196,7 @@ impl DavAclHandler for Server {
             .await
             .and_then(|uri| uri.into_owned_uri())?;
         let uri = self
-            .map_uri_resource(uri)
+            .map_uri_resource(access_token, uri)
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -497,9 +495,12 @@ impl DavAclHandler for Server {
 
                 aces.push(Ace::new(
                     Principal::Href(Href(format!(
-                        "{}/{}",
-                        DavResource::Principal.base_path(),
-                        grant_account_name,
+                        "{}/{}/",
+                        DavResourceName::Principal.base_path(),
+                        percent_encoding::utf8_percent_encode(
+                            &grant_account_name,
+                            NON_ALPHANUMERIC
+                        ),
                     ))),
                     GrantDeny::grant(privileges),
                 ));
@@ -515,6 +516,7 @@ pub(crate) trait Privileges {
         &self,
         account_id: u32,
         grants: &ArchivedVec<ArchivedAclGrant>,
+        is_calendar: bool,
     ) -> Vec<Privilege>;
 }
 
@@ -523,21 +525,10 @@ impl Privileges for AccessToken {
         &self,
         account_id: u32,
         grants: &ArchivedVec<ArchivedAclGrant>,
+        is_calendar: bool,
     ) -> Vec<Privilege> {
         if self.is_member(account_id) {
-            vec![
-                Privilege::Read,
-                Privilege::Write,
-                Privilege::WriteProperties,
-                Privilege::WriteContent,
-                Privilege::Unlock,
-                Privilege::ReadAcl,
-                Privilege::ReadCurrentUserPrivilegeSet,
-                Privilege::WriteAcl,
-                Privilege::Bind,
-                Privilege::Unbind,
-                Privilege::ReadFreeBusy,
-            ]
+            Privilege::all(is_calendar)
         } else {
             let mut acls = AHashSet::with_capacity(16);
             for grant in grants.effective_acl(self) {

@@ -20,14 +20,18 @@ use crate::schema::{
     },
     request::{DavPropertyValue, DeadProperty},
     response::{Ace, AclRestrictions, Href, List, PropResponse, SupportedPrivilege},
-    Namespace,
+    Namespace, Namespaces,
 };
 
 use super::XmlEscape;
 
 impl Display for PropResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<D:prop {}>{}</D:prop>", self.namespace, self.properties)
+        write!(
+            f,
+            "<D:prop {}>{}</D:prop>",
+            self.namespaces, self.properties
+        )
     }
 }
 
@@ -98,11 +102,11 @@ impl Display for DavValue {
                 write!(
                     f,
                     concat!(
-                        "<C:supported-address-data>",
-                        "<C:address-data-type content-type=\"text/vcard\" version=\"4.0\"/>",
-                        "<C:address-data-type content-type=\"text/vcard\" version=\"3.0\"/>",
-                        "<C:address-data-type content-type=\"text/vcard\" version=\"2.0\"/>",
-                        "</C:supported-address-data>"
+                        "<B:supported-address-data>",
+                        "<B:address-data-type content-type=\"text/vcard\" version=\"4.0\"/>",
+                        "<B:address-data-type content-type=\"text/vcard\" version=\"3.0\"/>",
+                        "<B:address-data-type content-type=\"text/vcard\" version=\"2.0\"/>",
+                        "</B:supported-address-data>"
                     )
                 )
             }
@@ -110,10 +114,10 @@ impl Display for DavValue {
                 write!(
                     f,
                     concat!(
-                        "<C:supported-calendar-data>",
-                        "<C:calendar-data-type content-type=\"text/calendar\" version=\"2.0\"/>",
-                        "<C:calendar-data-type content-type=\"text/calendar\" version=\"1.0\"/>",
-                        "</C:supported-calendar-data>"
+                        "<A:supported-calendar-data>",
+                        "<A:calendar-data-type content-type=\"text/calendar\" version=\"2.0\"/>",
+                        "<A:calendar-data-type content-type=\"text/calendar\" version=\"1.0\"/>",
+                        "</A:supported-calendar-data>"
                     )
                 )
             }
@@ -150,39 +154,40 @@ impl DavProperty {
                     WebDavProperty::AclRestrictions => "D:acl-restrictions",
                     WebDavProperty::InheritedAclSet => "D:inherited-acl-set",
                     WebDavProperty::PrincipalCollectionSet => "D:principal-collection-set",
+                    WebDavProperty::GetCTag => "C:getctag",
                 },
                 DavProperty::CardDav(prop) => match prop {
-                    CardDavProperty::AddressbookDescription => "C:addressbook-description",
-                    CardDavProperty::SupportedAddressData => "C:supported-address-data",
-                    CardDavProperty::SupportedCollationSet => "C:supported-collation-set",
-                    CardDavProperty::MaxResourceSize => "C:max-resource-size",
-                    CardDavProperty::AddressData(_) => "C:address-data",
+                    CardDavProperty::AddressbookDescription => "B:addressbook-description",
+                    CardDavProperty::SupportedAddressData => "B:supported-address-data",
+                    CardDavProperty::SupportedCollationSet => "B:supported-collation-set",
+                    CardDavProperty::MaxResourceSize => "B:max-resource-size",
+                    CardDavProperty::AddressData(_) => "B:address-data",
                 },
                 DavProperty::CalDav(prop) => match prop {
-                    CalDavProperty::CalendarDescription => "C:calendar-description",
-                    CalDavProperty::CalendarTimezone => "C:calendar-timezone",
+                    CalDavProperty::CalendarDescription => "A:calendar-description",
+                    CalDavProperty::CalendarTimezone => "A:calendar-timezone",
                     CalDavProperty::SupportedCalendarComponentSet => {
-                        "C:supported-calendar-component-set"
+                        "A:supported-calendar-component-set"
                     }
-                    CalDavProperty::SupportedCalendarData => "C:supported-calendar-data",
-                    CalDavProperty::SupportedCollationSet => "C:supported-collation-set",
-                    CalDavProperty::MaxResourceSize => "C:max-resource-size",
-                    CalDavProperty::MinDateTime => "C:min-date-time",
-                    CalDavProperty::MaxDateTime => "C:max-date-time",
-                    CalDavProperty::MaxInstances => "C:max-instances",
-                    CalDavProperty::MaxAttendeesPerInstance => "C:max-attendees-per-instance",
-                    CalDavProperty::CalendarHomeSet => "C:calendar-home-set",
-                    CalDavProperty::CalendarData(_) => "C:calendar-data",
-                    CalDavProperty::TimezoneServiceSet => "C:timezone-service-set",
-                    CalDavProperty::TimezoneId => "C:calendar-timezone-id",
+                    CalDavProperty::SupportedCalendarData => "A:supported-calendar-data",
+                    CalDavProperty::SupportedCollationSet => "A:supported-collation-set",
+                    CalDavProperty::MaxResourceSize => "A:max-resource-size",
+                    CalDavProperty::MinDateTime => "A:min-date-time",
+                    CalDavProperty::MaxDateTime => "A:max-date-time",
+                    CalDavProperty::MaxInstances => "A:max-instances",
+                    CalDavProperty::MaxAttendeesPerInstance => "A:max-attendees-per-instance",
+                    CalDavProperty::CalendarHomeSet => "A:calendar-home-set",
+                    CalDavProperty::CalendarData(_) => "A:calendar-data",
+                    CalDavProperty::TimezoneServiceSet => "A:timezone-service-set",
+                    CalDavProperty::TimezoneId => "A:calendar-timezone-id",
                 },
                 DavProperty::Principal(prop) => match prop {
                     PrincipalProperty::AlternateURISet => "D:alternate-URI-set",
                     PrincipalProperty::PrincipalURL => "D:principal-URL",
                     PrincipalProperty::GroupMemberSet => "D:group-member-set",
                     PrincipalProperty::GroupMembership => "D:group-membership",
-                    PrincipalProperty::AddressbookHomeSet => "C:addressbook-home-set",
-                    PrincipalProperty::PrincipalAddress => "C:principal-address",
+                    PrincipalProperty::AddressbookHomeSet => "B:addressbook-home-set",
+                    PrincipalProperty::PrincipalAddress => "B:principal-address",
                 },
                 DavProperty::DeadProperty(dead) => {
                     return (dead.name.as_str(), dead.attrs.as_deref())
@@ -195,21 +200,23 @@ impl DavProperty {
 
 impl Display for ReportSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<D:supported-report><D:report>")?;
         match self {
             ReportSet::SyncCollection => write!(f, "<D:sync-collection/>"),
             ReportSet::ExpandProperty => write!(f, "<D:expand-property/>"),
-            ReportSet::AddressbookQuery => write!(f, "<C:addressbook-query/>"),
-            ReportSet::AddressbookMultiGet => write!(f, "<C:addressbook-multiget/>"),
-            ReportSet::CalendarQuery => write!(f, "<C:calendar-query/>"),
-            ReportSet::CalendarMultiGet => write!(f, "<C:calendar-multiget/>"),
-            ReportSet::FreeBusyQuery => write!(f, "<C:free-busy-query/>"),
+            ReportSet::AddressbookQuery => write!(f, "<B:addressbook-query/>"),
+            ReportSet::AddressbookMultiGet => write!(f, "<B:addressbook-multiget/>"),
+            ReportSet::CalendarQuery => write!(f, "<A:calendar-query/>"),
+            ReportSet::CalendarMultiGet => write!(f, "<A:calendar-multiget/>"),
+            ReportSet::FreeBusyQuery => write!(f, "<A:free-busy-query/>"),
             ReportSet::AclPrincipalPropSet => write!(f, "<D:acl-principal-prop-set/>"),
             ReportSet::PrincipalMatch => write!(f, "<D:principal-match/>"),
             ReportSet::PrincipalPropertySearch => write!(f, "<D:principal-property-search/>"),
             ReportSet::PrincipalSearchPropertySet => {
                 write!(f, "<D:principal-search-property-set/>")
             }
-        }
+        }?;
+        f.write_str("</D:report></D:supported-report>")
     }
 }
 
@@ -227,13 +234,13 @@ impl Display for DavProperty {
 impl PropResponse {
     pub fn new(properties: Vec<DavPropertyValue>) -> Self {
         PropResponse {
-            namespace: Namespace::Dav,
+            namespaces: Namespaces::default(),
             properties: List(properties),
         }
     }
 
     pub fn with_namespace(mut self, namespace: Namespace) -> Self {
-        self.namespace = namespace;
+        self.namespaces.set(namespace);
         self
     }
 }

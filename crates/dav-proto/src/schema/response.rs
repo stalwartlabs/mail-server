@@ -15,11 +15,11 @@ use hyper::StatusCode;
 use super::{
     property::{DavProperty, Privilege},
     request::{DavPropertyValue, Filter},
-    Namespace,
+    Namespaces,
 };
 
 pub struct MultiStatus {
-    pub namespace: Namespace,
+    pub namespaces: Namespaces,
     pub response: List<Response>,
     pub response_description: Option<ResponseDescription>,
     pub sync_token: Option<SyncToken>,
@@ -61,7 +61,7 @@ pub struct Href(pub String);
 pub struct List<T: Display>(pub Vec<T>);
 
 pub struct MkColResponse {
-    pub namespace: Namespace,
+    pub namespaces: Namespaces,
     pub propstat: List<PropStat>,
 }
 
@@ -76,7 +76,7 @@ pub struct PropStat {
 pub struct Prop(pub List<DavPropertyValue>);
 
 pub struct PropResponse {
-    pub namespace: Namespace,
+    pub namespaces: Namespaces,
     pub properties: List<DavPropertyValue>,
 }
 
@@ -141,7 +141,7 @@ pub enum RequiredPrincipal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct PrincipalSearchPropertySet {
-    pub namespace: Namespace,
+    pub namespaces: Namespaces,
     pub properties: List<PrincipalSearchProperty>,
 }
 
@@ -153,7 +153,7 @@ pub struct PrincipalSearchProperty {
 }
 
 pub struct ErrorResponse {
-    pub namespace: Namespace,
+    pub namespaces: Namespaces,
     pub error: Condition,
 }
 

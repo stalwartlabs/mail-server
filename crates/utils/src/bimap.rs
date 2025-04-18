@@ -47,6 +47,10 @@ impl<T: IdBimapItem> IdBimap<T> {
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.name_to_id.values().map(|v| v.as_ref())
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.name_to_id.is_empty()
+    }
 }
 
 // SAFETY: Safe because Rc<> are never returned from the struct

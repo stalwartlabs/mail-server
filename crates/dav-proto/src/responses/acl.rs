@@ -14,7 +14,7 @@ use crate::{
             Ace, AclRestrictions, GrantDeny, Href, List, Principal, PrincipalSearchProperty,
             PrincipalSearchPropertySet, RequiredPrincipal, Resource, SupportedPrivilege,
         },
-        Namespace,
+        Namespace, Namespaces,
     },
 };
 
@@ -175,7 +175,7 @@ impl Display for Privilege {
             Privilege::Bind => "<D:privilege><D:bind/></D:privilege>".fmt(f),
             Privilege::Unbind => "<D:privilege><D:unbind/></D:privilege>".fmt(f),
             Privilege::All => "<D:privilege><D:all/></D:privilege>".fmt(f),
-            Privilege::ReadFreeBusy => "<D:privilege><C:read-free-busy/></D:privilege>".fmt(f),
+            Privilege::ReadFreeBusy => "<D:privilege><A:read-free-busy/></D:privilege>".fmt(f),
         }
     }
 }
@@ -195,7 +195,7 @@ impl Display for PrincipalSearchPropertySet {
         write!(
             f,
             "<D:principal-search-property-set {}>{}</D:principal-search-property-set>",
-            self.namespace, self.properties
+            self.namespaces, self.properties
         )
     }
 }
@@ -227,13 +227,13 @@ impl Resource {
 impl PrincipalSearchPropertySet {
     pub fn new(properties: Vec<PrincipalSearchProperty>) -> Self {
         PrincipalSearchPropertySet {
-            namespace: Namespace::Dav,
+            namespaces: Namespaces::default(),
             properties: List(properties),
         }
     }
 
     pub fn with_namespace(mut self, namespace: Namespace) -> Self {
-        self.namespace = namespace;
+        self.namespaces.set(namespace);
         self
     }
 }

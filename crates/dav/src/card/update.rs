@@ -20,14 +20,14 @@ use trc::AddContext;
 use crate::{
     DavError, DavErrorCondition, DavMethod,
     common::{
-        ETag,
+        ETag, ExtractETag,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
     file::DavFileResource,
 };
 
-use super::{assert_is_unique_uid, insert_card, update_card};
+use super::assert_is_unique_uid;
 
 pub(crate) trait CardUpdateRequestHandler: Sync + Send {
     fn handle_card_update_request(
@@ -54,7 +54,7 @@ impl CardUpdateRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource.account_id;
         let resources = self
-            .fetch_dav_resources(account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
             .await
             .caused_by(trc::location!())?;
         let resource_name = resource
@@ -169,9 +169,7 @@ impl CardUpdateRequestHandler for Server {
                 _ => {
                     return Err(DavError::Condition(DavErrorCondition::new(
                         StatusCode::PRECONDITION_FAILED,
-                        CardCondition::NoUidConflict(
-                            headers.format_to_base_uri(resource_name).into(),
-                        ),
+                        CardCondition::NoUidConflict(resources.format_resource(resource).into()),
                     )));
                 }
             }
@@ -185,16 +183,10 @@ impl CardUpdateRequestHandler for Server {
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
-            let etag = update_card(
-                access_token,
-                card,
-                new_card,
-                account_id,
-                document_id,
-                true,
-                &mut batch,
-            )
-            .caused_by(trc::location!())?;
+            let etag = new_card
+                .update(access_token, card, account_id, document_id, &mut batch)
+                .caused_by(trc::location!())?
+                .etag();
             self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
@@ -251,7 +243,6 @@ impl CardUpdateRequestHandler for Server {
                 account_id,
                 parent.document_id,
                 vcard.uid(),
-                headers.base_uri.unwrap_or_default(),
             )
             .await?;
 
@@ -273,15 +264,10 @@ impl CardUpdateRequestHandler for Server {
                 .assign_document_ids(account_id, Collection::ContactCard, 1)
                 .await
                 .caused_by(trc::location!())?;
-            let etag = insert_card(
-                access_token,
-                card,
-                account_id,
-                document_id,
-                true,
-                &mut batch,
-            )
-            .caused_by(trc::location!())?;
+            let etag = card
+                .insert(access_token, account_id, document_id, &mut batch)
+                .caused_by(trc::location!())?
+                .etag();
             self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))

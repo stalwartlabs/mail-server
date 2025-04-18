@@ -52,7 +52,6 @@ impl PrincipalMatching for Server {
                     access_token,
                     DavQuery {
                         resource: DavQueryResource::Uri(resource),
-                        base_uri: headers.base_uri.unwrap_or_default(),
                         propfind: PropFind::Prop(request.properties),
                         depth: usize::MAX,
                         ret: headers.ret,

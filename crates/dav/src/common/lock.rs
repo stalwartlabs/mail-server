@@ -122,6 +122,7 @@ impl LockRequestHandler for Server {
             ..Default::default()
         }];
 
+        let mut base_path = None;
         let is_lock_request = !matches!(lock_info, LockRequest::Unlock);
         let if_lock_token = headers
             .if_
@@ -170,7 +171,9 @@ impl LockRequestHandler for Server {
                             || lock_item.depth_infinity && resource_path.len() > lock_path.len()
                             || is_infinity && lock_path.len() > resource_path.len())
                     {
-                        failed_locks.push(headers.format_to_base_uri(lock_path).into());
+                        let base_path =
+                            base_path.get_or_insert_with(|| headers.base_uri().unwrap_or_default());
+                        failed_locks.push(format!("{base_path}/{lock_path}").into());
                     }
                 }
 
@@ -266,7 +269,8 @@ impl LockRequestHandler for Server {
                 lock_item.exclusive = matches!(lock_info.lock_scope, LockScope::Exclusive);
             }
 
-            let active_lock = lock_item.to_active_lock(headers.format_to_base_uri(resource_path));
+            let base_path = base_path.get_or_insert_with(|| headers.base_uri().unwrap_or_default());
+            let active_lock = lock_item.to_active_lock(format!("{base_path}/{resource_path}"));
 
             HttpResponse::new(StatusCode::CREATED)
                 .with_lock_token(&active_lock.lock_token.as_ref().unwrap().0)
@@ -364,6 +368,8 @@ impl LockRequestHandler for Server {
             method,
             DavMethod::GET | DavMethod::HEAD | DavMethod::LOCK | DavMethod::UNLOCK
         ) {
+            let mut base_path = None;
+
             'outer: for (pos, resource) in resources.iter().enumerate() {
                 if pos == 0 && matches!(method, DavMethod::COPY) {
                     continue;
@@ -382,7 +388,11 @@ impl LockRequestHandler for Server {
                         }) {
                             break 'outer;
                         } else {
-                            failed_locks.push(headers.format_to_base_uri(lock_path).into());
+                            let base_path = base_path.get_or_insert_with(|| {
+                                headers.base_uri()
+                                    .unwrap_or_default()
+                            });
+                            failed_locks.push(format!("{base_path}/{lock_path}").into());
                         }
                     }
 
@@ -475,11 +485,14 @@ impl LockRequestHandler for Server {
                 if needs_etag && resource_state.etag.is_none() {
                     if resource_state.document_id.is_none() {
                         resource_state.document_id = self
-                            .map_uri_resource(UriResource {
-                                collection: resource_state.collection,
-                                account_id: resource_state.account_id,
-                                resource: resource_state.path.into(),
-                            })
+                            .map_uri_resource(
+                                access_token,
+                                UriResource {
+                                    collection: resource_state.collection,
+                                    account_id: resource_state.account_id,
+                                    resource: resource_state.path.into(),
+                                },
+                            )
                             .await
                             .caused_by(trc::location!())?
                             .map(|uri| uri.resource)

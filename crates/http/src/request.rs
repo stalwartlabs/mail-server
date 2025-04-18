@@ -14,8 +14,9 @@ use common::{
     listener::{SessionData, SessionManager, SessionStream},
     manager::webadmin::Resource,
 };
-use dav::{DavMethod, DavResource, request::DavRequestHandler};
+use dav::{DavMethod, request::DavRequestHandler};
 use directory::Permission;
+use groupware::DavResourceName;
 use http_proto::{
     DownloadResponse, HttpContext, HttpRequest, HttpResponse, HttpResponseBody, HttpSessionData,
     JsonProblemResponse, ToHttpResponse, form_urlencoded, request::fetch_body,
@@ -206,12 +207,21 @@ impl ParseHttp for Server {
             }
             "dav" => {
                 let response = match (
-                    path.next().and_then(DavResource::parse),
+                    path.next().and_then(DavResourceName::parse),
                     DavMethod::parse(req.method()),
                 ) {
-                    (Some(resource), Some(DavMethod::OPTIONS)) => {
-                        resource.into_options_response(path.count())
-                    }
+                    (Some(_), Some(DavMethod::OPTIONS)) => HttpResponse::new(StatusCode::OK)
+                        .with_header(
+                            "DAV",
+                            "1, 2, 3, access-control, extended-mkcol, calendar-access, addressbook",
+                        )
+                        .with_header(
+                            "Allow",
+                            concat!(
+                                "OPTIONS, GET, HEAD, POST, PUT, DELETE, COPY, MOVE, MKCALENDAR, ",
+                                "MKCOL, PROPFIND, PROPPATCH, LOCK, UNLOCK, REPORT, ACL"
+                            ),
+                        ),
                     (Some(resource), Some(method)) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
@@ -237,17 +247,15 @@ impl ParseHttp for Server {
                         .await
                         .map(|s| s.into_http_response());
                 }
-                ("caldav", &Method::GET) => {
-                    let base_url = ctx.resolve_response_url(self).await;
+                ("caldav", _) => {
                     return Ok(HttpResponse::new(StatusCode::TEMPORARY_REDIRECT)
                         .with_no_cache()
-                        .with_location(format!("{base_url}/dav/cal")));
+                        .with_location(DavResourceName::Cal.base_path()));
                 }
-                ("carddav", &Method::GET) => {
-                    let base_url = ctx.resolve_response_url(self).await;
+                ("carddav", _) => {
                     return Ok(HttpResponse::new(StatusCode::TEMPORARY_REDIRECT)
                         .with_no_cache()
-                        .with_location(format!("{base_url}/dav/card")));
+                        .with_location(DavResourceName::Card.base_path()));
                 }
                 ("oauth-authorization-server", &Method::GET) => {
                     // Limit anonymous requests

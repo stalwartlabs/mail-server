@@ -14,7 +14,7 @@ use crate::{Depth, Timeout};
 use super::{
     request::{DavPropertyValue, DeadElementTag, DeadProperty},
     response::{Ace, AclRestrictions, Href, List, SupportedPrivilege},
-    Collation,
+    Collation, Namespace,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +58,8 @@ pub enum WebDavProperty {
     AclRestrictions,
     InheritedAclSet,
     PrincipalCollectionSet,
+    // Apple proprietary properties
+    GetCTag,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,7 +190,10 @@ pub struct Comp(pub ICalendarComponentType);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
-pub struct SupportedCollation(pub Collation);
+pub struct SupportedCollation {
+    pub collation: Collation,
+    pub namespace: Namespace,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
@@ -257,6 +262,41 @@ pub enum Privilege {
     ReadFreeBusy,
 }
 
+impl Privilege {
+    pub fn all(is_calendar: bool) -> Vec<Privilege> {
+        if is_calendar {
+            vec![
+                Privilege::All,
+                Privilege::Read,
+                Privilege::Write,
+                Privilege::WriteProperties,
+                Privilege::WriteContent,
+                Privilege::Unlock,
+                Privilege::ReadAcl,
+                Privilege::ReadCurrentUserPrivilegeSet,
+                Privilege::WriteAcl,
+                Privilege::Bind,
+                Privilege::Unbind,
+                Privilege::ReadFreeBusy,
+            ]
+        } else {
+            vec![
+                Privilege::All,
+                Privilege::Read,
+                Privilege::Write,
+                Privilege::WriteProperties,
+                Privilege::WriteContent,
+                Privilege::Unlock,
+                Privilege::ReadAcl,
+                Privilege::ReadCurrentUserPrivilegeSet,
+                Privilege::WriteAcl,
+                Privilege::Bind,
+                Privilege::Unbind,
+            ]
+        }
+    }
+}
+
 impl From<DavProperty> for DavPropertyValue {
     fn from(value: DavProperty) -> Self {
         DavPropertyValue {
@@ -301,5 +341,46 @@ impl DavProperty {
                 | DavProperty::CardDav(CardDavProperty::SupportedCollationSet)
                 | DavProperty::CardDav(CardDavProperty::MaxResourceSize),
         )
+    }
+}
+
+impl ReportSet {
+    pub fn calendar() -> Vec<ReportSet> {
+        vec![
+            ReportSet::SyncCollection,
+            ReportSet::AclPrincipalPropSet,
+            ReportSet::PrincipalMatch,
+            ReportSet::ExpandProperty,
+            ReportSet::CalendarQuery,
+            ReportSet::CalendarMultiGet,
+            ReportSet::FreeBusyQuery,
+        ]
+    }
+
+    pub fn addressbook() -> Vec<ReportSet> {
+        vec![
+            ReportSet::SyncCollection,
+            ReportSet::AclPrincipalPropSet,
+            ReportSet::PrincipalMatch,
+            ReportSet::ExpandProperty,
+            ReportSet::AddressbookQuery,
+            ReportSet::AddressbookMultiGet,
+        ]
+    }
+
+    pub fn file() -> Vec<ReportSet> {
+        vec![
+            ReportSet::SyncCollection,
+            ReportSet::AclPrincipalPropSet,
+            ReportSet::PrincipalMatch,
+        ]
+    }
+
+    pub fn principal() -> Vec<ReportSet> {
+        vec![
+            ReportSet::PrincipalPropertySearch,
+            ReportSet::PrincipalSearchPropertySet,
+            ReportSet::PrincipalMatch,
+        ]
     }
 }

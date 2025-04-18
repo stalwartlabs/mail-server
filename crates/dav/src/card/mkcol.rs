@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-use super::{insert_addressbook, proppatch::CardPropPatchRequestHandler};
+use super::proppatch::CardPropPatchRequestHandler;
 
 pub(crate) trait CardMkColRequestHandler: Sync + Send {
     fn handle_card_mkcol_request(
@@ -54,7 +54,7 @@ impl CardMkColRequestHandler for Server {
         if name.contains('/') || !access_token.is_member(account_id) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         } else if self
-            .fetch_dav_resources(account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
             .await
             .caused_by(trc::location!())?
             .paths
@@ -109,15 +109,8 @@ impl CardMkColRequestHandler for Server {
             .assign_document_ids(account_id, Collection::AddressBook, 1)
             .await
             .caused_by(trc::location!())?;
-        insert_addressbook(
-            access_token,
-            book,
-            account_id,
-            document_id,
-            false,
-            &mut batch,
-        )
-        .caused_by(trc::location!())?;
+        book.insert(access_token, account_id, document_id, &mut batch)
+            .caused_by(trc::location!())?;
         self.commit_batch(batch).await.caused_by(trc::location!())?;
 
         if let Some(prop_stat) = return_prop_stat {

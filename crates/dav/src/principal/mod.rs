@@ -8,7 +8,7 @@ use common::auth::AccessToken;
 use dav_proto::schema::response::Href;
 use percent_encoding::NON_ALPHANUMERIC;
 
-use crate::DavResource;
+use crate::DavResourceName;
 
 pub mod matching;
 pub mod propfind;
@@ -21,8 +21,8 @@ pub trait CurrentUserPrincipal {
 impl CurrentUserPrincipal for AccessToken {
     fn current_user_principal(&self) -> Href {
         Href(format!(
-            "{}/{}",
-            DavResource::Principal.base_path(),
+            "{}/{}/",
+            DavResourceName::Principal.base_path(),
             percent_encoding::utf8_percent_encode(&self.name, NON_ALPHANUMERIC)
         ))
     }

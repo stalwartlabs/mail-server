@@ -13,10 +13,7 @@ use dav_proto::schema::{
     request::{PrincipalPropertySearch, PropFind},
     response::MultiStatus,
 };
-use directory::{
-    Type,
-    backend::internal::{PrincipalField, manage::ManageDirectory},
-};
+use directory::{Type, backend::internal::manage::ManageDirectory};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;

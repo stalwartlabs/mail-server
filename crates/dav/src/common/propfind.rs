@@ -13,11 +13,13 @@ use common::{
 };
 use dav_proto::{
     Depth, RequestHeaders,
+    parser::header::dav_base_uri,
     schema::{
-        Collation,
+        Collation, Namespace,
         property::{
-            ActiveLock, CardDavProperty, DavProperty, DavValue, Privilege, ResourceType,
-            Rfc1123DateTime, SupportedCollation, SupportedLock, WebDavProperty,
+            ActiveLock, CardDavProperty, DavProperty, DavValue, PrincipalProperty, Privilege,
+            ReportSet, ResourceType, Rfc1123DateTime, SupportedCollation, SupportedLock,
+            WebDavProperty,
         },
         request::{DavPropertyValue, PropFind},
         response::{
@@ -26,14 +28,12 @@ use dav_proto::{
         },
     },
 };
-use directory::{
-    Type,
-    backend::internal::{PrincipalField, manage::ManageDirectory},
-};
-use groupware::hierarchy::DavHierarchy;
+use directory::{Type, backend::internal::manage::ManageDirectory};
+use groupware::{DavResourceName, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
+use percent_encoding::NON_ALPHANUMERIC;
 use store::{
     ahash::AHashMap,
     query::log::Query,
@@ -97,6 +97,7 @@ pub(crate) struct PropFindAccountQuota {
     pub available: u64,
 }
 
+#[derive(Debug)]
 pub(crate) struct PropFindItem {
     pub name: String,
     pub account_id: u32,
@@ -155,7 +156,11 @@ impl PropFindRequestHandler for Server {
 
                     if let Some(resource) = resource.resource {
                         response.add_response(Response::new_status(
-                            [headers.format_to_base_uri(resource)],
+                            [format!(
+                                "{}/{}",
+                                headers.base_uri().unwrap_or_default(),
+                                resource
+                            )],
                             StatusCode::NOT_FOUND,
                         ));
                     } else {
@@ -179,40 +184,102 @@ impl PropFindRequestHandler for Server {
 
             // Add container info
             if !headers.depth_no_root {
-                let mut prop_stat = match &request {
-                    PropFind::PropName | PropFind::AllProp(_) => {
-                        vec![
-                            DavPropertyValue::empty(DavProperty::WebDav(
-                                WebDavProperty::ResourceType,
-                            )),
-                            DavPropertyValue::empty(DavProperty::WebDav(
-                                WebDavProperty::CurrentUserPrincipal,
-                            )),
-                        ]
+                let properties = match &request {
+                    PropFind::PropName => {
+                        response.add_response(Response::new_propstat(
+                            resource.collection_path(),
+                            vec![PropStat::new_list(vec![
+                                DavPropertyValue::empty(DavProperty::WebDav(
+                                    WebDavProperty::ResourceType,
+                                )),
+                                DavPropertyValue::empty(DavProperty::WebDav(
+                                    WebDavProperty::CurrentUserPrincipal,
+                                )),
+                                DavPropertyValue::empty(DavProperty::WebDav(
+                                    WebDavProperty::SupportedReportSet,
+                                )),
+                            ])],
+                        ));
+                        &[]
                     }
-                    PropFind::Prop(items) => {
-                        items.iter().cloned().map(DavPropertyValue::empty).collect()
-                    }
+                    PropFind::AllProp(_) => [
+                        DavProperty::WebDav(WebDavProperty::ResourceType),
+                        DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+                        DavProperty::WebDav(WebDavProperty::SupportedReportSet),
+                    ]
+                    .as_slice(),
+                    PropFind::Prop(items) => items,
                 };
 
                 if !matches!(request, PropFind::PropName) {
-                    for prop in &mut prop_stat {
-                        match &prop.property {
+                    let mut fields = Vec::with_capacity(properties.len());
+                    let mut fields_not_found = Vec::new();
+
+                    for prop in properties {
+                        match &prop {
                             DavProperty::WebDav(WebDavProperty::ResourceType) => {
-                                prop.value = vec![ResourceType::Collection].into();
+                                fields.push(DavPropertyValue::new(
+                                    prop.clone(),
+                                    vec![ResourceType::Collection],
+                                ));
                             }
                             DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal) => {
-                                prop.value = vec![access_token.current_user_principal()].into();
+                                fields.push(DavPropertyValue::new(
+                                    prop.clone(),
+                                    vec![access_token.current_user_principal()],
+                                ));
                             }
-                            _ => (),
+                            DavProperty::Principal(PrincipalProperty::AddressbookHomeSet) => {
+                                fields.push(DavPropertyValue::new(
+                                    prop.clone(),
+                                    vec![Href(format!(
+                                        "{}/{}/",
+                                        DavResourceName::Card.base_path(),
+                                        percent_encoding::utf8_percent_encode(
+                                            &access_token.name,
+                                            NON_ALPHANUMERIC
+                                        ),
+                                    ))],
+                                ));
+                                response.set_namespace(Namespace::CardDav);
+                            }
+                            DavProperty::WebDav(WebDavProperty::SupportedReportSet) => {
+                                let reports = match resource.collection {
+                                    Collection::Principal => ReportSet::principal(),
+                                    Collection::Calendar | Collection::CalendarEvent => {
+                                        ReportSet::calendar()
+                                    }
+                                    Collection::AddressBook | Collection::ContactCard => {
+                                        ReportSet::addressbook()
+                                    }
+                                    _ => ReportSet::file(),
+                                };
+
+                                fields.push(DavPropertyValue::new(prop.clone(), reports));
+                            }
+                            _ => {
+                                fields_not_found.push(DavPropertyValue::empty(prop.clone()));
+                            }
                         }
                     }
-                }
 
-                response.add_response(Response::new_propstat(
-                    resource.base_path(),
-                    vec![PropStat::new_list(prop_stat)],
-                ));
+                    let mut prop_stat = Vec::with_capacity(2);
+
+                    if !fields.is_empty() {
+                        prop_stat.push(PropStat::new_list(fields));
+                    }
+
+                    if !fields_not_found.is_empty() {
+                        prop_stat.push(
+                            PropStat::new_list(fields_not_found).with_status(StatusCode::NOT_FOUND),
+                        );
+                    }
+
+                    response.add_response(Response::new_propstat(
+                        resource.collection_path(),
+                        prop_stat,
+                    ));
+                }
             }
 
             if return_children {
@@ -259,8 +326,11 @@ impl PropFindRequestHandler for Server {
         let mut data = PropFindData::new();
         let collection_container;
         let collection_children;
+        let mut ctag = None;
         let mut paths;
         let mut query_filter = None;
+
+        //let c = println!("handling DAV query {query:#?}");
 
         match std::mem::take(&mut query.resource) {
             DavQueryResource::Uri(resource) => {
@@ -268,10 +338,11 @@ impl PropFindRequestHandler for Server {
                 collection_container = resource.collection;
                 collection_children = collection_container.child_collection().unwrap();
                 let resources = self
-                    .fetch_dav_resources(account_id, collection_container)
+                    .fetch_dav_resources(access_token, account_id, collection_container)
                     .await
                     .caused_by(trc::location!())?;
                 response.set_namespace(collection_container.namespace());
+                ctag = Some(resources.modseq.unwrap_or_default());
 
                 // Obtain document ids
                 let mut document_ids = if !access_token.is_member(account_id) {
@@ -335,7 +406,9 @@ impl PropFindRequestHandler for Server {
                                 .as_ref()
                                 .is_none_or(|d| d.contains(item.document_id))
                         })
-                        .map(|item| PropFindItem::new(query.base_uri, account_id, item))
+                        .map(|item| {
+                            PropFindItem::new(resources.format_resource(item), account_id, item)
+                        })
                         .collect::<Vec<_>>()
                 } else {
                     if !query.depth_no_root || query.from_change_id.is_none() {
@@ -353,6 +426,7 @@ impl PropFindRequestHandler for Server {
                                 .with_xml_body(response.to_string()));
                         }
                     }
+
                     resources
                         .tree_with_depth(query.depth - 1)
                         .filter(|item| {
@@ -360,15 +434,19 @@ impl PropFindRequestHandler for Server {
                                 .as_ref()
                                 .is_none_or(|d| d.contains(item.document_id))
                         })
-                        .map(|item| PropFindItem::new(query.base_uri, account_id, item))
+                        .map(|item| {
+                            PropFindItem::new(resources.format_resource(item), account_id, item)
+                        })
                         .collect::<Vec<_>>()
                 };
 
                 if paths.is_empty() && query.from_change_id.is_none() {
-                    response.add_response(Response::new_status(
-                        [query.format_to_base_uri(resource.resource.unwrap_or_default())],
-                        StatusCode::NOT_FOUND,
-                    ));
+                    if let Some(resource) = resource.resource {
+                        response.add_response(Response::new_status(
+                            [resources.format_item(resource)],
+                            StatusCode::NOT_FOUND,
+                        ));
+                    }
 
                     return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
                         .with_xml_body(response.to_string()));
@@ -409,7 +487,7 @@ impl PropFindRequestHandler for Server {
                             resources.clone()
                         } else {
                             let resources = self
-                                .fetch_dav_resources(account_id, collection_container)
+                                .fetch_dav_resources(access_token, account_id, collection_container)
                                 .await
                                 .caused_by(trc::location!())?;
                             let document_ids = Arc::new(if !access_token.is_member(account_id) {
@@ -430,6 +508,15 @@ impl PropFindRequestHandler for Server {
                             (resources, document_ids)
                         };
 
+                    let c = println!(
+                        "resources: {:?} resource: {resource:?}",
+                        resources
+                            .paths
+                            .iter()
+                            .map(|r| r.name.to_string())
+                            .collect::<Vec<_>>()
+                    );
+
                     if let Some(resource) = resource
                         .resource
                         .and_then(|name| resources.paths.by_name(name))
@@ -440,7 +527,11 @@ impl PropFindRequestHandler for Server {
                                 .as_ref()
                                 .is_none_or(|docs| docs.contains(resource.document_id))
                             {
-                                paths.push(PropFindItem::new(query.base_uri, account_id, resource));
+                                paths.push(PropFindItem::new(
+                                    resources.format_resource(resource),
+                                    account_id,
+                                    resource,
+                                ));
                             } else {
                                 response.add_response(
                                     Response::new_status([item], StatusCode::FORBIDDEN)
@@ -484,7 +575,7 @@ impl PropFindRequestHandler for Server {
         }
 
         let mut is_all_prop = false;
-        let todo = "prop lists";
+        let todo = "prop lists for calendar";
         let properties = match &query.propfind {
             PropFind::PropName => {
                 let (container_props, children_props) = match collection_container {
@@ -636,6 +727,25 @@ impl PropFindRequestHandler for Server {
                                 DavValue::String(archive_.etag()),
                             ));
                         }
+                        WebDavProperty::GetCTag => {
+                            if item.is_container {
+                                let ctag = if let Some(ctag) = ctag {
+                                    ctag
+                                } else {
+                                    self.store()
+                                        .get_last_change_id(account_id, collection)
+                                        .await?
+                                        .unwrap_or_default()
+                                };
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    DavValue::String(format!("\"{ctag}\"")),
+                                ));
+                            } else {
+                                fields_not_found.push(DavPropertyValue::empty(property.clone()));
+                            }
+                            response.set_namespace(Namespace::CalendarServer);
+                        }
                         WebDavProperty::GetLastModified => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
@@ -651,7 +761,7 @@ impl PropFindRequestHandler for Server {
                         }
                         WebDavProperty::LockDiscovery => {
                             if let Some(locks) = data
-                                .locks(self, account_id, collection_container, &query, &item)
+                                .locks(self, account_id, collection_container, &item)
                                 .await
                                 .caused_by(trc::location!())?
                             {
@@ -793,7 +903,11 @@ impl PropFindRequestHandler for Server {
                             if let Some(acls) = archive.acls() {
                                 fields.push(DavPropertyValue::new(
                                     property.clone(),
-                                    access_token.current_privilege_set(account_id, acls),
+                                    access_token.current_privilege_set(
+                                        account_id,
+                                        acls,
+                                        collection_container == Collection::Calendar,
+                                    ),
                                 ));
                             } else if !is_all_prop {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
@@ -825,7 +939,9 @@ impl PropFindRequestHandler for Server {
                         WebDavProperty::PrincipalCollectionSet => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                vec![Href(crate::DavResource::Principal.base_path().to_string())],
+                                vec![Href(
+                                    DavResourceName::Principal.collection_path().to_string(),
+                                )],
                             ));
                         }
                     },
@@ -862,9 +978,14 @@ impl PropFindRequestHandler for Server {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
                                 DavValue::Collations(List(vec![
-                                    SupportedCollation(Collation::AsciiCasemap),
-                                    SupportedCollation(Collation::UnicodeCasemap),
-                                    SupportedCollation(Collation::Octet),
+                                    SupportedCollation {
+                                        collation: Collation::AsciiCasemap,
+                                        namespace: Namespace::CardDav,
+                                    },
+                                    SupportedCollation {
+                                        collation: Collation::UnicodeCasemap,
+                                        namespace: Namespace::CardDav,
+                                    },
                                 ])),
                             ));
                         }
@@ -970,7 +1091,7 @@ impl PropFindRequestHandler for Server {
         } else if let Some(tenant) = resource_token.tenant.filter(|t| t.quota > 0) {
             tenant.quota
         } else {
-            u64::MAX
+            u32::MAX as u64
         };
         let used = self
             .get_used_quota(account_id)
@@ -985,9 +1106,9 @@ impl PropFindRequestHandler for Server {
 }
 
 impl PropFindItem {
-    pub fn new(base_uri: &str, account_id: u32, resource: &DavResource) -> Self {
+    pub fn new(name: String, account_id: u32, resource: &DavResource) -> Self {
         Self {
-            name: format!("{}{}", base_uri, resource.name),
+            name,
             account_id,
             document_id: resource.document_id,
             is_container: resource.is_container,
@@ -1062,7 +1183,6 @@ impl PropFindData {
         server: &Server,
         account_id: u32,
         collection_container: Collection,
-        query: &DavQuery<'_>,
         item: &PropFindItem,
     ) -> trc::Result<Option<Vec<ActiveLock>>> {
         let data = self.accounts.entry(account_id).or_default();
@@ -1081,11 +1201,12 @@ impl PropFindData {
         }
 
         if let Some(lock_data) = &data.locks {
+            let base_uri = dav_base_uri(&item.name).unwrap_or_default();
             lock_data.unarchive::<LockData>().map(|locks| {
                 locks
-                    .find_locks(&item.name.strip_prefix(query.base_uri).unwrap()[1..], false)
+                    .find_locks(&item.name.strip_prefix(base_uri).unwrap()[1..], false)
                     .iter()
-                    .map(|(path, lock)| lock.to_active_lock(query.format_to_base_uri(path)))
+                    .map(|(path, lock)| lock.to_active_lock(format!("{base_uri}/{path}")))
                     .collect::<Vec<_>>()
                     .into()
             })

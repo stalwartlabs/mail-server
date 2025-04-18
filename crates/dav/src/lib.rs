@@ -12,19 +12,10 @@ pub mod principal;
 pub mod request;
 
 use dav_proto::schema::response::Condition;
-use http_proto::HttpResponse;
+use groupware::DavResourceName;
 use hyper::{Method, StatusCode};
-use jmap_proto::types::collection::Collection;
 
 pub(crate) type Result<T> = std::result::Result<T, DavError>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DavResource {
-    Card,
-    Cal,
-    File,
-    Principal,
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum DavMethod {
@@ -79,86 +70,6 @@ impl DavErrorCondition {
             code,
             condition: condition.into(),
         }
-    }
-}
-
-impl From<DavResource> for Collection {
-    fn from(value: DavResource) -> Self {
-        match value {
-            DavResource::Card => Collection::AddressBook,
-            DavResource::Cal => Collection::Calendar,
-            DavResource::File => Collection::FileNode,
-            DavResource::Principal => Collection::Principal,
-        }
-    }
-}
-
-impl From<Collection> for DavResource {
-    fn from(value: Collection) -> Self {
-        match value {
-            Collection::AddressBook => DavResource::Card,
-            Collection::Calendar => DavResource::Cal,
-            Collection::FileNode => DavResource::File,
-            Collection::Principal => DavResource::Principal,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl DavResource {
-    pub fn parse(service: &str) -> Option<Self> {
-        hashify::tiny_map!(service.as_bytes(),
-            "card" => DavResource::Card,
-            "cal" => DavResource::Cal,
-            "file" => DavResource::File,
-            "pal" => DavResource::Principal,
-        )
-    }
-
-    pub fn base_path(&self) -> &'static str {
-        match self {
-            DavResource::Card => "/dav/card",
-            DavResource::Cal => "/dav/cal",
-            DavResource::File => "/dav/file",
-            DavResource::Principal => "/dav/pal",
-        }
-    }
-
-    pub fn into_options_response(self, depth: usize) -> HttpResponse {
-        /*
-           Depth:
-           0 -> /dav/{resource_type}
-           1 -> /dav/{resource_type}/{account_id}
-           2 -> /dav/{resource_type}/{account_id}/{resource}
-
-        */
-        let dav = match self {
-            DavResource::Cal => "1, 2, 3, access-control, extended-mkcol, calendar-access",
-            DavResource::Card => "1, 2, 3, access-control, extended-mkcol, addressbook",
-            DavResource::File => "1, 2, 3, access-control, extended-mkcol",
-            DavResource::Principal => "1, 2, 3, access-control",
-        };
-        let allow = match depth {
-            0 => "OPTIONS, PROPFIND, REPORT",
-            1 => {
-                if self != DavResource::Principal {
-                    "OPTIONS, PROPFIND, MKCOL, REPORT"
-                } else {
-                    "OPTIONS, PROPFIND, REPORT"
-                }
-            }
-            _ => {
-                if self != DavResource::Principal {
-                    "OPTIONS, GET, HEAD, POST, PUT, DELETE, COPY, MOVE, MKCOL, PROPFIND, PROPPATCH, LOCK, UNLOCK, REPORT, ACL"
-                } else {
-                    "OPTIONS, PROPFIND, REPORT"
-                }
-            }
-        };
-
-        HttpResponse::new(StatusCode::OK)
-            .with_header("DAV", dav)
-            .with_header("Allow", allow)
     }
 }
 

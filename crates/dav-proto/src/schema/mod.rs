@@ -20,10 +20,31 @@ pub struct NamedElement {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
+#[repr(u8)]
 pub enum Namespace {
     Dav,
     CalDav,
     CardDav,
+    CalendarServer,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
+pub struct Namespaces {
+    pub(crate) cal: bool,
+    pub(crate) card: bool,
+    pub(crate) cs: bool,
+}
+
+impl Namespaces {
+    pub fn set(&mut self, ns: Namespace) {
+        match ns {
+            Namespace::CalDav => self.cal = true,
+            Namespace::CardDav => self.card = true,
+            Namespace::CalendarServer => self.cs = true,
+            Namespace::Dav => {}
+        }
+    }
 }
 
 impl Namespace {
@@ -31,8 +52,19 @@ impl Namespace {
         hashify::tiny_map!(value,
             "DAV:" => Namespace::Dav,
             "urn:ietf:params:xml:ns:caldav" => Namespace::CalDav,
-            "urn:ietf:params:xml:ns:carddav" => Namespace::CardDav
+            "urn:ietf:params:xml:ns:carddav" => Namespace::CardDav,
+            "http://calendarserver.org/ns/" => Namespace::CalendarServer,
+            "http://calendarserver.org/ns" => Namespace::CalendarServer
         )
+    }
+
+    pub fn prefix(&self) -> &str {
+        match self {
+            Namespace::Dav => "D",
+            Namespace::CalDav => "A",
+            Namespace::CardDav => "B",
+            Namespace::CalendarServer => "C",
+        }
     }
 }
 
@@ -42,6 +74,7 @@ impl AsRef<str> for Namespace {
             Namespace::Dav => "DAV:",
             Namespace::CalDav => "urn:ietf:params:xml:ns:caldav",
             Namespace::CardDav => "urn:ietf:params:xml:ns:carddav",
+            Namespace::CalendarServer => "http://calendarserver.org/ns/",
         }
     }
 }
@@ -163,6 +196,7 @@ pub enum Element {
     Getcontentlanguage,
     Getcontentlength,
     Getcontenttype,
+    Getctag,
     Getetag,
     Getlastmodified,
     Grammar,
@@ -543,6 +577,7 @@ impl Element {
             "getcontentlength" => Element::Getcontentlength,
             "getcontenttype" => Element::Getcontenttype,
             "getetag" => Element::Getetag,
+            "getctag" => Element::Getctag,
             "getlastmodified" => Element::Getlastmodified,
             "grammar" => Element::Grammar,
             "grant" => Element::Grant,
@@ -927,6 +962,7 @@ impl AsRef<str> for Element {
             Element::Getcontentlength => "getcontentlength",
             Element::Getcontenttype => "getcontenttype",
             Element::Getetag => "getetag",
+            Element::Getctag => "getctag",
             Element::Getlastmodified => "getlastmodified",
             Element::Grammar => "grammar",
             Element::Grant => "grant",

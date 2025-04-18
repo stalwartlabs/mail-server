@@ -4,18 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{
-    Server, auth::AccessToken, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder,
-};
+use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use dav_proto::RequestHeaders;
 use groupware::{
-    contact::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard},
+    DestroyArchive,
+    contact::{AddressBook, ContactCard},
     hierarchy::DavHierarchy,
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
-use store::write::{Archive, BatchBuilder};
+use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
@@ -52,7 +51,7 @@ impl CardDeleteRequestHandler for Server {
             .filter(|r| !r.is_empty())
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
         let resources = self
-            .fetch_dav_resources(account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
             .await
             .caused_by(trc::location!())?;
 
@@ -105,21 +104,21 @@ impl CardDeleteRequestHandler for Server {
             .await?;
 
             // Delete addressbook and cards
-            delete_address_book_and_cards(
-                self,
-                access_token,
-                account_id,
-                document_id,
-                resources
-                    .subtree(delete_path)
-                    .filter(|r| !r.is_container)
-                    .map(|r| r.document_id)
-                    .collect::<Vec<_>>(),
-                book,
-                &mut batch,
-            )
-            .await
-            .caused_by(trc::location!())?;
+            DestroyArchive(book)
+                .delete_with_cards(
+                    self,
+                    access_token,
+                    account_id,
+                    document_id,
+                    resources
+                        .subtree(delete_path)
+                        .filter(|r| !r.is_container)
+                        .map(|r| r.document_id)
+                        .collect::<Vec<_>>(),
+                    &mut batch,
+                )
+                .await
+                .caused_by(trc::location!())?;
         } else {
             // Validate ACL
             let addressbook_id = delete_resource.parent_id.unwrap();
@@ -162,14 +161,16 @@ impl CardDeleteRequestHandler for Server {
             .await?;
 
             // Delete card
-            delete_card(
+            DestroyArchive(
+                card_
+                    .to_unarchived::<ContactCard>()
+                    .caused_by(trc::location!())?,
+            )
+            .delete(
                 access_token,
                 account_id,
                 document_id,
                 addressbook_id,
-                card_
-                    .to_unarchived::<ContactCard>()
-                    .caused_by(trc::location!())?,
                 &mut batch,
             )
             .caused_by(trc::location!())?;
@@ -179,112 +180,4 @@ impl CardDeleteRequestHandler for Server {
 
         Ok(HttpResponse::new(StatusCode::NO_CONTENT))
     }
-}
-
-pub(crate) async fn delete_address_book_and_cards(
-    server: &Server,
-    access_token: &AccessToken,
-    account_id: u32,
-    document_id: u32,
-    children_ids: Vec<u32>,
-    book: Archive<&ArchivedAddressBook>,
-    batch: &mut BatchBuilder,
-) -> trc::Result<()> {
-    // Process deletions
-    let addressbook_id = document_id;
-    for document_id in children_ids {
-        if let Some(card_) = server
-            .get_archive(account_id, Collection::ContactCard, document_id)
-            .await?
-        {
-            delete_card(
-                access_token,
-                account_id,
-                document_id,
-                addressbook_id,
-                card_
-                    .to_unarchived::<ContactCard>()
-                    .caused_by(trc::location!())?,
-                batch,
-            )?;
-        }
-    }
-
-    delete_address_book(access_token, account_id, document_id, book, batch)?;
-
-    Ok(())
-}
-
-pub(crate) fn delete_address_book(
-    access_token: &AccessToken,
-    account_id: u32,
-    document_id: u32,
-    book: Archive<&ArchivedAddressBook>,
-    batch: &mut BatchBuilder,
-) -> trc::Result<()> {
-    // Delete addressbook
-    batch
-        .with_account_id(account_id)
-        .with_collection(Collection::AddressBook)
-        .delete_document(document_id)
-        .custom(
-            ObjectIndexBuilder::<_, ()>::new()
-                .with_tenant_id(access_token)
-                .with_current(book),
-        )
-        .caused_by(trc::location!())?
-        .commit_point();
-
-    Ok(())
-}
-
-pub(crate) fn delete_card(
-    access_token: &AccessToken,
-    account_id: u32,
-    document_id: u32,
-    addressbook_id: u32,
-    card: Archive<&ArchivedContactCard>,
-    batch: &mut BatchBuilder,
-) -> trc::Result<()> {
-    if let Some(delete_idx) = card
-        .inner
-        .names
-        .iter()
-        .position(|name| name.parent_id == addressbook_id)
-    {
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::ContactCard);
-
-        if card.inner.names.len() > 1 {
-            // Unlink addressbook id from card
-            let mut new_card = card
-                .deserialize::<ContactCard>()
-                .caused_by(trc::location!())?;
-            new_card.names.swap_remove(delete_idx);
-            batch
-                .update_document(document_id)
-                .custom(
-                    ObjectIndexBuilder::new()
-                        .with_tenant_id(access_token)
-                        .with_current(card)
-                        .with_changes(new_card),
-                )
-                .caused_by(trc::location!())?;
-        } else {
-            // Delete card
-            batch
-                .delete_document(document_id)
-                .custom(
-                    ObjectIndexBuilder::<_, ()>::new()
-                        .with_tenant_id(access_token)
-                        .with_current(card),
-                )
-                .caused_by(trc::location!())?;
-        }
-
-        batch.commit_point();
-    }
-
-    Ok(())
 }

@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use crate::schema::{
     response::{List, MkColResponse, PropStat},
-    Namespace,
+    Namespace, Namespaces,
 };
 
 impl Display for MkColResponse {
@@ -16,7 +16,7 @@ impl Display for MkColResponse {
         write!(
             f,
             "<D:mkcol-response {}>{}</D:mkcol-response>",
-            self.namespace, self.propstat
+            self.namespaces, self.propstat
         )
     }
 }
@@ -24,13 +24,13 @@ impl Display for MkColResponse {
 impl MkColResponse {
     pub fn new(propstat: Vec<PropStat>) -> Self {
         Self {
-            namespace: Namespace::Dav,
+            namespaces: Namespaces::default(),
             propstat: List(propstat),
         }
     }
 
     pub fn with_namespace(mut self, namespace: Namespace) -> Self {
-        self.namespace = namespace;
+        self.namespaces.set(namespace);
         self
     }
 }

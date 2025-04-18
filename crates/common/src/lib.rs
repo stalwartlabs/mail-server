@@ -242,6 +242,7 @@ pub struct DavResourceId {
 
 #[derive(Debug, Default)]
 pub struct DavResources {
+    pub base_path: String,
     pub paths: IdBimap<DavResource>,
     pub size: u64,
     pub modseq: Option<u64>,
@@ -479,7 +480,7 @@ impl DavResources {
         self.paths.iter().filter(move |item| {
             item.name
                 .strip_prefix(&prefix)
-                .is_some_and(|name| name.as_bytes().iter().filter(|&&c| c == b'/').count() <= depth)
+                .is_some_and(|name| name.as_bytes().iter().filter(|&&c| c == b'/').count() < depth)
                 || item.name == search_path
         })
     }
@@ -502,6 +503,22 @@ impl DavResources {
 
         let prefix = format!("{ancestor}/");
         descendant.starts_with(&prefix) || descendant == ancestor
+    }
+
+    pub fn format_resource(&self, resource: &DavResource) -> String {
+        if resource.is_container {
+            format!("{}{}/", self.base_path, resource.name)
+        } else {
+            format!("{}{}", self.base_path, resource.name)
+        }
+    }
+
+    pub fn format_collection(&self, name: &str) -> String {
+        format!("{}{name}/", self.base_path)
+    }
+
+    pub fn format_item(&self, name: &str) -> String {
+        format!("{}{}", self.base_path, name)
     }
 }
 

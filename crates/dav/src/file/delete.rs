@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{Server, auth::AccessToken};
 use dav_proto::RequestHeaders;
-use groupware::{file::FileNode, hierarchy::DavHierarchy};
+use groupware::{DestroyArchive, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
-use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
@@ -46,7 +45,7 @@ impl FileDeleteRequestHandler for Server {
             .filter(|r| !r.is_empty())
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
         let files = self
-            .fetch_dav_resources(account_id, Collection::FileNode)
+            .fetch_dav_resources(access_token, account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
 
@@ -91,51 +90,10 @@ impl FileDeleteRequestHandler for Server {
         )
         .await?;
 
-        delete_files(self, access_token, account_id, sorted_ids).await?;
+        DestroyArchive(sorted_ids)
+            .delete(self, access_token, account_id)
+            .await?;
 
         Ok(HttpResponse::new(StatusCode::NO_CONTENT))
     }
-}
-
-pub(crate) async fn delete_files(
-    server: &Server,
-    access_token: &AccessToken,
-    account_id: u32,
-    ids: Vec<u32>,
-) -> trc::Result<()> {
-    // Process deletions
-    let mut batch = BatchBuilder::new();
-    batch
-        .with_account_id(account_id)
-        .with_collection(Collection::FileNode);
-    for document_id in ids {
-        if let Some(node) = server
-            .get_archive(account_id, Collection::FileNode, document_id)
-            .await?
-        {
-            // Delete record
-            batch
-                .delete_document(document_id)
-                .custom(
-                    ObjectIndexBuilder::<_, ()>::new()
-                        .with_tenant_id(access_token)
-                        .with_current(
-                            node.to_unarchived::<FileNode>()
-                                .caused_by(trc::location!())?,
-                        ),
-                )
-                .caused_by(trc::location!())?
-                .commit_point();
-        }
-    }
-
-    // Write changes
-    if !batch.is_empty() {
-        server
-            .commit_batch(batch)
-            .await
-            .caused_by(trc::location!())?;
-    }
-
-    Ok(())
 }

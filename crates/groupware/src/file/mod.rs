@@ -5,7 +5,7 @@
  */
 
 pub mod index;
-
+pub mod storage;
 
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::value::AclGrant;

@@ -15,7 +15,7 @@ use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
 use trc::AddContext;
 
-use crate::{DavError, DavResource};
+use crate::{DavError, DavResourceName};
 
 #[derive(Debug)]
 pub(crate) struct UriResource<A, R> {
@@ -42,6 +42,7 @@ pub(crate) trait DavUriResource: Sync + Send {
 
     fn map_uri_resource(
         &self,
+        access_token: &AccessToken,
         uri: OwnedUri<'_>,
     ) -> impl Future<Output = trc::Result<Option<DocumentUri>>> + Send;
 }
@@ -63,7 +64,7 @@ impl DavUriResource for Server {
         let mut resource = UriResource {
             collection: uri_parts
                 .next()
-                .and_then(DavResource::parse)
+                .and_then(DavResourceName::parse)
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
                 .into(),
             account_id: None,
@@ -103,10 +104,14 @@ impl DavUriResource for Server {
         Ok(resource)
     }
 
-    async fn map_uri_resource(&self, uri: OwnedUri<'_>) -> trc::Result<Option<DocumentUri>> {
+    async fn map_uri_resource(
+        &self,
+        access_token: &AccessToken,
+        uri: OwnedUri<'_>,
+    ) -> trc::Result<Option<DocumentUri>> {
         if let Some(resource) = uri.resource {
             if let Some(resource) = self
-                .fetch_dav_resources(uri.account_id, uri.collection)
+                .fetch_dav_resources(access_token, uri.account_id, uri.collection)
                 .await
                 .caused_by(trc::location!())?
                 .paths
@@ -159,8 +164,8 @@ impl OwnedUri<'_> {
 }
 
 impl<A, R> UriResource<A, R> {
-    pub fn base_path(&self) -> &'static str {
-        DavResource::from(self.collection).base_path()
+    pub fn collection_path(&self) -> &'static str {
+        DavResourceName::from(self.collection).collection_path()
     }
 }
 

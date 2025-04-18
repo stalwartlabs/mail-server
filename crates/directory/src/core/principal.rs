@@ -310,7 +310,7 @@ impl Principal {
             typ: Type::Individual,
             name: "Fallback Administrator".into(),
             secrets: vec![fallback_pass.into()],
-            data: vec![PrincipalData::MemberOf(vec![ROLE_ADMIN])],
+            data: vec![PrincipalData::Roles(vec![ROLE_ADMIN])],
             description: Default::default(),
             emails: Default::default(),
             quota: Default::default(),

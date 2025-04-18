@@ -23,14 +23,12 @@ use trc::AddContext;
 use crate::{
     DavError, DavMethod,
     common::{
-        ETag,
+        ETag, ExtractETag,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
     file::DavFileResource,
 };
-
-use super::update_file_node;
 
 pub(crate) trait FilePropPatchRequestHandler: Sync + Send {
     fn handle_file_proppatch_request(
@@ -64,7 +62,7 @@ impl FilePropPatchRequestHandler for Server {
         let uri = headers.uri;
         let account_id = resource_.account_id;
         let files = self
-            .fetch_dav_resources(account_id, Collection::FileNode)
+            .fetch_dav_resources(access_token, account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource = files.map_resource(&resource_)?;
@@ -112,7 +110,7 @@ impl FilePropPatchRequestHandler for Server {
         .await?;
 
         // Deserialize
-        let mut new_node = node.deserialize().caused_by(trc::location!())?;
+        let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
 
         // Remove properties
         let mut items = Vec::with_capacity(request.remove.len() + request.set.len());
@@ -134,16 +132,16 @@ impl FilePropPatchRequestHandler for Server {
 
         let etag = if is_success {
             let mut batch = BatchBuilder::new();
-            let etag = update_file_node(
-                access_token,
-                node,
-                new_node,
-                account_id,
-                resource.resource,
-                true,
-                &mut batch,
-            )
-            .caused_by(trc::location!())?;
+            let etag = new_node
+                .update(
+                    access_token,
+                    node,
+                    account_id,
+                    resource.resource,
+                    &mut batch,
+                )
+                .caused_by(trc::location!())?
+                .etag();
             self.commit_batch(batch).await.caused_by(trc::location!())?;
             etag
         } else {

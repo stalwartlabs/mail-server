@@ -45,7 +45,7 @@ impl FileGetRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource_.account_id;
         let files = self
-            .fetch_dav_resources(account_id, Collection::FileNode)
+            .fetch_dav_resources(access_token, account_id, Collection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource = files.map_resource(&resource_)?;
