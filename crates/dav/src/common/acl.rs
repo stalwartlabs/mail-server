@@ -146,7 +146,21 @@ impl DavAclHandler for Server {
             let mut batch = BatchBuilder::new();
 
             match container {
-                ArchivedResource::Calendar(calendar) => todo!(),
+                ArchivedResource::Calendar(calendar) => {
+                    let mut new_calendar = calendar
+                        .deserialize::<Calendar>()
+                        .caused_by(trc::location!())?;
+                    new_calendar.acls = grants;
+                    new_calendar
+                        .update(
+                            access_token,
+                            calendar,
+                            account_id,
+                            resource.document_id,
+                            &mut batch,
+                        )
+                        .caused_by(trc::location!())?;
+                }
                 ArchivedResource::AddressBook(book) => {
                     let mut new_book = book
                         .deserialize::<AddressBook>()

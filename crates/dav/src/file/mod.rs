@@ -64,26 +64,6 @@ pub(crate) static FILE_ITEM_PROPS: [DavProperty; 19] = [
     DavProperty::WebDav(WebDavProperty::GetContentType),
 ];
 
-pub(crate) static FILE_ALL_PROPS: [DavProperty; 17] = [
-    DavProperty::WebDav(WebDavProperty::CreationDate),
-    DavProperty::WebDav(WebDavProperty::DisplayName),
-    DavProperty::WebDav(WebDavProperty::GetETag),
-    DavProperty::WebDav(WebDavProperty::GetLastModified),
-    DavProperty::WebDav(WebDavProperty::ResourceType),
-    DavProperty::WebDav(WebDavProperty::LockDiscovery),
-    DavProperty::WebDav(WebDavProperty::SupportedLock),
-    DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
-    DavProperty::WebDav(WebDavProperty::SyncToken),
-    DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
-    DavProperty::WebDav(WebDavProperty::AclRestrictions),
-    DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
-    DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
-    DavProperty::WebDav(WebDavProperty::GetContentLanguage),
-    DavProperty::WebDav(WebDavProperty::GetContentLength),
-    DavProperty::WebDav(WebDavProperty::GetContentType),
-    DavProperty::WebDav(WebDavProperty::SupportedReportSet),
-];
-
 pub(crate) trait FromDavResource {
     fn from_dav_resource(item: &DavResource) -> Self;
 }

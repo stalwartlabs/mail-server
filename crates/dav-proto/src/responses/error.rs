@@ -92,6 +92,7 @@ impl Display for CalCondition {
             }
             CalCondition::ValidCalendarData => write!(f, "<A:valid-calendar-data/>"),
             CalCondition::ValidFilter => write!(f, "<A:valid-filter/>"),
+            CalCondition::ValidTimezone => write!(f, "<A:valid-timezone/>"),
             CalCondition::ValidCalendarObjectResource => {
                 write!(f, "<A:valid-calendar-object-resource/>")
             }

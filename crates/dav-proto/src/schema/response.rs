@@ -63,6 +63,7 @@ pub struct List<T: Display>(pub Vec<T>);
 pub struct MkColResponse {
     pub namespaces: Namespaces,
     pub propstat: List<PropStat>,
+    pub mkcalendar: bool,
 }
 
 pub struct PropStat {
@@ -201,6 +202,7 @@ pub enum CalCondition {
     ValidCalendarData,
     ValidFilter,
     ValidCalendarObjectResource,
+    ValidTimezone,
     NoUidConflict(Href),
     InitializeCalendarCollection,
     SupportedCalendarData,

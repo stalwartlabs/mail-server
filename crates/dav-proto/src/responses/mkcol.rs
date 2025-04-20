@@ -13,11 +13,19 @@ use crate::schema::{
 
 impl Display for MkColResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "<D:mkcol-response {}>{}</D:mkcol-response>",
-            self.namespaces, self.propstat
-        )
+        if !self.mkcalendar {
+            write!(
+                f,
+                "<D:mkcol-response {}>{}</D:mkcol-response>",
+                self.namespaces, self.propstat
+            )
+        } else {
+            write!(
+                f,
+                "<A:mkcalendar-response {}>{}</A:mkcalendar-response>",
+                self.namespaces, self.propstat
+            )
+        }
     }
 }
 
@@ -26,7 +34,16 @@ impl MkColResponse {
         Self {
             namespaces: Namespaces::default(),
             propstat: List(propstat),
+            mkcalendar: false,
         }
+    }
+
+    pub fn with_mkcalendar(mut self, mkcalendar: bool) -> Self {
+        self.mkcalendar = mkcalendar;
+        if mkcalendar {
+            self.namespaces.set(Namespace::CalDav);
+        }
+        self
     }
 
     pub fn with_namespace(mut self, namespace: Namespace) -> Self {

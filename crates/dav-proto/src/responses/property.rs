@@ -4,14 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fmt::Display;
-
-use calcard::{icalendar::ICalendar, vcard::VCard};
-use mail_parser::{
-    parsers::fields::date::{DOW, MONTH},
-    DateTime,
-};
-
+use super::XmlEscape;
 use crate::schema::{
     property::{
         ActiveLock, CalDavProperty, CardDavProperty, Comp, DavProperty, DavValue, LockDiscovery,
@@ -22,8 +15,12 @@ use crate::schema::{
     response::{Ace, AclRestrictions, Href, List, PropResponse, SupportedPrivilege},
     Namespace, Namespaces,
 };
-
-use super::XmlEscape;
+use calcard::{icalendar::ICalendar, vcard::VCard};
+use mail_parser::{
+    parsers::fields::date::{DOW, MONTH},
+    DateTime,
+};
+use std::fmt::Display;
 
 impl Display for PropResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -90,6 +87,9 @@ impl Display for DavValue {
             DavValue::ICalendar(v) => {
                 write!(f, "<![CDATA[{v}]]>")
             }
+            DavValue::CData(v) => {
+                write!(f, "<![CDATA[{v}]]>")
+            }
             DavValue::Components(v) => v.fmt(f),
             DavValue::Collations(v) => v.fmt(f),
             DavValue::Href(v) => v.fmt(f),
@@ -105,7 +105,7 @@ impl Display for DavValue {
                         "<B:supported-address-data>",
                         "<B:address-data-type content-type=\"text/vcard\" version=\"4.0\"/>",
                         "<B:address-data-type content-type=\"text/vcard\" version=\"3.0\"/>",
-                        "<B:address-data-type content-type=\"text/vcard\" version=\"2.0\"/>",
+                        "<B:address-data-type content-type=\"text/vcard\" version=\"2.1\"/>",
                         "</B:supported-address-data>"
                     )
                 )
@@ -118,6 +118,28 @@ impl Display for DavValue {
                         "<A:calendar-data-type content-type=\"text/calendar\" version=\"2.0\"/>",
                         "<A:calendar-data-type content-type=\"text/calendar\" version=\"1.0\"/>",
                         "</A:supported-calendar-data>"
+                    )
+                )
+            }
+            DavValue::SupportedCalendarComponentSet => {
+                write!(
+                    f,
+                    concat!(
+                        "<A:supported-calendar-component-set>",
+                        "<A:comp name=\"VEVENT\"/>",
+                        "<A:comp name=\"VTODO\"/>",
+                        "<A:comp name=\"VJOURNAL\"/>",
+                        "<A:comp name=\"VFREEBUSY\"/>",
+                        "<A:comp name=\"VTIMEZONE\"/>",
+                        "<A:comp name=\"VALARM\"/>",
+                        "<A:comp name=\"STANDARD\"/>",
+                        "<A:comp name=\"DAYLIGHT\"/>",
+                        "<A:comp name=\"VAVAILABILITY\"/>",
+                        "<A:comp name=\"AVAILABLE\"/>",
+                        "<A:comp name=\"PARTICIPANT\"/>",
+                        "<A:comp name=\"VLOCATION\"/>",
+                        "<A:comp name=\"VRESOURCE\"/>",
+                        "</A:supported-calendar-component-set>"
                     )
                 )
             }
@@ -176,7 +198,6 @@ impl DavProperty {
                     CalDavProperty::MaxDateTime => "A:max-date-time",
                     CalDavProperty::MaxInstances => "A:max-instances",
                     CalDavProperty::MaxAttendeesPerInstance => "A:max-attendees-per-instance",
-                    CalDavProperty::CalendarHomeSet => "A:calendar-home-set",
                     CalDavProperty::CalendarData(_) => "A:calendar-data",
                     CalDavProperty::TimezoneServiceSet => "A:timezone-service-set",
                     CalDavProperty::TimezoneId => "A:calendar-timezone-id",
@@ -186,6 +207,7 @@ impl DavProperty {
                     PrincipalProperty::PrincipalURL => "D:principal-URL",
                     PrincipalProperty::GroupMemberSet => "D:group-member-set",
                     PrincipalProperty::GroupMembership => "D:group-membership",
+                    PrincipalProperty::CalendarHomeSet => "A:calendar-home-set",
                     PrincipalProperty::AddressbookHomeSet => "B:addressbook-home-set",
                     PrincipalProperty::PrincipalAddress => "B:principal-address",
                 },

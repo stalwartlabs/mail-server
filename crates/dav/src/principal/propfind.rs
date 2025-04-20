@@ -246,6 +246,17 @@ impl PrincipalPropFind for Server {
                                 ))],
                             ));
                         }
+                        PrincipalProperty::CalendarHomeSet => {
+                            fields.push(DavPropertyValue::new(
+                                property.clone(),
+                                vec![Href(format!(
+                                    "{}/{}/",
+                                    DavResourceName::Cal.base_path(),
+                                    percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+                                ))],
+                            ));
+                            response.set_namespace(Namespace::CalDav);
+                        }
                         PrincipalProperty::AddressbookHomeSet => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),

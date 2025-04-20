@@ -531,7 +531,7 @@ impl DavProperty {
                 Some(DavProperty::CalDav(CalDavProperty::MaxAttendeesPerInstance))
             }
             (Namespace::CalDav, Element::CalendarHomeSet) => {
-                Some(DavProperty::CalDav(CalDavProperty::CalendarHomeSet))
+                Some(DavProperty::Principal(PrincipalProperty::CalendarHomeSet))
             }
             (Namespace::CalDav, Element::CalendarData) => Some(DavProperty::CalDav(
                 CalDavProperty::CalendarData(Default::default()),

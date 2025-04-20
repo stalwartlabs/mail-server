@@ -4,38 +4,39 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::DestroyArchive;
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::collection::Collection;
 use store::write::{Archive, BatchBuilder, now};
 use trc::AddContext;
 
-use crate::DestroyArchive;
+use super::{
+    ArchivedCalendar, ArchivedCalendarEvent, Calendar, CalendarEvent, CalendarPreferences,
+};
 
-use super::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard};
-
-impl ContactCard {
+impl CalendarEvent {
     pub fn update<'x>(
         self,
         access_token: &AccessToken,
-        card: Archive<&ArchivedContactCard>,
+        event: Archive<&ArchivedCalendarEvent>,
         account_id: u32,
         document_id: u32,
         batch: &'x mut BatchBuilder,
     ) -> trc::Result<&'x mut BatchBuilder> {
-        let mut new_card = self;
+        let mut new_event = self;
 
-        // Build card
-        new_card.modified = now() as i64;
+        // Build event
+        new_event.modified = now() as i64;
 
         // Prepare write batch
         batch
             .with_account_id(account_id)
-            .with_collection(Collection::ContactCard)
+            .with_collection(Collection::CalendarEvent)
             .update_document(document_id)
             .custom(
                 ObjectIndexBuilder::new()
-                    .with_current(card)
-                    .with_changes(new_card)
+                    .with_current(event)
+                    .with_changes(new_event)
                     .with_tenant_id(access_token),
             )
             .map(|b| b.commit_point())
@@ -48,27 +49,27 @@ impl ContactCard {
         document_id: u32,
         batch: &'x mut BatchBuilder,
     ) -> trc::Result<&'x mut BatchBuilder> {
-        // Build card
-        let mut card = self;
+        // Build event
+        let mut event = self;
         let now = now() as i64;
-        card.modified = now;
-        card.created = now;
+        event.modified = now;
+        event.created = now;
 
         // Prepare write batch
         batch
             .with_account_id(account_id)
-            .with_collection(Collection::ContactCard)
+            .with_collection(Collection::CalendarEvent)
             .create_document(document_id)
             .custom(
                 ObjectIndexBuilder::<(), _>::new()
-                    .with_changes(card)
+                    .with_changes(event)
                     .with_tenant_id(access_token),
             )
             .map(|b| b.commit_point())
     }
 }
 
-impl AddressBook {
+impl Calendar {
     pub fn insert<'x>(
         self,
         access_token: &AccessToken,
@@ -76,20 +77,28 @@ impl AddressBook {
         document_id: u32,
         batch: &'x mut BatchBuilder,
     ) -> trc::Result<&'x mut BatchBuilder> {
-        // Build address book
-        let mut book = self;
+        // Build address calendar
+        let mut calendar = self;
         let now = now() as i64;
-        book.modified = now;
-        book.created = now;
+        calendar.modified = now;
+        calendar.created = now;
+
+        if calendar.preferences.is_empty() {
+            calendar.preferences.push(CalendarPreferences {
+                account_id,
+                name: "default".to_string(),
+                ..Default::default()
+            });
+        }
 
         // Prepare write batch
         batch
             .with_account_id(account_id)
-            .with_collection(Collection::AddressBook)
+            .with_collection(Collection::Calendar)
             .create_document(document_id)
             .custom(
                 ObjectIndexBuilder::<(), _>::new()
-                    .with_changes(book)
+                    .with_changes(calendar)
                     .with_tenant_id(access_token),
             )
             .map(|b| b.commit_point())
@@ -98,32 +107,32 @@ impl AddressBook {
     pub fn update<'x>(
         self,
         access_token: &AccessToken,
-        book: Archive<&ArchivedAddressBook>,
+        calendar: Archive<&ArchivedCalendar>,
         account_id: u32,
         document_id: u32,
         batch: &'x mut BatchBuilder,
     ) -> trc::Result<&'x mut BatchBuilder> {
-        // Build address book
-        let mut new_book = self;
-        new_book.modified = now() as i64;
+        // Build address calendar
+        let mut new_calendar = self;
+        new_calendar.modified = now() as i64;
 
         // Prepare write batch
         batch
             .with_account_id(account_id)
-            .with_collection(Collection::AddressBook)
+            .with_collection(Collection::Calendar)
             .update_document(document_id)
             .custom(
                 ObjectIndexBuilder::new()
-                    .with_current(book)
-                    .with_changes(new_book)
+                    .with_current(calendar)
+                    .with_changes(new_calendar)
                     .with_tenant_id(access_token),
             )
             .map(|b| b.commit_point())
     }
 }
 
-impl DestroyArchive<Archive<&ArchivedAddressBook>> {
-    pub async fn delete_with_cards(
+impl DestroyArchive<Archive<&ArchivedCalendar>> {
+    pub async fn delete_with_events(
         self,
         server: &Server,
         access_token: &AccessToken,
@@ -133,22 +142,22 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         // Process deletions
-        let addressbook_id = document_id;
+        let calendar_id = document_id;
         for document_id in children_ids {
-            if let Some(card_) = server
-                .get_archive(account_id, Collection::ContactCard, document_id)
+            if let Some(event_) = server
+                .get_archive(account_id, Collection::CalendarEvent, document_id)
                 .await?
             {
                 DestroyArchive(
-                    card_
-                        .to_unarchived::<ContactCard>()
+                    event_
+                        .to_unarchived::<CalendarEvent>()
                         .caused_by(trc::location!())?,
                 )
                 .delete(
                     access_token,
                     account_id,
                     document_id,
-                    addressbook_id,
+                    calendar_id,
                     batch,
                 )?;
             }
@@ -164,16 +173,16 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
         document_id: u32,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
-        let book = self.0;
-        // Delete addressbook
+        let calendar = self.0;
+        // Delete calendar
         batch
             .with_account_id(account_id)
-            .with_collection(Collection::AddressBook)
+            .with_collection(Collection::Calendar)
             .delete_document(document_id)
             .custom(
                 ObjectIndexBuilder::<_, ()>::new()
                     .with_tenant_id(access_token)
-                    .with_current(book),
+                    .with_current(calendar),
             )
             .caused_by(trc::location!())?
             .commit_point();
@@ -182,49 +191,49 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
     }
 }
 
-impl DestroyArchive<Archive<&ArchivedContactCard>> {
+impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
     pub fn delete(
         self,
         access_token: &AccessToken,
         account_id: u32,
         document_id: u32,
-        addressbook_id: u32,
+        calendar_id: u32,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
-        let card = self.0;
-        if let Some(delete_idx) = card
+        let event = self.0;
+        if let Some(delete_idx) = event
             .inner
             .names
             .iter()
-            .position(|name| name.parent_id == addressbook_id)
+            .position(|name| name.parent_id == calendar_id)
         {
             batch
                 .with_account_id(account_id)
-                .with_collection(Collection::ContactCard);
+                .with_collection(Collection::CalendarEvent);
 
-            if card.inner.names.len() > 1 {
-                // Unlink addressbook id from card
-                let mut new_card = card
-                    .deserialize::<ContactCard>()
+            if event.inner.names.len() > 1 {
+                // Unlink calendar id from event
+                let mut new_event = event
+                    .deserialize::<CalendarEvent>()
                     .caused_by(trc::location!())?;
-                new_card.names.swap_remove(delete_idx);
+                new_event.names.swap_remove(delete_idx);
                 batch
                     .update_document(document_id)
                     .custom(
                         ObjectIndexBuilder::new()
                             .with_tenant_id(access_token)
-                            .with_current(card)
-                            .with_changes(new_card),
+                            .with_current(event)
+                            .with_changes(new_event),
                     )
                     .caused_by(trc::location!())?;
             } else {
-                // Delete card
+                // Delete event
                 batch
                     .delete_document(document_id)
                     .custom(
                         ObjectIndexBuilder::<_, ()>::new()
                             .with_tenant_id(access_token)
-                            .with_current(card),
+                            .with_current(event),
                     )
                     .caused_by(trc::location!())?;
             }

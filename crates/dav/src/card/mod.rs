@@ -9,7 +9,7 @@ use dav_proto::schema::{
     property::{CardDavProperty, DavProperty, WebDavProperty},
     response::CardCondition,
 };
-use groupware::IDX_CARD_UID;
+use groupware::IDX_UID;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
 use store::query::Filter;
@@ -74,31 +74,6 @@ pub(crate) static CARD_ITEM_PROPS: [DavProperty; 20] = [
     DavProperty::CardDav(CardDavProperty::AddressData(vec![])),
 ];
 
-pub(crate) static CARD_ALL_PROPS: [DavProperty; 22] = [
-    DavProperty::WebDav(WebDavProperty::CreationDate),
-    DavProperty::WebDav(WebDavProperty::DisplayName),
-    DavProperty::WebDav(WebDavProperty::GetETag),
-    DavProperty::WebDav(WebDavProperty::GetLastModified),
-    DavProperty::WebDav(WebDavProperty::ResourceType),
-    DavProperty::WebDav(WebDavProperty::LockDiscovery),
-    DavProperty::WebDav(WebDavProperty::SupportedLock),
-    DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
-    DavProperty::WebDav(WebDavProperty::SyncToken),
-    DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
-    DavProperty::WebDav(WebDavProperty::AclRestrictions),
-    DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
-    DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
-    DavProperty::WebDav(WebDavProperty::GetContentLanguage),
-    DavProperty::WebDav(WebDavProperty::GetContentLength),
-    DavProperty::WebDav(WebDavProperty::GetContentType),
-    DavProperty::WebDav(WebDavProperty::SupportedReportSet),
-    DavProperty::CardDav(CardDavProperty::AddressData(vec![])),
-    DavProperty::CardDav(CardDavProperty::AddressbookDescription),
-    DavProperty::CardDav(CardDavProperty::SupportedAddressData),
-    DavProperty::CardDav(CardDavProperty::SupportedCollationSet),
-    DavProperty::CardDav(CardDavProperty::MaxResourceSize),
-];
-
 pub(crate) async fn assert_is_unique_uid(
     server: &Server,
     resources: &DavResources,
@@ -112,7 +87,7 @@ pub(crate) async fn assert_is_unique_uid(
             .filter(
                 account_id,
                 Collection::ContactCard,
-                vec![Filter::eq(IDX_CARD_UID, uid.as_bytes().to_vec())],
+                vec![Filter::eq(IDX_UID, uid.as_bytes().to_vec())],
             )
             .await
             .caused_by(trc::location!())?;

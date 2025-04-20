@@ -4,45 +4,62 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::collections::HashMap;
-
-use calcard::icalendar::ICalendar;
-
-use dav_proto::schema::request::DeadProperty;
-use jmap_proto::types::{acl::Acl, value::AclGrant};
-use store::{SERIALIZE_CALENDAR_V1, SERIALIZE_CALENDAREVENT_V1, SerializedVersion, ahash};
-use utils::map::vec_map::VecMap;
+pub mod index;
+pub mod storage;
 
 use crate::DavName;
+use calcard::icalendar::ICalendar;
+use dav_proto::schema::request::DeadProperty;
+use jmap_proto::types::{acl::Acl, value::AclGrant};
+use store::{SERIALIZE_CALENDAR_V1, SERIALIZE_CALENDAREVENT_V1, SerializedVersion};
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct Calendar {
     pub name: String,
-    pub preferences: HashMap<u32, CalendarPreferences, ahash::RandomState>,
+    pub preferences: Vec<CalendarPreferences>,
+    pub default_alerts: Vec<DefaultAlert>,
     pub acls: Vec<AclGrant>,
     pub dead_properties: DeadProperty,
     pub created: i64,
     pub modified: i64,
 }
 
+pub const CALENDAR_SUBSCRIBED: u16 = 1;
+pub const CALENDAR_DEFAULT: u16 = 1 << 1;
+pub const CALENDAR_VISIBLE: u16 = 1 << 2;
+pub const CALENDAR_AVAILABILITY_ALL: u16 = 1 << 3;
+pub const CALENDAR_AVAILABILITY_ATTENDING: u16 = 1 << 4;
+
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct CalendarPreferences {
+    pub account_id: u32,
     pub name: String,
     pub description: Option<String>,
     pub sort_order: u32,
     pub color: Option<String>,
-    pub is_subscribed: bool,
-    pub is_default: bool,
-    pub is_visible: bool,
-    pub include_in_availability: IncludeInAvailability,
-    pub default_alerts_with_time: HashMap<String, ICalendar, ahash::RandomState>,
-    pub default_alerts_without_time: HashMap<String, ICalendar, ahash::RandomState>,
+    pub flags: u16,
     pub time_zone: Timezone,
 }
+
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+pub struct DefaultAlert {
+    pub account_id: u32,
+    pub id: String,
+    pub alert: ICalendar,
+    pub with_time: bool,
+}
+
+pub const EVENT_INVITE_SELF: u16 = 1;
+pub const EVENT_INVITE_OTHERS: u16 = 1 << 1;
+pub const EVENT_HIDE_ATTENDEES: u16 = 1 << 2;
+pub const EVENT_DRAFT: u16 = 1 << 3;
+pub const EVENT_ORIGIN: u16 = 1 << 4;
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -51,15 +68,20 @@ pub struct CalendarEvent {
     pub names: Vec<DavName>,
     pub display_name: Option<String>,
     pub event: ICalendar,
-    pub user_properties: VecMap<u32, ICalendar>,
-    pub may_invite_self: bool,
-    pub may_invite_others: bool,
-    pub hide_attendees: bool,
-    pub is_draft: bool,
+    pub user_properties: Vec<UserProperties>,
+    pub flags: u16,
     pub dead_properties: DeadProperty,
     pub size: u32,
     pub created: i64,
     pub modified: i64,
+}
+
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+pub struct UserProperties {
+    pub account_id: u32,
+    pub properties: ICalendar,
 }
 
 #[derive(
@@ -70,17 +92,6 @@ pub enum Timezone {
     Custom(ICalendar),
     #[default]
     Default,
-}
-
-#[derive(
-    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
-)]
-#[rkyv(derive(Debug))]
-pub enum IncludeInAvailability {
-    All,
-    Attending,
-    #[default]
-    None,
 }
 
 pub enum CalendarRight {
@@ -139,14 +150,43 @@ impl SerializedVersion for CalendarEvent {
     }
 }
 
-impl ArchivedCalendar {
-    pub fn preferences(&self, account_id: u32) -> Option<&ArchivedCalendarPreferences> {
+impl Calendar {
+    pub fn preferences(&self, account_id: u32) -> &CalendarPreferences {
         if self.preferences.len() == 1 {
-            self.preferences.values().next()
+            &self.preferences[0]
         } else {
             self.preferences
-                .get(&rkyv::rend::u32_le::from_native(account_id))
-                .or_else(|| self.preferences.values().next())
+                .iter()
+                .find(|p| p.account_id == account_id)
+                .or_else(|| self.preferences.first())
+                .unwrap()
+        }
+    }
+
+    pub fn preferences_mut(&mut self, account_id: u32) -> &mut CalendarPreferences {
+        if self.preferences.len() == 1 {
+            &mut self.preferences[0]
+        } else {
+            let idx = self
+                .preferences
+                .iter()
+                .position(|p| p.account_id == account_id)
+                .unwrap_or(0);
+            &mut self.preferences[idx]
+        }
+    }
+}
+
+impl ArchivedCalendar {
+    pub fn preferences(&self, account_id: u32) -> &ArchivedCalendarPreferences {
+        if self.preferences.len() == 1 {
+            &self.preferences[0]
+        } else {
+            self.preferences
+                .iter()
+                .find(|p| p.account_id == account_id)
+                .or_else(|| self.preferences.first())
+                .unwrap()
         }
     }
 }

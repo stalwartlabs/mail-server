@@ -18,7 +18,12 @@ use store::{
 use trc::AddContext;
 use utils::bimap::IdBimap;
 
-use crate::{DavName, DavResourceName, IDX_NAME, contact::AddressBook, file::FileNode};
+use crate::{
+    DavName, DavResourceName, IDX_NAME,
+    calendar::{Calendar, CalendarPreferences},
+    contact::AddressBook,
+    file::FileNode,
+};
 
 pub trait DavHierarchy: Sync + Send {
     fn fetch_dav_resources(
@@ -127,7 +132,27 @@ impl DavHierarchy for Server {
         access_token: &AccessToken,
         account_id: u32,
     ) -> trc::Result<()> {
-        todo!()
+        if let Some(name) = &self.core.dav.default_calendar_name {
+            let mut batch = BatchBuilder::new();
+            let document_id = self
+                .store()
+                .assign_document_ids(account_id, Collection::Calendar, 1)
+                .await?;
+            Calendar {
+                name: name.clone(),
+                preferences: vec![CalendarPreferences {
+                    account_id,
+                    name: name.clone(),
+                    description: self.core.dav.default_calendar_display_name.clone(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }
+            .insert(access_token, account_id, document_id, &mut batch)?;
+            self.commit_batch(batch).await?;
+        }
+
+        Ok(())
     }
 }
 

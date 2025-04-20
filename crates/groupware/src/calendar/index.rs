@@ -12,9 +12,12 @@ use store::SerializeInfallible;
 
 use crate::{IDX_NAME, IDX_UID};
 
-use super::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard};
+use super::{
+    ArchivedCalendar, ArchivedCalendarEvent, ArchivedCalendarPreferences, ArchivedDefaultAlert,
+    ArchivedTimezone, Calendar, CalendarEvent, CalendarPreferences, DefaultAlert, Timezone,
+};
 
-impl IndexableObject for AddressBook {
+impl IndexableObject for Calendar {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         // Note: When adding a new value with index id above 0u8, tune `build_hierarchy`` to skip
         // this value during iteration.
@@ -28,8 +31,8 @@ impl IndexableObject for AddressBook {
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
-                    + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
-                    + self.description.as_ref().map_or(0, |n| n.len() as u32)
+                    + self.preferences.iter().map(|p| p.size()).sum::<usize>() as u32
+                    + self.default_alerts.iter().map(|a| a.size()).sum::<usize>() as u32
                     + self.name.len() as u32,
             },
             IndexValue::LogChild { prefix: None },
@@ -38,7 +41,7 @@ impl IndexableObject for AddressBook {
     }
 }
 
-impl IndexableObject for &ArchivedAddressBook {
+impl IndexableObject for &ArchivedCalendar {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::Index {
@@ -55,8 +58,8 @@ impl IndexableObject for &ArchivedAddressBook {
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
-                    + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
-                    + self.description.as_ref().map_or(0, |n| n.len() as u32)
+                    + self.preferences.iter().map(|p| p.size()).sum::<usize>() as u32
+                    + self.default_alerts.iter().map(|a| a.size()).sum::<usize>() as u32
                     + self.name.len() as u32,
             },
             IndexValue::LogChild { prefix: None },
@@ -65,9 +68,9 @@ impl IndexableObject for &ArchivedAddressBook {
     }
 }
 
-impl IndexableAndSerializableObject for AddressBook {}
+impl IndexableAndSerializableObject for Calendar {}
 
-impl IndexableObject for ContactCard {
+impl IndexableObject for CalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::IndexList {
@@ -80,7 +83,7 @@ impl IndexableObject for ContactCard {
             },
             IndexValue::Index {
                 field: IDX_UID,
-                value: self.card.uid().into(),
+                value: self.event.uids().next().into(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -90,7 +93,7 @@ impl IndexableObject for ContactCard {
             },
             IndexValue::LogChild { prefix: None },
             IndexValue::LogParent {
-                collection: Collection::AddressBook.into(),
+                collection: Collection::Calendar.into(),
                 ids: self.names.iter().map(|n| n.parent_id).collect(),
             },
         ]
@@ -98,7 +101,7 @@ impl IndexableObject for ContactCard {
     }
 }
 
-impl IndexableObject for &ArchivedContactCard {
+impl IndexableObject for &ArchivedCalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::IndexList {
@@ -111,7 +114,7 @@ impl IndexableObject for &ArchivedContactCard {
             },
             IndexValue::Index {
                 field: IDX_UID,
-                value: self.card.uid().into(),
+                value: self.event.uids().next().into(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -121,7 +124,7 @@ impl IndexableObject for &ArchivedContactCard {
             },
             IndexValue::LogChild { prefix: None },
             IndexValue::LogParent {
-                collection: Collection::AddressBook.into(),
+                collection: Collection::Calendar.into(),
                 ids: self.names.iter().map(|n| n.parent_id.to_native()).collect(),
             },
         ]
@@ -129,4 +132,54 @@ impl IndexableObject for &ArchivedContactCard {
     }
 }
 
-impl IndexableAndSerializableObject for ContactCard {}
+impl IndexableAndSerializableObject for CalendarEvent {}
+
+impl CalendarPreferences {
+    pub fn size(&self) -> usize {
+        self.name.len()
+            + self.description.as_ref().map_or(0, |n| n.len())
+            + self.color.as_ref().map_or(0, |n| n.len())
+            + self.time_zone.size()
+    }
+}
+
+impl ArchivedCalendarPreferences {
+    pub fn size(&self) -> usize {
+        self.name.len()
+            + self.description.as_ref().map_or(0, |n| n.len())
+            + self.color.as_ref().map_or(0, |n| n.len())
+            + self.time_zone.size()
+    }
+}
+
+impl Timezone {
+    pub fn size(&self) -> usize {
+        match self {
+            Timezone::IANA(s) => s.len(),
+            Timezone::Custom(c) => c.size(),
+            Timezone::Default => 0,
+        }
+    }
+}
+
+impl ArchivedTimezone {
+    pub fn size(&self) -> usize {
+        match self {
+            ArchivedTimezone::IANA(s) => s.len(),
+            ArchivedTimezone::Custom(c) => c.size(),
+            ArchivedTimezone::Default => 0,
+        }
+    }
+}
+
+impl DefaultAlert {
+    pub fn size(&self) -> usize {
+        self.alert.size() + self.id.len()
+    }
+}
+
+impl ArchivedDefaultAlert {
+    pub fn size(&self) -> usize {
+        self.alert.size() + self.id.len()
+    }
+}

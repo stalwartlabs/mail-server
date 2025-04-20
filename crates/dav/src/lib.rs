@@ -29,6 +29,7 @@ pub enum DavMethod {
     PROPPATCH,
     REPORT,
     MKCOL,
+    MKCALENDAR,
     COPY,
     MOVE,
     LOCK,
@@ -89,6 +90,7 @@ impl DavMethod {
                     "PROPPATCH" => DavMethod::PROPPATCH,
                     "REPORT" => DavMethod::REPORT,
                     "MKCOL" => DavMethod::MKCOL,
+                    "MKCALENDAR" => DavMethod::MKCALENDAR,
                     "COPY" => DavMethod::COPY,
                     "MOVE" => DavMethod::MOVE,
                     "LOCK" => DavMethod::LOCK,
@@ -111,6 +113,7 @@ impl DavMethod {
                 | DavMethod::REPORT
                 | DavMethod::LOCK
                 | DavMethod::ACL
+                | DavMethod::MKCALENDAR
         )
     }
 }

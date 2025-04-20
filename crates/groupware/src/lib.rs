@@ -14,7 +14,7 @@ pub mod file;
 pub mod hierarchy;
 
 pub const IDX_NAME: u8 = 0;
-pub const IDX_CARD_UID: u8 = 1;
+pub const IDX_UID: u8 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DavResourceName {

@@ -330,10 +330,9 @@ impl<'x> ArchivedResource<'x> {
 
     pub fn display_name(&self, account_id: u32) -> Option<&str> {
         match self {
-            ArchivedResource::Calendar(archive) => archive
-                .inner
-                .preferences(account_id)
-                .map(|p| p.name.as_str()),
+            ArchivedResource::Calendar(archive) => {
+                Some(archive.inner.preferences(account_id).name.as_str())
+            }
             ArchivedResource::CalendarEvent(archive) => archive.inner.display_name.as_deref(),
             ArchivedResource::AddressBook(archive) => archive.inner.display_name.as_deref(),
             ArchivedResource::ContactCard(archive) => archive.inner.display_name.as_deref(),

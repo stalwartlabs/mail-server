@@ -95,7 +95,6 @@ pub enum CalDavProperty {
     MaxDateTime,
     MaxInstances,
     MaxAttendeesPerInstance,
-    CalendarHomeSet,
     CalendarData(CalendarData),
     TimezoneServiceSet,
     TimezoneId,
@@ -109,6 +108,7 @@ pub enum PrincipalProperty {
     PrincipalURL,
     GroupMemberSet,
     GroupMembership,
+    CalendarHomeSet,
     AddressbookHomeSet,
     PrincipalAddress,
 }
@@ -149,6 +149,7 @@ pub enum DavValue {
     Rfc1123Date(Rfc1123DateTime),
     Uint64(u64),
     String(String),
+    CData(String),
     ResourceTypes(List<ResourceType>),
     ActiveLocks(List<ActiveLock>),
     LockEntries(List<LockEntry>),
@@ -165,6 +166,7 @@ pub enum DavValue {
     DeadProperty(DeadProperty),
     SupportedAddressData,
     SupportedCalendarData,
+    SupportedCalendarComponentSet,
     Null,
 }
 
@@ -313,8 +315,27 @@ impl Rfc1123DateTime {
 }
 
 impl DavProperty {
+    pub const ALL_PROPS: [DavProperty; 17] = [
+        DavProperty::WebDav(WebDavProperty::CreationDate),
+        DavProperty::WebDav(WebDavProperty::DisplayName),
+        DavProperty::WebDav(WebDavProperty::GetETag),
+        DavProperty::WebDav(WebDavProperty::GetLastModified),
+        DavProperty::WebDav(WebDavProperty::ResourceType),
+        DavProperty::WebDav(WebDavProperty::LockDiscovery),
+        DavProperty::WebDav(WebDavProperty::SupportedLock),
+        DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+        DavProperty::WebDav(WebDavProperty::SyncToken),
+        DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
+        DavProperty::WebDav(WebDavProperty::AclRestrictions),
+        DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
+        DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
+        DavProperty::WebDav(WebDavProperty::GetContentLanguage),
+        DavProperty::WebDav(WebDavProperty::GetContentLength),
+        DavProperty::WebDav(WebDavProperty::GetContentType),
+        DavProperty::WebDav(WebDavProperty::SupportedReportSet),
+    ];
+
     pub fn is_all_prop(&self) -> bool {
-        let todo = "add cal, card";
         matches!(
             self,
             DavProperty::WebDav(WebDavProperty::CreationDate)
@@ -335,11 +356,6 @@ impl DavProperty {
                 | DavProperty::WebDav(WebDavProperty::GetContentType)
                 | DavProperty::WebDav(WebDavProperty::SupportedReportSet)
                 | DavProperty::DeadProperty(_)
-                | DavProperty::CardDav(CardDavProperty::AddressData(_))
-                | DavProperty::CardDav(CardDavProperty::AddressbookDescription)
-                | DavProperty::CardDav(CardDavProperty::SupportedAddressData)
-                | DavProperty::CardDav(CardDavProperty::SupportedCollationSet)
-                | DavProperty::CardDav(CardDavProperty::MaxResourceSize),
         )
     }
 }

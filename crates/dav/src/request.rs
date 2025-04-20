@@ -27,6 +27,12 @@ use jmap_proto::types::collection::Collection;
 
 use crate::{
     DavError, DavMethod, DavResourceName,
+    calendar::{
+        copy_move::CalendarCopyMoveRequestHandler, delete::CalendarDeleteRequestHandler,
+        get::CalendarGetRequestHandler, mkcol::CalendarMkColRequestHandler,
+        proppatch::CalendarPropPatchRequestHandler, query::CalendarQueryRequestHandler,
+        update::CalendarUpdateRequestHandler,
+    },
     card::{
         copy_move::CardCopyMoveRequestHandler, delete::CardDeleteRequestHandler,
         get::CardGetRequestHandler, mkcol::CardMkColRequestHandler,
@@ -95,63 +101,23 @@ impl DavRequestDispatcher for Server {
                 )
                 .await
             }
-            DavMethod::PROPPATCH => {
-                let request = PropertyUpdate::parse(&mut Tokenizer::new(&body))?;
-                match resource {
-                    DavResourceName::Card => {
-                        self.handle_card_proppatch_request(&access_token, headers, request)
-                            .await
-                    }
-                    DavResourceName::Cal => todo!(),
-                    DavResourceName::File => {
-                        self.handle_file_proppatch_request(&access_token, headers, request)
-                            .await
-                    }
-                    DavResourceName::Principal => {
-                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
-                    }
-                }
-            }
-            DavMethod::MKCOL => {
-                let request = if !body.is_empty() {
-                    Some(MkCol::parse(&mut Tokenizer::new(&body))?)
-                } else {
-                    None
-                };
-
-                match resource {
-                    DavResourceName::Card => {
-                        self.handle_card_mkcol_request(&access_token, headers, request)
-                            .await
-                    }
-                    DavResourceName::Cal => todo!(),
-                    DavResourceName::File => {
-                        self.handle_file_mkcol_request(&access_token, headers, request)
-                            .await
-                    }
-                    DavResourceName::Principal => {
-                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
-                    }
-                }
-            }
-            DavMethod::GET => match resource {
+            DavMethod::GET | DavMethod::HEAD => match resource {
                 DavResourceName::Card => {
-                    self.handle_card_get_request(&access_token, headers, false)
-                        .await
+                    self.handle_card_get_request(
+                        &access_token,
+                        headers,
+                        matches!(method, DavMethod::HEAD),
+                    )
+                    .await
                 }
-                DavResourceName::Cal => todo!(),
-                DavResourceName::File => {
-                    self.handle_file_get_request(&access_token, headers, false)
-                        .await
+                DavResourceName::Cal => {
+                    self.handle_calendar_get_request(
+                        &access_token,
+                        headers,
+                        matches!(method, DavMethod::HEAD),
+                    )
+                    .await
                 }
-                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-            },
-            DavMethod::HEAD => match resource {
-                DavResourceName::Card => {
-                    self.handle_card_get_request(&access_token, headers, true)
-                        .await
-                }
-                DavResourceName::Cal => todo!(),
                 DavResourceName::File => {
                     #[cfg(debug_assertions)]
                     {
@@ -166,113 +132,16 @@ impl DavRequestDispatcher for Server {
 
                     #[cfg(not(debug_assertions))]
                     {
-                        self.handle_file_get_request(&access_token, headers, true)
-                            .await
+                        self.handle_file_get_request(
+                            &access_token,
+                            headers,
+                            matches!(method, DavMethod::HEAD),
+                        )
+                        .await
                     }
                 }
                 DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
             },
-            DavMethod::DELETE => {
-                // Include any fragments in the URI
-                if let Some(p) = request.uri().path_and_query() {
-                    // TODO: Access to the fragment part is pending, see https://github.com/hyperium/http/issues/127
-                    headers.uri = p.as_str();
-                }
-
-                match resource {
-                    DavResourceName::Card => {
-                        self.handle_card_delete_request(&access_token, headers)
-                            .await
-                    }
-                    DavResourceName::Cal => todo!(),
-                    DavResourceName::File => {
-                        self.handle_file_delete_request(&access_token, headers)
-                            .await
-                    }
-                    DavResourceName::Principal => {
-                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
-                    }
-                }
-            }
-            DavMethod::PUT | DavMethod::POST => match resource {
-                DavResourceName::Card => {
-                    self.handle_card_update_request(&access_token, headers, body, false)
-                        .await
-                }
-                DavResourceName::Cal => todo!(),
-                DavResourceName::File => {
-                    self.handle_file_update_request(&access_token, headers, body, false)
-                        .await
-                }
-                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-            },
-            DavMethod::PATCH => match resource {
-                DavResourceName::Card => {
-                    self.handle_card_update_request(&access_token, headers, body, true)
-                        .await
-                }
-                DavResourceName::Cal => todo!(),
-                DavResourceName::File => {
-                    self.handle_file_update_request(&access_token, headers, body, true)
-                        .await
-                }
-                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-            },
-            DavMethod::COPY => match resource {
-                DavResourceName::Card => {
-                    self.handle_card_copy_move_request(&access_token, headers, false)
-                        .await
-                }
-                DavResourceName::Cal => todo!(),
-                DavResourceName::File => {
-                    self.handle_file_copy_move_request(&access_token, headers, false)
-                        .await
-                }
-                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-            },
-            DavMethod::MOVE => match resource {
-                DavResourceName::Card => {
-                    self.handle_card_copy_move_request(&access_token, headers, false)
-                        .await
-                }
-                DavResourceName::Cal => todo!(),
-                DavResourceName::File => {
-                    self.handle_file_copy_move_request(&access_token, headers, true)
-                        .await
-                }
-                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-            },
-            DavMethod::LOCK => match resource {
-                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
-                _ => {
-                    self.handle_lock_request(
-                        &access_token,
-                        headers,
-                        if !body.is_empty() {
-                            LockRequest::Lock(LockInfo::parse(&mut Tokenizer::new(&body))?)
-                        } else {
-                            LockRequest::Refresh
-                        },
-                    )
-                    .await
-                }
-            },
-            DavMethod::UNLOCK => {
-                self.handle_lock_request(&access_token, headers, LockRequest::Unlock)
-                    .await
-            }
-            DavMethod::ACL => {
-                let request = Acl::parse(&mut Tokenizer::new(&body))?;
-                match resource {
-                    DavResourceName::Card | DavResourceName::Cal | DavResourceName::File => {
-                        self.handle_acl_request(&access_token, headers, request)
-                            .await
-                    }
-                    DavResourceName::Principal => {
-                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
-                    }
-                }
-            }
             DavMethod::REPORT => match Report::parse(&mut Tokenizer::new(&body))? {
                 Report::SyncCollection(sync_collection) => {
                     let uri = self
@@ -332,11 +201,192 @@ impl DavRequestDispatcher for Server {
                     )
                     .await
                 }
-                Report::CalendarQuery(report) => todo!(),
-                Report::CalendarMultiGet(report) => todo!(),
-                Report::FreeBusyQuery(report) => todo!(),
+                Report::CalendarQuery(report) => {
+                    self.handle_calendar_query_request(&access_token, headers, report)
+                        .await
+                }
+                Report::CalendarMultiGet(report) => {
+                    self.handle_dav_query(
+                        &access_token,
+                        DavQuery::multiget(report, Collection::Calendar, headers),
+                    )
+                    .await
+                }
+                Report::FreeBusyQuery(report) => {
+                    self.handle_calendar_freebusy_request(&access_token, headers, report)
+                        .await
+                }
                 Report::ExpandProperty(report) => todo!(),
             },
+            DavMethod::PROPPATCH => {
+                let request = PropertyUpdate::parse(&mut Tokenizer::new(&body))?;
+                match resource {
+                    DavResourceName::Card => {
+                        self.handle_card_proppatch_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResourceName::Cal => {
+                        self.handle_calendar_proppatch_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResourceName::File => {
+                        self.handle_file_proppatch_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResourceName::Principal => {
+                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
+                    }
+                }
+            }
+            DavMethod::MKCOL => {
+                let request = if !body.is_empty() {
+                    Some(MkCol::parse(&mut Tokenizer::new(&body))?)
+                } else {
+                    None
+                };
+
+                match resource {
+                    DavResourceName::Card => {
+                        self.handle_card_mkcol_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResourceName::Cal => {
+                        self.handle_calendar_mkcol_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResourceName::File => {
+                        self.handle_file_mkcol_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResourceName::Principal => {
+                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
+                    }
+                }
+            }
+            DavMethod::DELETE => {
+                // Include any fragments in the URI
+                if let Some(p) = request.uri().path_and_query() {
+                    // TODO: Access to the fragment part is pending, see https://github.com/hyperium/http/issues/127
+                    headers.uri = p.as_str();
+                }
+
+                match resource {
+                    DavResourceName::Card => {
+                        self.handle_card_delete_request(&access_token, headers)
+                            .await
+                    }
+                    DavResourceName::Cal => {
+                        self.handle_calendar_delete_request(&access_token, headers)
+                            .await
+                    }
+                    DavResourceName::File => {
+                        self.handle_file_delete_request(&access_token, headers)
+                            .await
+                    }
+                    DavResourceName::Principal => {
+                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
+                    }
+                }
+            }
+            DavMethod::PUT | DavMethod::POST | DavMethod::PATCH => match resource {
+                DavResourceName::Card => {
+                    self.handle_card_update_request(
+                        &access_token,
+                        headers,
+                        body,
+                        matches!(method, DavMethod::PATCH),
+                    )
+                    .await
+                }
+                DavResourceName::Cal => {
+                    self.handle_calendar_update_request(
+                        &access_token,
+                        headers,
+                        body,
+                        matches!(method, DavMethod::PATCH),
+                    )
+                    .await
+                }
+                DavResourceName::File => {
+                    self.handle_file_update_request(
+                        &access_token,
+                        headers,
+                        body,
+                        matches!(method, DavMethod::PATCH),
+                    )
+                    .await
+                }
+                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
+            },
+            DavMethod::COPY | DavMethod::MOVE => match resource {
+                DavResourceName::Card => {
+                    self.handle_card_copy_move_request(
+                        &access_token,
+                        headers,
+                        matches!(method, DavMethod::MOVE),
+                    )
+                    .await
+                }
+                DavResourceName::Cal => {
+                    self.handle_calendar_copy_move_request(
+                        &access_token,
+                        headers,
+                        matches!(method, DavMethod::MOVE),
+                    )
+                    .await
+                }
+                DavResourceName::File => {
+                    self.handle_file_copy_move_request(
+                        &access_token,
+                        headers,
+                        matches!(method, DavMethod::MOVE),
+                    )
+                    .await
+                }
+                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
+            },
+            DavMethod::MKCALENDAR => match resource {
+                DavResourceName::Cal => {
+                    self.handle_calendar_mkcol_request(
+                        &access_token,
+                        headers,
+                        Some(MkCol::parse(&mut Tokenizer::new(&body))?),
+                    )
+                    .await
+                }
+                _ => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
+            },
+            DavMethod::LOCK => match resource {
+                DavResourceName::Principal => Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED)),
+                _ => {
+                    self.handle_lock_request(
+                        &access_token,
+                        headers,
+                        if !body.is_empty() {
+                            LockRequest::Lock(LockInfo::parse(&mut Tokenizer::new(&body))?)
+                        } else {
+                            LockRequest::Refresh
+                        },
+                    )
+                    .await
+                }
+            },
+            DavMethod::UNLOCK => {
+                self.handle_lock_request(&access_token, headers, LockRequest::Unlock)
+                    .await
+            }
+            DavMethod::ACL => {
+                let request = Acl::parse(&mut Tokenizer::new(&body))?;
+                match resource {
+                    DavResourceName::Card | DavResourceName::Cal | DavResourceName::File => {
+                        self.handle_acl_request(&access_token, headers, request)
+                            .await
+                    }
+                    DavResourceName::Principal => {
+                        Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
+                    }
+                }
+            }
             DavMethod::OPTIONS => unreachable!(),
         }
     }
