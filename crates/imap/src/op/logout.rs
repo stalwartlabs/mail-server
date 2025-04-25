@@ -15,12 +15,7 @@ impl<T: SessionStream> Session<T> {
         let op_start = Instant::now();
 
         let mut response = StatusResponse::bye(
-            concat!(
-                "Stalwart IMAP4rev2 v",
-                env!("CARGO_PKG_VERSION"),
-                " bids you farewell."
-            )
-            .to_string(),
+                "Stalwart IMAP4rev2 bids you farewell.",
         )
         .into_bytes();
 
