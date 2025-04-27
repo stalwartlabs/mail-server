@@ -17,9 +17,10 @@ impl Server {
         access_token: &AccessToken,
         to_account_id: u32,
         to_collection: Collection,
-        check_acls: impl Into<Bitmap<Acl>>,
+        check_acls: impl IntoIterator<Item = Acl>,
+        match_any: bool,
     ) -> trc::Result<RoaringBitmap> {
-        let check_acls = check_acls.into();
+        let check_acls = Bitmap::<Acl>::from_iter(check_acls);
         let mut document_ids = RoaringBitmap::new();
         let to_collection = u8::from(to_collection);
         for &grant_account_id in [access_token.primary_id]
@@ -39,34 +40,13 @@ impl Server {
                 .caused_by(trc::location!())?
             {
                 let mut acls = Bitmap::<Acl>::from(acl_item.permissions);
-
                 acls.intersection(&check_acls);
-                if !acls.is_empty() {
+                if acls == check_acls || (match_any && !acls.is_empty()) {
                     document_ids.insert(acl_item.to_document_id);
                 }
             }
         }
 
-        Ok(document_ids)
-    }
-
-    pub async fn owned_or_shared_containers(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-        collection: Collection,
-        check_acls: impl Into<Bitmap<Acl>>,
-    ) -> trc::Result<RoaringBitmap> {
-        let check_acls = check_acls.into();
-        let mut document_ids = self
-            .get_document_ids(account_id, collection)
-            .await?
-            .unwrap_or_default();
-        if !document_ids.is_empty() && !access_token.is_member(account_id) {
-            document_ids &= self
-                .shared_containers(access_token, account_id, collection, check_acls)
-                .await?;
-        }
         Ok(document_ids)
     }
 

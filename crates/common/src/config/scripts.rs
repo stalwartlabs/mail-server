@@ -11,9 +11,12 @@ use sieve::{Compiler, Runtime, Sieve, compiler::grammar::Capability};
 use store::Stores;
 use utils::config::Config;
 
-use crate::scripts::{
-    functions::{register_functions_trusted, register_functions_untrusted},
-    plugins::RegisterSievePlugins,
+use crate::{
+    VERSION_PUBLIC,
+    scripts::{
+        functions::{register_functions_trusted, register_functions_untrusted},
+        plugins::RegisterSievePlugins,
+    },
 };
 
 use super::{if_block::IfBlock, smtp::SMTP_RCPT_TO_VARS, tokenizer::TokenMap};
@@ -182,8 +185,8 @@ impl Scripting {
                     .unwrap_or("Auto: ")
                     .to_string(),
             )
-            .with_env_variable("name", "Stalwart Mail Server")
-            .with_env_variable("version", env!("CARGO_PKG_VERSION"))
+            .with_env_variable("name", "Stalwart Server")
+            .with_env_variable("version", VERSION_PUBLIC)
             .with_env_variable("location", "MS")
             .with_env_variable("phase", "during");
 

@@ -300,7 +300,7 @@ impl Account {
 impl Default for SieveSessionCapabilities {
     fn default() -> Self {
         Self {
-            implementation: concat!("Stalwart JMAP v", env!("CARGO_PKG_VERSION"),),
+            implementation: "Stalwart v1.0.0",
         }
     }
 }

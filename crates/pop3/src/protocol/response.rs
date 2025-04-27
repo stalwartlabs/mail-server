@@ -114,7 +114,7 @@ impl<T: Display> Response<T> {
                     "EXPIRE NEVER",
                     "UIDL",
                     "UTF8",
-                    "IMPLEMENTATION Stalwart Mail Server",
+                    "IMPLEMENTATION Stalwart Server",
                 ] {
                     buf.extend_from_slice(capa.as_bytes());
                     buf.extend_from_slice(b"\r\n");
@@ -201,7 +201,7 @@ mod tests {
                     "EXPIRE NEVER\r\n",
                     "UIDL\r\n",
                     "UTF8\r\n",
-                    "IMPLEMENTATION Stalwart Mail Server\r\n.\r\n"
+                    "IMPLEMENTATION Stalwart Server\r\n.\r\n"
                 ),
             ),
             (

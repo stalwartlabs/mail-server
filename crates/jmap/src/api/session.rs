@@ -48,7 +48,13 @@ impl SessionHandler for Server {
             let is_personal = !access_token.is_member(*id);
             let is_readonly = is_personal
                 && self
-                    .shared_containers(&access_token, *id, Collection::Mailbox, Acl::AddItems)
+                    .shared_containers(
+                        &access_token,
+                        *id,
+                        Collection::Mailbox,
+                        [Acl::AddItems],
+                        false,
+                    )
                     .await
                     .caused_by(trc::location!())?
                     .is_empty();

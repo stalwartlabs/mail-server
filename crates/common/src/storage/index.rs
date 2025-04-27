@@ -130,6 +130,12 @@ impl From<u64> for IndexItem<'_> {
     }
 }
 
+impl From<i64> for IndexItem<'_> {
+    fn from(value: i64) -> Self {
+        IndexItem::LongInt(value.to_be_bytes())
+    }
+}
+
 impl<'x> From<&'x [u8]> for IndexItem<'x> {
     fn from(value: &'x [u8]) -> Self {
         IndexItem::Slice(value)

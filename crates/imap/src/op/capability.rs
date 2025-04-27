@@ -64,9 +64,7 @@ impl<T: SessionStream> Session<T> {
                 .with_tag(request.tag)
                 .serialize(
                     concat!(
-                        "* ID (\"name\" \"Stalwart IMAP\" \"version\" \"",
-                        env!("CARGO_PKG_VERSION"),
-                        "\" \"vendor\" \"Stalwart Labs Ltd.\" ",
+                        "* ID (\"name\" \"Stalwart\" \"version\" \"1.0.0\" \"vendor\" \"Stalwart Labs Ltd.\" ",
                         "\"support-url\" \"https://stalw.art\")\r\n"
                     )
                     .as_bytes()

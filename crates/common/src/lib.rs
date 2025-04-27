@@ -71,8 +71,12 @@ pub mod telemetry;
 
 pub use psl;
 
-pub static USER_AGENT: &str = concat!("Stalwart/", env!("CARGO_PKG_VERSION"),);
-pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
+pub static VERSION_PRIVATE: &str = env!("CARGO_PKG_VERSION");
+pub static VERSION_PUBLIC: &str = "1.0.0";
+
+pub static USER_AGENT: &str = "Stalwart/1.0.0";
+pub static DAEMON_NAME: &str = concat!("Stalwart v", env!("CARGO_PKG_VERSION"),);
+pub static PROD_ID: &str = "-//Stalwart Labs Ltd.//Stalwart Server//EN";
 
 pub const LONG_1D_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 pub const LONG_1Y_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
@@ -253,9 +257,22 @@ pub struct DavResource {
     pub document_id: u32,
     pub parent_id: Option<u32>,
     pub name: String,
-    pub size: u32,
-    pub hierarchy_sequence: u32,
-    pub is_container: bool,
+    pub data: DavResourceMetadata,
+}
+
+#[derive(Debug, Default)]
+pub enum DavResourceMetadata {
+    File {
+        size: u32,
+        hierarchy_sequence: u32,
+        is_container: bool,
+    },
+    Calendar {
+        start: i64,
+        duration: u32,
+    },
+    #[default]
+    None,
 }
 
 #[derive(Clone, Default)]
@@ -506,7 +523,7 @@ impl DavResources {
     }
 
     pub fn format_resource(&self, resource: &DavResource) -> String {
-        if resource.is_container {
+        if resource.is_container() {
             format!("{}{}/", self.base_path, resource.name)
         } else {
             format!("{}{}", self.base_path, resource.name)
@@ -519,6 +536,46 @@ impl DavResources {
 
     pub fn format_item(&self, name: &str) -> String {
         format!("{}{}", self.base_path, name)
+    }
+}
+
+impl DavResource {
+    pub fn event_time_range(&self) -> Option<(i64, i64)> {
+        match &self.data {
+            DavResourceMetadata::Calendar { start, duration } => {
+                Some((*start, *start + *duration as i64))
+            }
+            _ => None,
+        }
+    }
+
+    pub fn is_container(&self) -> bool {
+        match &self.data {
+            DavResourceMetadata::File { is_container, .. } => *is_container,
+            _ => self.parent_id.is_none(),
+        }
+    }
+
+    pub fn size(&self) -> u32 {
+        match &self.data {
+            DavResourceMetadata::File { size, .. } => *size,
+            _ => 0,
+        }
+    }
+
+    pub fn hierarchy_sequence(&self) -> u32 {
+        match &self.data {
+            DavResourceMetadata::File {
+                hierarchy_sequence, ..
+            } => *hierarchy_sequence,
+            _ => {
+                if self.parent_id.is_none() {
+                    0
+                } else {
+                    1
+                }
+            }
+        }
     }
 }
 
