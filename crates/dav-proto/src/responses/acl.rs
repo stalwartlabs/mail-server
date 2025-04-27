@@ -93,6 +93,7 @@ impl Display for Principal {
         write!(f, "<D:principal>")?;
         match self {
             Principal::Href(href) => href.fmt(f),
+            Principal::Response(response) => response.fmt(f),
             Principal::All => "<D:all/>".fmt(f),
             Principal::Authenticated => "<D:authenticated/>".fmt(f),
             Principal::Unauthenticated => "<D:unauthenticated/>".fmt(f),

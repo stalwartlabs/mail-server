@@ -13,7 +13,7 @@ use crate::{Depth, Timeout};
 
 use super::{
     request::{DavPropertyValue, DeadElementTag, DeadProperty},
-    response::{Ace, AclRestrictions, Href, List, SupportedPrivilege},
+    response::{Ace, AclRestrictions, Href, List, Response, SupportedPrivilege},
     Collation, Namespace,
 };
 
@@ -117,14 +117,14 @@ pub enum PrincipalProperty {
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct CalendarData {
     pub properties: Vec<CalDavPropertyName>,
-    pub expand: Option<DateRange>,
-    pub limit_recurrence: Option<DateRange>,
-    pub limit_freebusy: Option<DateRange>,
+    pub expand: Option<TimeRange>,
+    pub limit_recurrence: Option<TimeRange>,
+    pub limit_freebusy: Option<TimeRange>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
-pub struct DateRange {
+pub struct TimeRange {
     pub start: i64,
     pub end: i64,
 }
@@ -163,6 +163,7 @@ pub enum DavValue {
     Href(List<Href>),
     Acl(List<Ace>),
     AclRestrictions(AclRestrictions),
+    Response(Response),
     DeadProperty(DeadProperty),
     SupportedAddressData,
     SupportedCalendarData,

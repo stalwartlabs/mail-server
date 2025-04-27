@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod dates;
 pub mod index;
 pub mod storage;
 
@@ -67,13 +68,35 @@ pub const EVENT_ORIGIN: u16 = 1 << 4;
 pub struct CalendarEvent {
     pub names: Vec<DavName>,
     pub display_name: Option<String>,
-    pub event: ICalendar,
+    pub data: CalendarEventData,
     pub user_properties: Vec<UserProperties>,
     pub flags: u16,
     pub dead_properties: DeadProperty,
     pub size: u32,
     pub created: i64,
     pub modified: i64,
+}
+
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+pub struct CalendarEventData {
+    pub event: ICalendar,
+    pub time_ranges: Box<[ComponentTimeRange]>,
+    pub base_offset: i64,
+    pub base_time_utc: u32,
+    pub duration: u32,
+}
+
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+pub struct ComponentTimeRange {
+    pub id: u16,
+    pub start_tz: u16,
+    pub end_tz: u16,
+    pub duration: i32,
+    pub instances: Box<[u8]>,
 }
 
 #[derive(

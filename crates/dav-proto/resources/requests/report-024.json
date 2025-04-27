@@ -1,0 +1,45 @@
+{
+  "type": "ExpandProperty",
+  "properties": [
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "version-history",
+          "attrs": "name=\"version-history\""
+        }
+      },
+      "depth": 0
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "version-set",
+          "attrs": "name=\"version-set\""
+        }
+      },
+      "depth": 1
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "creator-displayname",
+          "attrs": "name=\"creator-displayname\""
+        }
+      },
+      "depth": 2
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "activity-set",
+          "attrs": "name=\"activity-set\""
+        }
+      },
+      "depth": 2
+    }
+  ]
+}

@@ -19,6 +19,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use auth::{AccessToken, oauth::config::OAuthConfig, roles::RolePermissions};
+use calcard::common::timezone::Tz;
 use config::{
     dav::DavConfig,
     imap::ImapConfig,
@@ -268,6 +269,9 @@ pub enum DavResourceMetadata {
         is_container: bool,
     },
     Calendar {
+        tz: Tz,
+    },
+    CalendarEvent {
         start: i64,
         duration: u32,
     },
@@ -542,9 +546,16 @@ impl DavResources {
 impl DavResource {
     pub fn event_time_range(&self) -> Option<(i64, i64)> {
         match &self.data {
-            DavResourceMetadata::Calendar { start, duration } => {
+            DavResourceMetadata::CalendarEvent { start, duration } => {
                 Some((*start, *start + *duration as i64))
             }
+            _ => None,
+        }
+    }
+
+    pub fn timezone(&self) -> Option<Tz> {
+        match &self.data {
+            DavResourceMetadata::Calendar { tz } => Some(*tz),
             _ => None,
         }
     }

@@ -62,7 +62,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                     access_token,
                     from_account_id,
                     Collection::Calendar,
-                    if from_resource.is_container {
+                    if from_resource.is_container() {
                         from_resource.document_id
                     } else {
                         from_resource.parent_id.unwrap()
@@ -112,16 +112,16 @@ impl CalendarCopyMoveRequestHandler for Server {
                 .map(|(_, name)| name)
                 .unwrap_or(destination_resource_name);
 
-            match (from_resource.is_container, to_resource.is_container) {
+            match (from_resource.is_container(), to_resource.is_container()) {
                 (true, true) => {
                     let from_children_ids = from_resources
                         .subtree(from_resource_name)
-                        .filter(|r| !r.is_container)
+                        .filter(|r| !r.is_container())
                         .map(|r| r.document_id)
                         .collect::<Vec<_>>();
                     let to_document_ids = to_resources
                         .subtree(destination_resource_name)
-                        .filter(|r| !r.is_container)
+                        .filter(|r| !r.is_container())
                         .map(|r| r.document_id)
                         .collect::<Vec<_>>();
 
@@ -240,7 +240,7 @@ impl CalendarCopyMoveRequestHandler for Server {
             if let Some(parent_resource) = parent_resource {
                 // Creating items under a event is not allowed
                 // Copying/moving containers under a container is not allowed
-                if !parent_resource.is_container || from_resource.is_container {
+                if !parent_resource.is_container() || from_resource.is_container() {
                     return Err(DavError::Code(StatusCode::BAD_GATEWAY));
                 }
 
@@ -322,7 +322,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                 }
             } else {
                 // Copying/moving events to the root is not allowed
-                if !from_resource.is_container {
+                if !from_resource.is_container() {
                     return Err(DavError::Code(StatusCode::BAD_GATEWAY));
                 }
 
@@ -354,7 +354,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                 // Copy/move container
                 let from_children_ids = from_resources
                     .subtree(from_resource_name)
-                    .filter(|r| !r.is_container)
+                    .filter(|r| !r.is_container())
                     .map(|r| r.document_id)
                     .collect::<Vec<_>>();
                 if is_move {
@@ -474,7 +474,7 @@ async fn copy_event(
                 .as_ref(),
             to_account_id,
             to_calendar_id,
-            event.inner.event.uids().next().unwrap_or_default(),
+            event.inner.data.event.uids().next().unwrap_or_default(),
         )
         .await?;
 
@@ -602,7 +602,7 @@ async fn move_event(
                 .as_ref(),
             to_account_id,
             to_calendar_id,
-            event.inner.event.uids().next().unwrap_or_default(),
+            event.inner.data.event.uids().next().unwrap_or_default(),
         )
         .await?;
 

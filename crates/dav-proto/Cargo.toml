@@ -15,3 +15,4 @@ rkyv = { version = "0.8.10", features = ["little_endian"] }
 calcard = { path = "/Users/me/code/calcard", features = ["serde", "rkyv"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
+chrono = { version = "0.4.40", features = ["serde"] }

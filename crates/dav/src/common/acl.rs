@@ -83,7 +83,8 @@ pub(crate) trait DavAclHandler: Sync + Send {
         access_token: &AccessToken,
         account_id: u32,
         grants: &ArchivedVec<ArchivedAclGrant>,
-    ) -> impl Future<Output = trc::Result<Vec<Ace>>> + Send;
+        expand: Option<&PropFind>,
+    ) -> impl Future<Output = crate::Result<Vec<Ace>>> + Send;
 }
 
 impl DavAclHandler for Server {
@@ -115,7 +116,7 @@ impl DavAclHandler for Server {
             .resource
             .and_then(|r| resources.paths.by_name(r))
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        if !resource.is_container && !matches!(collection, Collection::FileNode) {
+        if !resource.is_container() && !matches!(collection, Collection::FileNode) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
 
@@ -473,7 +474,8 @@ impl DavAclHandler for Server {
         access_token: &AccessToken,
         account_id: u32,
         grants: &ArchivedVec<ArchivedAclGrant>,
-    ) -> trc::Result<Vec<Ace>> {
+        expand: Option<&PropFind>,
+    ) -> crate::Result<Vec<Ace>> {
         let mut aces = Vec::with_capacity(grants.len());
         if access_token.is_member(account_id)
             || grants.effective_acl(access_token).contains(Acl::Administer)
@@ -500,14 +502,24 @@ impl DavAclHandler for Server {
                     privileges.push(Privilege::ReadFreeBusy);
                 }
 
-                let grant_account_name = self
-                    .store()
-                    .get_principal_name(grant_account_id)
-                    .await
-                    .caused_by(trc::location!())?
-                    .unwrap_or_else(|| format!("_{grant_account_id}"));
+                let principal = if let Some(expand) = expand {
+                    self.expand_principal(access_token, grant_account_id, expand)
+                        .await?
+                        .map(Principal::Response)
+                        .unwrap_or_else(|| {
+                            Principal::Href(Href(format!(
+                                "{}/_{grant_account_id}/",
+                                DavResourceName::Principal.base_path(),
+                            )))
+                        })
+                } else {
+                    let grant_account_name = self
+                        .store()
+                        .get_principal_name(grant_account_id)
+                        .await
+                        .caused_by(trc::location!())?
+                        .unwrap_or_else(|| format!("_{grant_account_id}"));
 
-                aces.push(Ace::new(
                     Principal::Href(Href(format!(
                         "{}/{}/",
                         DavResourceName::Principal.base_path(),
@@ -515,9 +527,10 @@ impl DavAclHandler for Server {
                             &grant_account_name,
                             NON_ALPHANUMERIC
                         ),
-                    ))),
-                    GrantDeny::grant(privileges),
-                ));
+                    )))
+                };
+
+                aces.push(Ace::new(principal, GrantDeny::grant(privileges)));
             }
         }
 

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><A:expand-property
+xmlns:A="DAV:"><A:property name="calendar-proxy-read-for" namespace="
+http://calendarserver.org/ns/"><A:property name="email-address-set"
+namespace="http://calendarserver.org/ns/"/><A:property name="displayname"
+namespace="DAV:"/><A:property name="calendar-user-address-set"
+namespace="urn:ietf:params:xml:ns:caldav"/></A:property><A:property
+name="calendar-proxy-write-for"
+namespace="http://calendarserver.org/ns/"><A:property
+name="email-address-set" namespace="http://calendarserver.org/ns/"/><A:property
+name="displayname" namespace="DAV:"/><A:property
+name="calendar-user-address-set"
+namespace="urn:ietf:params:xml:ns:caldav"/></A:property></A:expand-property>

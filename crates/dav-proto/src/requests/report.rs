@@ -12,11 +12,12 @@ use calcard::{
 use crate::{
     parser::{tokenizer::Tokenizer, DavParser, RawElement, Token, XmlValueParser},
     schema::{
-        property::DateRange,
+        property::{DavProperty, TimeRange},
         request::{
-            AclPrincipalPropSet, AddressbookQuery, CalendarQuery, Filter, FilterOp, FreeBusyQuery,
-            MultiGet, PrincipalMatch, PrincipalPropertySearch, PropFind, Report, SyncCollection,
-            TextMatch, Timezone, VCardPropertyWithGroup,
+            AclPrincipalPropSet, AddressbookQuery, CalendarQuery, DeadElementTag, ExpandProperty,
+            ExpandPropertyItem, Filter, FilterOp, FreeBusyQuery, MultiGet, PrincipalMatch,
+            PrincipalPropertySearch, PropFind, Report, SyncCollection, TextMatch, Timezone,
+            VCardPropertyWithGroup,
         },
         Attribute, Collation, Element, MatchType, NamedElement, Namespace,
     },
@@ -67,6 +68,10 @@ impl DavParser for Report {
             } => stream
                 .expect_element_end()
                 .map(|_| Report::PrincipalSearchPropertySet),
+            NamedElement {
+                ns: Namespace::Dav,
+                element: Element::ExpandProperty,
+            } => ExpandProperty::parse(stream).map(Report::ExpandProperty),
             other => Err(other.into_unexpected()),
         }
     }
@@ -193,14 +198,16 @@ impl DavParser for CalendarQuery {
                         ns: Namespace::CalDav,
                         element: Element::TimeRange,
                     } => {
-                        let range = DateRange::from_raw(&raw)?;
+                        let range = TimeRange::from_raw(&raw)?;
                         stream.expect_element_end()?;
-                        if let Some(filter) = Filter::from_parts(
-                            components.iter().map(|(c, _)| *c).collect(),
-                            property.clone(),
-                            parameter.clone(),
-                            FilterOp::TimeRange(range),
-                        ) {
+                        if let Some(filter) = range.and_then(|range| {
+                            Filter::from_parts(
+                                components.iter().map(|(c, _)| *c).collect(),
+                                property.clone(),
+                                parameter.clone(),
+                                FilterOp::TimeRange(range),
+                            )
+                        }) {
                             cq.filters.push(filter);
                         }
                     }
@@ -381,7 +388,7 @@ impl DavParser for FreeBusyQuery {
                         element: Element::TimeRange,
                     },
                 raw,
-            } => DateRange::from_raw(&raw).map(|range| FreeBusyQuery { range }),
+            } => TimeRange::from_raw(&raw).map(|range| FreeBusyQuery { range }),
             other => Err(other.into_unexpected()),
         }
     }
@@ -492,6 +499,67 @@ impl DavParser for SyncCollection {
         }
 
         Ok(sc)
+    }
+}
+
+impl DavParser for ExpandProperty {
+    fn parse(stream: &mut Tokenizer<'_>) -> crate::parser::Result<Self> {
+        let mut ep = ExpandProperty { properties: vec![] };
+        let mut depth = 1;
+
+        loop {
+            match stream.token()? {
+                Token::ElementStart { name, raw } => match name {
+                    NamedElement {
+                        ns,
+                        element: Element::Property,
+                    } => {
+                        for attribute in raw.attributes::<String>() {
+                            if let Attribute::Name(name) = attribute? {
+                                if let Some(property) = Element::try_parse(name.as_bytes())
+                                    .copied()
+                                    .and_then(|element| {
+                                        DavProperty::from_element(NamedElement { ns, element })
+                                    })
+                                {
+                                    ep.properties.push(ExpandPropertyItem {
+                                        property,
+                                        depth: depth - 1,
+                                    });
+                                } else {
+                                    let attrs = raw.0.attributes_raw().trim_ascii();
+                                    ep.properties.push(ExpandPropertyItem {
+                                        property: DavProperty::DeadProperty(DeadElementTag {
+                                            name,
+                                            attrs: (!attrs.is_empty()).then(|| {
+                                                String::from_utf8_lossy(attrs).into_owned()
+                                            }),
+                                        }),
+                                        depth: depth - 1,
+                                    });
+                                }
+                                break;
+                            }
+                        }
+                        depth += 1;
+                    }
+                    name => return Err(name.into_unexpected()),
+                },
+                Token::ElementEnd => {
+                    depth -= 1;
+
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                Token::UnknownElement(_) => {
+                    stream.seek_element_end()?;
+                }
+                element => return Err(element.into_unexpected()),
+            }
+        }
+
+        Ok(ep)
     }
 }
 

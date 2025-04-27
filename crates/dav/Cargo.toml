@@ -20,6 +20,7 @@ hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 percent-encoding = "2.3.1"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
 compact_str = "0.9.0"
+chrono = "0.4.40"
 
 [dev-dependencies]
 

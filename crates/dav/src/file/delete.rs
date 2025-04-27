@@ -56,7 +56,7 @@ impl FileDeleteRequestHandler for Server {
         }
 
         // Sort ids descending from the deepest to the root
-        ids.sort_unstable_by(|a, b| b.hierarchy_sequence.cmp(&a.hierarchy_sequence));
+        ids.sort_unstable_by(|a, b| b.hierarchy_sequence().cmp(&a.hierarchy_sequence()));
         let document_id = ids.last().map(|a| a.document_id).unwrap();
         let mut sorted_ids = Vec::with_capacity(ids.len());
         sorted_ids.extend(ids.into_iter().map(|a| a.document_id));
@@ -64,7 +64,13 @@ impl FileDeleteRequestHandler for Server {
         // Validate ACLs
         if !access_token.is_member(account_id) {
             let permissions = self
-                .shared_containers(access_token, account_id, Collection::FileNode, Acl::Delete)
+                .shared_containers(
+                    access_token,
+                    account_id,
+                    Collection::FileNode,
+                    [Acl::Delete],
+                    false,
+                )
                 .await
                 .caused_by(trc::location!())?;
             if permissions.len() != sorted_ids.len() as u64

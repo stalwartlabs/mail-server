@@ -85,7 +85,7 @@ impl CardUpdateRequestHandler for Server {
         };
 
         if let Some(resource) = resources.paths.by_name(resource_name) {
-            if resource.is_container {
+            if resource.is_container() {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 
@@ -191,7 +191,7 @@ impl CardUpdateRequestHandler for Server {
 
             Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
         } else if let Some((Some(parent), name)) = resources.map_parent(resource_name) {
-            if !parent.is_container {
+            if !parent.is_container() {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 

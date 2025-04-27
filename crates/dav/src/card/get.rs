@@ -55,7 +55,7 @@ impl CardGetRequestHandler for Server {
                     .ok_or(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))?,
             )
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        if resource.is_container {
+        if resource.is_container() {
             return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
         }
 

@@ -55,7 +55,7 @@ impl CalendarGetRequestHandler for Server {
                     .ok_or(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))?,
             )
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        if resource.is_container {
+        if resource.is_container() {
             return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
         }
 
@@ -108,7 +108,7 @@ impl CalendarGetRequestHandler for Server {
             .with_etag(etag)
             .with_last_modified(Rfc1123DateTime::new(i64::from(event.modified)).to_string());
 
-        let ical = event.event.to_string();
+        let ical = event.data.event.to_string();
 
         if !is_head {
             Ok(response.with_binary_body(ical))

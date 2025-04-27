@@ -15,7 +15,7 @@ use mail_parser::DateTime;
 use crate::schema::{
     property::{
         CalDavProperty, CalDavPropertyName, CalendarData, CardDavProperty, CardDavPropertyName,
-        Comp, DateRange, DavProperty, DavValue, PrincipalProperty, ResourceType, WebDavProperty,
+        Comp, DavProperty, DavValue, PrincipalProperty, ResourceType, TimeRange, WebDavProperty,
     },
     request::{DavPropertyValue, DeadProperty, VCardPropertyWithGroup},
     response::List,
@@ -171,7 +171,7 @@ impl Tokenizer<'_> {
                         },
                     raw,
                 } => {
-                    data.expand = Some(DateRange::from_raw(&raw)?);
+                    data.expand = TimeRange::from_raw(&raw)?;
                     self.expect_element_end()?;
                 }
                 Token::ElementStart {
@@ -182,7 +182,7 @@ impl Tokenizer<'_> {
                         },
                     raw,
                 } => {
-                    data.limit_recurrence = Some(DateRange::from_raw(&raw)?);
+                    data.limit_recurrence = TimeRange::from_raw(&raw)?;
                     self.expect_element_end()?;
                 }
                 Token::ElementStart {
@@ -193,7 +193,7 @@ impl Tokenizer<'_> {
                         },
                     raw,
                 } => {
-                    data.limit_freebusy = Some(DateRange::from_raw(&raw)?);
+                    data.limit_freebusy = TimeRange::from_raw(&raw)?;
                     self.expect_element_end()?;
                 }
                 Token::ElementEnd => {
@@ -381,9 +381,23 @@ impl Tokenizer<'_> {
     }
 }
 
-impl DateRange {
-    pub fn from_raw(raw: &RawElement<'_>) -> super::Result<Self> {
-        let mut range = DateRange { start: 0, end: 0 };
+impl TimeRange {
+    pub fn is_in_range(&self, match_overlap: bool, start: i64, end: i64) -> bool {
+        if !match_overlap {
+            // RFC4791#9.9: (start <  DTEND AND end > DTSTART)
+            self.start < end && self.end > start
+        } else {
+            // RFC4791#9.9: ((start <  DUE) OR (start <= DTSTART)) AND ((end > DTSTART) OR (end >= DUE))
+            let range = self.start..=self.end;
+            range.contains(&start) || range.contains(&end)
+        }
+    }
+
+    pub fn from_raw(raw: &RawElement<'_>) -> super::Result<Option<Self>> {
+        let mut range = TimeRange {
+            start: i64::MIN,
+            end: i64::MAX,
+        };
 
         for attribute in raw.attributes::<ICalendarDateTime>() {
             match attribute? {
@@ -397,7 +411,15 @@ impl DateRange {
             }
         }
 
-        Ok(range)
+        if range.end < range.start {
+            range.end = i64::MAX;
+        }
+
+        if range.start != i64::MIN || range.end != i64::MAX {
+            Ok(Some(range))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -572,7 +594,7 @@ impl AttributeValue for ICalendarDateTime {
         Self: Sized,
     {
         let mut dt = PartialDateTime::default();
-        dt.parse_timestamp(&mut s.as_bytes().iter().peekable());
+        dt.parse_timestamp(&mut s.as_bytes().iter().peekable(), true);
         dt.to_timestamp().map(ICalendarDateTime)
     }
 }

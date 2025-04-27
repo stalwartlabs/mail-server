@@ -68,10 +68,11 @@ impl FileCopyMoveRequestHandler for Server {
                     from_account_id,
                     Collection::FileNode,
                     if is_move {
-                        Bitmap::<Acl>::from_iter([Acl::Read, Acl::Modify])
+                        [Acl::Read, Acl::Modify].as_slice().iter().copied()
                     } else {
-                        Bitmap::<Acl>::from_iter([Acl::Read])
+                        [Acl::Read].as_slice().iter().copied()
                     },
+                    false,
                 )
                 .await
                 .caused_by(trc::location!())?;
@@ -212,7 +213,7 @@ impl FileCopyMoveRequestHandler for Server {
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
             let space_needed = from_files
                 .subtree(&res.name)
-                .map(|a| a.size as u64)
+                .map(|a| a.size() as u64)
                 .sum::<u64>();
             self.has_available_quota(
                 &self.get_resource_token(access_token, to_account_id).await?,
@@ -232,7 +233,7 @@ impl FileCopyMoveRequestHandler for Server {
                 .subtree(destination_resource_name)
                 .collect::<Vec<_>>();
             if !ids.is_empty() {
-                ids.sort_unstable_by(|a, b| b.hierarchy_sequence.cmp(&a.hierarchy_sequence));
+                ids.sort_unstable_by(|a, b| b.hierarchy_sequence().cmp(&a.hierarchy_sequence()));
                 let mut sorted_ids = Vec::with_capacity(ids.len());
                 sorted_ids.extend(ids.into_iter().map(|a| a.document_id));
                 DestroyArchive(sorted_ids)
@@ -408,12 +409,12 @@ async fn copy_container(
     let mut copy_files = if infinity_copy {
         from_files
             .subtree(&res.name)
-            .map(|r| (r.document_id, r.hierarchy_sequence))
+            .map(|r| (r.document_id, r.hierarchy_sequence()))
             .collect::<Vec<_>>()
     } else {
         from_files
             .subtree_with_depth(&res.name, 1)
-            .map(|r| (r.document_id, r.hierarchy_sequence))
+            .map(|r| (r.document_id, r.hierarchy_sequence()))
             .collect::<Vec<_>>()
     };
 
@@ -777,7 +778,7 @@ impl FromDavResource for Destination {
             account_id: u32::MAX,
             document_id: Some(item.document_id),
             parent_id: item.parent_id,
-            is_container: item.is_container,
+            is_container: item.is_container(),
             new_name: None,
         }
     }

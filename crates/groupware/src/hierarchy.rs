@@ -4,26 +4,27 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
-use common::{DavResource, DavResourceId, DavResources, Server, auth::AccessToken};
+use crate::{
+    DavName, DavResourceName, IDX_NAME, IDX_TIME,
+    calendar::{Calendar, CalendarPreferences},
+    contact::AddressBook,
+    file::FileNode,
+};
+use calcard::common::timezone::Tz;
+use common::{
+    DavResource, DavResourceId, DavResourceMetadata, DavResources, Server, auth::AccessToken,
+};
 use directory::backend::internal::manage::ManageDirectory;
 use jmap_proto::types::collection::Collection;
 use percent_encoding::NON_ALPHANUMERIC;
+use std::sync::Arc;
 use store::{
-    Deserialize, IndexKey, IndexKeyPrefix, IterateParams, SerializeInfallible, U32_LEN,
+    Deserialize, IndexKey, IndexKeyPrefix, IterateParams, SerializeInfallible, U32_LEN, U64_LEN,
     ahash::AHashMap,
     write::{BatchBuilder, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 use utils::bimap::IdBimap;
-
-use crate::{
-    DavName, DavResourceName, IDX_NAME,
-    calendar::{Calendar, CalendarPreferences},
-    contact::AddressBook,
-    file::FileNode,
-};
 
 pub trait DavHierarchy: Sync + Send {
     fn fetch_dav_resources(
@@ -44,6 +45,12 @@ pub trait DavHierarchy: Sync + Send {
         access_token: &AccessToken,
         account_id: u32,
     ) -> impl Future<Output = trc::Result<()>> + Send;
+
+    fn cached_dav_resources(
+        &self,
+        account_id: u32,
+        collection: Collection,
+    ) -> Option<Arc<DavResources>>;
 }
 
 impl DavHierarchy for Server {
@@ -154,17 +161,35 @@ impl DavHierarchy for Server {
 
         Ok(())
     }
+
+    fn cached_dav_resources(
+        &self,
+        account_id: u32,
+        collection: Collection,
+    ) -> Option<Arc<DavResources>> {
+        self.inner
+            .cache
+            .dav
+            .get(&DavResourceId {
+                account_id,
+                collection: collection.into(),
+            })
+            .clone()
+    }
 }
 
 async fn build_hierarchy(
     server: &Server,
     account_id: u32,
-    collection: Collection,
+    collection_: Collection,
 ) -> trc::Result<DavResources> {
-    let base_path = DavResourceName::from(collection).base_path();
-    let collection = u8::from(collection);
+    let base_path = DavResourceName::from(collection_).base_path();
+    let collection = u8::from(collection_);
     let mut containers: AHashMap<u32, String> = AHashMap::with_capacity(16);
     let mut resources: AHashMap<u32, Vec<DavName>> = AHashMap::with_capacity(16);
+
+    let mut time_ranges: AHashMap<u32, (i64, u32)> = AHashMap::new();
+    let mut time_zones: AHashMap<u32, Tz> = AHashMap::new();
 
     server
         .store()
@@ -181,7 +206,7 @@ async fn build_hierarchy(
                     account_id,
                     collection: collection + 1,
                     document_id: u32::MAX,
-                    field: IDX_NAME,
+                    field: IDX_TIME,
                     key: u32::MAX.serialize(),
                 },
             )
@@ -196,19 +221,39 @@ async fn build_hierarchy(
                     .get(U32_LEN)
                     .copied()
                     .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
+                let field = key
+                    .get(U32_LEN + 1)
+                    .copied()
+                    .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
 
                 if key_collection == collection {
-                    containers.insert(
-                        document_id,
-                        std::str::from_utf8(value)
-                            .map_err(|_| trc::Error::corrupted_key(key, None, trc::location!()))?
-                            .to_string(),
-                    );
-                } else {
+                    if field == IDX_NAME {
+                        containers.insert(
+                            document_id,
+                            std::str::from_utf8(value)
+                                .map_err(|_| {
+                                    trc::Error::corrupted_key(key, None, trc::location!())
+                                })?
+                                .to_string(),
+                        );
+                    } else if field == IDX_TIME {
+                        let tz = Tz::from_id(key.deserialize_be_u16(IndexKeyPrefix::len())?)
+                            .ok_or_else(|| {
+                                trc::Error::corrupted_key(key, None, trc::location!())
+                            })?;
+
+                        time_zones.insert(document_id, tz);
+                    }
+                } else if field == IDX_NAME {
                     resources.entry(document_id).or_default().push(
                         DavName::deserialize(value)
                             .map_err(|_| trc::Error::corrupted_key(key, None, trc::location!()))?,
                     );
+                } else if field == IDX_TIME {
+                    let start_time = key.deserialize_be_u64(IndexKeyPrefix::len())?;
+                    let duration = key.deserialize_be_u32(IndexKeyPrefix::len() + U64_LEN)?;
+
+                    time_ranges.insert(document_id, (start_time as i64, duration));
                 }
 
                 Ok(true)
@@ -246,9 +291,13 @@ async fn build_hierarchy(
                     document_id,
                     parent_id: dav_name.parent_id.into(),
                     name,
-                    size: 0,
-                    is_container: false,
-                    hierarchy_sequence: 1,
+                    data: time_ranges
+                        .get(&document_id)
+                        .map(|(start, duration)| DavResourceMetadata::CalendarEvent {
+                            start: *start,
+                            duration: *duration,
+                        })
+                        .unwrap_or(DavResourceMetadata::None),
                 });
             }
         }
@@ -261,9 +310,10 @@ async fn build_hierarchy(
             document_id,
             parent_id: None,
             name,
-            size: 0,
-            is_container: true,
-            hierarchy_sequence: 0,
+            data: time_zones
+                .get(&document_id)
+                .map(|tz| DavResourceMetadata::Calendar { tz: *tz })
+                .unwrap_or(DavResourceMetadata::None),
         });
     }
 
@@ -300,9 +350,11 @@ async fn build_file_hierarchy(server: &Server, account_id: u32) -> trc::Result<D
             document_id: expanded.document_id,
             parent_id: expanded.parent_id,
             name: expanded.name,
-            size: expanded.size,
-            is_container: expanded.is_container,
-            hierarchy_sequence: expanded.hierarchy_sequence,
+            data: DavResourceMetadata::File {
+                size: expanded.size,
+                hierarchy_sequence: expanded.hierarchy_sequence,
+                is_container: expanded.is_container,
+            },
         });
     }
 

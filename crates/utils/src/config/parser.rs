@@ -15,7 +15,7 @@ use std::fmt::Write;
 
 const MAX_NEST_LEVEL: usize = 10;
 
-// Simple TOML parser for Stalwart Mail Server configuration files.
+// Simple TOML parser for Stalwart Server configuration files.
 impl Config {
     pub fn new(toml: impl AsRef<str>) -> Result<Self> {
         let mut config = Config::default();

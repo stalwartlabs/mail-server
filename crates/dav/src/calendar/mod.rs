@@ -6,6 +6,7 @@
 
 pub mod copy_move;
 pub mod delete;
+pub mod freebusy;
 pub mod get;
 pub mod mkcol;
 pub mod proppatch;
@@ -104,7 +105,7 @@ pub(crate) async fn assert_is_unique_uid(
         .caused_by(trc::location!())?;
     if !hits.results.is_empty() {
         for path in resources.paths.iter() {
-            if !path.is_container
+            if !path.is_container()
                 && hits.results.contains(path.document_id)
                 && path.parent_id.unwrap() == calendar_id
             {

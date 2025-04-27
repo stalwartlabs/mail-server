@@ -148,7 +148,7 @@ impl FromDavResource for FileItemId {
         FileItemId {
             document_id: item.document_id,
             parent_id: item.parent_id,
-            is_container: item.is_container,
+            is_container: item.is_container(),
         }
     }
 }

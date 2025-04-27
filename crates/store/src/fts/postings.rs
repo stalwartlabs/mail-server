@@ -7,10 +7,12 @@
 use std::cmp::Ordering;
 
 use ahash::AHashSet;
-use bitpacking::{BitPacker, BitPacker1x, BitPacker4x, BitPacker8x};
 use utils::codec::leb128::Leb128Reader;
 
-use crate::{SerializeInfallible, write::key::KeySerializer};
+use crate::{
+    SerializeInfallible,
+    write::{bitpack::BitpackIterator, key::KeySerializer},
+};
 
 #[derive(Default)]
 pub(super) struct Postings {
@@ -80,7 +82,7 @@ impl<T: AsRef<[u8]>> SerializedPostings<T> {
 
 impl<'x, T: AsRef<[u8]>> IntoIterator for &'x SerializedPostings<T> {
     type Item = u32;
-    type IntoIter = PostingsIterator<'x>;
+    type IntoIter = BitpackIterator<'x>;
 
     fn into_iter(self) -> Self::IntoIter {
         let bytes = self.bytes.as_ref();
@@ -89,9 +91,9 @@ impl<'x, T: AsRef<[u8]>> IntoIterator for &'x SerializedPostings<T> {
             if *byte == 0xFF {
                 if let Some((items_left, bytes_read)) = bytes
                     .get(bytes_offset + 1..)
-                    .and_then(|bytes| bytes.read_leb128::<usize>())
+                    .and_then(|bytes| bytes.read_leb128::<u32>())
                 {
-                    return PostingsIterator {
+                    return BitpackIterator {
                         bytes,
                         bytes_offset: bytes_offset + bytes_read + 1,
                         items_left,
@@ -103,59 +105,7 @@ impl<'x, T: AsRef<[u8]>> IntoIterator for &'x SerializedPostings<T> {
             }
         }
 
-        PostingsIterator::default()
-    }
-}
-
-#[derive(Default)]
-pub(super) struct PostingsIterator<'x> {
-    bytes: &'x [u8],
-    bytes_offset: usize,
-    chunk: Vec<u32>,
-    chunk_offset: usize,
-    pub items_left: usize,
-}
-
-impl Iterator for PostingsIterator<'_> {
-    type Item = u32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(item) = self.chunk.get(self.chunk_offset) {
-            self.chunk_offset += 1;
-            return Some(*item);
-        }
-        let block_len = match self.items_left {
-            0 => return None,
-            1..=31 => {
-                self.items_left -= 1;
-                let (item, bytes_read) = self.bytes.get(self.bytes_offset..)?.read_leb128()?;
-                self.bytes_offset += bytes_read;
-                return Some(item);
-            }
-            32..=127 => BitPacker1x::BLOCK_LEN,
-            128..=255 => BitPacker4x::BLOCK_LEN,
-            _ => BitPacker8x::BLOCK_LEN,
-        };
-
-        let bitpacker = TermIndexPacker::with_block_len(block_len);
-        let num_bits = *self.bytes.get(self.bytes_offset)?;
-        let bytes_read = ((num_bits as usize) * block_len / 8) + 1;
-        let initial_value = self.chunk.last().copied();
-
-        self.chunk = vec![0u32; block_len];
-        self.chunk_offset = 1;
-
-        bitpacker.decompress_strictly_sorted(
-            initial_value,
-            self.bytes
-                .get(self.bytes_offset + 1..self.bytes_offset + bytes_read)?,
-            &mut self.chunk[..],
-            num_bits,
-        );
-
-        self.bytes_offset += bytes_read;
-        self.items_left -= block_len;
-        self.chunk.first().copied()
+        BitpackIterator::default()
     }
 }
 
@@ -171,244 +121,9 @@ impl SerializeInfallible for Postings {
 
         // Compress postings
         if !self.postings.is_empty() {
-            let mut bitpacker = TermIndexPacker::new();
-            let mut compressed = vec![0u8; 4 * BitPacker8x::BLOCK_LEN];
-
-            let mut pos = 0;
-            let len = self.postings.len();
-            let mut initial_value = None;
-
-            serializer = serializer.write_leb128(len);
-
-            while pos < len {
-                let block_len = match len - pos {
-                    0..=31 => {
-                        for val in &self.postings[pos..] {
-                            serializer = serializer.write_leb128(*val);
-                        }
-                        break;
-                    }
-                    32..=127 => BitPacker1x::BLOCK_LEN,
-                    128..=255 => BitPacker4x::BLOCK_LEN,
-                    _ => BitPacker8x::BLOCK_LEN,
-                };
-
-                let chunk = &self.postings[pos..pos + block_len];
-                bitpacker.block_len(block_len);
-                let num_bits: u8 = bitpacker.num_bits_strictly_sorted(initial_value, chunk);
-                let compressed_len = bitpacker.compress_strictly_sorted(
-                    initial_value,
-                    chunk,
-                    &mut compressed[..],
-                    num_bits,
-                );
-                serializer = serializer
-                    .write(num_bits)
-                    .write(&compressed[..compressed_len]);
-                initial_value = chunk[chunk.len() - 1].into();
-
-                pos += block_len;
-            }
-        }
-
-        serializer.finalize()
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct TermIndexPacker {
-    bitpacker_1: BitPacker1x,
-    bitpacker_4: BitPacker4x,
-    bitpacker_8: BitPacker8x,
-    block_len: usize,
-}
-
-impl TermIndexPacker {
-    pub fn with_block_len(block_len: usize) -> Self {
-        TermIndexPacker {
-            bitpacker_1: BitPacker1x::new(),
-            bitpacker_4: BitPacker4x::new(),
-            bitpacker_8: BitPacker8x::new(),
-            block_len,
-        }
-    }
-
-    pub fn block_len(&mut self, num: usize) {
-        self.block_len = num;
-    }
-}
-
-impl BitPacker for TermIndexPacker {
-    const BLOCK_LEN: usize = 0;
-
-    fn new() -> Self {
-        TermIndexPacker {
-            bitpacker_1: BitPacker1x::new(),
-            bitpacker_4: BitPacker4x::new(),
-            bitpacker_8: BitPacker8x::new(),
-            block_len: 1,
-        }
-    }
-
-    fn compress(&self, decompressed: &[u32], compressed: &mut [u8], num_bits: u8) -> usize {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => self
-                .bitpacker_8
-                .compress(decompressed, compressed, num_bits),
-            BitPacker4x::BLOCK_LEN => self
-                .bitpacker_4
-                .compress(decompressed, compressed, num_bits),
-            _ => self
-                .bitpacker_1
-                .compress(decompressed, compressed, num_bits),
-        }
-    }
-
-    fn compress_sorted(
-        &self,
-        initial: u32,
-        decompressed: &[u32],
-        compressed: &mut [u8],
-        num_bits: u8,
-    ) -> usize {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => {
-                self.bitpacker_8
-                    .compress_sorted(initial, decompressed, compressed, num_bits)
-            }
-            BitPacker4x::BLOCK_LEN => {
-                self.bitpacker_4
-                    .compress_sorted(initial, decompressed, compressed, num_bits)
-            }
-            _ => self
-                .bitpacker_1
-                .compress_sorted(initial, decompressed, compressed, num_bits),
-        }
-    }
-
-    fn decompress(&self, compressed: &[u8], decompressed: &mut [u32], num_bits: u8) -> usize {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => {
-                self.bitpacker_8
-                    .decompress(compressed, decompressed, num_bits)
-            }
-            BitPacker4x::BLOCK_LEN => {
-                self.bitpacker_4
-                    .decompress(compressed, decompressed, num_bits)
-            }
-            _ => self
-                .bitpacker_1
-                .decompress(compressed, decompressed, num_bits),
-        }
-    }
-
-    fn decompress_sorted(
-        &self,
-        initial: u32,
-        compressed: &[u8],
-        decompressed: &mut [u32],
-        num_bits: u8,
-    ) -> usize {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => {
-                self.bitpacker_8
-                    .decompress_sorted(initial, compressed, decompressed, num_bits)
-            }
-            BitPacker4x::BLOCK_LEN => {
-                self.bitpacker_4
-                    .decompress_sorted(initial, compressed, decompressed, num_bits)
-            }
-            _ => self
-                .bitpacker_1
-                .decompress_sorted(initial, compressed, decompressed, num_bits),
-        }
-    }
-
-    fn num_bits(&self, decompressed: &[u32]) -> u8 {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => self.bitpacker_8.num_bits(decompressed),
-            BitPacker4x::BLOCK_LEN => self.bitpacker_4.num_bits(decompressed),
-            _ => self.bitpacker_1.num_bits(decompressed),
-        }
-    }
-
-    fn num_bits_sorted(&self, initial: u32, decompressed: &[u32]) -> u8 {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => self.bitpacker_8.num_bits_sorted(initial, decompressed),
-            BitPacker4x::BLOCK_LEN => self.bitpacker_4.num_bits_sorted(initial, decompressed),
-            _ => self.bitpacker_1.num_bits_sorted(initial, decompressed),
-        }
-    }
-
-    fn compress_strictly_sorted(
-        &self,
-        initial: Option<u32>,
-        decompressed: &[u32],
-        compressed: &mut [u8],
-        num_bits: u8,
-    ) -> usize {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => self.bitpacker_8.compress_strictly_sorted(
-                initial,
-                decompressed,
-                compressed,
-                num_bits,
-            ),
-            BitPacker4x::BLOCK_LEN => self.bitpacker_4.compress_strictly_sorted(
-                initial,
-                decompressed,
-                compressed,
-                num_bits,
-            ),
-            _ => self.bitpacker_1.compress_strictly_sorted(
-                initial,
-                decompressed,
-                compressed,
-                num_bits,
-            ),
-        }
-    }
-
-    fn decompress_strictly_sorted(
-        &self,
-        initial: Option<u32>,
-        compressed: &[u8],
-        decompressed: &mut [u32],
-        num_bits: u8,
-    ) -> usize {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => self.bitpacker_8.decompress_strictly_sorted(
-                initial,
-                compressed,
-                decompressed,
-                num_bits,
-            ),
-            BitPacker4x::BLOCK_LEN => self.bitpacker_4.decompress_strictly_sorted(
-                initial,
-                compressed,
-                decompressed,
-                num_bits,
-            ),
-            _ => self.bitpacker_1.decompress_strictly_sorted(
-                initial,
-                compressed,
-                decompressed,
-                num_bits,
-            ),
-        }
-    }
-
-    fn num_bits_strictly_sorted(&self, initial: Option<u32>, decompressed: &[u32]) -> u8 {
-        match self.block_len {
-            BitPacker8x::BLOCK_LEN => self
-                .bitpacker_8
-                .num_bits_strictly_sorted(initial, decompressed),
-            BitPacker4x::BLOCK_LEN => self
-                .bitpacker_4
-                .num_bits_strictly_sorted(initial, decompressed),
-            _ => self
-                .bitpacker_1
-                .num_bits_strictly_sorted(initial, decompressed),
+            serializer.bitpack_sorted(&self.postings).finalize()
+        } else {
+            serializer.finalize()
         }
     }
 }
@@ -416,60 +131,8 @@ impl BitPacker for TermIndexPacker {
 #[cfg(test)]
 mod tests {
 
-    use ahash::AHashMap;
-
     use super::*;
-
-    #[test]
-    fn postings_roundtrip() {
-        for num_positions in [
-            1,
-            10,
-            BitPacker1x::BLOCK_LEN,
-            BitPacker4x::BLOCK_LEN,
-            BitPacker8x::BLOCK_LEN,
-            BitPacker8x::BLOCK_LEN + BitPacker4x::BLOCK_LEN + BitPacker1x::BLOCK_LEN,
-            BitPacker8x::BLOCK_LEN + BitPacker4x::BLOCK_LEN + BitPacker1x::BLOCK_LEN + 1,
-            (BitPacker8x::BLOCK_LEN * 3)
-                + (BitPacker4x::BLOCK_LEN * 3)
-                + (BitPacker1x::BLOCK_LEN * 3)
-                + 1,
-        ] {
-            println!("Testing block {num_positions}...",);
-            let mut postings = Postings::default();
-            for i in 0..num_positions {
-                postings.postings.push((i * i) as u32);
-            }
-            for fields in 0..std::cmp::min(10, num_positions) as u8 {
-                postings.fields.insert(fields);
-            }
-
-            let deserialized = SerializedPostings::new(postings.serialize());
-            let mut iter = (&deserialized).into_iter();
-
-            assert_eq!(
-                iter.items_left, num_positions,
-                "failed for num_positions: {}",
-                num_positions
-            );
-
-            for i in 0..num_positions {
-                assert_eq!(
-                    iter.next(),
-                    Some((i * i) as u32),
-                    "failed for position: {}",
-                    i
-                );
-            }
-            assert_eq!(iter.next(), None, "expected end of iterator");
-
-            for field in 0..std::cmp::min(10, num_positions) as u8 {
-                assert!(deserialized.has_field(field), "failed for field: {}", field);
-            }
-
-            assert_eq!(deserialized.positions().len(), num_positions);
-        }
-    }
+    use ahash::AHashMap;
 
     #[test]
     fn postings_match_positions() {

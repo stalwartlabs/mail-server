@@ -1,5 +1,5 @@
    <?xml version="1.0" encoding="utf-8" ?>
-   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+   <D:multistatus xmlns:D="DAV:" xmlns:B="urn:ietf:params:xml:ns:carddav">
      <D:response>
        <D:href>/home/bernard/addressbook/</D:href>
        <D:status>HTTP/1.1 507 Insufficient Storage</D:status>

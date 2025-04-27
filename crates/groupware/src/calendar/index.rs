@@ -8,9 +8,9 @@ use common::storage::index::{
     IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
 };
 use jmap_proto::types::{collection::Collection, value::AclGrant};
-use store::SerializeInfallible;
+use store::{SerializeInfallible, write::key::KeySerializer};
 
-use crate::{IDX_NAME, IDX_UID};
+use crate::{IDX_NAME, IDX_TIME, IDX_UID};
 
 use super::{
     ArchivedCalendar, ArchivedCalendarEvent, ArchivedCalendarPreferences, ArchivedDefaultAlert,
@@ -25,6 +25,15 @@ impl IndexableObject for Calendar {
             IndexValue::Index {
                 field: IDX_NAME,
                 value: self.name.as_str().into(),
+            },
+            IndexValue::Index {
+                field: IDX_TIME,
+                value: self
+                    .preferences
+                    .first()
+                    .and_then(|p| p.time_zone.tz())
+                    .map(|tz| tz.as_id().serialize())
+                    .into(),
             },
             IndexValue::Acl {
                 value: (&self.acls).into(),
@@ -47,6 +56,15 @@ impl IndexableObject for &ArchivedCalendar {
             IndexValue::Index {
                 field: IDX_NAME,
                 value: self.name.as_str().into(),
+            },
+            IndexValue::Index {
+                field: IDX_TIME,
+                value: self
+                    .preferences
+                    .first()
+                    .and_then(|p| p.time_zone.tz())
+                    .map(|tz| tz.as_id().serialize())
+                    .into(),
             },
             IndexValue::Acl {
                 value: self
@@ -83,7 +101,20 @@ impl IndexableObject for CalendarEvent {
             },
             IndexValue::Index {
                 field: IDX_UID,
-                value: self.event.uids().next().into(),
+                value: self.data.event.uids().next().into(),
+            },
+            IndexValue::Index {
+                field: IDX_TIME,
+                value: self
+                    .data
+                    .event_range()
+                    .map(|(start, duration)| {
+                        KeySerializer::new(std::mem::size_of::<i64>() + std::mem::size_of::<u32>())
+                            .write(start as u64)
+                            .write(duration)
+                            .finalize()
+                    })
+                    .into(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -114,7 +145,20 @@ impl IndexableObject for &ArchivedCalendarEvent {
             },
             IndexValue::Index {
                 field: IDX_UID,
-                value: self.event.uids().next().into(),
+                value: self.data.event.uids().next().into(),
+            },
+            IndexValue::Index {
+                field: IDX_TIME,
+                value: self
+                    .data
+                    .event_range()
+                    .map(|(start, duration)| {
+                        KeySerializer::new(std::mem::size_of::<i64>() + std::mem::size_of::<u32>())
+                            .write(start as u64)
+                            .write(duration)
+                            .finalize()
+                    })
+                    .into(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32

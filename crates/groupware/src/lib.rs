@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use calcard::common::timezone::Tz;
+use common::DavResources;
 use jmap_proto::types::collection::Collection;
 use store::{Deserialize, SerializeInfallible, write::key::KeySerializer};
 use utils::codec::leb128::Leb128Reader;
@@ -14,7 +16,8 @@ pub mod file;
 pub mod hierarchy;
 
 pub const IDX_NAME: u8 = 0;
-pub const IDX_UID: u8 = 1;
+pub const IDX_TIME: u8 = 1;
+pub const IDX_UID: u8 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DavResourceName {
@@ -130,5 +133,27 @@ impl From<Collection> for DavResourceName {
             Collection::Principal => DavResourceName::Principal,
             _ => unreachable!(),
         }
+    }
+}
+
+pub trait DavCalendarResource {
+    fn calendar_default_tz(&self, calendar_id: u32) -> Option<Tz>;
+    fn event_default_tz(&self, event_id: u32) -> Option<Tz>;
+}
+
+impl DavCalendarResource for DavResources {
+    fn calendar_default_tz(&self, calendar_id: u32) -> Option<Tz> {
+        self.paths
+            .iter()
+            .find(|c| c.is_container() && c.document_id == calendar_id)
+            .and_then(|c| c.timezone())
+    }
+
+    fn event_default_tz(&self, event_id: u32) -> Option<Tz> {
+        self.paths
+            .iter()
+            .find(|c| !c.is_container() && c.document_id == event_id)
+            .and_then(|c| c.parent_id)
+            .and_then(|parent_id| self.calendar_default_tz(parent_id))
     }
 }

@@ -12,10 +12,10 @@ use dav_proto::{
     Depth, RequestHeaders, Return,
     schema::{
         Namespace,
-        property::{ReportSet, ResourceType},
+        property::{DavProperty, ReportSet, ResourceType, TimeRange},
         request::{
-            AddressbookQuery, ArchivedDeadProperty, CalendarQuery, Filter, MultiGet, PropFind,
-            SyncCollection, Timezone, VCardPropertyWithGroup,
+            AddressbookQuery, ArchivedDeadProperty, CalendarQuery, ExpandProperty, Filter,
+            MultiGet, PropFind, SyncCollection, Timezone, VCardPropertyWithGroup,
         },
     },
 };
@@ -47,6 +47,7 @@ pub(crate) struct DavQuery<'x> {
     pub limit: Option<u32>,
     pub ret: Return,
     pub depth_no_root: bool,
+    pub expand: bool,
 }
 
 #[derive(Default, Debug)]
@@ -74,6 +75,7 @@ pub(crate) enum DavQueryFilter {
     Addressbook(AddressbookFilter),
     Calendar {
         filter: CalendarFilter,
+        max_time_range: Option<TimeRange>,
         timezone: Timezone,
     },
 }
@@ -184,6 +186,7 @@ impl<'x> DavQuery<'x> {
 
     pub fn calendar_query(
         query: CalendarQuery,
+        max_time_range: Option<TimeRange>,
         items: Vec<PropFindItem>,
         headers: RequestHeaders<'x>,
     ) -> Self {
@@ -192,6 +195,7 @@ impl<'x> DavQuery<'x> {
                 filter: DavQueryFilter::Calendar {
                     filter: query.filters,
                     timezone: query.timezone,
+                    max_time_range,
                 },
                 parent_collection: Collection::Calendar,
                 items,
@@ -222,6 +226,38 @@ impl<'x> DavQuery<'x> {
             limit: changes.limit,
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
+            expand: false,
+        }
+    }
+
+    pub fn expand(
+        resource: OwnedUri<'x>,
+        expand: ExpandProperty,
+        headers: RequestHeaders<'x>,
+    ) -> Self {
+        Self {
+            resource: DavQueryResource::Uri(resource),
+            propfind: PropFind::Prop(
+                expand
+                    .properties
+                    .into_iter()
+                    .filter_map(|item| {
+                        if !matches!(item.property, DavProperty::DeadProperty(_)) {
+                            Some(item.property)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+            ),
+            depth: match headers.depth {
+                Depth::Zero => 0,
+                _ => 1,
+            },
+            ret: headers.ret,
+            depth_no_root: headers.depth_no_root,
+            expand: true,
+            ..Default::default()
         }
     }
 

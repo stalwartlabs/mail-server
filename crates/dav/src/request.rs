@@ -29,9 +29,9 @@ use crate::{
     DavError, DavMethod, DavResourceName,
     calendar::{
         copy_move::CalendarCopyMoveRequestHandler, delete::CalendarDeleteRequestHandler,
-        get::CalendarGetRequestHandler, mkcol::CalendarMkColRequestHandler,
-        proppatch::CalendarPropPatchRequestHandler, query::CalendarQueryRequestHandler,
-        update::CalendarUpdateRequestHandler,
+        freebusy::CalendarFreebusyRequestHandler, get::CalendarGetRequestHandler,
+        mkcol::CalendarMkColRequestHandler, proppatch::CalendarPropPatchRequestHandler,
+        query::CalendarQueryRequestHandler, update::CalendarUpdateRequestHandler,
     },
     card::{
         copy_move::CardCopyMoveRequestHandler, delete::CardDeleteRequestHandler,
@@ -216,7 +216,24 @@ impl DavRequestDispatcher for Server {
                     self.handle_calendar_freebusy_request(&access_token, headers, report)
                         .await
                 }
-                Report::ExpandProperty(report) => todo!(),
+                Report::ExpandProperty(report) => {
+                    let uri = self
+                        .validate_uri(&access_token, headers.uri)
+                        .await
+                        .and_then(|d| d.into_owned_uri())?;
+                    match resource {
+                        DavResourceName::Card | DavResourceName::Cal | DavResourceName::File => {
+                            self.handle_dav_query(
+                                &access_token,
+                                DavQuery::expand(uri, report, headers),
+                            )
+                            .await
+                        }
+                        DavResourceName::Principal => {
+                            Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))
+                        }
+                    }
+                }
             },
             DavMethod::PROPPATCH => {
                 let request = PropertyUpdate::parse(&mut Tokenizer::new(&body))?;

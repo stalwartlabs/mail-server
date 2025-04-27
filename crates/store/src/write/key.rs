@@ -14,8 +14,8 @@ use crate::{
     SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_IN_MEMORY_VALUE, SUBSPACE_INDEXES, SUBSPACE_LOGS,
     SUBSPACE_PROPERTY, SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA,
     SUBSPACE_REPORT_IN, SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE,
-    SUBSPACE_TELEMETRY_INDEX, SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U32_LEN, U64_LEN,
-    ValueKey, WITH_SUBSPACE,
+    SUBSPACE_TELEMETRY_INDEX, SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN,
+    U64_LEN, ValueKey, WITH_SUBSPACE,
 };
 
 use super::{
@@ -32,6 +32,7 @@ pub trait KeySerialize {
 }
 
 pub trait DeserializeBigEndian {
+    fn deserialize_be_u16(&self, index: usize) -> trc::Result<u16>;
     fn deserialize_be_u32(&self, index: usize) -> trc::Result<u32>;
     fn deserialize_be_u64(&self, index: usize) -> trc::Result<u64>;
 }
@@ -101,6 +102,23 @@ impl KeySerialize for u64 {
 }
 
 impl DeserializeBigEndian for &[u8] {
+    fn deserialize_be_u16(&self, index: usize) -> trc::Result<u16> {
+        self.get(index..index + U16_LEN)
+            .ok_or_else(|| {
+                trc::StoreEvent::DataCorruption
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, *self)
+            })
+            .and_then(|bytes| {
+                bytes.try_into().map_err(|_| {
+                    trc::StoreEvent::DataCorruption
+                        .caused_by(trc::location!())
+                        .ctx(trc::Key::Value, *self)
+                })
+            })
+            .map(u16::from_be_bytes)
+    }
+
     fn deserialize_be_u32(&self, index: usize) -> trc::Result<u32> {
         self.get(index..index + U32_LEN)
             .ok_or_else(|| {

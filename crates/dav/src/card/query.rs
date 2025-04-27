@@ -4,20 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use calcard::vcard::{
-    ArchivedVCard, ArchivedVCardEntry, ArchivedVCardParameter, VCardParameterName,
-};
-use common::{Server, auth::AccessToken};
-use dav_proto::{
-    RequestHeaders,
-    schema::request::{AddressbookQuery, Filter, FilterOp, VCardPropertyWithGroup},
-};
-use groupware::hierarchy::DavHierarchy;
-use http_proto::HttpResponse;
-use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
-use trc::AddContext;
-
 use crate::{
     DavError,
     common::{
@@ -26,6 +12,23 @@ use crate::{
         uri::DavUriResource,
     },
 };
+use calcard::vcard::{
+    ArchivedVCard, ArchivedVCardEntry, ArchivedVCardParameter, VCardParameterName,
+};
+use common::{Server, auth::AccessToken};
+use dav_proto::{
+    RequestHeaders,
+    schema::{
+        property::CardDavPropertyName,
+        request::{AddressbookQuery, Filter, FilterOp, VCardPropertyWithGroup},
+    },
+};
+use groupware::hierarchy::DavHierarchy;
+use http_proto::HttpResponse;
+use hyper::StatusCode;
+use jmap_proto::types::{acl::Acl, collection::Collection};
+use std::fmt::Write;
+use trc::AddContext;
 
 pub(crate) trait CardQueryRequestHandler: Sync + Send {
     fn handle_card_query_request(
@@ -61,7 +64,7 @@ impl CardQueryRequestHandler for Server {
                     .ok_or(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))?,
             )
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        if !resource.is_container {
+        if !resource.is_container() {
             return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
         }
 
@@ -71,7 +74,8 @@ impl CardQueryRequestHandler for Server {
                 access_token,
                 account_id,
                 Collection::AddressBook,
-                Acl::ReadItems,
+                [Acl::ReadItems],
+                false,
             )
             .await
             .caused_by(trc::location!())?
@@ -197,4 +201,26 @@ fn find_parameter<'x>(
     name: &VCardParameterName,
 ) -> Option<&'x ArchivedVCardParameter> {
     entry.params.iter().find(|param| param.matches_name(name))
+}
+
+pub(crate) fn serialize_vcard_with_props(
+    card: &ArchivedVCard,
+    props: &[CardDavPropertyName],
+) -> String {
+    if !props.is_empty() {
+        let mut vcard = String::with_capacity(128);
+        let _ = write!(&mut vcard, "BEGIN:VCARD\r\n");
+        for item in props {
+            for entry in card.entries.iter() {
+                if entry.name == item.name && entry.group == item.group {
+                    let _ = entry.write_to(&mut vcard, !item.no_value);
+                    break;
+                }
+            }
+        }
+        let _ = write!(&mut vcard, "END:VCARD\r\n");
+        vcard
+    } else {
+        card.to_string()
+    }
 }

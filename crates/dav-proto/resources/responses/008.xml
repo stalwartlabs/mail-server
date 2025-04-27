@@ -1,11 +1,11 @@
    <?xml version="1.0" encoding="utf-8" ?>
-   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+   <D:multistatus xmlns:D="DAV:" xmlns:A="urn:ietf:params:xml:ns:caldav">
      <D:response>
        <D:href>http://cal.example.com/bernard/work/abcd2.ics</D:href>
        <D:propstat>
          <D:prop>
            <D:getetag>"fffff-abcd2"</D:getetag>
-        <C:calendar-data><![CDATA[BEGIN:VCALENDAR
+        <A:calendar-data><![CDATA[BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
 DTSTART;TZID=US/Eastern:20060106T140000
@@ -15,7 +15,7 @@ SUMMARY:Event #2 bis bis
 UID:00959BC664CA650E933C892C@example.com
 END:VEVENT
 END:VCALENDAR
-]]></C:calendar-data>
+]]></A:calendar-data>
          </D:prop>
          <D:status>HTTP/1.1 200 OK</D:status>
        </D:propstat>
@@ -25,7 +25,7 @@ END:VCALENDAR
        <D:propstat>
          <D:prop>
            <D:getetag>"fffff-abcd3"</D:getetag>
-        <C:calendar-data><![CDATA[BEGIN:VCALENDAR
+        <A:calendar-data><![CDATA[BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Example Corp.//CalDAV Client//EN
 BEGIN:VEVENT
@@ -35,7 +35,7 @@ SUMMARY:Event #3
 UID:DC6C50A017428C5216A2F1CD@example.com
 END:VEVENT
 END:VCALENDAR
-]]></C:calendar-data>
+]]></A:calendar-data>
          </D:prop>
          <D:status>HTTP/1.1 200 OK</D:status>
        </D:propstat>

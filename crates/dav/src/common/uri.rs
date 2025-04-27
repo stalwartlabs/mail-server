@@ -118,7 +118,7 @@ impl DavUriResource for Server {
                 .by_name(resource)
             {
                 Ok(Some(DocumentUri {
-                    collection: if resource.is_container || uri.collection == Collection::FileNode {
+                    collection: if resource.is_container() || uri.collection == Collection::FileNode {
                         uri.collection
                     } else if uri.collection == Collection::Calendar {
                         Collection::CalendarEvent

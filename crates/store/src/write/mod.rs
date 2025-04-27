@@ -26,6 +26,7 @@ use self::assert::AssertValue;
 
 pub mod assert;
 pub mod batch;
+pub mod bitpack;
 pub mod blob;
 pub mod hash;
 pub mod key;

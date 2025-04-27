@@ -64,7 +64,7 @@ impl CardDeleteRequestHandler for Server {
 
         // Fetch entry
         let mut batch = BatchBuilder::new();
-        if delete_resource.is_container {
+        if delete_resource.is_container() {
             let book_ = self
                 .get_archive(account_id, Collection::AddressBook, document_id)
                 .await
@@ -112,7 +112,7 @@ impl CardDeleteRequestHandler for Server {
                     document_id,
                     resources
                         .subtree(delete_path)
-                        .filter(|r| !r.is_container)
+                        .filter(|r| !r.is_container())
                         .map(|r| r.document_id)
                         .collect::<Vec<_>>(),
                     &mut batch,

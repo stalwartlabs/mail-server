@@ -10,7 +10,7 @@ use calcard::{
 };
 
 use super::{
-    property::{DateRange, DavProperty, DavValue, LockScope, LockType},
+    property::{DavProperty, DavValue, LockScope, LockType, TimeRange},
     response::Ace,
     Collation, MatchType,
 };
@@ -74,7 +74,16 @@ pub enum Report {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
-pub struct ExpandProperty {}
+pub struct ExpandProperty {
+    pub properties: Vec<ExpandPropertyItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
+pub struct ExpandPropertyItem {
+    pub property: DavProperty,
+    pub depth: u32,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
@@ -112,7 +121,7 @@ pub enum Timezone {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct FreeBusyQuery {
-    pub range: DateRange,
+    pub range: Option<TimeRange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,7 +169,7 @@ pub enum Filter<A, B, C> {
 pub enum FilterOp {
     Exists,
     Undefined,
-    TimeRange(DateRange),
+    TimeRange(TimeRange),
     TextMatch(TextMatch),
 }
 

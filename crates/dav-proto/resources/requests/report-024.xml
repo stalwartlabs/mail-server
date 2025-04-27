@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<D:expand-property xmlns:D="DAV:">
+    <D:property name="version-history">
+        <D:property name="version-set">
+            <D:property name="creator-displayname"/>
+            <D:property name="activity-set"/>
+        </D:property>
+    </D:property>
+</D:expand-property>

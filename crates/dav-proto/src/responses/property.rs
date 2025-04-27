@@ -143,6 +143,7 @@ impl Display for DavValue {
                     )
                 )
             }
+            DavValue::Response(v) => v.fmt(f),
             DavValue::Null => Ok(()),
         }
     }

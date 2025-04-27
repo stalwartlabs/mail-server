@@ -6,12 +6,19 @@
 
 use crate::{
     DavError, DavErrorCondition,
-    calendar::{CALENDAR_CONTAINER_PROPS, CALENDAR_ITEM_PROPS},
-    card::{CARD_CONTAINER_PROPS, CARD_ITEM_PROPS, query::vcard_query},
+    calendar::{
+        CALENDAR_CONTAINER_PROPS, CALENDAR_ITEM_PROPS,
+        query::{CalendarQueryHandler, try_parse_tz},
+    },
+    card::{
+        CARD_CONTAINER_PROPS, CARD_ITEM_PROPS,
+        query::{serialize_vcard_with_props, vcard_query},
+    },
     common::{DavQueryResource, uri::DavUriResource},
     file::{FILE_CONTAINER_PROPS, FILE_ITEM_PROPS},
     principal::{CurrentUserPrincipal, propfind::PrincipalPropFind},
 };
+use calcard::common::timezone::Tz;
 use common::{
     DavResource, DavResources, Server,
     auth::{AccessToken, AsTenantId},
@@ -34,12 +41,13 @@ use dav_proto::{
     },
 };
 use directory::{Type, backend::internal::manage::ManageDirectory};
-use groupware::{DavResourceName, calendar::ArchivedTimezone, hierarchy::DavHierarchy};
+use groupware::{
+    DavCalendarResource, DavResourceName, calendar::ArchivedTimezone, hierarchy::DavHierarchy,
+};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
 use percent_encoding::NON_ALPHANUMERIC;
-use std::fmt::Write;
 use std::sync::Arc;
 use store::{
     ahash::AHashMap,
@@ -101,6 +109,7 @@ pub(crate) struct PropFindItem {
     pub name: String,
     pub account_id: u32,
     pub document_id: u32,
+    pub parent_id: Option<u32>,
     pub is_container: bool,
 }
 
@@ -363,7 +372,8 @@ impl PropFindRequestHandler for Server {
                         access_token,
                         account_id,
                         collection_container,
-                        Acl::ReadItems,
+                        [Acl::ReadItems],
+                        false,
                     )
                     .await
                     .caused_by(trc::location!())?
@@ -508,7 +518,8 @@ impl PropFindRequestHandler for Server {
                                     access_token,
                                     account_id,
                                     collection_container,
-                                    Acl::ReadItems,
+                                    [Acl::ReadItems],
+                                    false,
                                 )
                                 .await
                                 .caused_by(trc::location!())?
@@ -534,7 +545,7 @@ impl PropFindRequestHandler for Server {
                         .resource
                         .and_then(|name| resources.paths.by_name(name))
                     {
-                        if !resource.is_container {
+                        if !resource.is_container() {
                             if document_ids
                                 .as_ref()
                                 .as_ref()
@@ -587,7 +598,7 @@ impl PropFindRequestHandler for Server {
             )));
         }
 
-        let mut is_all_prop = false;
+        let mut skip_not_found = query.expand;
         let properties = match &query.propfind {
             PropFind::PropName => {
                 let (container_props, children_props) = match collection_container {
@@ -630,7 +641,7 @@ impl PropFindRequestHandler for Server {
                 );
             }
             PropFind::AllProp(items) => {
-                is_all_prop = true;
+                skip_not_found = true;
                 let mut result = Vec::with_capacity(items.len() + DavProperty::ALL_PROPS.len());
                 result.extend(DavProperty::ALL_PROPS);
                 result.extend(items.iter().filter(|field| !field.is_all_prop()).cloned());
@@ -662,17 +673,39 @@ impl PropFindRequestHandler for Server {
                 .caused_by(trc::location!())?;
 
             // Filter
+            let mut calendar_filter = None;
             if let Some(query_filter) = &query_filter {
                 match (query_filter, &archive) {
-                    (DavQueryFilter::Addressbook(filters), ArchivedResource::ContactCard(card)) => {
-                        if !vcard_query(&card.inner.card, filters) {
+                    (DavQueryFilter::Addressbook(filter), ArchivedResource::ContactCard(card)) => {
+                        if !vcard_query(&card.inner.card, filter) {
                             continue;
                         }
                     }
                     (
-                        DavQueryFilter::Calendar { filter, timezone },
+                        DavQueryFilter::Calendar {
+                            filter,
+                            timezone,
+                            max_time_range,
+                        },
                         ArchivedResource::CalendarEvent(event),
-                    ) => {}
+                    ) => {
+                        let mut query_handler = CalendarQueryHandler::new(
+                            event.inner,
+                            *max_time_range,
+                            try_parse_tz(timezone)
+                                .or_else(|| {
+                                    item.parent_id.and_then(|calendar_id| {
+                                        self.cached_dav_resources(account_id, Collection::Calendar)
+                                            .and_then(|r| r.calendar_default_tz(calendar_id))
+                                    })
+                                })
+                                .unwrap_or(Tz::UTC),
+                        );
+                        if !query_handler.filter(event.inner, filter) {
+                            continue;
+                        }
+                        calendar_filter = Some(query_handler);
+                    }
                     _ => (),
                 }
             }
@@ -696,12 +729,12 @@ impl PropFindRequestHandler for Server {
                                     property.clone(),
                                     DavValue::String(name.to_string()),
                                 ));
-                            } else if !is_all_prop {
+                            } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
                         WebDavProperty::GetContentLanguage => {
-                            if !is_all_prop {
+                            if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
@@ -711,7 +744,7 @@ impl PropFindRequestHandler for Server {
                                     property.clone(),
                                     DavValue::Uint64(value as u64),
                                 ));
-                            } else if !is_all_prop {
+                            } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
@@ -721,7 +754,7 @@ impl PropFindRequestHandler for Server {
                                     property.clone(),
                                     DavValue::String(value.to_string()),
                                 ));
-                            } else if !is_all_prop {
+                            } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
@@ -783,7 +816,7 @@ impl PropFindRequestHandler for Server {
                         WebDavProperty::SupportedReportSet => {
                             if let Some(report_set) = archive.supported_report_set() {
                                 fields.push(DavPropertyValue::new(property.clone(), report_set));
-                            } else if !is_all_prop {
+                            } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
@@ -796,10 +829,24 @@ impl PropFindRequestHandler for Server {
                             ));
                         }
                         WebDavProperty::CurrentUserPrincipal => {
-                            fields.push(DavPropertyValue::new(
-                                property.clone(),
-                                vec![access_token.current_user_principal()],
-                            ));
+                            if !query.expand {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    vec![access_token.current_user_principal()],
+                                ));
+                            } else {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    self.expand_principal(
+                                        access_token,
+                                        access_token.primary_id(),
+                                        &query.propfind,
+                                    )
+                                    .await?
+                                    .map(DavValue::Response)
+                                    .unwrap_or(DavValue::Null),
+                                ));
+                            }
                         }
                         WebDavProperty::QuotaAvailableBytes => {
                             if item.is_container {
@@ -810,7 +857,7 @@ impl PropFindRequestHandler for Server {
                                         .caused_by(trc::location!())?
                                         .available,
                                 ));
-                            } else if !is_all_prop {
+                            } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
@@ -823,19 +870,33 @@ impl PropFindRequestHandler for Server {
                                         .caused_by(trc::location!())?
                                         .used,
                                 ));
-                            } else if !is_all_prop {
+                            } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
                         WebDavProperty::Owner => {
-                            fields.push(DavPropertyValue::new(
-                                property.clone(),
-                                vec![
-                                    data.owner(self, access_token, account_id)
-                                        .await
-                                        .caused_by(trc::location!())?,
-                                ],
-                            ));
+                            if !query.expand {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    vec![
+                                        data.owner(self, access_token, account_id)
+                                            .await
+                                            .caused_by(trc::location!())?,
+                                    ],
+                                ));
+                            } else {
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    self.expand_principal(
+                                        access_token,
+                                        account_id,
+                                        &query.propfind,
+                                    )
+                                    .await?
+                                    .map(DavValue::Response)
+                                    .unwrap_or(DavValue::Null),
+                                ));
+                            }
                         }
                         WebDavProperty::Group => {
                             fields.push(DavPropertyValue::empty(property.clone()));
@@ -913,19 +974,23 @@ impl PropFindRequestHandler for Server {
                                         collection_container == Collection::Calendar,
                                     ),
                                 ));
-                            } else if !is_all_prop {
+                            } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
                         WebDavProperty::Acl => {
                             if let Some(acls) = archive.acls() {
                                 let aces = self
-                                    .resolve_ace(access_token, account_id, acls)
-                                    .await
-                                    .caused_by(trc::location!())?;
+                                    .resolve_ace(
+                                        access_token,
+                                        account_id,
+                                        acls,
+                                        query.expand.then_some(&query.propfind),
+                                    )
+                                    .await?;
 
                                 fields.push(DavPropertyValue::new(property.clone(), aces));
-                            } else if !is_all_prop {
+                            } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
@@ -1003,29 +1068,16 @@ impl PropFindRequestHandler for Server {
                             CardDavProperty::AddressData(items),
                             ArchivedResource::ContactCard(card),
                         ) => {
-                            let vcard = if !items.is_empty() {
-                                let mut vcard = String::with_capacity(128);
-                                let _ = write!(&mut vcard, "BEGIN:VCARD\r\n");
-                                for item in items {
-                                    for entry in card.inner.card.entries.iter() {
-                                        if entry.name == item.name && entry.group == item.group {
-                                            let _ = entry.write_to(&mut vcard, !item.no_value);
-                                            break;
-                                        }
-                                    }
-                                }
-                                let _ = write!(&mut vcard, "END:VCARD\r\n");
-                                vcard
-                            } else {
-                                card.inner.card.to_string()
-                            };
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                DavValue::CData(vcard),
+                                DavValue::CData(serialize_vcard_with_props(
+                                    &card.inner.card,
+                                    items,
+                                )),
                             ));
                         }
                         _ => {
-                            if !is_all_prop {
+                            if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
@@ -1113,7 +1165,7 @@ impl PropFindRequestHandler for Server {
                         (CalDavProperty::MinDateTime, ArchivedResource::Calendar(_)) => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                DavValue::Timestamp(-2201212800),
+                                DavValue::Timestamp(i64::MIN),
                             ));
                         }
                         (CalDavProperty::MaxDateTime, ArchivedResource::Calendar(_)) => {
@@ -1138,19 +1190,34 @@ impl PropFindRequestHandler for Server {
                             ));
                         }
                         (
-                            CalDavProperty::CalendarData(calendar_data),
-                            ArchivedResource::CalendarEvent(calendar),
-                        ) => {}
+                            CalDavProperty::CalendarData(data),
+                            ArchivedResource::CalendarEvent(event),
+                        ) => {
+                            let ical = if calendar_filter.is_some() || !data.properties.is_empty() {
+                                calendar_filter
+                                    .get_or_insert_with(|| {
+                                        CalendarQueryHandler::new(event.inner, None, Tz::UTC)
+                                    })
+                                    .serialize_ical(event.inner, data)
+                            } else {
+                                event.inner.data.event.to_string()
+                            };
+
+                            fields.push(DavPropertyValue::new(
+                                property.clone(),
+                                DavValue::CData(ical),
+                            ));
+                        }
 
                         _ => {
-                            if !is_all_prop {
+                            if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
                     },
 
                     property => {
-                        if !is_all_prop {
+                        if !skip_not_found {
                             fields_not_found.push(DavPropertyValue::empty(property.clone()));
                         }
                     }
@@ -1158,7 +1225,7 @@ impl PropFindRequestHandler for Server {
             }
 
             // Add dead properties
-            if is_all_prop && !dead_properties.0.is_empty() {
+            if skip_not_found && !dead_properties.0.is_empty() {
                 dead_properties.to_dav_values(&mut fields);
             }
 
@@ -1214,7 +1281,8 @@ impl PropFindItem {
             name,
             account_id,
             document_id: resource.document_id,
-            is_container: resource.is_container,
+            parent_id: resource.parent_id,
+            is_container: resource.is_container(),
         }
     }
 }

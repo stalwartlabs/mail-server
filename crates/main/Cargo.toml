@@ -1,6 +1,6 @@
 [package]
 name = "mail-server"
-description = "Stalwart Mail Server"
+description = "Stalwart Server"
 authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
 repository = "https://github.com/stalwartlabs/jmap-server"
 homepage = "https://stalw.art"

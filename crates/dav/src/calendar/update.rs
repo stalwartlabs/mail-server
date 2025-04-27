@@ -15,7 +15,11 @@ use dav_proto::{
     RequestHeaders, Return,
     schema::{property::Rfc1123DateTime, response::CalCondition},
 };
-use groupware::{DavName, calendar::CalendarEvent, hierarchy::DavHierarchy};
+use groupware::{
+    DavName,
+    calendar::{CalendarEvent, CalendarEventData},
+    hierarchy::DavHierarchy,
+};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
@@ -90,7 +94,7 @@ impl CalendarUpdateRequestHandler for Server {
         };
 
         if let Some(resource) = resources.paths.by_name(resource_name) {
-            if resource.is_container {
+            if resource.is_container() {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 
@@ -151,7 +155,7 @@ impl CalendarUpdateRequestHandler for Server {
                             Rfc1123DateTime::new(i64::from(event.inner.modified)).to_string(),
                         )
                         .with_header("Preference-Applied", "return=representation")
-                        .with_binary_body(event.inner.event.to_string()));
+                        .with_binary_body(event.inner.data.event.to_string()));
                 }
                 Err(e) => return Err(e),
             }
@@ -168,7 +172,7 @@ impl CalendarUpdateRequestHandler for Server {
             }
 
             // Validate iCal
-            if event.inner.event.uids().next().unwrap_or_default() != validate_ical(&ical)? {
+            if event.inner.data.event.uids().next().unwrap_or_default() != validate_ical(&ical)? {
                 return Err(DavError::Condition(DavErrorCondition::new(
                     StatusCode::PRECONDITION_FAILED,
                     CalCondition::NoUidConflict(resources.format_resource(resource).into()),
@@ -180,7 +184,7 @@ impl CalendarUpdateRequestHandler for Server {
                 .deserialize::<CalendarEvent>()
                 .caused_by(trc::location!())?;
             new_event.size = bytes.len() as u32;
-            new_event.event = ical;
+            new_event.data = CalendarEventData::new(ical, self.core.dav.max_ical_instances);
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
@@ -192,7 +196,7 @@ impl CalendarUpdateRequestHandler for Server {
 
             Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
         } else if let Some((Some(parent), name)) = resources.map_parent(resource_name) {
-            if !parent.is_container {
+            if !parent.is_container() {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 
@@ -253,7 +257,7 @@ impl CalendarUpdateRequestHandler for Server {
                     name: name.to_string(),
                     parent_id: parent.document_id,
                 }],
-                event: ical,
+                data: CalendarEventData::new(ical, self.core.dav.max_ical_instances),
                 size: bytes.len() as u32,
                 ..Default::default()
             };

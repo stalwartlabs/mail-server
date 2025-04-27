@@ -38,6 +38,13 @@ pub(crate) trait PrincipalPropFind: Sync + Send {
         response: &mut MultiStatus,
     ) -> impl Future<Output = crate::Result<()>> + Send;
 
+    fn expand_principal(
+        &self,
+        access_token: &AccessToken,
+        account_id: u32,
+        propfind: &PropFind,
+    ) -> impl Future<Output = crate::Result<Option<Response>>> + Send;
+
     fn owner_href(
         &self,
         access_token: &AccessToken,
@@ -301,6 +308,25 @@ impl PrincipalPropFind for Server {
         }
 
         Ok(())
+    }
+
+    async fn expand_principal(
+        &self,
+        access_token: &AccessToken,
+        account_id: u32,
+        propfind: &PropFind,
+    ) -> crate::Result<Option<Response>> {
+        let mut status = MultiStatus::new(vec![]);
+        self.prepare_principal_propfind_response(
+            access_token,
+            Collection::Principal,
+            [account_id].into_iter(),
+            propfind,
+            &mut status,
+        )
+        .await?;
+
+        Ok(status.response.0.into_iter().next())
     }
 
     async fn owner_href(&self, access_token: &AccessToken, account_id: u32) -> trc::Result<Href> {

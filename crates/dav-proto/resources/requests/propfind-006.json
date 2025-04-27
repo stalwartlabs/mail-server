@@ -2,7 +2,7 @@
   "type": "Prop",
   "data": [
     {
-      "type": "CalDav",
+      "type": "Principal",
       "data": {
         "type": "CalendarHomeSet"
       }

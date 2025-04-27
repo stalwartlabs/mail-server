@@ -81,7 +81,7 @@ impl CardPropPatchRequestHandler for Server {
             .and_then(|r| resources.paths.by_name(r))
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
         let document_id = resource.document_id;
-        let collection = if resource.is_container {
+        let collection = if resource.is_container() {
             Collection::AddressBook
         } else {
             Collection::ContactCard
@@ -93,7 +93,7 @@ impl CardPropPatchRequestHandler for Server {
 
         // Verify ACL
         if !access_token.is_member(account_id) {
-            let (acl, document_id) = if resource.is_container {
+            let (acl, document_id) = if resource.is_container() {
                 (Acl::Read, resource.document_id)
             } else {
                 (Acl::ReadItems, resource.parent_id.unwrap())
@@ -142,7 +142,7 @@ impl CardPropPatchRequestHandler for Server {
         let mut batch = BatchBuilder::new();
         let mut items = Vec::with_capacity(request.remove.len() + request.set.len());
 
-        let etag = if resource.is_container {
+        let etag = if resource.is_container() {
             // Deserialize
             let book = archive
                 .to_unarchived::<AddressBook>()

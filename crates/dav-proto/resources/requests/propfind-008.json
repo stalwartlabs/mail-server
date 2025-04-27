@@ -14,10 +14,9 @@
       }
     },
     {
-      "type": "DeadProperty",
+      "type": "WebDav",
       "data": {
-        "name": "cs:getctag",
-        "attrs": null
+        "type": "GetCTag"
       }
     },
     {

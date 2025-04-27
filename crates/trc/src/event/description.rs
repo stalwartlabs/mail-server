@@ -1142,12 +1142,11 @@ impl ServerEvent {
     pub fn description(&self) -> &'static str {
         match self {
             ServerEvent::Startup => {
-                concat!("Starting Stalwart Mail Server v", env!("CARGO_PKG_VERSION"))
+                concat!("Starting Stalwart Server v", env!("CARGO_PKG_VERSION"))
             }
-            ServerEvent::Shutdown => concat!(
-                "Shutting down Stalwart Mail Server v",
-                env!("CARGO_PKG_VERSION")
-            ),
+            ServerEvent::Shutdown => {
+                concat!("Shutting down Stalwart Server v", env!("CARGO_PKG_VERSION"))
+            }
             ServerEvent::StartupError => "Server startup error",
             ServerEvent::ThreadError => "Server thread error",
             ServerEvent::Licensing => "Server licensing event",
@@ -1156,8 +1155,8 @@ impl ServerEvent {
 
     pub fn explain(&self) -> &'static str {
         match self {
-            ServerEvent::Startup => "Stalwart Mail Server has started",
-            ServerEvent::Shutdown => "Stalwart Mail Server is shutting down",
+            ServerEvent::Startup => "Stalwart Server has started",
+            ServerEvent::Shutdown => "Stalwart Server is shutting down",
             ServerEvent::StartupError => "An error occurred while starting the server",
             ServerEvent::ThreadError => "An error occurred with a server thread",
             ServerEvent::Licensing => "A licensing event occurred",

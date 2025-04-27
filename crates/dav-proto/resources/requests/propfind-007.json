@@ -27,13 +27,6 @@
       }
     },
     {
-      "type": "DeadProperty",
-      "data": {
-        "name": "cs:source",
-        "attrs": null
-      }
-    },
-    {
       "type": "CalDav",
       "data": {
         "type": "SupportedCalendarComponentSet"

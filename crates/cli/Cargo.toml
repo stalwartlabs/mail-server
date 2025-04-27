@@ -1,6 +1,6 @@
 [package]
 name = "stalwart-cli"
-description = "Stalwart Mail Server CLI"
+description = "Stalwart Server CLI"
 authors = ["Stalwart Labs Ltd. <hello@stalw.art>"]
 license = "AGPL-3.0-only OR LicenseRef-SEL"
 repository = "https://github.com/stalwartlabs/cli"

@@ -64,7 +64,7 @@ impl CalendarDeleteRequestHandler for Server {
 
         // Fetch entry
         let mut batch = BatchBuilder::new();
-        if delete_resource.is_container {
+        if delete_resource.is_container() {
             let calendar_ = self
                 .get_archive(account_id, Collection::Calendar, document_id)
                 .await
@@ -112,7 +112,7 @@ impl CalendarDeleteRequestHandler for Server {
                     document_id,
                     resources
                         .subtree(delete_path)
-                        .filter(|r| !r.is_container)
+                        .filter(|r| !r.is_container())
                         .map(|r| r.document_id)
                         .collect::<Vec<_>>(),
                     &mut batch,

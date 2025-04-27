@@ -93,7 +93,7 @@ pub(crate) async fn assert_is_unique_uid(
             .caused_by(trc::location!())?;
         if !hits.results.is_empty() {
             for path in resources.paths.iter() {
-                if !path.is_container
+                if !path.is_container()
                     && hits.results.contains(path.document_id)
                     && path.parent_id.unwrap() == addressbook_id
                 {

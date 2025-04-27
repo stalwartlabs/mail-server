@@ -1,0 +1,83 @@
+{
+  "type": "ExpandProperty",
+  "properties": [
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "calendar-proxy-read-for",
+          "attrs": "name=\"calendar-proxy-read-for\" namespace=\"\nhttp://calendarserver.org/ns/\""
+        }
+      },
+      "depth": 0
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "email-address-set",
+          "attrs": "name=\"email-address-set\"\nnamespace=\"http://calendarserver.org/ns/\""
+        }
+      },
+      "depth": 1
+    },
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "DisplayName"
+        }
+      },
+      "depth": 1
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "calendar-user-address-set",
+          "attrs": "name=\"calendar-user-address-set\"\nnamespace=\"urn:ietf:params:xml:ns:caldav\""
+        }
+      },
+      "depth": 1
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "calendar-proxy-write-for",
+          "attrs": "name=\"calendar-proxy-write-for\"\nnamespace=\"http://calendarserver.org/ns/\""
+        }
+      },
+      "depth": 0
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "email-address-set",
+          "attrs": "name=\"email-address-set\" namespace=\"http://calendarserver.org/ns/\""
+        }
+      },
+      "depth": 1
+    },
+    {
+      "property": {
+        "type": "WebDav",
+        "data": {
+          "type": "DisplayName"
+        }
+      },
+      "depth": 1
+    },
+    {
+      "property": {
+        "type": "DeadProperty",
+        "data": {
+          "name": "calendar-user-address-set",
+          "attrs": "name=\"calendar-user-address-set\"\nnamespace=\"urn:ietf:params:xml:ns:caldav\""
+        }
+      },
+      "depth": 1
+    }
+  ]
+}
