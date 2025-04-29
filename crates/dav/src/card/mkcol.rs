@@ -4,6 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::proppatch::CardPropPatchRequestHandler;
+use crate::{
+    DavError, DavMethod, PropStatBuilder,
+    common::{
+        lock::{LockRequestHandler, ResourceState},
+        uri::DavUriResource,
+    },
+};
 use common::{Server, auth::AccessToken};
 use dav_proto::{
     RequestHeaders, Return,
@@ -15,16 +23,6 @@ use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
 use store::write::BatchBuilder;
 use trc::AddContext;
-
-use crate::{
-    DavError, DavMethod,
-    common::{
-        lock::{LockRequestHandler, ResourceState},
-        uri::DavUriResource,
-    },
-};
-
-use super::proppatch::CardPropPatchRequestHandler;
 
 pub(crate) trait CardMkColRequestHandler: Sync + Send {
     fn handle_card_mkcol_request(
@@ -51,15 +49,16 @@ impl CardMkColRequestHandler for Server {
         let name = resource
             .resource
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
-        if name.contains('/') || !access_token.is_member(account_id) {
+        if !access_token.is_member(account_id) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
-        } else if self
-            .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
-            .await
-            .caused_by(trc::location!())?
-            .paths
-            .by_name(name)
-            .is_some()
+        } else if name.contains('/')
+            || self
+                .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
+                .await
+                .caused_by(trc::location!())?
+                .paths
+                .by_name(name)
+                .is_some()
         {
             return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
         }
@@ -89,10 +88,10 @@ impl CardMkColRequestHandler for Server {
         // Apply MKCOL properties
         let mut return_prop_stat = None;
         if let Some(mkcol) = request {
-            let mut prop_stat = Vec::new();
+            let mut prop_stat = PropStatBuilder::default();
             if !self.apply_addressbook_properties(&mut book, false, mkcol.props, &mut prop_stat) {
                 return Ok(HttpResponse::new(StatusCode::FORBIDDEN).with_xml_body(
-                    MkColResponse::new(prop_stat)
+                    MkColResponse::new(prop_stat.build())
                         .with_namespace(Namespace::CardDav)
                         .to_string(),
                 ));
@@ -115,7 +114,7 @@ impl CardMkColRequestHandler for Server {
 
         if let Some(prop_stat) = return_prop_stat {
             Ok(HttpResponse::new(StatusCode::CREATED).with_xml_body(
-                MkColResponse::new(prop_stat)
+                MkColResponse::new(prop_stat.build())
                     .with_namespace(Namespace::CardDav)
                     .to_string(),
             ))

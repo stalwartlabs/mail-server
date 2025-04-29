@@ -7,7 +7,8 @@
 use utils::config::Config;
 
 #[derive(Debug, Clone, Default)]
-pub struct DavConfig {
+pub struct GroupwareConfig {
+    // DAV settings
     pub max_request_size: usize,
     pub dead_property_size: Option<usize>,
     pub live_property_size: usize,
@@ -15,19 +16,26 @@ pub struct DavConfig {
     pub max_locks_per_user: usize,
     pub max_changes: usize,
     pub max_match_results: usize,
-    pub max_vcard_size: usize,
+
+    // Calendar settings
     pub max_ical_size: usize,
     pub max_ical_instances: usize,
     pub max_ical_attendees_per_instance: usize,
     pub default_calendar_name: Option<String>,
-    pub default_addressbook_name: Option<String>,
     pub default_calendar_display_name: Option<String>,
+
+    // Addressbook settings
+    pub max_vcard_size: usize,
+    pub default_addressbook_name: Option<String>,
     pub default_addressbook_display_name: Option<String>,
+
+    // File storage settings
+    pub max_file_size: usize,
 }
 
-impl DavConfig {
+impl GroupwareConfig {
     pub fn parse(config: &mut Config) -> Self {
-        DavConfig {
+        GroupwareConfig {
             max_request_size: config
                 .property("dav.limits.size.request")
                 .unwrap_or(25 * 1024 * 1024),
@@ -75,6 +83,9 @@ impl DavConfig {
             max_ical_attendees_per_instance: config
                 .property("dav.limits.ical.max-attendees-per-instance")
                 .unwrap_or(1000),
+            max_file_size: config
+                .property("dav.limits.size.file")
+                .unwrap_or(25 * 1024 * 1024),
         }
     }
 }

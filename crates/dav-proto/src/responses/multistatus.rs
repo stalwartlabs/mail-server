@@ -18,7 +18,11 @@ use crate::schema::{
 
 impl Display for MultiStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<D:multistatus {}>{}", self.namespaces, self.response)?;
+        write!(
+            f,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><D:multistatus {}>{}",
+            self.namespaces, self.response
+        )?;
         if let Some(response_description) = &self.response_description {
             write!(f, "{response_description}")?;
         }

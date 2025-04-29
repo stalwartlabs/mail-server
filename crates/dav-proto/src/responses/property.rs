@@ -26,7 +26,7 @@ impl Display for PropResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "<D:prop {}>{}</D:prop>",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><D:prop {}>{}</D:prop>",
             self.namespaces, self.properties
         )
     }
@@ -35,10 +35,17 @@ impl Display for PropResponse {
 impl Display for DavPropertyValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (name, attrs) = self.property.tag_name();
+
+        write!(f, "<{}", name)?;
+
         if let Some(attrs) = attrs {
-            write!(f, "<{} {}>{}</{}>", name, attrs, self.value, name)
+            write!(f, " {attrs}")?;
+        }
+
+        if !matches!(self.value, DavValue::Null) {
+            write!(f, ">{}</{}>", self.value, name)
         } else {
-            write!(f, "<{}>{}</{}>", name, self.value, name)
+            write!(f, "/>")
         }
     }
 }

@@ -11,7 +11,7 @@ use dav_proto::{
         Namespace,
         property::{CardDavProperty, DavProperty, DavValue, ResourceType, WebDavProperty},
         request::{DavPropertyValue, PropertyUpdate},
-        response::{BaseCondition, MultiStatus, PropStat, Response},
+        response::{BaseCondition, MultiStatus, Response},
     },
 };
 use groupware::{
@@ -25,7 +25,7 @@ use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
-    DavError, DavMethod,
+    DavError, DavMethod, PropStatBuilder,
     common::{
         ETag, ExtractETag,
         lock::{LockRequestHandler, ResourceState},
@@ -46,7 +46,7 @@ pub(crate) trait CardPropPatchRequestHandler: Sync + Send {
         address_book: &mut AddressBook,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool;
 
     fn apply_card_properties(
@@ -54,7 +54,7 @@ pub(crate) trait CardPropPatchRequestHandler: Sync + Send {
         card: &mut ContactCard,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool;
 }
 
@@ -140,7 +140,7 @@ impl CardPropPatchRequestHandler for Server {
 
         let is_success;
         let mut batch = BatchBuilder::new();
-        let mut items = Vec::with_capacity(request.remove.len() + request.set.len());
+        let mut items = PropStatBuilder::default();
 
         let etag = if resource.is_container() {
             // Deserialize
@@ -220,7 +220,7 @@ impl CardPropPatchRequestHandler for Server {
         if headers.ret != Return::Minimal || !is_success {
             Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
                 .with_xml_body(
-                    MultiStatus::new(vec![Response::new_propstat(uri, items)])
+                    MultiStatus::new(vec![Response::new_propstat(uri, items.build())])
                         .with_namespace(Namespace::CardDav)
                         .to_string(),
                 )
@@ -235,24 +235,21 @@ impl CardPropPatchRequestHandler for Server {
         address_book: &mut AddressBook,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool {
         let mut has_errors = false;
 
         for property in properties {
-            match (property.property, property.value) {
+            match (&property.property, property.value) {
                 (DavProperty::WebDav(WebDavProperty::DisplayName), DavValue::String(name)) => {
-                    if name.len() <= self.core.dav.live_property_size {
+                    if name.len() <= self.core.groupware.live_property_size {
                         address_book.display_name = Some(name);
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Display name too long"),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
@@ -261,22 +258,16 @@ impl CardPropPatchRequestHandler for Server {
                     DavProperty::CardDav(CardDavProperty::AddressbookDescription),
                     DavValue::String(name),
                 ) => {
-                    if name.len() <= self.core.dav.live_property_size {
+                    if name.len() <= self.core.groupware.live_property_size {
                         address_book.description = Some(name);
-                        items.push(
-                            PropStat::new(DavProperty::CardDav(
-                                CardDavProperty::AddressbookDescription,
-                            ))
-                            .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::CardDav(
-                                CardDavProperty::AddressbookDescription,
-                            ))
-                            .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                            .with_response_description("Addressbook description too long"),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
+
                         has_errors = true;
                     }
                 }
@@ -287,53 +278,47 @@ impl CardPropPatchRequestHandler for Server {
                     DavProperty::WebDav(WebDavProperty::ResourceType),
                     DavValue::ResourceTypes(types),
                 ) => {
-                    if types.0.iter().all(|rt| {
+                    if !types.0.iter().all(|rt| {
                         matches!(rt, ResourceType::Collection | ResourceType::AddressBook)
                     }) {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::ResourceType))
-                                .with_status(StatusCode::FORBIDDEN)
-                                .with_error(BaseCondition::ValidResourceType),
+                        items.insert_precondition_failed(
+                            property.property,
+                            StatusCode::FORBIDDEN,
+                            BaseCondition::ValidResourceType,
                         );
                         has_errors = true;
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::ResourceType))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     }
                 }
                 (DavProperty::DeadProperty(dead), DavValue::DeadProperty(values))
-                    if self.core.dav.dead_property_size.is_some() =>
+                    if self.core.groupware.dead_property_size.is_some() =>
                 {
                     if is_update {
-                        address_book.dead_properties.remove_element(&dead);
+                        address_book.dead_properties.remove_element(dead);
                     }
 
                     if address_book.dead_properties.size() + values.size() + dead.size()
-                        < self.core.dav.dead_property_size.unwrap()
+                        < self.core.groupware.dead_property_size.unwrap()
                     {
                         address_book
                             .dead_properties
                             .add_element(dead.clone(), values.0);
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Dead property is too large."),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
                 }
-                (property, _) => {
-                    items.push(
-                        PropStat::new(property)
-                            .with_status(StatusCode::CONFLICT)
-                            .with_response_description("Property cannot be modified"),
+                _ => {
+                    items.insert_error_with_description(
+                        property.property,
+                        StatusCode::CONFLICT,
+                        "Property cannot be modified",
                     );
                     has_errors = true;
                 }
@@ -348,24 +333,21 @@ impl CardPropPatchRequestHandler for Server {
         card: &mut ContactCard,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool {
         let mut has_errors = false;
 
         for property in properties {
-            match (property.property, property.value) {
+            match (&property.property, property.value) {
                 (DavProperty::WebDav(WebDavProperty::DisplayName), DavValue::String(name)) => {
-                    if name.len() <= self.core.dav.live_property_size {
+                    if name.len() <= self.core.groupware.live_property_size {
                         card.display_name = Some(name);
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Display name too long"),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
@@ -374,34 +356,31 @@ impl CardPropPatchRequestHandler for Server {
                     card.created = dt;
                 }
                 (DavProperty::DeadProperty(dead), DavValue::DeadProperty(values))
-                    if self.core.dav.dead_property_size.is_some() =>
+                    if self.core.groupware.dead_property_size.is_some() =>
                 {
                     if is_update {
-                        card.dead_properties.remove_element(&dead);
+                        card.dead_properties.remove_element(dead);
                     }
 
                     if card.dead_properties.size() + values.size() + dead.size()
-                        < self.core.dav.dead_property_size.unwrap()
+                        < self.core.groupware.dead_property_size.unwrap()
                     {
                         card.dead_properties.add_element(dead.clone(), values.0);
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Dead property is too large."),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
                 }
-                (property, _) => {
-                    items.push(
-                        PropStat::new(property)
-                            .with_status(StatusCode::CONFLICT)
-                            .with_response_description("Property cannot be modified"),
+                _ => {
+                    items.insert_error_with_description(
+                        property.property,
+                        StatusCode::CONFLICT,
+                        "Property cannot be modified",
                     );
                     has_errors = true;
                 }
@@ -415,28 +394,23 @@ impl CardPropPatchRequestHandler for Server {
 fn remove_card_properties(
     card: &mut ContactCard,
     properties: Vec<DavProperty>,
-    items: &mut Vec<PropStat>,
+    items: &mut PropStatBuilder,
 ) {
     for property in properties {
-        match property {
+        match &property {
             DavProperty::WebDav(WebDavProperty::DisplayName) => {
                 card.display_name = None;
-                items.push(
-                    PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                        .with_status(StatusCode::OK),
-                );
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
             DavProperty::DeadProperty(dead) => {
-                card.dead_properties.remove_element(&dead);
-                items.push(
-                    PropStat::new(DavProperty::DeadProperty(dead)).with_status(StatusCode::OK),
-                );
+                card.dead_properties.remove_element(dead);
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
-            property => {
-                items.push(
-                    PropStat::new(property)
-                        .with_status(StatusCode::CONFLICT)
-                        .with_response_description("Property cannot be modified"),
+            _ => {
+                items.insert_error_with_description(
+                    property,
+                    StatusCode::CONFLICT,
+                    "Property cannot be deleted",
                 );
             }
         }
@@ -446,37 +420,27 @@ fn remove_card_properties(
 fn remove_addressbook_properties(
     book: &mut AddressBook,
     properties: Vec<DavProperty>,
-    items: &mut Vec<PropStat>,
+    items: &mut PropStatBuilder,
 ) {
     for property in properties {
-        match property {
+        match &property {
             DavProperty::CardDav(CardDavProperty::AddressbookDescription) => {
                 book.description = None;
-                items.push(
-                    PropStat::new(DavProperty::CardDav(
-                        CardDavProperty::AddressbookDescription,
-                    ))
-                    .with_status(StatusCode::OK),
-                );
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
             DavProperty::WebDav(WebDavProperty::DisplayName) => {
                 book.display_name = None;
-                items.push(
-                    PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                        .with_status(StatusCode::OK),
-                );
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
             DavProperty::DeadProperty(dead) => {
-                book.dead_properties.remove_element(&dead);
-                items.push(
-                    PropStat::new(DavProperty::DeadProperty(dead)).with_status(StatusCode::OK),
-                );
+                book.dead_properties.remove_element(dead);
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
-            property => {
-                items.push(
-                    PropStat::new(property)
-                        .with_status(StatusCode::CONFLICT)
-                        .with_response_description("Property cannot be modified"),
+            _ => {
+                items.insert_error_with_description(
+                    property,
+                    StatusCode::CONFLICT,
+                    "Property cannot be deleted",
                 );
             }
         }

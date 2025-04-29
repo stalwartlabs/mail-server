@@ -193,6 +193,7 @@ impl Display for Resource {
 
 impl Display for PrincipalSearchPropertySet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")?;
         write!(
             f,
             "<D:principal-search-property-set {}>{}</D:principal-search-property-set>",

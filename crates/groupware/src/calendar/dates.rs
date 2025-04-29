@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::str::FromStr;
-
 use super::{ArchivedCalendarEventData, ArchivedTimezone, CalendarEventData, Timezone};
 use crate::calendar::ComponentTimeRange;
 use calcard::{
@@ -238,7 +236,7 @@ impl ArchivedCalendarEventData {
 impl Timezone {
     pub fn tz(&self) -> Option<Tz> {
         match self {
-            Timezone::IANA(iana) => Tz::from_str(iana).ok(),
+            Timezone::IANA(iana) => Tz::from_id(*iana),
             Timezone::Custom(icalendar) => icalendar
                 .timezones()
                 .filter_map(|t| t.timezone().map(|x| x.1))
@@ -251,7 +249,7 @@ impl Timezone {
 impl ArchivedTimezone {
     pub fn tz(&self) -> Option<Tz> {
         match self {
-            ArchivedTimezone::IANA(iana) => Tz::from_str(iana).ok(),
+            ArchivedTimezone::IANA(iana) => Tz::from_id(iana.to_native()),
             ArchivedTimezone::Custom(icalendar) => icalendar
                 .timezones()
                 .filter_map(|t| t.timezone().map(|x| x.1))

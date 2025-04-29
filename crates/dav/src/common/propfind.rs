@@ -391,7 +391,7 @@ impl PropFindRequestHandler for Server {
                         .caused_by(trc::location!())?;
                     let limit = std::cmp::min(
                         query.limit.unwrap_or(u32::MAX) as usize,
-                        self.core.dav.max_changes,
+                        self.core.groupware.max_changes,
                     );
 
                     // Set sync token
@@ -591,7 +591,7 @@ impl PropFindRequestHandler for Server {
             DavQueryResource::None => unreachable!(),
         }
 
-        if query.depth == usize::MAX && paths.len() > self.core.dav.max_match_results {
+        if query.depth == usize::MAX && paths.len() > self.core.groupware.max_match_results {
             return Err(DavError::Condition(DavErrorCondition::new(
                 StatusCode::PRECONDITION_FAILED,
                 BaseCondition::NumberOfMatchesWithinLimit,
@@ -1025,10 +1025,10 @@ impl PropFindRequestHandler for Server {
                         (
                             CardDavProperty::AddressbookDescription,
                             ArchivedResource::AddressBook(book),
-                        ) if book.inner.display_name.is_some() => {
+                        ) if book.inner.description.is_some() => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                book.inner.display_name.as_ref().unwrap().to_string(),
+                                book.inner.description.as_ref().unwrap().to_string(),
                             ));
                         }
                         (
@@ -1061,7 +1061,7 @@ impl PropFindRequestHandler for Server {
                         (CardDavProperty::MaxResourceSize, ArchivedResource::AddressBook(_)) => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                self.core.dav.max_vcard_size as u64,
+                                self.core.groupware.max_vcard_size as u64,
                             ));
                         }
                         (
@@ -1159,7 +1159,7 @@ impl PropFindRequestHandler for Server {
                         (CalDavProperty::MaxResourceSize, ArchivedResource::Calendar(_)) => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                self.core.dav.max_ical_size as u64,
+                                self.core.groupware.max_ical_size as u64,
                             ));
                         }
                         (CalDavProperty::MinDateTime, ArchivedResource::Calendar(_)) => {
@@ -1177,7 +1177,7 @@ impl PropFindRequestHandler for Server {
                         (CalDavProperty::MaxInstances, ArchivedResource::Calendar(_)) => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                self.core.dav.max_ical_instances as u64,
+                                self.core.groupware.max_ical_instances as u64,
                             ));
                         }
                         (
@@ -1186,7 +1186,7 @@ impl PropFindRequestHandler for Server {
                         ) => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                self.core.dav.max_ical_attendees_per_instance as u64,
+                                self.core.groupware.max_ical_attendees_per_instance as u64,
                             ));
                         }
                         (

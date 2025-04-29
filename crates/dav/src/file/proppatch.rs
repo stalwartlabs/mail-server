@@ -10,7 +10,7 @@ use dav_proto::{
     schema::{
         property::{DavProperty, DavValue, ResourceType, WebDavProperty},
         request::{DavPropertyValue, PropertyUpdate},
-        response::{BaseCondition, MultiStatus, PropStat, Response},
+        response::{BaseCondition, MultiStatus, Response},
     },
 };
 use groupware::{file::FileNode, hierarchy::DavHierarchy};
@@ -21,7 +21,7 @@ use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
-    DavError, DavMethod,
+    DavError, DavMethod, PropStatBuilder,
     common::{
         ETag, ExtractETag,
         lock::{LockRequestHandler, ResourceState},
@@ -43,7 +43,7 @@ pub(crate) trait FilePropPatchRequestHandler: Sync + Send {
         file: &mut FileNode,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool;
 }
 
@@ -113,7 +113,7 @@ impl FilePropPatchRequestHandler for Server {
         let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
 
         // Remove properties
-        let mut items = Vec::with_capacity(request.remove.len() + request.set.len());
+        let mut items = PropStatBuilder::default();
         if !request.set_first && !request.remove.is_empty() {
             remove_file_properties(
                 &mut new_node,
@@ -151,7 +151,7 @@ impl FilePropPatchRequestHandler for Server {
         if headers.ret != Return::Minimal || !is_success {
             Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
                 .with_xml_body(
-                    MultiStatus::new(vec![Response::new_propstat(uri, items)]).to_string(),
+                    MultiStatus::new(vec![Response::new_propstat(uri, items.build())]).to_string(),
                 )
                 .with_etag_opt(etag))
         } else {
@@ -164,25 +164,23 @@ impl FilePropPatchRequestHandler for Server {
         file: &mut FileNode,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool {
         let mut has_errors = false;
 
         for property in properties {
-            match (property.property, property.value) {
+            match (&property.property, property.value) {
                 (DavProperty::WebDav(WebDavProperty::DisplayName), DavValue::String(name)) => {
-                    if name.len() <= self.core.dav.live_property_size {
+                    if name.len() <= self.core.groupware.live_property_size {
                         file.display_name = Some(name);
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Display name too long"),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
+
                         has_errors = true;
                     }
                 }
@@ -192,17 +190,14 @@ impl FilePropPatchRequestHandler for Server {
                 (DavProperty::WebDav(WebDavProperty::GetContentType), DavValue::String(name))
                     if file.file.is_some() =>
                 {
-                    if name.len() <= self.core.dav.live_property_size {
+                    if name.len() <= self.core.groupware.live_property_size {
                         file.file.as_mut().unwrap().media_type = Some(name);
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::GetContentType))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::GetContentType))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Content-type is too long"),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
@@ -212,48 +207,42 @@ impl FilePropPatchRequestHandler for Server {
                     DavValue::ResourceTypes(types),
                 ) if file.file.is_none() => {
                     if types.0.len() != 1 || types.0.first() != Some(&ResourceType::Collection) {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::ResourceType))
-                                .with_status(StatusCode::FORBIDDEN)
-                                .with_error(BaseCondition::ValidResourceType),
+                        items.insert_precondition_failed(
+                            property.property,
+                            StatusCode::FORBIDDEN,
+                            BaseCondition::ValidResourceType,
                         );
                         has_errors = true;
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::ResourceType))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     }
                 }
                 (DavProperty::DeadProperty(dead), DavValue::DeadProperty(values))
-                    if self.core.dav.dead_property_size.is_some() =>
+                    if self.core.groupware.dead_property_size.is_some() =>
                 {
                     if is_update {
-                        file.dead_properties.remove_element(&dead);
+                        file.dead_properties.remove_element(dead);
                     }
 
                     if file.dead_properties.size() + values.size() + dead.size()
-                        < self.core.dav.dead_property_size.unwrap()
+                        < self.core.groupware.dead_property_size.unwrap()
                     {
                         file.dead_properties.add_element(dead.clone(), values.0);
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Dead property is too large."),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
                 }
-                (property, _) => {
-                    items.push(
-                        PropStat::new(property)
-                            .with_status(StatusCode::CONFLICT)
-                            .with_response_description("Property cannot be modified"),
+                _ => {
+                    items.insert_error_with_description(
+                        property.property,
+                        StatusCode::CONFLICT,
+                        "Property cannot be modified",
                     );
                     has_errors = true;
                 }
@@ -267,35 +256,27 @@ impl FilePropPatchRequestHandler for Server {
 fn remove_file_properties(
     node: &mut FileNode,
     properties: Vec<DavProperty>,
-    items: &mut Vec<PropStat>,
+    items: &mut PropStatBuilder,
 ) {
     for property in properties {
-        match property {
+        match &property {
             DavProperty::WebDav(WebDavProperty::DisplayName) => {
                 node.display_name = None;
-                items.push(
-                    PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                        .with_status(StatusCode::OK),
-                );
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
             DavProperty::WebDav(WebDavProperty::GetContentType) if node.file.is_some() => {
                 node.file.as_mut().unwrap().media_type = None;
-                items.push(
-                    PropStat::new(DavProperty::WebDav(WebDavProperty::GetContentType))
-                        .with_status(StatusCode::OK),
-                );
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
             DavProperty::DeadProperty(dead) => {
-                node.dead_properties.remove_element(&dead);
-                items.push(
-                    PropStat::new(DavProperty::DeadProperty(dead)).with_status(StatusCode::OK),
-                );
+                node.dead_properties.remove_element(dead);
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
-            property => {
-                items.push(
-                    PropStat::new(property)
-                        .with_status(StatusCode::CONFLICT)
-                        .with_response_description("Property cannot be modified"),
+            _ => {
+                items.insert_error_with_description(
+                    property,
+                    StatusCode::CONFLICT,
+                    "Property cannot be deleted",
                 );
             }
         }

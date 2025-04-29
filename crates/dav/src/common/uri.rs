@@ -118,7 +118,8 @@ impl DavUriResource for Server {
                 .by_name(resource)
             {
                 Ok(Some(DocumentUri {
-                    collection: if resource.is_container() || uri.collection == Collection::FileNode {
+                    collection: if resource.is_container() || uri.collection == Collection::FileNode
+                    {
                         uri.collection
                     } else if uri.collection == Collection::Calendar {
                         Collection::CalendarEvent
@@ -143,7 +144,7 @@ impl<'x> UnresolvedUri<'x> {
             collection: self.collection,
             account_id: self
                 .account_id
-                .ok_or(DavError::Code(StatusCode::NOT_FOUND))?,
+                .ok_or(DavError::Code(StatusCode::FORBIDDEN))?,
             resource: self.resource,
         })
     }

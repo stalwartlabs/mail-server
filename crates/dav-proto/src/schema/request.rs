@@ -140,7 +140,7 @@ pub struct SyncCollection {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(test, serde(tag = "type"))]
 pub enum Filter<A, B, C> {
@@ -163,7 +163,7 @@ pub enum Filter<A, B, C> {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(test, serde(tag = "type", content = "data"))]
 pub enum FilterOp {
@@ -173,7 +173,7 @@ pub enum FilterOp {
     TextMatch(TextMatch),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(test, serde(tag = "type"))]
 pub struct TextMatch {

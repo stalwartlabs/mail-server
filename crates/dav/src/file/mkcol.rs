@@ -17,7 +17,7 @@ use store::write::{BatchBuilder, now};
 use trc::AddContext;
 
 use crate::{
-    DavMethod,
+    DavMethod, PropStatBuilder,
     common::{
         acl::DavAclHandler,
         lock::{LockRequestHandler, ResourceState},
@@ -99,10 +99,10 @@ impl FileMkColRequestHandler for Server {
         // Apply MKCOL properties
         let mut return_prop_stat = None;
         if let Some(mkcol) = request {
-            let mut prop_stat = Vec::new();
+            let mut prop_stat = PropStatBuilder::default();
             if !self.apply_file_properties(&mut node, false, mkcol.props, &mut prop_stat) {
                 return Ok(HttpResponse::new(StatusCode::FORBIDDEN).with_xml_body(
-                    MkColResponse::new(prop_stat)
+                    MkColResponse::new(prop_stat.build())
                         .with_namespace(Namespace::Dav)
                         .to_string(),
                 ));
@@ -129,7 +129,7 @@ impl FileMkColRequestHandler for Server {
 
         if let Some(prop_stat) = return_prop_stat {
             Ok(HttpResponse::new(StatusCode::CREATED).with_xml_body(
-                MkColResponse::new(prop_stat)
+                MkColResponse::new(prop_stat.build())
                     .with_namespace(Namespace::Dav)
                     .to_string(),
             ))

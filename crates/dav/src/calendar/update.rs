@@ -70,10 +70,10 @@ impl CalendarUpdateRequestHandler for Server {
             .resource
             .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
-        if bytes.len() > self.core.dav.max_ical_size {
+        if bytes.len() > self.core.groupware.max_ical_size {
             return Err(DavError::Condition(DavErrorCondition::new(
                 StatusCode::PRECONDITION_FAILED,
-                CalCondition::MaxResourceSize(self.core.dav.max_ical_size as u32),
+                CalCondition::MaxResourceSize(self.core.groupware.max_ical_size as u32),
             )));
         }
         let ical_raw = std::str::from_utf8(&bytes).map_err(|_| {
@@ -184,7 +184,7 @@ impl CalendarUpdateRequestHandler for Server {
                 .deserialize::<CalendarEvent>()
                 .caused_by(trc::location!())?;
             new_event.size = bytes.len() as u32;
-            new_event.data = CalendarEventData::new(ical, self.core.dav.max_ical_instances);
+            new_event.data = CalendarEventData::new(ical, self.core.groupware.max_ical_instances);
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
@@ -257,7 +257,7 @@ impl CalendarUpdateRequestHandler for Server {
                     name: name.to_string(),
                     parent_id: parent.document_id,
                 }],
-                data: CalendarEventData::new(ical, self.core.dav.max_ical_instances),
+                data: CalendarEventData::new(ical, self.core.groupware.max_ical_instances),
                 size: bytes.len() as u32,
                 ..Default::default()
             };
@@ -287,7 +287,7 @@ fn validate_ical(ical: &ICalendar) -> crate::Result<&str> {
     let uids = ical.uids().collect::<HashSet<_>>();
 
     // Validate component types
-    let mut types: [u8; 4] = [0; 4];
+    let mut types: [u8; 5] = [0; 5];
     for comp in &ical.components {
         match comp.component_type {
             ICalendarComponentType::VEvent => {
@@ -302,11 +302,14 @@ fn validate_ical(ical: &ICalendar) -> crate::Result<&str> {
             ICalendarComponentType::VFreebusy => {
                 types[3] += 1;
             }
+            ICalendarComponentType::VAvailability => {
+                types[4] += 1;
+            }
             _ => {}
         }
     }
 
-    if uids.len() == 1 && types.iter().filter(|&&v| v == 0).count() == 3 {
+    if uids.len() == 1 && types.iter().filter(|&&v| v == 0).count() == 4 {
         Ok(uids.iter().next().unwrap())
     } else {
         Err(DavError::Condition(DavErrorCondition::new(

@@ -111,7 +111,7 @@ pub struct UserProperties {
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub enum Timezone {
-    IANA(String),
+    IANA(u16),
     Custom(ICalendar),
     #[default]
     Default,

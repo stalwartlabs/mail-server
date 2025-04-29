@@ -13,7 +13,11 @@ use crate::schema::{
 
 impl Display for ErrorResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<D:error {}>", self.namespaces)?;
+        write!(
+            f,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><D:error {}>",
+            self.namespaces
+        )?;
 
         match &self.error {
             Condition::Base(e) => e.fmt(f)?,

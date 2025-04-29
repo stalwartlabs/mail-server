@@ -186,15 +186,13 @@ impl LockRequestHandler for Server {
                 }
 
                 // Validate lock_info
-                if lock_info
-                    .owner
-                    .as_ref()
-                    .is_some_and(|o| o.size() > self.core.dav.dead_property_size.unwrap_or(512))
-                {
+                if lock_info.owner.as_ref().is_some_and(|o| {
+                    o.size() > self.core.groupware.dead_property_size.unwrap_or(512)
+                }) {
                     return Err(DavError::Code(StatusCode::PAYLOAD_TOO_LARGE));
                 }
 
-                if self.core.dav.max_locks_per_user > 0
+                if self.core.groupware.max_locks_per_user > 0
                     && lock_data
                         .locks
                         .values()
@@ -205,7 +203,7 @@ impl LockRequestHandler for Server {
                                 .filter(|lock| lock.owner == access_token.primary_id)
                         })
                         .count()
-                        >= self.core.dav.max_locks_per_user
+                        >= self.core.groupware.max_locks_per_user
                 {
                     return Err(DavError::Code(StatusCode::TOO_MANY_REQUESTS));
                 }
@@ -234,9 +232,9 @@ impl LockRequestHandler for Server {
         let now = now();
         let response = if is_lock_request {
             let timeout = if let Timeout::Second(seconds) = headers.timeout {
-                std::cmp::min(seconds, self.core.dav.max_lock_timeout)
+                std::cmp::min(seconds, self.core.groupware.max_lock_timeout)
             } else {
-                self.core.dav.max_lock_timeout
+                self.core.groupware.max_lock_timeout
             };
             let expires = now + timeout;
 

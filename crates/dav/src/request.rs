@@ -125,7 +125,8 @@ impl DavRequestDispatcher for Server {
                         self.handle_file_get_request(
                             &access_token,
                             headers,
-                            !request.headers().contains_key("x-litmus"),
+                            matches!(method, DavMethod::HEAD)
+                                && !request.headers().contains_key("x-litmus"),
                         )
                         .await
                     }
@@ -429,7 +430,7 @@ impl DavRequestHandler for Server {
             if let Some(body) = fetch_body(
                 &mut request,
                 if !access_token.has_permission(Permission::UnlimitedUploads) {
-                    self.core.dav.max_request_size
+                    self.core.groupware.max_request_size
                 } else {
                     0
                 },

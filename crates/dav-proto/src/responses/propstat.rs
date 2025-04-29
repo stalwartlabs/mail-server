@@ -35,7 +35,8 @@ impl Display for Prop {
 }
 
 impl PropStat {
-    pub fn new(prop: impl Into<DavPropertyValue>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn new(prop: impl Into<DavPropertyValue>) -> Self {
         PropStat {
             prop: Prop(List(vec![prop.into()])),
             status: Status(StatusCode::OK),

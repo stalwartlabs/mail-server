@@ -59,12 +59,12 @@ pub struct ResponseDescription(pub String);
 #[repr(transparent)]
 pub struct SyncToken(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct Href(pub String);
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct List<T: Display>(pub Vec<T>);
@@ -172,7 +172,7 @@ pub struct ErrorResponse {
     pub error: Condition,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum Condition {
     Base(BaseCondition),
@@ -180,7 +180,7 @@ pub enum Condition {
     Card(CardCondition),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum BaseCondition {
     NoConflictingLock(List<Href>),
@@ -210,14 +210,14 @@ pub enum BaseCondition {
     ValidSyncToken,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct Resource {
     pub href: Href,
     pub privilege: Privilege,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum CalCondition {
     CalendarCollectionLocationOk,
@@ -239,7 +239,7 @@ pub enum CalCondition {
     MaxAttendeesPerInstance,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum CardCondition {
     SupportedAddressData,

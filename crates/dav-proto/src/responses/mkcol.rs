@@ -13,6 +13,7 @@ use crate::schema::{
 
 impl Display for MkColResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")?;
         if !self.mkcalendar {
             write!(
                 f,

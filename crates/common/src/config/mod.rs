@@ -6,10 +6,18 @@
 
 use std::{str::FromStr, sync::Arc};
 
+use self::{
+    imap::ImapConfig, jmap::settings::JmapConfig, scripts::Scripting, smtp::SmtpConfig,
+    storage::Storage,
+};
+use crate::{
+    Core, Network, Security, auth::oauth::config::OAuthConfig, expr::*,
+    listener::tls::AcmeProviders, manager::config::ConfigManager,
+};
 use arc_swap::ArcSwap;
 use base64::{Engine, engine::general_purpose};
-use dav::DavConfig;
 use directory::{Directories, Directory};
+use groupware::GroupwareConfig;
 use hyper::{
     HeaderMap,
     header::{AUTHORIZATION, HeaderName, HeaderValue},
@@ -20,17 +28,7 @@ use store::{BlobBackend, BlobStore, FtsStore, InMemoryStore, Store, Stores};
 use telemetry::Metrics;
 use utils::config::{Config, utils::AsKey};
 
-use crate::{
-    Core, Network, Security, auth::oauth::config::OAuthConfig, expr::*,
-    listener::tls::AcmeProviders, manager::config::ConfigManager,
-};
-
-use self::{
-    imap::ImapConfig, jmap::settings::JmapConfig, scripts::Scripting, smtp::SmtpConfig,
-    storage::Storage,
-};
-
-pub mod dav;
+pub mod groupware;
 pub mod imap;
 pub mod inner;
 pub mod jmap;
@@ -188,7 +186,7 @@ impl Core {
             acme: AcmeProviders::parse(config),
             metrics: Metrics::parse(config),
             spam: SpamFilterConfig::parse(config).await,
-            dav: DavConfig::parse(config),
+            groupware: GroupwareConfig::parse(config),
             storage: Storage {
                 data,
                 blob,

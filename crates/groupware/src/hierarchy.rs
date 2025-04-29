@@ -115,7 +115,7 @@ impl DavHierarchy for Server {
         access_token: &AccessToken,
         account_id: u32,
     ) -> trc::Result<()> {
-        if let Some(name) = &self.core.dav.default_addressbook_name {
+        if let Some(name) = &self.core.groupware.default_addressbook_name {
             let mut batch = BatchBuilder::new();
             let document_id = self
                 .store()
@@ -123,7 +123,7 @@ impl DavHierarchy for Server {
                 .await?;
             AddressBook {
                 name: name.clone(),
-                display_name: self.core.dav.default_addressbook_display_name.clone(),
+                display_name: self.core.groupware.default_addressbook_display_name.clone(),
                 is_default: true,
                 ..Default::default()
             }
@@ -139,7 +139,7 @@ impl DavHierarchy for Server {
         access_token: &AccessToken,
         account_id: u32,
     ) -> trc::Result<()> {
-        if let Some(name) = &self.core.dav.default_calendar_name {
+        if let Some(name) = &self.core.groupware.default_calendar_name {
             let mut batch = BatchBuilder::new();
             let document_id = self
                 .store()
@@ -150,7 +150,7 @@ impl DavHierarchy for Server {
                 preferences: vec![CalendarPreferences {
                     account_id,
                     name: name.clone(),
-                    description: self.core.dav.default_calendar_display_name.clone(),
+                    description: self.core.groupware.default_calendar_display_name.clone(),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -334,7 +334,7 @@ async fn build_file_hierarchy(server: &Server, account_id: u32) -> trc::Result<D
     let mut files = DavResources {
         base_path: format!(
             "{}/{}/",
-            DavResourceName::Card.base_path(),
+            DavResourceName::File.base_path(),
             percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
         ),
         paths: IdBimap::with_capacity(list.len()),

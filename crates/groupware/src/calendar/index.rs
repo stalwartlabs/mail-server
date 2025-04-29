@@ -199,7 +199,7 @@ impl ArchivedCalendarPreferences {
 impl Timezone {
     pub fn size(&self) -> usize {
         match self {
-            Timezone::IANA(s) => s.len(),
+            Timezone::IANA(_) => 2,
             Timezone::Custom(c) => c.size(),
             Timezone::Default => 0,
         }
@@ -209,7 +209,7 @@ impl Timezone {
 impl ArchivedTimezone {
     pub fn size(&self) -> usize {
         match self {
-            ArchivedTimezone::IANA(s) => s.len(),
+            ArchivedTimezone::IANA(_) => 2,
             ArchivedTimezone::Custom(c) => c.size(),
             ArchivedTimezone::Default => 0,
         }

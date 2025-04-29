@@ -59,7 +59,7 @@ impl CalendarDeleteRequestHandler for Server {
         let delete_resource = resources
             .paths
             .by_name(delete_path)
-            .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
+            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
         let document_id = delete_resource.document_id;
 
         // Fetch entry

@@ -62,6 +62,10 @@ impl FileUpdateRequestHandler for Server {
             .resource
             .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
+        if bytes.len() > self.core.groupware.max_file_size {
+            return Err(DavError::Code(StatusCode::PAYLOAD_TOO_LARGE));
+        }
+
         if let Some(document_id) = files.paths.by_name(resource_name).map(|r| r.document_id) {
             // Update
             let node_ = self
@@ -162,7 +166,10 @@ impl FileUpdateRequestHandler for Server {
             let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
             let new_file = new_node.file.as_mut().unwrap();
             new_file.blob_hash = blob_hash;
-            new_file.media_type = headers.content_type.map(|v| v.to_string());
+            new_file.media_type = headers
+                .content_type
+                .filter(|ct| !ct.is_empty() && *ct != "application/octet-stream")
+                .map(|v| v.to_string());
             new_file.size = bytes.len() as u32;
             new_node.modified = now() as i64;
 
@@ -203,15 +210,10 @@ impl FileUpdateRequestHandler for Server {
 
             // Verify that parent is a collection
             if parent_id > 0
-                && self
-                    .get_archive(account_id, Collection::FileNode, parent_id - 1)
-                    .await
-                    .caused_by(trc::location!())?
-                    .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
-                    .unarchive::<FileNode>()
-                    .caused_by(trc::location!())?
-                    .file
-                    .is_some()
+                && files
+                    .paths
+                    .by_id(parent_id - 1)
+                    .is_some_and(|r| !r.is_container())
             {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }

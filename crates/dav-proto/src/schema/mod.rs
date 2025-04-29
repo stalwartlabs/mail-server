@@ -1342,7 +1342,7 @@ impl AttributeValue for String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum Collation {
     AsciiNumeric,
@@ -1371,7 +1371,7 @@ impl Collation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub enum MatchType {
     Equals,

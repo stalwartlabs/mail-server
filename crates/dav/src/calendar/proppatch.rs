@@ -4,14 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::str::FromStr;
+
 use crate::{
-    DavError, DavMethod,
+    DavError, DavMethod, PropStatBuilder,
     common::{
         ETag, ExtractETag,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
 };
+use calcard::common::timezone::Tz;
 use common::{Server, auth::AccessToken};
 use dav_proto::{
     RequestHeaders, Return,
@@ -19,7 +22,7 @@ use dav_proto::{
         Namespace,
         property::{CalDavProperty, DavProperty, DavValue, ResourceType, WebDavProperty},
         request::{DavPropertyValue, PropertyUpdate},
-        response::{BaseCondition, CalCondition, MultiStatus, PropStat, Response},
+        response::{BaseCondition, CalCondition, MultiStatus, Response},
     },
 };
 use groupware::{
@@ -46,7 +49,7 @@ pub(crate) trait CalendarPropPatchRequestHandler: Sync + Send {
         calendar: &mut Calendar,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool;
 
     fn apply_event_properties(
@@ -54,7 +57,7 @@ pub(crate) trait CalendarPropPatchRequestHandler: Sync + Send {
         event: &mut CalendarEvent,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool;
 }
 
@@ -140,7 +143,7 @@ impl CalendarPropPatchRequestHandler for Server {
 
         let is_success;
         let mut batch = BatchBuilder::new();
-        let mut items = Vec::with_capacity(request.remove.len() + request.set.len());
+        let mut items = PropStatBuilder::default();
 
         let etag = if resource.is_container() {
             // Deserialize
@@ -231,7 +234,7 @@ impl CalendarPropPatchRequestHandler for Server {
         if headers.ret != Return::Minimal || !is_success {
             Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
                 .with_xml_body(
-                    MultiStatus::new(vec![Response::new_propstat(uri, items)])
+                    MultiStatus::new(vec![Response::new_propstat(uri, items.build())])
                         .with_namespace(Namespace::CalDav)
                         .to_string(),
                 )
@@ -247,24 +250,21 @@ impl CalendarPropPatchRequestHandler for Server {
         calendar: &mut Calendar,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool {
         let mut has_errors = false;
 
         for property in properties {
-            match (property.property, property.value) {
+            match (&property.property, property.value) {
                 (DavProperty::WebDav(WebDavProperty::DisplayName), DavValue::String(name)) => {
-                    if name.len() <= self.core.dav.live_property_size {
+                    if name.len() <= self.core.groupware.live_property_size {
                         calendar.preferences_mut(account_id).name = name;
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Display name too long"),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
@@ -273,18 +273,16 @@ impl CalendarPropPatchRequestHandler for Server {
                     DavProperty::CalDav(CalDavProperty::CalendarDescription),
                     DavValue::String(name),
                 ) => {
-                    if name.len() <= self.core.dav.live_property_size {
+                    if name.len() <= self.core.groupware.live_property_size {
                         calendar.preferences_mut(account_id).description = Some(name);
-                        items.push(
-                            PropStat::new(DavProperty::CalDav(CalDavProperty::CalendarDescription))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::CalDav(CalDavProperty::CalendarDescription))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Calendar description too long"),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
+
                         has_errors = true;
                     }
                 }
@@ -292,42 +290,36 @@ impl CalendarPropPatchRequestHandler for Server {
                     DavProperty::CalDav(CalDavProperty::CalendarTimezone),
                     DavValue::ICalendar(ical),
                 ) => {
-                    if ical.size() > self.core.dav.max_ical_size {
-                        items.push(
-                            PropStat::new(DavProperty::CalDav(CalDavProperty::CalendarTimezone))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Calendar timezone too large"),
+                    if ical.size() > self.core.groupware.max_ical_size {
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     } else if !ical.is_timezone() {
-                        items.push(
-                            PropStat::new(DavProperty::CalDav(CalDavProperty::CalendarTimezone))
-                                .with_status(StatusCode::PRECONDITION_FAILED)
-                                .with_error(CalCondition::ValidCalendarData)
-                                .with_response_description("Invalid calendar timezone"),
+                        items.insert_precondition_failed_with_description(
+                            property.property,
+                            StatusCode::PRECONDITION_FAILED,
+                            CalCondition::ValidCalendarData,
+                            "Invalid calendar timezone",
                         );
                         has_errors = true;
                     } else {
                         calendar.preferences_mut(account_id).time_zone = Timezone::Custom(ical);
-                        items.push(
-                            PropStat::new(DavProperty::CalDav(CalDavProperty::CalendarTimezone))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     }
                 }
                 (DavProperty::CalDav(CalDavProperty::TimezoneId), DavValue::String(tz_id)) => {
-                    if !tz_id.is_empty() {
-                        calendar.preferences_mut(account_id).time_zone = Timezone::IANA(tz_id);
-                        items.push(
-                            PropStat::new(DavProperty::CalDav(CalDavProperty::TimezoneId))
-                                .with_status(StatusCode::OK),
-                        );
+                    if let Ok(tz) = Tz::from_str(&tz_id) {
+                        calendar.preferences_mut(account_id).time_zone = Timezone::IANA(tz.as_id());
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::CalDav(CalDavProperty::TimezoneId))
-                                .with_status(StatusCode::PRECONDITION_FAILED)
-                                .with_error(CalCondition::ValidTimezone)
-                                .with_response_description("Invalid timezone ID"),
+                        items.insert_precondition_failed_with_description(
+                            property.property,
+                            StatusCode::PRECONDITION_FAILED,
+                            CalCondition::ValidTimezone,
+                            "Invalid timezone ID",
                         );
                         has_errors = true;
                     }
@@ -339,53 +331,48 @@ impl CalendarPropPatchRequestHandler for Server {
                     DavProperty::WebDav(WebDavProperty::ResourceType),
                     DavValue::ResourceTypes(types),
                 ) => {
-                    if types
+                    if !types
                         .0
                         .iter()
                         .all(|rt| matches!(rt, ResourceType::Collection | ResourceType::Calendar))
                     {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::ResourceType))
-                                .with_status(StatusCode::FORBIDDEN)
-                                .with_error(BaseCondition::ValidResourceType),
+                        items.insert_precondition_failed(
+                            property.property,
+                            StatusCode::FORBIDDEN,
+                            BaseCondition::ValidResourceType,
                         );
                         has_errors = true;
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::ResourceType))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     }
                 }
                 (DavProperty::DeadProperty(dead), DavValue::DeadProperty(values))
-                    if self.core.dav.dead_property_size.is_some() =>
+                    if self.core.groupware.dead_property_size.is_some() =>
                 {
                     if is_update {
-                        calendar.dead_properties.remove_element(&dead);
+                        calendar.dead_properties.remove_element(dead);
                     }
 
                     if calendar.dead_properties.size() + values.size() + dead.size()
-                        < self.core.dav.dead_property_size.unwrap()
+                        < self.core.groupware.dead_property_size.unwrap()
                     {
                         calendar.dead_properties.add_element(dead.clone(), values.0);
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Dead property is too large."),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
+
                         has_errors = true;
                     }
                 }
-                (property, _) => {
-                    items.push(
-                        PropStat::new(property)
-                            .with_status(StatusCode::CONFLICT)
-                            .with_response_description("Property cannot be modified"),
+                _ => {
+                    items.insert_error_with_description(
+                        property.property,
+                        StatusCode::CONFLICT,
+                        "Property cannot be modified",
                     );
                     has_errors = true;
                 }
@@ -400,24 +387,21 @@ impl CalendarPropPatchRequestHandler for Server {
         event: &mut CalendarEvent,
         is_update: bool,
         properties: Vec<DavPropertyValue>,
-        items: &mut Vec<PropStat>,
+        items: &mut PropStatBuilder,
     ) -> bool {
         let mut has_errors = false;
 
         for property in properties {
-            match (property.property, property.value) {
+            match (&property.property, property.value) {
                 (DavProperty::WebDav(WebDavProperty::DisplayName), DavValue::String(name)) => {
-                    if name.len() <= self.core.dav.live_property_size {
+                    if name.len() <= self.core.groupware.live_property_size {
                         event.display_name = Some(name);
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Display name too long"),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
@@ -426,34 +410,31 @@ impl CalendarPropPatchRequestHandler for Server {
                     event.created = dt;
                 }
                 (DavProperty::DeadProperty(dead), DavValue::DeadProperty(values))
-                    if self.core.dav.dead_property_size.is_some() =>
+                    if self.core.groupware.dead_property_size.is_some() =>
                 {
                     if is_update {
-                        event.dead_properties.remove_element(&dead);
+                        event.dead_properties.remove_element(dead);
                     }
 
                     if event.dead_properties.size() + values.size() + dead.size()
-                        < self.core.dav.dead_property_size.unwrap()
+                        < self.core.groupware.dead_property_size.unwrap()
                     {
                         event.dead_properties.add_element(dead.clone(), values.0);
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::OK),
-                        );
+                        items.insert_ok(property.property);
                     } else {
-                        items.push(
-                            PropStat::new(DavProperty::DeadProperty(dead))
-                                .with_status(StatusCode::INSUFFICIENT_STORAGE)
-                                .with_response_description("Dead property is too large."),
+                        items.insert_error_with_description(
+                            property.property,
+                            StatusCode::INSUFFICIENT_STORAGE,
+                            "Property value is too long",
                         );
                         has_errors = true;
                     }
                 }
-                (property, _) => {
-                    items.push(
-                        PropStat::new(property)
-                            .with_status(StatusCode::CONFLICT)
-                            .with_response_description("Property cannot be modified"),
+                _ => {
+                    items.insert_error_with_description(
+                        property.property,
+                        StatusCode::CONFLICT,
+                        "Property cannot be modified",
                     );
                     has_errors = true;
                 }
@@ -467,28 +448,23 @@ impl CalendarPropPatchRequestHandler for Server {
 fn remove_event_properties(
     event: &mut CalendarEvent,
     properties: Vec<DavProperty>,
-    items: &mut Vec<PropStat>,
+    items: &mut PropStatBuilder,
 ) {
     for property in properties {
-        match property {
+        match &property {
             DavProperty::WebDav(WebDavProperty::DisplayName) => {
                 event.display_name = None;
-                items.push(
-                    PropStat::new(DavProperty::WebDav(WebDavProperty::DisplayName))
-                        .with_status(StatusCode::OK),
-                );
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
             DavProperty::DeadProperty(dead) => {
-                event.dead_properties.remove_element(&dead);
-                items.push(
-                    PropStat::new(DavProperty::DeadProperty(dead)).with_status(StatusCode::OK),
-                );
+                event.dead_properties.remove_element(dead);
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
-            property => {
-                items.push(
-                    PropStat::new(property)
-                        .with_status(StatusCode::CONFLICT)
-                        .with_response_description("Property cannot be deleted"),
+            _ => {
+                items.insert_error_with_description(
+                    property,
+                    StatusCode::CONFLICT,
+                    "Property cannot be deleted",
                 );
             }
         }
@@ -499,33 +475,28 @@ fn remove_calendar_properties(
     account_id: u32,
     calendar: &mut Calendar,
     properties: Vec<DavProperty>,
-    items: &mut Vec<PropStat>,
+    items: &mut PropStatBuilder,
 ) {
     for property in properties {
-        match property {
+        match &property {
             DavProperty::CalDav(CalDavProperty::CalendarDescription) => {
                 calendar.preferences_mut(account_id).description = None;
-                items.push(
-                    PropStat::new(DavProperty::CalDav(CalDavProperty::CalendarDescription))
-                        .with_status(StatusCode::OK),
-                );
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
-            property @ (DavProperty::CalDav(CalDavProperty::CalendarTimezone)
-            | DavProperty::CalDav(CalDavProperty::TimezoneId)) => {
+            DavProperty::CalDav(CalDavProperty::CalendarTimezone)
+            | DavProperty::CalDav(CalDavProperty::TimezoneId) => {
                 calendar.preferences_mut(account_id).time_zone = Timezone::Default;
-                items.push(PropStat::new(property).with_status(StatusCode::OK));
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
             DavProperty::DeadProperty(dead) => {
-                calendar.dead_properties.remove_element(&dead);
-                items.push(
-                    PropStat::new(DavProperty::DeadProperty(dead)).with_status(StatusCode::OK),
-                );
+                calendar.dead_properties.remove_element(dead);
+                items.insert_with_status(property, StatusCode::NO_CONTENT);
             }
-            property => {
-                items.push(
-                    PropStat::new(property)
-                        .with_status(StatusCode::CONFLICT)
-                        .with_response_description("Property cannot be deleted"),
+            _ => {
+                items.insert_error_with_description(
+                    property,
+                    StatusCode::CONFLICT,
+                    "Property cannot be deleted",
                 );
             }
         }

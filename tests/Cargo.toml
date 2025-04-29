@@ -26,6 +26,7 @@ jmap = { path = "../crates/jmap", features = ["test_mode", "enterprise"] }
 jmap_proto = { path = "../crates/jmap-proto" }
 imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }
+groupware = { path = "../crates/groupware", features = ["test_mode"] }
 http = { path = "../crates/http", features = ["test_mode", "enterprise"] }
 http_proto = { path = "../crates/http-proto" }
 services = { path = "../crates/services", features = ["test_mode", "enterprise"] }
@@ -71,6 +72,8 @@ biscuit = "0.7.0"
 form_urlencoded = "1.1.0"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
 compact_str = "0.9.0"
+quick-xml = "0.37.2"
+
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"

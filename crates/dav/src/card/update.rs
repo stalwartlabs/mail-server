@@ -61,10 +61,10 @@ impl CardUpdateRequestHandler for Server {
             .resource
             .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
-        if bytes.len() > self.core.dav.max_vcard_size {
+        if bytes.len() > self.core.groupware.max_vcard_size {
             return Err(DavError::Condition(DavErrorCondition::new(
                 StatusCode::PRECONDITION_FAILED,
-                CardCondition::MaxResourceSize(self.core.dav.max_vcard_size as u32),
+                CardCondition::MaxResourceSize(self.core.groupware.max_vcard_size as u32),
             )));
         }
         let vcard_raw = std::str::from_utf8(&bytes).map_err(|_| {

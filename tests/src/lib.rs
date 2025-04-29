@@ -27,6 +27,8 @@ pub mod jmap;
 pub mod smtp;
 #[cfg(test)]
 pub mod store;
+#[cfg(test)]
+pub mod webdav;
 
 pub fn add_test_certs(config: &str) -> String {
     let mut cert_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

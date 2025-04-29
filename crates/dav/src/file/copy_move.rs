@@ -4,21 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
-use common::{DavResources, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
-use dav_proto::{Depth, RequestHeaders};
-use groupware::{DestroyArchive, file::FileNode, hierarchy::DavHierarchy};
-use http_proto::HttpResponse;
-use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
-use store::{
-    ahash::AHashMap,
-    write::{BatchBuilder, now},
-};
-use trc::AddContext;
-use utils::map::bitmap::Bitmap;
-
+use super::FromDavResource;
 use crate::{
     DavError, DavMethod,
     common::{
@@ -29,8 +15,18 @@ use crate::{
     },
     file::{DavFileResource, FileItemId},
 };
-
-use super::FromDavResource;
+use common::{DavResources, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use dav_proto::{Depth, RequestHeaders};
+use groupware::{DestroyArchive, file::FileNode, hierarchy::DavHierarchy};
+use http_proto::HttpResponse;
+use hyper::StatusCode;
+use jmap_proto::types::{acl::Acl, collection::Collection};
+use std::sync::Arc;
+use store::{
+    ahash::AHashMap,
+    write::{BatchBuilder, now},
+};
+use trc::AddContext;
 
 pub(crate) trait FileCopyMoveRequestHandler: Sync + Send {
     fn handle_file_copy_move_request(

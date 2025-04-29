@@ -122,7 +122,7 @@ pub struct CalendarData {
     pub limit_freebusy: Option<TimeRange>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 pub struct TimeRange {
     pub start: i64,

@@ -11,9 +11,13 @@ pub mod file;
 pub mod principal;
 pub mod request;
 
-use dav_proto::schema::response::Condition;
+use dav_proto::schema::{
+    request::DavPropertyValue,
+    response::{Condition, List, Prop, PropStat, ResponseDescription, Status},
+};
 use groupware::DavResourceName;
 use hyper::{Method, StatusCode};
+use store::ahash::AHashMap;
 
 pub(crate) type Result<T> = std::result::Result<T, DavError>;
 
@@ -115,5 +119,84 @@ impl DavMethod {
                 | DavMethod::ACL
                 | DavMethod::MKCALENDAR
         )
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct PropStatBuilder {
+    propstats: AHashMap<(StatusCode, Option<Condition>, Option<String>), Vec<DavPropertyValue>>,
+}
+
+impl PropStatBuilder {
+    pub fn insert_ok(&mut self, prop: impl Into<DavPropertyValue>) -> &mut Self {
+        self.propstats
+            .entry((StatusCode::OK, None, None))
+            .or_default()
+            .push(prop.into());
+        self
+    }
+
+    pub fn insert_with_status(
+        &mut self,
+        prop: impl Into<DavPropertyValue>,
+        status: StatusCode,
+    ) -> &mut Self {
+        self.propstats
+            .entry((status, None, None))
+            .or_default()
+            .push(prop.into());
+        self
+    }
+
+    pub fn insert_error_with_description(
+        &mut self,
+        prop: impl Into<DavPropertyValue>,
+        status: StatusCode,
+        description: impl Into<String>,
+    ) -> &mut Self {
+        self.propstats
+            .entry((status, None, Some(description.into())))
+            .or_default()
+            .push(prop.into());
+        self
+    }
+
+    pub fn insert_precondition_failed(
+        &mut self,
+        prop: impl Into<DavPropertyValue>,
+        status: StatusCode,
+        condition: impl Into<Condition>,
+    ) -> &mut Self {
+        self.propstats
+            .entry((status, Some(condition.into()), None))
+            .or_default()
+            .push(prop.into());
+        self
+    }
+
+    pub fn insert_precondition_failed_with_description(
+        &mut self,
+        prop: impl Into<DavPropertyValue>,
+        status: StatusCode,
+        condition: impl Into<Condition>,
+        description: impl Into<String>,
+    ) -> &mut Self {
+        self.propstats
+            .entry((status, Some(condition.into()), Some(description.into())))
+            .or_default()
+            .push(prop.into());
+        self
+    }
+
+    pub fn build(self) -> Vec<PropStat> {
+        self.propstats
+            .into_iter()
+            .map(|((status, condition, description), props)| PropStat {
+                prop: Prop(List(props)),
+                status: Status(status),
+                error: condition,
+                response_description: description.map(ResponseDescription),
+            })
+            .collect()
     }
 }

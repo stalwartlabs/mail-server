@@ -20,7 +20,7 @@ use store::write::BatchBuilder;
 use trc::AddContext;
 
 use crate::{
-    DavError, DavMethod,
+    DavError, DavMethod, PropStatBuilder,
     common::{
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
@@ -54,15 +54,16 @@ impl CalendarMkColRequestHandler for Server {
         let name = resource
             .resource
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
-        if name.contains('/') || !access_token.is_member(account_id) {
+        if !access_token.is_member(account_id) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
-        } else if self
-            .fetch_dav_resources(access_token, account_id, Collection::Calendar)
-            .await
-            .caused_by(trc::location!())?
-            .paths
-            .by_name(name)
-            .is_some()
+        } else if name.contains('/')
+            || self
+                .fetch_dav_resources(access_token, account_id, Collection::Calendar)
+                .await
+                .caused_by(trc::location!())?
+                .paths
+                .by_name(name)
+                .is_some()
         {
             return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
         }
@@ -98,7 +99,7 @@ impl CalendarMkColRequestHandler for Server {
         let mut return_prop_stat = None;
         let mut is_mkcalendar = false;
         if let Some(mkcol) = request {
-            let mut prop_stat = Vec::new();
+            let mut prop_stat = PropStatBuilder::default();
             is_mkcalendar = mkcol.is_mkcalendar;
             if !self.apply_calendar_properties(
                 account_id,
@@ -108,7 +109,7 @@ impl CalendarMkColRequestHandler for Server {
                 &mut prop_stat,
             ) {
                 return Ok(HttpResponse::new(StatusCode::FORBIDDEN).with_xml_body(
-                    MkColResponse::new(prop_stat)
+                    MkColResponse::new(prop_stat.build())
                         .with_namespace(Namespace::CalDav)
                         .with_mkcalendar(is_mkcalendar)
                         .to_string(),
@@ -133,7 +134,7 @@ impl CalendarMkColRequestHandler for Server {
 
         if let Some(prop_stat) = return_prop_stat {
             Ok(HttpResponse::new(StatusCode::CREATED).with_xml_body(
-                MkColResponse::new(prop_stat)
+                MkColResponse::new(prop_stat.build())
                     .with_namespace(Namespace::CalDav)
                     .with_mkcalendar(is_mkcalendar)
                     .to_string(),

@@ -6,22 +6,12 @@
 
 #![warn(clippy::large_futures)]
 
-use std::{
-    hash::{BuildHasher, Hasher},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU8},
-    },
-    time::Duration,
-};
-
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use auth::{AccessToken, oauth::config::OAuthConfig, roles::RolePermissions};
 use calcard::common::timezone::Tz;
 use config::{
-    dav::DavConfig,
+    groupware::GroupwareConfig,
     imap::ImapConfig,
     jmap::settings::{JmapConfig, SpecialUse},
     network::Network,
@@ -34,16 +24,23 @@ use config::{
     storage::Storage,
     telemetry::Metrics,
 };
-
 use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
 use jmap_proto::types::value::AclGrant;
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
-
 use mail_auth::{MX, Txt};
 use manager::webadmin::{Resource, WebAdminManager};
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
+use std::{
+    hash::{BuildHasher, Hasher},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU8},
+    },
+    time::Duration,
+};
 use store::roaring::RoaringBitmap;
 use tinyvec::TinyVec;
 use tokio::sync::{Notify, Semaphore, mpsc};
@@ -253,7 +250,7 @@ pub struct DavResources {
     pub modseq: Option<u64>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DavResource {
     pub document_id: u32,
     pub parent_id: Option<u32>,
@@ -261,7 +258,7 @@ pub struct DavResource {
     pub data: DavResourceMetadata,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum DavResourceMetadata {
     File {
         size: u32,
@@ -288,7 +285,7 @@ pub struct Core {
     pub oauth: OAuthConfig,
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
-    pub dav: DavConfig,
+    pub groupware: GroupwareConfig,
     pub spam: SpamFilterConfig,
     pub imap: ImapConfig,
     pub metrics: Metrics,
