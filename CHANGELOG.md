@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.11.8] - 2025-04-30
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+### Added
+
+### Changed
+
+### Fixed
+- Allow undiscovered UIDs to be used in `COPY`/`MOVE` operations (#1201).
+
 ## [0.11.7] - 2025-03-23
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.

@@ -275,17 +275,21 @@ impl SelectedMailbox {
         if !sequence.is_saved_search() {
             let mut ids = AHashMap::new();
             let state = self.state.lock();
-            if state.id_to_imap.is_empty() {
-                return Ok(ids);
-            }
 
             if is_uid {
-                for (id, imap_id) in &state.id_to_imap {
-                    if sequence.contains(imap_id.uid, state.uid_max) {
-                        ids.insert(*id, *imap_id);
+                let id_to_imap = state
+                    .next_state
+                    .as_ref()
+                    .map(|s| &s.next_state.id_to_imap)
+                    .unwrap_or(&state.id_to_imap);
+                if !state.id_to_imap.is_empty() {
+                    for (id, imap_id) in id_to_imap {
+                        if sequence.contains(imap_id.uid, state.uid_max) {
+                            ids.insert(*id, *imap_id);
+                        }
                     }
                 }
-            } else {
+            } else if !state.id_to_imap.is_empty() {
                 for (id, imap_id) in &state.id_to_imap {
                     if sequence.contains(imap_id.seqnum, state.total_messages as u32) {
                         ids.insert(*id, *imap_id);

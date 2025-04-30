@@ -9,18 +9,18 @@ use std::{sync::Arc, time::Instant};
 use directory::Permission;
 use email::{
     ingest::EmailIngest,
-    mailbox::{UidMailbox, JUNK_ID},
+    mailbox::{JUNK_ID, UidMailbox},
 };
 use imap_proto::{
-    protocol::copy_move::Arguments, receiver::Request, Command, ResponseCode, ResponseType,
-    StatusResponse,
+    Command, ResponseCode, ResponseType, StatusResponse, protocol::copy_move::Arguments,
+    receiver::Request,
 };
 
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
     spawn_op,
 };
-use common::{listener::SessionStream, MailboxId};
+use common::{MailboxId, listener::SessionStream};
 use jmap::email::{bayes::EmailBayesTrain, copy::EmailCopy, set::TagManager};
 use jmap_proto::{
     error::set::SetErrorType,
@@ -31,7 +31,7 @@ use jmap_proto::{
 };
 use store::{
     roaring::RoaringBitmap,
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, ValueClass, F_VALUE},
+    write::{BatchBuilder, F_VALUE, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
 
 use super::ImapContext;
@@ -110,6 +110,10 @@ impl<T: SessionStream> SessionData<T> {
         is_qresync: bool,
         op_start: Instant,
     ) -> trc::Result<()> {
+        self.synchronize_messages(&src_mailbox)
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
+
         // Convert IMAP ids to JMAP ids.
         let ids = src_mailbox
             .sequence_to_ids(&arguments.sequence_set, is_uid)
