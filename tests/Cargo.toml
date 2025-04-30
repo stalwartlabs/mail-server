@@ -61,7 +61,7 @@ base64 = "0.22"
 ahash = { version = "0.8" }
 serial_test = "3.0.0"
 num_cpus = "1.15.0"
-async-trait = "0.1.68"
+async-trait = "0.1.88"
 chrono = "0.4"
 ring = { version = "0.17" }
 biscuit = "0.7.0"

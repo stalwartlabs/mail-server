@@ -20,7 +20,7 @@ rustls = { version = "0.23.5", default-features = false, features = ["std", "rin
 rustls-pki-types = { version = "1" }
 ldap3 = { version = "0.11.1", default-features = false, features = ["tls-rustls"] }
 deadpool = { version = "0.10", features = ["managed", "rt_tokio_1"] }
-async-trait = "0.1.68"
+async-trait = "0.1.88"
 ahash = { version = "0.8" }
 pwhash = "1"
 password-hash = "0.5.0"
