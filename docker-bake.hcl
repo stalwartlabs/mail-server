@@ -16,7 +16,7 @@ variable "DOCKER_PLATFORM" {
 target "docker-metadata-action" {}
 target "build" {
   secret = [
-    "type=env,id=ACTIONS_CACHE_URL",
+    "type=env,id=ACTIONS_RESULTS_URL",
     "type=env,id=ACTIONS_RUNTIME_TOKEN"
   ]
   args = {
