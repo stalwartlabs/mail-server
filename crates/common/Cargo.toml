@@ -45,7 +45,7 @@ opentelemetry_sdk = { version = "0.25" }
 opentelemetry-otlp = { version = "0.25", features = ["http-proto", "reqwest-client"] }
 opentelemetry-semantic-conventions = { version = "0.25.0" }
 prometheus = { version = "0.13.4", default-features = false }
-imagesize = "0.13"
+imagesize = "0.14"
 sha1 = "0.10"
 sha2 = "0.10.6"
 md5 = "0.7.0"
