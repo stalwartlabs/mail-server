@@ -304,7 +304,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.7
+        uses: mozilla-actions/sccache-action@v0.0.9
         with:
           disable_annotations: true
 
@@ -337,7 +337,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.7
+        uses: mozilla-actions/sccache-action@v0.0.9
         with:
           disable_annotations: true
 
@@ -347,7 +347,7 @@ jobs:
         run: |
           rustup target add ${{matrix.target}}
           # Get latest FoundationDB installer
-          curl --retry 5 -Lso foundationdb.pkg "$(gh api -X GET /repos/apple/foundationdb/releases --jq '.[] | select(.prerelease == false) | .assets[] | select(.name | test("${{startsWith(matrix.target, 'x86') && 'x86_64' || 'arm64'}}" + ".pkg")) | .browser_download_url' | head -n1)"
+          curl --retry 5 -Lso foundationdb.pkg "$(gh api -X GET /repos/apple/foundationdb/releases --jq '.[] | select(.prerelease == false) | .assets[] | select(.name | test("${{startsWith(matrix.target, 'x86') && 'x86_64' || 'arm64'}}" + ".pkg$")) | .browser_download_url' | head -n1)"
           sudo installer -allowUntrusted -dumplog -pkg foundationdb.pkg -target /
           cargo build --release --target ${{matrix.target}} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise"
           mkdir -p artifacts
