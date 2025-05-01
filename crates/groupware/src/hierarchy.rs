@@ -60,11 +60,21 @@ impl DavHierarchy for Server {
         account_id: u32,
         collection: Collection,
     ) -> trc::Result<Arc<DavResources>> {
-        let change_id = self
+        let is_files = collection == Collection::FileNode;
+        let mut change_id = self
             .store()
             .get_last_change_id(account_id, collection)
             .await
             .caused_by(trc::location!())?;
+        if !is_files {
+            let child_change_id = self
+                .store()
+                .get_last_change_id(account_id, collection.child_collection().unwrap())
+                .await
+                .caused_by(trc::location!())?;
+            change_id = change_id.max(child_change_id);
+        }
+
         let resource_id = DavResourceId {
             account_id,
             collection: collection.into(),
@@ -78,28 +88,26 @@ impl DavHierarchy for Server {
         {
             Ok(files)
         } else {
-            let mut files = match collection {
-                Collection::Calendar | Collection::AddressBook => {
-                    let files = build_hierarchy(self, account_id, collection).await?;
-                    if files.paths.is_empty() {
-                        match collection {
-                            Collection::Calendar => {
-                                self.create_default_calendar(access_token, account_id)
-                                    .await?
-                            }
-                            Collection::AddressBook => {
-                                self.create_default_addressbook(access_token, account_id)
-                                    .await?
-                            }
-                            _ => unreachable!(),
+            let mut files = if !is_files {
+                let files = build_hierarchy(self, account_id, collection).await?;
+                if files.paths.is_empty() {
+                    match collection {
+                        Collection::Calendar => {
+                            self.create_default_calendar(access_token, account_id)
+                                .await?
                         }
-                        build_hierarchy(self, account_id, collection).await?
-                    } else {
-                        files
+                        Collection::AddressBook => {
+                            self.create_default_addressbook(access_token, account_id)
+                                .await?
+                        }
+                        _ => unreachable!(),
                     }
+                    build_hierarchy(self, account_id, collection).await?
+                } else {
+                    files
                 }
-                Collection::FileNode => build_file_hierarchy(self, account_id).await?,
-                _ => unreachable!(),
+            } else {
+                build_file_hierarchy(self, account_id).await?
             };
 
             files.modseq = change_id;

@@ -7326,6 +7326,8 @@ dependencies = [
  "common",
  "compact_str",
  "csv",
+ "dav",
+ "dav-proto",
  "directory",
  "ece",
  "email",

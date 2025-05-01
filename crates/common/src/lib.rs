@@ -515,14 +515,6 @@ impl DavResources {
             .filter(move |item| item.parent_id.is_some_and(|id| id == parent_id))
     }
 
-    pub fn is_ancestor_of(&self, ancestor: u32, descendant: u32) -> bool {
-        let ancestor = &self.paths.by_id(ancestor).unwrap().name;
-        let descendant = &self.paths.by_id(descendant).unwrap().name;
-
-        let prefix = format!("{ancestor}/");
-        descendant.starts_with(&prefix) || descendant == ancestor
-    }
-
     pub fn format_resource(&self, resource: &DavResource) -> String {
         if resource.is_container() {
             format!("{}{}/", self.base_path, resource.name)

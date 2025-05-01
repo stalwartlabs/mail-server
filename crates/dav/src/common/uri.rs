@@ -34,6 +34,13 @@ pub(crate) type OwnedUri<'x> = UriResource<u32, Option<&'x str>>;
 pub(crate) type DocumentUri = UriResource<u32, u32>;
 
 pub(crate) trait DavUriResource: Sync + Send {
+    fn validate_uri_with_status<'x>(
+        &self,
+        access_token: &AccessToken,
+        uri: &'x str,
+        error_status: StatusCode,
+    ) -> impl Future<Output = crate::Result<UnresolvedUri<'x>>> + Send;
+
     fn validate_uri<'x>(
         &self,
         access_token: &AccessToken,
@@ -53,9 +60,19 @@ impl DavUriResource for Server {
         access_token: &AccessToken,
         uri: &'x str,
     ) -> crate::Result<UnresolvedUri<'x>> {
+        self.validate_uri_with_status(access_token, uri, StatusCode::NOT_FOUND)
+            .await
+    }
+
+    async fn validate_uri_with_status<'x>(
+        &self,
+        access_token: &AccessToken,
+        uri: &'x str,
+        error_status: StatusCode,
+    ) -> crate::Result<UnresolvedUri<'x>> {
         let (_, uri_parts) = uri
             .split_once("/dav/")
-            .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+            .ok_or(DavError::Code(error_status))?;
 
         let mut uri_parts = uri_parts
             .trim_end_matches('/')
@@ -65,7 +82,7 @@ impl DavUriResource for Server {
             collection: uri_parts
                 .next()
                 .and_then(DavResourceName::parse)
-                .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
+                .ok_or(DavError::Code(error_status))?
                 .into(),
             account_id: None,
             resource: None,
@@ -75,7 +92,7 @@ impl DavUriResource for Server {
             let account_id = if let Some(account_id) = account.strip_prefix('_') {
                 account_id
                     .parse::<u32>()
-                    .map_err(|_| DavError::Code(StatusCode::NOT_FOUND))?
+                    .map_err(|_| DavError::Code(error_status))?
             } else {
                 let account = decode_path_element(account);
                 if access_token.name == account {
@@ -85,7 +102,7 @@ impl DavUriResource for Server {
                         .get_principal_id(&account)
                         .await
                         .caused_by(trc::location!())?
-                        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?
+                        .ok_or(DavError::Code(error_status))?
                 }
             };
 

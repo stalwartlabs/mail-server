@@ -35,6 +35,15 @@ pub enum Collection {
 }
 
 impl Collection {
+    pub fn main_collection(&self) -> Collection {
+        match self {
+            Collection::Email => Collection::Mailbox,
+            Collection::CalendarEvent => Collection::Calendar,
+            Collection::ContactCard => Collection::AddressBook,
+            _ => *self,
+        }
+    }
+
     pub fn parent_collection(&self) -> Option<Collection> {
         match self {
             Collection::Email => Some(Collection::Mailbox),

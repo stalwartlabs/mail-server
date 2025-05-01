@@ -343,7 +343,11 @@ impl LockRequestHandler for Server {
             | DavMethod::POST
             | DavMethod::PUT
             | DavMethod::PATCH => {
-                if headers.overwrite_fail && resources.last().is_some_and(|r| r.etag.is_some()) {
+                if headers.overwrite_fail
+                    && resources.last().is_some_and(|r| {
+                        r.etag.is_some() || r.document_id.is_some_and(|id| id != u32::MAX)
+                    })
+                {
                     return Err(DavError::Code(StatusCode::PRECONDITION_FAILED));
                 }
             }
@@ -431,10 +435,18 @@ impl LockRequestHandler for Server {
                     .await
                     .ok()
                     .and_then(|r| {
+                        let path = r.resource?;
+
                         Some(ResourceState {
                             account_id: r.account_id?,
-                            collection: r.collection,
-                            path: r.resource?,
+                            collection: if !matches!(r.collection, Collection::FileNode)
+                                && path.contains('/')
+                            {
+                                r.collection.child_collection().unwrap_or(r.collection)
+                            } else {
+                                r.collection
+                            },
+                            path,
                             ..Default::default()
                         })
                     })
@@ -579,23 +591,6 @@ impl LockRequestHandler for Server {
         Err(DavError::Code(StatusCode::PRECONDITION_FAILED))
     }
 }
-
-/*impl LockItems {
-    pub fn insert_or_refresh_lock(&mut self, item: LockItem, href: String) -> ActiveLock {
-        if let Some(idx) = self.0.iter().position(|i| i.lock_id == item.lock_id) {
-            let update = &mut self.0[idx];
-            update.expires = item.expires;
-            update.depth_infinity = item.depth_infinity;
-            update.owner_dav = item.owner_dav;
-            update.exclusive = item.exclusive;
-            update.to_active_lock(href)
-        } else {
-            let active_lock = item.to_active_lock(href);
-            self.0.push(item);
-            active_lock
-        }
-    }
-}*/
 
 impl LockData {
     pub fn remove_lock(&mut self, lock_id: u64) -> bool {

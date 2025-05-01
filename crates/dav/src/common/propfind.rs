@@ -51,14 +51,14 @@ use percent_encoding::NON_ALPHANUMERIC;
 use std::sync::Arc;
 use store::{
     ahash::AHashMap,
-    query::log::Query,
+    query::log::{Change, Query},
     roaring::RoaringBitmap,
     write::{AlignedBytes, Archive},
 };
 use trc::AddContext;
 
 use super::{
-    ArchivedResource, DavCollection, DavQuery, DavQueryFilter, ETag,
+    ArchivedResource, DavCollection, DavQuery, DavQueryFilter, ETag, SyncType,
     acl::{DavAclHandler, Privileges},
     lock::{LockData, build_lock_key},
     uri::{UriResource, Urn},
@@ -359,6 +359,7 @@ impl PropFindRequestHandler for Server {
                 let account_id = resource.account_id;
                 collection_container = resource.collection;
                 collection_children = collection_container.child_collection().unwrap();
+                let container_has_children = collection_children != collection_container;
                 let resources = self
                     .fetch_dav_resources(access_token, account_id, collection_container)
                     .await
@@ -367,13 +368,17 @@ impl PropFindRequestHandler for Server {
                 ctag = Some(resources.modseq.unwrap_or_default());
 
                 // Obtain document ids
-                let mut document_ids = if !access_token.is_member(account_id) {
+                let mut display_containers = if !access_token.is_member(account_id) {
                     self.shared_containers(
                         access_token,
                         account_id,
                         collection_container,
-                        [Acl::ReadItems],
-                        false,
+                        [if container_has_children {
+                            Acl::ReadItems
+                        } else {
+                            Acl::Read
+                        }],
+                        true,
                     )
                     .await
                     .caused_by(trc::location!())?
@@ -381,60 +386,118 @@ impl PropFindRequestHandler for Server {
                 } else {
                     None
                 };
+                let mut display_children = display_containers
+                    .as_ref()
+                    .filter(|_| container_has_children)
+                    .map(|containers| {
+                        RoaringBitmap::from_iter(resources.paths.iter().filter_map(|r| {
+                            if r.parent_id
+                                .is_some_and(|parent_id| containers.contains(parent_id))
+                            {
+                                Some(r.document_id)
+                            } else {
+                                None
+                            }
+                        }))
+                    });
 
                 // Filter by changelog
-                if let Some(change_id) = query.from_change_id {
-                    let changelog = self
-                        .store()
-                        .changes(account_id, collection_children, Query::Since(change_id))
-                        .await
-                        .caused_by(trc::location!())?;
-                    let limit = std::cmp::min(
-                        query.limit.unwrap_or(u32::MAX) as usize,
-                        self.core.groupware.max_changes,
-                    );
-
-                    // Set sync token
-                    let sync_token = if changelog.to_change_id != 0 {
-                        let sync_token = Urn::Sync(changelog.to_change_id).to_string();
-                        data.accounts.entry(account_id).or_default().sync_token =
-                            sync_token.clone().into();
-                        sync_token
-                    } else {
-                        data.sync_token(self, account_id, collection_children)
+                match query.sync_type {
+                    SyncType::From(change_id) => {
+                        let limit = std::cmp::min(
+                            query.limit.unwrap_or(u32::MAX) as usize,
+                            self.core.groupware.max_changes,
+                        );
+                        let container_changes = self
+                            .store()
+                            .changes(account_id, collection_container, Query::Since(change_id))
                             .await
-                            .caused_by(trc::location!())?
-                    };
-                    response.set_sync_token(sync_token);
+                            .caused_by(trc::location!())?;
+                        let children_changes = if container_has_children {
+                            self.store()
+                                .changes(account_id, collection_children, Query::Since(change_id))
+                                .await
+                                .caused_by(trc::location!())?
+                                .into()
+                        } else {
+                            None
+                        };
+                        let change_id = std::cmp::max(
+                            container_changes.to_change_id,
+                            children_changes.as_ref().map_or(0, |c| c.to_change_id),
+                        );
 
-                    let mut changes = RoaringBitmap::from_iter(
-                        changelog.changes.iter().map(|change| change.id() as u32),
-                    );
-                    if changes.len() as usize > limit {
-                        changes = RoaringBitmap::from_sorted_iter(changes.into_iter().take(limit))
-                            .unwrap();
+                        // Set sync token
+                        let sync_token = if change_id != 0 {
+                            let sync_token = Urn::Sync(change_id).to_string();
+                            data.accounts.entry(account_id).or_default().sync_token =
+                                sync_token.clone().into();
+                            sync_token
+                        } else {
+                            data.sync_token(self, account_id, collection_container)
+                                .await
+                                .caused_by(trc::location!())?
+                        };
+                        response.set_sync_token(sync_token);
+
+                        for (changes, document_ids) in [
+                            Some((container_changes, &mut display_containers)),
+                            children_changes.map(|changes| (changes, &mut display_children)),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        {
+                            let changes = RoaringBitmap::from_iter(
+                                changes
+                                    .changes
+                                    .iter()
+                                    .filter_map(|change| match change {
+                                        Change::Insert(id) | Change::Update(id) => Some(*id as u32),
+                                        _ => None,
+                                    })
+                                    .take(limit),
+                            );
+                            if let Some(document_ids) = document_ids {
+                                *document_ids &= changes;
+                            } else {
+                                *document_ids = Some(changes);
+                            }
+                        }
                     }
-                    if let Some(document_ids) = &mut document_ids {
-                        *document_ids &= changes;
-                    } else {
-                        document_ids = Some(changes);
+                    SyncType::Initial => {
+                        response.set_sync_token(
+                            data.sync_token(self, account_id, collection_container)
+                                .await
+                                .caused_by(trc::location!())?,
+                        );
                     }
+                    SyncType::None => (),
                 }
 
                 paths = if let Some(resource) = resource.resource {
                     resources
                         .subtree_with_depth(resource, query.depth)
                         .filter(|item| {
-                            document_ids
-                                .as_ref()
-                                .is_none_or(|d| d.contains(item.document_id))
+                            display_containers.as_ref().is_none_or(|containers| {
+                                if container_has_children {
+                                    if item.is_container() {
+                                        containers.contains(item.document_id)
+                                    } else {
+                                        display_children.as_ref().is_some_and(|children| {
+                                            children.contains(item.document_id)
+                                        })
+                                    }
+                                } else {
+                                    containers.contains(item.document_id)
+                                }
+                            })
                         })
                         .map(|item| {
                             PropFindItem::new(resources.format_resource(item), account_id, item)
                         })
                         .collect::<Vec<_>>()
                 } else {
-                    if !query.depth_no_root || query.from_change_id.is_none() {
+                    if !query.depth_no_root && query.sync_type.is_none_or_initial() {
                         self.prepare_principal_propfind_response(
                             access_token,
                             collection_container,
@@ -443,19 +506,29 @@ impl PropFindRequestHandler for Server {
                             &mut response,
                         )
                         .await?;
+                    }
 
-                        if query.depth == 0 {
-                            return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
-                                .with_xml_body(response.to_string()));
-                        }
+                    if query.depth == 0 {
+                        return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
+                            .with_xml_body(response.to_string()));
                     }
 
                     resources
                         .tree_with_depth(query.depth - 1)
                         .filter(|item| {
-                            document_ids
-                                .as_ref()
-                                .is_none_or(|d| d.contains(item.document_id))
+                            display_containers.as_ref().is_none_or(|containers| {
+                                if container_has_children {
+                                    if item.is_container() {
+                                        containers.contains(item.document_id)
+                                    } else {
+                                        display_children.as_ref().is_some_and(|children| {
+                                            children.contains(item.document_id)
+                                        })
+                                    }
+                                } else {
+                                    containers.contains(item.document_id)
+                                }
+                            })
                         })
                         .map(|item| {
                             PropFindItem::new(resources.format_resource(item), account_id, item)
@@ -463,7 +536,7 @@ impl PropFindRequestHandler for Server {
                         .collect::<Vec<_>>()
                 };
 
-                if paths.is_empty() && query.from_change_id.is_none() {
+                if paths.is_empty() && query.sync_type.is_none() {
                     if let Some(resource) = resource.resource {
                         response.add_response(Response::new_status(
                             [resources.format_item(resource)],

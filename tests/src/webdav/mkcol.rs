@@ -131,27 +131,27 @@ pub async fn test(test: &WebDavTest) {
             ["D:collection", "A:calendar"].as_slice(),
         ),
     ] {
-        let response = client
+        let mut response = client
             .mkcol(
                 "MKCOL",
                 path,
                 resource_types.iter().copied(),
                 properties.iter().copied(),
             )
-            .await;
-        response
+            .await
             .with_status(StatusCode::CREATED)
             .match_many("D:mkcol-response.D:propstat.D:status", ["HTTP/1.1 200 OK"]);
         for (property, _) in properties {
-            response.match_one(
+            response = response.match_one(
                 &format!("D:mkcol-response.D:propstat.D:prop.{property}"),
                 "",
             );
         }
 
         // Check the properties of the created collection
-        let response = client.propfind(path, properties.iter().map(|x| x.0)).await;
-        response
+        let mut response = client
+            .propfind(path, properties.iter().map(|x| x.0))
+            .await
             .with_status(StatusCode::MULTI_STATUS)
             .match_one("D:multistatus.D:response.D:href", path)
             .match_one(
@@ -159,7 +159,7 @@ pub async fn test(test: &WebDavTest) {
                 "HTTP/1.1 200 OK",
             );
         for (property, value) in properties {
-            response.match_one(
+            response = response.match_one(
                 &format!("D:multistatus.D:response.D:propstat.D:prop.{property}"),
                 value,
             );

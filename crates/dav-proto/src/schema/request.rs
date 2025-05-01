@@ -9,6 +9,8 @@ use calcard::{
     vcard::{VCardParameterName, VCardProperty},
 };
 
+use crate::Depth;
+
 use super::{
     property::{DavProperty, DavValue, LockScope, LockType, TimeRange},
     response::Ace,
@@ -136,7 +138,7 @@ pub struct MultiGet {
 pub struct SyncCollection {
     pub sync_token: Option<String>,
     pub properties: PropFind,
-    pub level_inf: bool,
+    pub depth: Depth,
     pub limit: Option<u32>,
 }
 

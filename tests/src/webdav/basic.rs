@@ -39,10 +39,6 @@ pub async fn test(test: &WebDavTest) {
         .await
         .match_many(
             "D:multistatus.D:response.D:href",
-            [
-                "/dav/cal/",
-                "/dav/cal/jane/",
-                "/dav/cal/support%40example%2Ecom/",
-            ],
+            ["/dav/cal/", "/dav/cal/jane/", "/dav/cal/support/"],
         );
 }
