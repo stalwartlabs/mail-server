@@ -136,12 +136,14 @@ pub async fn test(test: &WebDavTest) {
         while chunky_contents.len() < max_size {
             chunky_contents.push_str(contents);
         }
-        let response = client.request("PUT", path, chunky_contents).await;
-        response.with_status(
-            expect
-                .map(|_| StatusCode::PRECONDITION_FAILED)
-                .unwrap_or(StatusCode::PAYLOAD_TOO_LARGE),
-        );
+        let response = client
+            .request("PUT", path, chunky_contents)
+            .await
+            .with_status(
+                expect
+                    .map(|_| StatusCode::PRECONDITION_FAILED)
+                    .unwrap_or(StatusCode::PAYLOAD_TOO_LARGE),
+            );
         if let Some(expect) = expect {
             response.with_failed_precondition(expect, &max_size.to_string());
         }

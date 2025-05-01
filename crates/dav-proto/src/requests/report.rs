@@ -21,6 +21,7 @@ use crate::{
         },
         Attribute, Collation, Element, MatchType, NamedElement, Namespace,
     },
+    Depth,
 };
 
 impl DavParser for Report {
@@ -450,7 +451,7 @@ impl DavParser for SyncCollection {
             properties: PropFind::AllProp(vec![]),
             limit: None,
             sync_token: None,
-            level_inf: false,
+            depth: Depth::None,
         };
 
         loop {
@@ -482,8 +483,8 @@ impl DavParser for SyncCollection {
                         ns: Namespace::Dav,
                         element: Element::SyncLevel,
                     } => {
-                        if let Some(Ok(_)) = stream.parse_value::<Infinite>()? {
-                            sc.level_inf = true;
+                        if let Some(Ok(depth)) = stream.parse_value::<Depth>()? {
+                            sc.depth = depth;
                         }
                     }
                     name => return Err(name.into_unexpected()),
@@ -626,22 +627,12 @@ impl<A, B, C> Filter<A, B, C> {
     }
 }
 
-struct Infinite;
-
-impl XmlValueParser for Infinite {
+impl XmlValueParser for Depth {
     fn parse_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes == b"infinite" {
-            Some(Infinite)
-        } else {
-            None
-        }
+        Depth::parse(bytes)
     }
 
     fn parse_str(text: &str) -> Option<Self> {
-        if text == "infinite" {
-            Some(Infinite)
-        } else {
-            None
-        }
+        Depth::parse(text.as_bytes())
     }
 }

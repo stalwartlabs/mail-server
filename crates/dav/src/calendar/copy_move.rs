@@ -5,7 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken};
-use dav_proto::{Depth, RequestHeaders, schema::response::CalCondition};
+use dav_proto::{Depth, RequestHeaders};
 use groupware::{
     DavName, DestroyArchive,
     calendar::{Calendar, CalendarEvent, CalendarPreferences, Timezone},
@@ -17,7 +17,14 @@ use jmap_proto::types::{acl::Acl, collection::Collection};
 use store::write::BatchBuilder;
 use trc::AddContext;
 
-use crate::{DavError, DavErrorCondition, common::uri::DavUriResource, file::DavFileResource};
+use crate::{
+    DavError, DavMethod,
+    common::{
+        lock::{LockRequestHandler, ResourceState},
+        uri::DavUriResource,
+    },
+    file::DavFileResource,
+};
 
 use super::assert_is_unique_uid;
 
@@ -77,11 +84,12 @@ impl CalendarCopyMoveRequestHandler for Server {
 
         // Validate destination
         let destination = self
-            .validate_uri(
+            .validate_uri_with_status(
                 access_token,
                 headers
                     .destination
                     .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?,
+                StatusCode::BAD_GATEWAY,
             )
             .await?;
         if destination.collection != Collection::Calendar {
@@ -98,11 +106,53 @@ impl CalendarCopyMoveRequestHandler for Server {
                 .caused_by(trc::location!())?
         };
 
-        // Map destination
+        // Validate headers
         let destination_resource_name = destination
             .resource
             .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?;
-        if let Some(to_resource) = to_resources.paths.by_name(destination_resource_name) {
+        let to_resource = to_resources.paths.by_name(destination_resource_name);
+        self.validate_headers(
+            access_token,
+            &headers,
+            vec![
+                ResourceState {
+                    account_id: from_account_id,
+                    collection: if from_resource.is_container() {
+                        Collection::Calendar
+                    } else {
+                        Collection::CalendarEvent
+                    },
+                    document_id: Some(from_resource.document_id),
+                    path: from_resource_name,
+                    ..Default::default()
+                },
+                ResourceState {
+                    account_id: to_account_id,
+                    collection: to_resource
+                        .map(|r| {
+                            if r.is_container() {
+                                Collection::Calendar
+                            } else {
+                                Collection::CalendarEvent
+                            }
+                        })
+                        .unwrap_or(Collection::Calendar),
+                    document_id: Some(to_resource.map(|r| r.document_id).unwrap_or(u32::MAX)),
+                    path: destination_resource_name,
+                    ..Default::default()
+                },
+            ],
+            Default::default(),
+            if is_move {
+                DavMethod::MOVE
+            } else {
+                DavMethod::COPY
+            },
+        )
+        .await?;
+
+        // Map destination
+        if let Some(to_resource) = to_resource {
             if from_resource.name == to_resource.name {
                 // Same resource
                 return Err(DavError::Code(StatusCode::BAD_GATEWAY));
@@ -197,12 +247,6 @@ impl CalendarCopyMoveRequestHandler for Server {
                         return Err(DavError::Code(StatusCode::FORBIDDEN));
                     }
 
-                    let to_base_path = to_resources
-                        .format_resource(to_resource)
-                        .rsplit_once('/')
-                        .unwrap()
-                        .0
-                        .to_string();
                     if is_move {
                         move_event(
                             self,
@@ -213,7 +257,6 @@ impl CalendarCopyMoveRequestHandler for Server {
                             to_account_id,
                             to_resource.document_id.into(),
                             to_calendar_id,
-                            to_base_path,
                             new_name,
                         )
                         .await
@@ -226,7 +269,6 @@ impl CalendarCopyMoveRequestHandler for Server {
                             to_account_id,
                             to_resource.document_id.into(),
                             to_calendar_id,
-                            to_base_path,
                             new_name,
                         )
                         .await
@@ -238,7 +280,7 @@ impl CalendarCopyMoveRequestHandler for Server {
             to_resources.map_parent(destination_resource_name)
         {
             if let Some(parent_resource) = parent_resource {
-                // Creating items under a event is not allowed
+                // Creating items under an event is not allowed
                 // Copying/moving containers under a container is not allowed
                 if !parent_resource.is_container() || from_resource.is_container() {
                     return Err(DavError::Code(StatusCode::BAD_GATEWAY));
@@ -291,7 +333,6 @@ impl CalendarCopyMoveRequestHandler for Server {
                             to_account_id,
                             None,
                             to_calendar_id,
-                            to_resources.format_resource(parent_resource),
                             new_name,
                         )
                         .await
@@ -312,10 +353,9 @@ impl CalendarCopyMoveRequestHandler for Server {
                         access_token,
                         from_account_id,
                         from_resource.document_id,
-                        from_calendar_id,
+                        to_account_id,
                         None,
                         to_calendar_id,
-                        to_resources.format_resource(parent_resource),
                         new_name,
                     )
                     .await
@@ -421,7 +461,6 @@ async fn copy_event(
     to_account_id: u32,
     to_document_id: Option<u32>,
     to_calendar_id: u32,
-    to_base_path: String,
     new_name: &str,
 ) -> crate::Result<HttpResponse> {
     // Fetch event
@@ -435,18 +474,21 @@ async fn copy_event(
         .caused_by(trc::location!())?;
     let mut batch = BatchBuilder::new();
 
+    // Validate UID
+    assert_is_unique_uid(
+        server,
+        server
+            .fetch_dav_resources(access_token, to_account_id, Collection::Calendar)
+            .await
+            .caused_by(trc::location!())?
+            .as_ref(),
+        to_account_id,
+        to_calendar_id,
+        event.inner.data.event.uids().next(),
+    )
+    .await?;
+
     if from_account_id == to_account_id {
-        if let Some(name) = event
-            .inner
-            .names
-            .iter()
-            .find(|n| n.parent_id == to_calendar_id)
-        {
-            return Err(DavError::Condition(DavErrorCondition::new(
-                StatusCode::PRECONDITION_FAILED,
-                CalCondition::NoUidConflict(format!("{}{}", to_base_path, name.name).into()),
-            )));
-        }
         let mut new_event = event
             .deserialize::<CalendarEvent>()
             .caused_by(trc::location!())?;
@@ -464,20 +506,6 @@ async fn copy_event(
             )
             .caused_by(trc::location!())?;
     } else {
-        // Validate UID
-        assert_is_unique_uid(
-            server,
-            server
-                .fetch_dav_resources(access_token, to_account_id, Collection::Calendar)
-                .await
-                .caused_by(trc::location!())?
-                .as_ref(),
-            to_account_id,
-            to_calendar_id,
-            event.inner.data.event.uids().next().unwrap_or_default(),
-        )
-        .await?;
-
         let mut new_event = event
             .deserialize::<CalendarEvent>()
             .caused_by(trc::location!())?;
@@ -540,7 +568,6 @@ async fn move_event(
     to_account_id: u32,
     to_document_id: Option<u32>,
     to_calendar_id: u32,
-    to_base_path: String,
     new_name: &str,
 ) -> crate::Result<HttpResponse> {
     // Fetch event
@@ -553,16 +580,30 @@ async fn move_event(
         .to_unarchived::<CalendarEvent>()
         .caused_by(trc::location!())?;
 
+    // Validate UID
+    if from_account_id != to_account_id
+        || from_calendar_id != to_calendar_id
+        || to_document_id.is_none()
+    {
+        assert_is_unique_uid(
+            server,
+            server
+                .fetch_dav_resources(access_token, to_account_id, Collection::Calendar)
+                .await
+                .caused_by(trc::location!())?
+                .as_ref(),
+            to_account_id,
+            to_calendar_id,
+            event.inner.data.event.uids().next(),
+        )
+        .await?;
+    }
+
     let mut batch = BatchBuilder::new();
     if from_account_id == to_account_id {
         let mut name_idx = None;
         for (idx, name) in event.inner.names.iter().enumerate() {
-            if name.parent_id == to_calendar_id {
-                return Err(DavError::Condition(DavErrorCondition::new(
-                    StatusCode::PRECONDITION_FAILED,
-                    CalCondition::NoUidConflict(format!("{}{}", to_base_path, name.name).into()),
-                )));
-            } else if name.parent_id == from_calendar_id {
+            if name.parent_id == from_calendar_id {
                 name_idx = Some(idx);
                 break;
             }
@@ -592,20 +633,6 @@ async fn move_event(
             )
             .caused_by(trc::location!())?;
     } else {
-        // Validate UID
-        assert_is_unique_uid(
-            server,
-            server
-                .fetch_dav_resources(access_token, to_account_id, Collection::Calendar)
-                .await
-                .caused_by(trc::location!())?
-                .as_ref(),
-            to_account_id,
-            to_calendar_id,
-            event.inner.data.event.uids().next().unwrap_or_default(),
-        )
-        .await?;
-
         let mut new_event = event
             .deserialize::<CalendarEvent>()
             .caused_by(trc::location!())?;
@@ -848,7 +875,7 @@ async fn copy_container(
                         access_token,
                         event,
                         from_account_id,
-                        from_document_id,
+                        from_child_document_id,
                         &mut batch,
                     )
                     .caused_by(trc::location!())?;

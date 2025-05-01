@@ -17,7 +17,7 @@ impl<'x> RequestHeaders<'x> {
     pub fn parse(&mut self, key: &str, value: &'x str) -> bool {
         hashify::fnc_map_ignore_case!(key.as_bytes(),
             "Depth" => {
-                if let Some(depth) = Depth::parse(value) {
+                if let Some(depth) = Depth::parse(value.as_bytes()) {
                     self.depth = depth;
                     return true;
                 }
@@ -292,11 +292,12 @@ pub fn dav_base_uri(uri: &str) -> Option<&str> {
 }
 
 impl Depth {
-    pub fn parse(value: &str) -> Option<Self> {
-        hashify::tiny_map!(value.as_bytes(),
+    pub fn parse(value: &[u8]) -> Option<Self> {
+        hashify::tiny_map!(value,
             "0" => Depth::Zero,
             "1" => Depth::One,
             "infinity" => Depth::Infinity,
+            "infinite" => Depth::Infinity,
         )
     }
 }
@@ -594,6 +595,25 @@ mod tests {
                         tag: "\"4217\"",
                     }],
                 }],
+            ),
+            (
+                r#"</test/file.txt> (["1234"]) </specs/rfc2518.doc> (Not ["4217"])"#,
+                vec![
+                    If {
+                        resource: "/test/file.txt".into(),
+                        list: vec![Condition::ETag {
+                            is_not: false,
+                            tag: "\"1234\"",
+                        }],
+                    },
+                    If {
+                        resource: "/specs/rfc2518.doc".into(),
+                        list: vec![Condition::ETag {
+                            is_not: true,
+                            tag: "\"4217\"",
+                        }],
+                    },
+                ],
             ),
         ] {
             assert!(headers.parse("If", input));

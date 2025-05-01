@@ -12,6 +12,6 @@
       }
     ]
   },
-  "level_inf": true,
+  "depth": "Infinity",
   "limit": 9
 }

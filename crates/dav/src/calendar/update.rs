@@ -247,7 +247,7 @@ impl CalendarUpdateRequestHandler for Server {
                 &resources,
                 account_id,
                 parent.document_id,
-                validate_ical(&ical)?,
+                validate_ical(&ical)?.into(),
             )
             .await?;
 

@@ -7,7 +7,7 @@
 use common::storage::index::{
     IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
 };
-use jmap_proto::types::{collection::Collection, value::AclGrant};
+use jmap_proto::types::value::AclGrant;
 use store::{SerializeInfallible, write::key::KeySerializer};
 
 use crate::{IDX_NAME, IDX_TIME, IDX_UID};
@@ -123,10 +123,6 @@ impl IndexableObject for CalendarEvent {
                     + self.size,
             },
             IndexValue::LogChild { prefix: None },
-            IndexValue::LogParent {
-                collection: Collection::Calendar.into(),
-                ids: self.names.iter().map(|n| n.parent_id).collect(),
-            },
         ]
         .into_iter()
     }
@@ -167,10 +163,6 @@ impl IndexableObject for &ArchivedCalendarEvent {
                     + self.size,
             },
             IndexValue::LogChild { prefix: None },
-            IndexValue::LogParent {
-                collection: Collection::Calendar.into(),
-                ids: self.names.iter().map(|n| n.parent_id.to_native()).collect(),
-            },
         ]
         .into_iter()
     }

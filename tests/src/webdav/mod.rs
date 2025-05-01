@@ -21,7 +21,8 @@ use common::{
     core::BuildServer,
     manager::boot::build_ipc,
 };
-use groupware::hierarchy::DavHierarchy;
+use dav_proto::Depth;
+use groupware::{DavResourceName, hierarchy::DavHierarchy};
 use http::HttpSessionManager;
 use hyper::{HeaderMap, Method, StatusCode, header::AUTHORIZATION};
 use imap::core::ImapSessionManager;
@@ -36,10 +37,12 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use store::rand::{Rng, distr::Alphanumeric, rng};
 use tokio::sync::watch;
 use utils::config::Config;
 
 pub mod basic;
+pub mod copy_move;
 pub mod mkcol;
 pub mod put_get;
 
@@ -327,13 +330,9 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
         }
     }
     store
-        .create_test_group(
-            "support@example.com",
-            "Support Group",
-            &["support@example.com"],
-        )
+        .create_test_group("support", "Support Group", &["support@example.com"])
         .await;
-    store.add_to_group("jane", "support@example.com").await;
+    store.add_to_group("jane", "support").await;
 
     WebDavTest {
         server: inner.build_server(),
@@ -355,9 +354,10 @@ pub async fn webdav_tests() {
     )
     .await;
 
-    //basic::test(&handle).await;
-    //put_get::test(&handle).await;
+    basic::test(&handle).await;
+    put_get::test(&handle).await;
     mkcol::test(&handle).await;
+    copy_move::test(&handle).await;
 
     // Print elapsed time
     let elapsed = start_time.elapsed();
@@ -498,15 +498,22 @@ impl DummyWebDavClient {
         let mut request = concat!(
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
             "<D:mkcol xmlns:D=\"DAV:\" xmlns:A=\"urn:ietf:params:xml:ns:caldav\" xmlns:B=\"urn:ietf:params:xml:ns:carddav\">",
-            "<D:set><D:prop><D:resourcetype>"
+            "<D:set><D:prop>"
         )
         .to_string();
 
-        for resource_type in resource_types {
+        let mut has_resource_type = false;
+        for (idx, resource_type) in resource_types.into_iter().enumerate() {
+            if idx == 0 {
+                request.push_str("<D:resourcetype>");
+            }
             request.push_str(&format!("<{resource_type}/>"));
+            has_resource_type = true;
         }
 
-        request.push_str("</D:resourcetype>");
+        if has_resource_type {
+            request.push_str("</D:resourcetype>");
+        }
 
         for (key, value) in properties {
             request.push_str(&format!("<{key}>{value}</{key}>"));
@@ -541,9 +548,151 @@ impl DummyWebDavClient {
         self.request("PROPFIND", path, &request).await
     }
 
+    pub async fn sync_collection(
+        &self,
+        path: &str,
+        sync_token: &str,
+        depth: Depth,
+        properties: impl IntoIterator<Item = &str>,
+    ) -> DavResponse {
+        let mut request = concat!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+            "<D:sync-collection xmlns:D=\"DAV:\" xmlns:A=\"urn:ietf:params:xml:ns:caldav\" xmlns:B=\"urn:ietf:params:xml:ns:carddav\">",
+            "<D:prop>"
+        )
+        .to_string();
+
+        for property in properties {
+            request.push_str(&format!("<{property}/>"));
+        }
+
+        request.push_str("</D:prop><D:sync-token>");
+        request.push_str(sync_token);
+        request.push_str("</D:sync-token><D:sync-level>");
+        request.push_str(match depth {
+            Depth::One => "1",
+            Depth::Infinity => "infinite",
+            _ => "0",
+        });
+        request.push_str("</D:sync-level></D:sync-collection>");
+
+        self.request("REPORT", path, &request)
+            .await
+            .with_status(StatusCode::MULTI_STATUS)
+    }
+
+    pub async fn create_hierarchy(
+        &self,
+        base_path: &str,
+        max_depth: usize,
+        containers_per_level: usize,
+        files_per_container: usize,
+    ) -> (String, Vec<(String, String)>) {
+        let resource_type = if base_path.starts_with("/dav/card/") {
+            DavResourceName::Card
+        } else if base_path.starts_with("/dav/cal/") {
+            DavResourceName::Cal
+        } else {
+            DavResourceName::File
+        };
+
+        let mut created_resources = Vec::new();
+
+        self.create_hierarchy_recursive(
+            resource_type,
+            base_path,
+            max_depth,
+            containers_per_level,
+            files_per_container,
+            0,
+            &mut created_resources,
+        )
+        .await;
+
+        let root_folder = created_resources.first().unwrap().0.clone();
+        created_resources.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        (root_folder, created_resources)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn create_hierarchy_recursive(
+        &self,
+        resource_type: DavResourceName,
+        base_path: &str,
+        max_depth: usize,
+        containers_per_level: usize,
+        files_per_container: usize,
+        current_depth: usize,
+        created_resources: &mut Vec<(String, String)>,
+    ) {
+        let folder_name = generate_random_name(4);
+        let folder_path = format!("{base_path}/Folder_{folder_name}");
+
+        self.mkcol("MKCOL", &folder_path, [], [])
+            .await
+            .with_status(StatusCode::CREATED);
+
+        created_resources.push((format!("{folder_path}/"), "".to_string()));
+
+        for _ in 0..files_per_container {
+            let file_name = generate_random_name(8);
+            let file_path = format!(
+                "{folder_path}/{file_name}.{}",
+                match resource_type {
+                    DavResourceName::Card => "vcf",
+                    DavResourceName::Cal => "ics",
+                    DavResourceName::File => "txt",
+                    _ => unreachable!(),
+                }
+            );
+            let content = match resource_type {
+                DavResourceName::Card => generate_random_vcard(),
+                DavResourceName::Cal => generate_random_ical(),
+                DavResourceName::File => generate_random_content(100, 500),
+                _ => unreachable!(),
+            };
+
+            self.request("PUT", &file_path, &content)
+                .await
+                .with_status(StatusCode::CREATED);
+
+            created_resources.push((file_path, content));
+        }
+
+        if current_depth < max_depth {
+            for _ in 0..containers_per_level {
+                Box::pin(self.create_hierarchy_recursive(
+                    resource_type,
+                    &folder_path,
+                    max_depth,
+                    containers_per_level,
+                    files_per_container,
+                    current_depth + 1,
+                    created_resources,
+                ))
+                .await;
+            }
+        }
+    }
+
+    pub async fn validate_values(&self, items: &[(String, String)]) {
+        for (path, value) in items {
+            if !path.ends_with('/') {
+                self.request("GET", path, "")
+                    .await
+                    .with_status(StatusCode::OK)
+                    .with_body(value);
+            }
+        }
+    }
+
     pub async fn delete_default_containers(&self) {
+        self.delete_default_containers_by_account(self.name).await;
+    }
+
+    pub async fn delete_default_containers_by_account(&self, account: &str) {
         for col in ["card", "cal"] {
-            self.request("DELETE", &format!("/dav/{col}/{}/default", self.name), "")
+            self.request("DELETE", &format!("/dav/{col}/{account}/default"), "")
                 .await
                 .with_status(StatusCode::NO_CONTENT);
         }
@@ -551,7 +700,7 @@ impl DummyWebDavClient {
 }
 
 impl DavResponse {
-    pub fn with_status(&self, status: StatusCode) -> &Self {
+    pub fn with_status(self, status: StatusCode) -> Self {
         if self.status != status {
             self.dump_response();
             panic!("Expected {status} but got {}", self.status)
@@ -559,12 +708,12 @@ impl DavResponse {
         self
     }
 
-    pub fn with_redirect_to(&self, url: &str) -> &Self {
+    pub fn with_redirect_to(self, url: &str) -> Self {
         self.with_status(StatusCode::TEMPORARY_REDIRECT)
             .with_header("location", url)
     }
 
-    pub fn with_header(&self, header: &str, value: &str) -> &Self {
+    pub fn with_header(self, header: &str, value: &str) -> Self {
         if self.headers.get(header).is_some_and(|v| v == value) {
             self
         } else {
@@ -573,7 +722,7 @@ impl DavResponse {
         }
     }
 
-    pub fn with_body(&self, expect_body: impl AsRef<str>) -> &Self {
+    pub fn with_body(self, expect_body: impl AsRef<str>) -> Self {
         let expect_body = expect_body.as_ref();
         if self.body.is_ok() {
             let body = self.body.as_ref().unwrap();
@@ -588,6 +737,20 @@ impl DavResponse {
         }
     }
 
+    pub fn with_empty_body(self) -> Self {
+        if self.body.is_ok() {
+            let body = self.body.as_ref().unwrap();
+            if !body.is_empty() {
+                self.dump_response();
+                panic!("Expected empty body but got {body:?}");
+            }
+            self
+        } else {
+            self.dump_response();
+            panic!("Expected empty body but no body was returned.")
+        }
+    }
+
     pub fn header(&self, header: &str) -> &str {
         if let Some(value) = self.headers.get(header) {
             value
@@ -599,6 +762,24 @@ impl DavResponse {
 
     pub fn etag(&self) -> &str {
         self.header("etag")
+    }
+
+    pub fn sync_token(&self) -> &str {
+        self.find_keys("D:multistatus.D:sync-token")
+            .next()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| {
+                self.dump_response();
+                panic!("Sync token not found.")
+            })
+    }
+
+    pub fn hrefs(&self) -> Vec<&str> {
+        let mut hrefs = self
+            .find_keys("D:multistatus.D:response.D:href")
+            .collect::<Vec<_>>();
+        hrefs.sort_unstable();
+        hrefs
     }
 
     fn dump_response(&self) {
@@ -625,7 +806,7 @@ impl DavResponse {
     }
 
     // Poor man's XPath
-    pub fn match_one(&self, query: &str, expect: impl AsRef<str>) -> &Self {
+    pub fn match_one(self, query: &str, expect: impl AsRef<str>) -> Self {
         let expect = expect.as_ref();
         if let Some(value) = self.find_keys(query).next() {
             if value != expect {
@@ -639,7 +820,7 @@ impl DavResponse {
         self
     }
 
-    pub fn match_many<I, T>(&self, query: &str, expect: I) -> &Self
+    pub fn match_many<I, T>(self, query: &str, expect: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -654,7 +835,7 @@ impl DavResponse {
         self
     }
 
-    pub fn with_failed_precondition(&self, precondition: &str, value: &str) -> &Self {
+    pub fn with_failed_precondition(self, precondition: &str, value: &str) -> Self {
         let error = format!("D:error.{precondition}");
         if self.find_keys(&error).next().is_none_or(|v| v != value) {
             self.dump_response();
@@ -825,3 +1006,123 @@ END:DAYLIGHT
 END:VTIMEZONE
 END:VCALENDAR
 "#;
+
+pub trait GenerateTestDavResource {
+    fn generate(&self) -> String;
+}
+
+impl GenerateTestDavResource for DavResourceName {
+    fn generate(&self) -> String {
+        match self {
+            DavResourceName::Card => generate_random_vcard(),
+            DavResourceName::Cal => generate_random_ical(),
+            DavResourceName::File => generate_random_content(100, 200),
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn generate_random_vcard() -> String {
+    r#"BEGIN:VCARD
+VERSION:4.0
+UID:$UID
+FN:$NAME
+END:VCARD
+"#
+    .replace("$UID", &generate_random_name(8))
+    .replace("$NAME", &generate_random_name(10))
+    .replace('\n', "\r\n")
+}
+
+fn generate_random_ical() -> String {
+    r#"BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:$UID
+SUMMARY:$SUMMARY
+DESCRIPTION:$DESCRIPTION
+END:VEVENT
+END:VCALENDAR
+"#
+    .replace("$UID", &generate_random_name(8))
+    .replace("$SUMMARY", &generate_random_name(10))
+    .replace("$DESCRIPTION", &generate_random_name(20))
+    .replace('\n', "\r\n")
+}
+
+fn generate_random_content(min_chars: usize, max_chars: usize) -> String {
+    let mut rng = rng();
+    let length = rng.random_range(min_chars..=max_chars);
+
+    let words = [
+        "lorem",
+        "ipsum",
+        "dolor",
+        "sit",
+        "amet",
+        "consectetur",
+        "adipiscing",
+        "elit",
+        "sed",
+        "do",
+        "eiusmod",
+        "tempor",
+        "incididunt",
+        "ut",
+        "labore",
+        "et",
+        "dolore",
+        "magna",
+        "aliqua",
+        "ut",
+        "enim",
+        "ad",
+        "minim",
+        "veniam",
+        "quis",
+        "nostrud",
+        "exercitation",
+        "ullamco",
+        "laboris",
+        "nisi",
+        "ut",
+        "aliquip",
+        "ex",
+        "ea",
+        "commodo",
+        "consequat",
+    ];
+
+    let mut content = String::with_capacity(length);
+
+    while content.len() < length {
+        let word_idx = rng.random_range(0..words.len());
+        if !content.is_empty() {
+            content.push(' ');
+        }
+        if rng.random_ratio(1, 10) {
+            content.push('.');
+            let word = words[word_idx];
+            let mut chars = word.chars();
+            if let Some(first_char) = chars.next() {
+                content.push_str(&first_char.to_uppercase().to_string());
+                content.push_str(chars.as_str());
+            }
+        } else {
+            content.push_str(words[word_idx]);
+        }
+    }
+
+    if !content.ends_with('.') {
+        content.push('.');
+    }
+
+    content
+}
+
+fn generate_random_name(length: usize) -> String {
+    let mut rng = rng();
+    (0..length)
+        .map(|_| rng.sample(Alphanumeric) as char)
+        .collect()
+}

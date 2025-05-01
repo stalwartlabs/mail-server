@@ -42,12 +42,20 @@ pub mod uri;
 pub(crate) struct DavQuery<'x> {
     pub resource: DavQueryResource<'x>,
     pub propfind: PropFind,
-    pub from_change_id: Option<u64>,
+    pub sync_type: SyncType,
     pub depth: usize,
     pub limit: Option<u32>,
     pub ret: Return,
     pub depth_no_root: bool,
     pub expand: bool,
+}
+
+#[derive(Default, Debug)]
+pub(crate) enum SyncType {
+    #[default]
+    None,
+    Initial,
+    From(u64),
 }
 
 #[derive(Default, Debug)]
@@ -215,14 +223,18 @@ impl<'x> DavQuery<'x> {
         Self {
             resource: DavQueryResource::Uri(resource),
             propfind: changes.properties,
-            from_change_id: changes
+            sync_type: changes
                 .sync_token
                 .as_deref()
                 .and_then(Urn::parse)
                 .and_then(|urn| urn.try_unwrap_sync())
-                .unwrap_or_default()
-                .into(),
-            depth: if changes.level_inf { usize::MAX } else { 1 },
+                .map(SyncType::From)
+                .unwrap_or(SyncType::Initial),
+            depth: match changes.depth {
+                Depth::One => 1,
+                Depth::Infinity => usize::MAX,
+                _ => 0,
+            },
             limit: changes.limit,
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
@@ -420,5 +432,15 @@ impl<'x> ArchivedResource<'x> {
             }
             _ => None,
         }
+    }
+}
+
+impl SyncType {
+    pub fn is_none(&self) -> bool {
+        matches!(self, SyncType::None)
+    }
+
+    pub fn is_none_or_initial(&self) -> bool {
+        matches!(self, SyncType::None | SyncType::Initial)
     }
 }

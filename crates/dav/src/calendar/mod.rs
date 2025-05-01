@@ -92,27 +92,30 @@ pub(crate) async fn assert_is_unique_uid(
     resources: &DavResources,
     account_id: u32,
     calendar_id: u32,
-    uid: &str,
+    uid: Option<&str>,
 ) -> crate::Result<()> {
-    let hits = server
-        .store()
-        .filter(
-            account_id,
-            Collection::CalendarEvent,
-            vec![Filter::eq(IDX_UID, uid.as_bytes().to_vec())],
-        )
-        .await
-        .caused_by(trc::location!())?;
-    if !hits.results.is_empty() {
-        for path in resources.paths.iter() {
-            if !path.is_container()
-                && hits.results.contains(path.document_id)
-                && path.parent_id.unwrap() == calendar_id
-            {
-                return Err(DavError::Condition(DavErrorCondition::new(
-                    StatusCode::PRECONDITION_FAILED,
-                    CalCondition::NoUidConflict(resources.format_resource(path).into()),
-                )));
+    if let Some(uid) = uid {
+        let hits = server
+            .store()
+            .filter(
+                account_id,
+                Collection::CalendarEvent,
+                vec![Filter::eq(IDX_UID, uid.as_bytes().to_vec())],
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        if !hits.results.is_empty() {
+            for path in resources.paths.iter() {
+                if !path.is_container()
+                    && hits.results.contains(path.document_id)
+                    && path.parent_id.unwrap() == calendar_id
+                {
+                    return Err(DavError::Condition(DavErrorCondition::new(
+                        StatusCode::PRECONDITION_FAILED,
+                        CalCondition::NoUidConflict(resources.format_resource(path).into()),
+                    )));
+                }
             }
         }
     }

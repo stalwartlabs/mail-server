@@ -288,13 +288,13 @@ impl PrincipalPropFind for Server {
 
             let mut prop_stats = Vec::with_capacity(2);
 
-            if !fields.is_empty() {
-                prop_stats.push(PropStat::new_list(fields));
-            }
-
             if !fields_not_found.is_empty() {
                 prop_stats
                     .push(PropStat::new_list(fields_not_found).with_status(StatusCode::NOT_FOUND));
+            }
+
+            if !fields.is_empty() || prop_stats.is_empty() {
+                prop_stats.push(PropStat::new_list(fields));
             }
 
             response.add_response(Response::new_propstat(

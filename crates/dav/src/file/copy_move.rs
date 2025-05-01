@@ -55,6 +55,7 @@ impl FileCopyMoveRequestHandler for Server {
             .await
             .caused_by(trc::location!())?;
         let from_resource = from_files.map_resource::<FileItemId>(&from_resource_)?;
+        let from_resource_name = from_resource_.resource.unwrap();
 
         // Validate source ACLs
         if !access_token.is_member(from_account_id) {
@@ -82,11 +83,12 @@ impl FileCopyMoveRequestHandler for Server {
 
         // Validate destination
         let destination = self
-            .validate_uri(
+            .validate_uri_with_status(
                 access_token,
                 headers
                     .destination
                     .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?,
+                StatusCode::BAD_GATEWAY,
             )
             .await?;
         if destination.collection != Collection::FileNode {
@@ -107,6 +109,15 @@ impl FileCopyMoveRequestHandler for Server {
         let destination_resource_name = destination
             .resource
             .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?;
+        if from_account_id == to_account_id
+            && (from_resource_name == destination_resource_name
+                || from_resource_name
+                    .strip_prefix(destination_resource_name)
+                    .is_some_and(|v| v.is_empty() || v.starts_with('/')))
+        {
+            return Ok(HttpResponse::new(StatusCode::BAD_GATEWAY));
+        }
+
         let mut delete_destination = None;
         // Check if the resource exists
         let mut destination =
@@ -134,17 +145,14 @@ impl FileCopyMoveRequestHandler for Server {
             };
         destination.account_id = to_account_id;
 
-        if from_account_id == destination.account_id && delete_destination.is_none() {
-            if Some(from_resource.resource.document_id) == destination.document_id {
-                // Move or copy to the same location
-                return Ok(HttpResponse::new(StatusCode::BAD_GATEWAY));
-            } else if from_resource.resource.parent_id == destination.parent_id
-                && destination.new_name.is_some()
-                && is_move
-            {
-                // Rename
-                return rename_item(self, access_token, from_resource, destination).await;
-            }
+        if delete_destination.is_none()
+            && from_account_id == destination.account_id
+            && from_resource.resource.parent_id == destination.document_id
+            && destination.new_name.is_some()
+            && is_move
+        {
+            // Rename
+            return rename_item(self, access_token, from_resource, destination).await;
         }
 
         // Validate destination ACLs
@@ -187,7 +195,13 @@ impl FileCopyMoveRequestHandler for Server {
                 ResourceState {
                     account_id: to_account_id,
                     collection: Collection::FileNode,
-                    document_id: Some(destination.document_id.unwrap_or(u32::MAX)),
+                    document_id: Some(
+                        delete_destination
+                            .as_ref()
+                            .unwrap_or(&destination)
+                            .document_id
+                            .unwrap_or(u32::MAX),
+                    ),
                     path: destination_resource_name,
                     ..Default::default()
                 },
@@ -229,7 +243,7 @@ impl FileCopyMoveRequestHandler for Server {
                 .subtree(destination_resource_name)
                 .collect::<Vec<_>>();
             if !ids.is_empty() {
-                ids.sort_unstable_by(|a, b| b.hierarchy_sequence().cmp(&a.hierarchy_sequence()));
+                ids.sort_unstable_by_key(|b| std::cmp::Reverse(b.hierarchy_sequence()));
                 let mut sorted_ids = Vec::with_capacity(ids.len());
                 sorted_ids.extend(ids.into_iter().map(|a| a.document_id));
                 DestroyArchive(sorted_ids)
@@ -245,7 +259,6 @@ impl FileCopyMoveRequestHandler for Server {
                     self,
                     access_token,
                     from_files,
-                    to_files,
                     from_resource,
                     destination,
                     headers.depth,
@@ -296,7 +309,7 @@ pub(crate) struct Destination {
     pub account_id: u32,
     pub new_name: Option<String>,
     pub document_id: Option<u32>,
-    pub parent_id: Option<u32>,
+    //pub parent_id: Option<u32>,
     pub is_container: bool,
 }
 
@@ -305,7 +318,6 @@ impl Default for Destination {
         Self {
             account_id: Default::default(),
             document_id: Default::default(),
-            parent_id: Default::default(),
             new_name: Default::default(),
             is_container: true,
         }
@@ -317,7 +329,6 @@ async fn move_container(
     server: &Server,
     access_token: &AccessToken,
     from_files: Arc<DavResources>,
-    to_files: Arc<DavResources>,
     from_resource: UriResource<u32, FileItemId>,
     destination: Destination,
     depth: Depth,
@@ -328,9 +339,6 @@ async fn move_container(
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
 
     if from_account_id == to_account_id {
-        if parent_id != 0 && to_files.is_ancestor_of(from_document_id, parent_id - 1) {
-            return Err(DavError::Code(StatusCode::BAD_GATEWAY));
-        }
         let node_ = server
             .get_archive(from_account_id, Collection::FileNode, from_document_id)
             .await
@@ -773,7 +781,6 @@ impl FromDavResource for Destination {
         Destination {
             account_id: u32::MAX,
             document_id: Some(item.document_id),
-            parent_id: item.parent_id,
             is_container: item.is_container(),
             new_name: None,
         }
