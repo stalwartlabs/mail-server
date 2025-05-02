@@ -127,6 +127,10 @@ impl ArchivedDeadProperty {
 }
 
 impl DeadElementTag {
+    pub fn new(name: String, attrs: Option<String>) -> Self {
+        DeadElementTag { name, attrs }
+    }
+
     pub fn size(&self) -> usize {
         self.name.len() + self.attrs.as_ref().map_or(0, |attrs| attrs.len())
     }

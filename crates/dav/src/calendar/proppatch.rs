@@ -326,6 +326,7 @@ impl CalendarPropPatchRequestHandler for Server {
                 }
                 (DavProperty::WebDav(WebDavProperty::CreationDate), DavValue::Timestamp(dt)) => {
                     calendar.created = dt;
+                    items.insert_ok(property.property);
                 }
                 (
                     DavProperty::WebDav(WebDavProperty::ResourceType),
@@ -408,6 +409,7 @@ impl CalendarPropPatchRequestHandler for Server {
                 }
                 (DavProperty::WebDav(WebDavProperty::CreationDate), DavValue::Timestamp(dt)) => {
                     event.created = dt;
+                    items.insert_ok(property.property);
                 }
                 (DavProperty::DeadProperty(dead), DavValue::DeadProperty(values))
                     if self.core.groupware.dead_property_size.is_some() =>

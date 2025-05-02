@@ -316,7 +316,7 @@ impl Rfc1123DateTime {
 }
 
 impl DavProperty {
-    pub const ALL_PROPS: [DavProperty; 17] = [
+    pub const ALL_PROPS: [DavProperty; 11] = [
         DavProperty::WebDav(WebDavProperty::CreationDate),
         DavProperty::WebDav(WebDavProperty::DisplayName),
         DavProperty::WebDav(WebDavProperty::GetETag),
@@ -325,15 +325,9 @@ impl DavProperty {
         DavProperty::WebDav(WebDavProperty::LockDiscovery),
         DavProperty::WebDav(WebDavProperty::SupportedLock),
         DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
-        DavProperty::WebDav(WebDavProperty::SyncToken),
-        DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet),
-        DavProperty::WebDav(WebDavProperty::AclRestrictions),
-        DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet),
-        DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet),
         DavProperty::WebDav(WebDavProperty::GetContentLanguage),
         DavProperty::WebDav(WebDavProperty::GetContentLength),
         DavProperty::WebDav(WebDavProperty::GetContentType),
-        DavProperty::WebDav(WebDavProperty::SupportedReportSet),
     ];
 
     pub fn is_all_prop(&self) -> bool {
@@ -347,15 +341,9 @@ impl DavProperty {
                 | DavProperty::WebDav(WebDavProperty::LockDiscovery)
                 | DavProperty::WebDav(WebDavProperty::SupportedLock)
                 | DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal)
-                | DavProperty::WebDav(WebDavProperty::SyncToken)
-                | DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet)
-                | DavProperty::WebDav(WebDavProperty::AclRestrictions)
-                | DavProperty::WebDav(WebDavProperty::CurrentUserPrivilegeSet)
-                | DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet)
                 | DavProperty::WebDav(WebDavProperty::GetContentLanguage)
                 | DavProperty::WebDav(WebDavProperty::GetContentLength)
                 | DavProperty::WebDav(WebDavProperty::GetContentType)
-                | DavProperty::WebDav(WebDavProperty::SupportedReportSet)
                 | DavProperty::DeadProperty(_)
         )
     }

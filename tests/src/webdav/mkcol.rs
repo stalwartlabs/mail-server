@@ -8,7 +8,7 @@ use hyper::StatusCode;
 
 use crate::webdav::{TEST_FILE_1, TEST_ICAL_1, TEST_VCARD_1, TEST_VTIMEZONE_1};
 
-use super::WebDavTest;
+use super::{DavResponse, DummyWebDavClient, WebDavTest};
 
 pub async fn test(test: &WebDavTest) {
     println!("Running MKCOL tests...");
@@ -102,7 +102,7 @@ pub async fn test(test: &WebDavTest) {
     }
 
     // Create using extended MKCOL
-    for (path, properties, resource_types) in [
+    for (path, expected_properties, resource_types) in [
         (
             "/dav/file/john/my-named-files/",
             [("D:displayname", "Named Files")].as_slice(),
@@ -131,38 +131,34 @@ pub async fn test(test: &WebDavTest) {
             ["D:collection", "A:calendar"].as_slice(),
         ),
     ] {
-        let mut response = client
+        let response = client
             .mkcol(
                 "MKCOL",
                 path,
                 resource_types.iter().copied(),
-                properties.iter().copied(),
+                expected_properties.iter().copied(),
             )
             .await
             .with_status(StatusCode::CREATED)
-            .match_many("D:mkcol-response.D:propstat.D:status", ["HTTP/1.1 200 OK"]);
-        for (property, _) in properties {
-            response = response.match_one(
-                &format!("D:mkcol-response.D:propstat.D:prop.{property}"),
-                "",
-            );
+            .into_propfind_response("D:mkcol-response".into());
+        let properties = response.properties("");
+        for (property, _) in expected_properties {
+            properties
+                .get(property)
+                .with_status(StatusCode::OK)
+                .with_values([""]);
         }
 
         // Check the properties of the created collection
-        let mut response = client
-            .propfind(path, properties.iter().map(|x| x.0))
-            .await
-            .with_status(StatusCode::MULTI_STATUS)
-            .match_one("D:multistatus.D:response.D:href", path)
-            .match_one(
-                "D:multistatus.D:response.D:propstat.D:status",
-                "HTTP/1.1 200 OK",
-            );
-        for (property, value) in properties {
-            response = response.match_one(
-                &format!("D:multistatus.D:response.D:propstat.D:prop.{property}"),
-                value,
-            );
+        let response = client
+            .propfind(path, expected_properties.iter().map(|x| x.0))
+            .await;
+        let properties = response.properties(path);
+        for (property, value) in expected_properties {
+            properties
+                .get(property)
+                .with_status(StatusCode::OK)
+                .with_values([*value]);
         }
     }
 
@@ -199,4 +195,45 @@ pub async fn test(test: &WebDavTest) {
     }
     client.delete_default_containers().await;
     test.assert_is_empty().await;
+}
+
+impl DummyWebDavClient {
+    pub async fn mkcol(
+        &self,
+        method: &str,
+        path: &str,
+        resource_types: impl IntoIterator<Item = &str>,
+        properties: impl IntoIterator<Item = (&str, &str)>,
+    ) -> DavResponse {
+        let mut request = concat!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+            "<D:mkcol xmlns:D=\"DAV:\" xmlns:A=\"urn:ietf:params:xml:ns:caldav\" xmlns:B=\"urn:ietf:params:xml:ns:carddav\">",
+            "<D:set><D:prop>"
+        )
+        .to_string();
+
+        let mut has_resource_type = false;
+        for (idx, resource_type) in resource_types.into_iter().enumerate() {
+            if idx == 0 {
+                request.push_str("<D:resourcetype>");
+            }
+            request.push_str(&format!("<{resource_type}/>"));
+            has_resource_type = true;
+        }
+
+        if has_resource_type {
+            request.push_str("</D:resourcetype>");
+        }
+
+        for (key, value) in properties {
+            request.push_str(&format!("<{key}>{value}</{key}>"));
+        }
+        request.push_str("</D:prop></D:set></D:mkcol>");
+
+        if method == "MKCALENDAR" {
+            request = request.replace("D:mkcol", "A:mkcalendar");
+        }
+
+        self.request(method, path, &request).await
+    }
 }

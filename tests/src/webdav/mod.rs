@@ -10,7 +10,7 @@ use crate::{
 };
 use ::managesieve::core::ManageSieveSessionManager;
 use ::store::Stores;
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use common::{
     Caches, Core, Data, DavResource, DavResources, Inner, Server,
@@ -21,7 +21,10 @@ use common::{
     core::BuildServer,
     manager::boot::build_ipc,
 };
-use dav_proto::Depth;
+use dav_proto::{
+    Depth,
+    schema::property::{DavProperty, WebDavProperty},
+};
 use groupware::{DavResourceName, hierarchy::DavHierarchy};
 use http::HttpSessionManager;
 use hyper::{HeaderMap, Method, StatusCode, header::AUTHORIZATION};
@@ -44,6 +47,7 @@ use utils::config::Config;
 pub mod basic;
 pub mod copy_move;
 pub mod mkcol;
+pub mod prop;
 pub mod put_get;
 
 const SERVER: &str = r#"
@@ -316,7 +320,7 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
         ("john", "secret2", "John Doe", "jdoe@example.com"),
         ("jane", "secret3", "Jane Smith", "jane.smith@example.com"),
         ("bill", "secret4", "Bill Foobar", "bill@example,com"),
-        ("mike", "secret5", "Mile Noquota", "mike@example,com"),
+        ("mike", "secret5", "Mike Noquota", "mike@example,com"),
     ] {
         let account_id = store
             .create_test_user(account, secret, name, &[email])
@@ -326,7 +330,7 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
             DummyWebDavClient::new(account_id, account, secret, email),
         );
         if account == "mike" {
-            store.set_test_quota(account, 10).await;
+            store.set_test_quota(account, 1024).await;
         }
     }
     store
@@ -358,6 +362,7 @@ pub async fn webdav_tests() {
     put_get::test(&handle).await;
     mkcol::test(&handle).await;
     copy_move::test(&handle).await;
+    prop::test(&handle).await;
 
     // Print elapsed time
     let elapsed = start_time.elapsed();
@@ -400,6 +405,7 @@ pub struct DummyWebDavClient {
     credentials: String,
 }
 
+#[derive(Debug)]
 pub struct DavResponse {
     headers: AHashMap<String, String>,
     status: StatusCode,
@@ -488,66 +494,6 @@ impl DummyWebDavClient {
         }
     }
 
-    pub async fn mkcol(
-        &self,
-        method: &str,
-        path: &str,
-        resource_types: impl IntoIterator<Item = &str>,
-        properties: impl IntoIterator<Item = (&str, &str)>,
-    ) -> DavResponse {
-        let mut request = concat!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-            "<D:mkcol xmlns:D=\"DAV:\" xmlns:A=\"urn:ietf:params:xml:ns:caldav\" xmlns:B=\"urn:ietf:params:xml:ns:carddav\">",
-            "<D:set><D:prop>"
-        )
-        .to_string();
-
-        let mut has_resource_type = false;
-        for (idx, resource_type) in resource_types.into_iter().enumerate() {
-            if idx == 0 {
-                request.push_str("<D:resourcetype>");
-            }
-            request.push_str(&format!("<{resource_type}/>"));
-            has_resource_type = true;
-        }
-
-        if has_resource_type {
-            request.push_str("</D:resourcetype>");
-        }
-
-        for (key, value) in properties {
-            request.push_str(&format!("<{key}>{value}</{key}>"));
-        }
-        request.push_str("</D:prop></D:set></D:mkcol>");
-
-        if method == "MKCALENDAR" {
-            request = request.replace("D:mkcol", "A:mkcalendar");
-        }
-
-        self.request(method, path, &request).await
-    }
-
-    pub async fn propfind(
-        &self,
-        path: &str,
-        properties: impl IntoIterator<Item = &str>,
-    ) -> DavResponse {
-        let mut request = concat!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-            "<D:propfind xmlns:D=\"DAV:\" xmlns:A=\"urn:ietf:params:xml:ns:caldav\" xmlns:B=\"urn:ietf:params:xml:ns:carddav\">",
-            "<D:prop>"
-        )
-        .to_string();
-
-        for property in properties {
-            request.push_str(&format!("<{property}/>"));
-        }
-
-        request.push_str("</D:prop></D:propfind>");
-
-        self.request("PROPFIND", path, &request).await
-    }
-
     pub async fn sync_collection(
         &self,
         path: &str,
@@ -579,6 +525,19 @@ impl DummyWebDavClient {
         self.request("REPORT", path, &request)
             .await
             .with_status(StatusCode::MULTI_STATUS)
+    }
+
+    pub async fn available_quota(&self, path: &str) -> u64 {
+        self.propfind(
+            path,
+            [DavProperty::WebDav(WebDavProperty::QuotaAvailableBytes)],
+        )
+        .await
+        .properties(path)
+        .get(DavProperty::WebDav(WebDavProperty::QuotaAvailableBytes))
+        .value()
+        .parse()
+        .unwrap()
     }
 
     pub async fn create_hierarchy(
@@ -782,6 +741,26 @@ impl DavResponse {
         hrefs
     }
 
+    pub fn with_hrefs<'x>(self, hrefs: impl IntoIterator<Item = &'x str>) -> Self {
+        let expected_hrefs = hrefs.into_iter().collect::<AHashSet<_>>();
+        let hrefs = self
+            .find_keys("D:multistatus.D:response.D:href")
+            .collect::<AHashSet<_>>();
+        if expected_hrefs != hrefs {
+            self.dump_response();
+
+            println!("\nMissing: {:?}", expected_hrefs.difference(&hrefs));
+            println!("\nExtra: {:?}", hrefs.difference(&expected_hrefs));
+
+            panic!(
+                "Hierarchy mismatch: expected {} items, received {} items",
+                expected_hrefs.len(),
+                hrefs.len()
+            );
+        }
+        self
+    }
+
     fn dump_response(&self) {
         eprintln!("-------------------------------------");
         eprintln!("Status: {}", self.status);
@@ -868,19 +847,34 @@ fn flatten_xml(xml: &str) -> Vec<(String, String)> {
             Event::Start(ref e) => {
                 let name = str::from_utf8(e.name().as_ref()).unwrap().to_string();
                 path.push(name);
+                let base_path = path.join(".");
                 for attr in e.attributes() {
                     let attr = attr.unwrap();
                     let key = str::from_utf8(attr.key.as_ref()).unwrap().to_string();
                     let value = attr.unescape_value().unwrap();
                     let value_str = value.trim().to_string();
 
-                    result.push((format!("{}.[{}]", path.join("."), key), value_str));
+                    result.push((format!("{}.[{}]", base_path, key), value_str));
                 }
                 text_content = None;
             }
             Event::Empty(ref e) => {
                 let name = str::from_utf8(e.name().as_ref()).unwrap().to_string();
-                result.push((format!("{}.{}", path.join("."), name), "".to_string()));
+                let base_path = format!("{}.{}", path.join("."), name);
+                let mut has_attrs = false;
+
+                for attr in e.attributes() {
+                    let attr = attr.unwrap();
+                    let key = str::from_utf8(attr.key.as_ref()).unwrap().to_string();
+                    let value = attr.unescape_value().unwrap();
+                    let value_str = value.trim().to_string();
+                    has_attrs = true;
+                    result.push((format!("{}.[{}]", base_path, key), value_str));
+                }
+
+                if !has_attrs {
+                    result.push((base_path, "".to_string()));
+                }
             }
             Event::Text(e) => {
                 let text = e.unescape().unwrap();

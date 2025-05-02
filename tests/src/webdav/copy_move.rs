@@ -13,6 +13,7 @@ use hyper::StatusCode;
 
 pub async fn test(test: &WebDavTest) {
     let client = test.client("jane");
+    let mike_noquota = test.client("mike");
 
     for resource_type in [
         DavResourceName::File,
@@ -649,10 +650,72 @@ pub async fn test(test: &WebDavTest) {
             .request("DELETE", &test_base_path, "")
             .await
             .with_status(StatusCode::NO_CONTENT);
+
+        // Test 19: Quota enforcement (on CalDAV/CardDAV items are linked, not copied therefore there is no quota increase)
+        if resource_type == DavResourceName::File {
+            let path = format!("{}/mike/quota-test/", resource_type.base_path());
+            let content = resource_type.generate();
+            mike_noquota
+                .mkcol("MKCOL", &path, [], [])
+                .await
+                .with_status(StatusCode::CREATED);
+            mike_noquota
+                .request_with_headers("PUT", &format!("{path}file"), [], &content)
+                .await
+                .with_status(StatusCode::CREATED);
+            let mut num_success = 0;
+            let mut did_fail = false;
+
+            for i in 0..100 {
+                let response = mike_noquota
+                    .request_with_headers(
+                        "COPY",
+                        &path,
+                        [(
+                            "destination",
+                            format!("{}/mike/quota-test{i}", resource_type.base_path()).as_str(),
+                        )],
+                        &content,
+                    )
+                    .await;
+                match response.status {
+                    StatusCode::CREATED => {
+                        num_success += 1;
+                    }
+                    StatusCode::PRECONDITION_FAILED => {
+                        did_fail = true;
+                        break;
+                    }
+                    _ => panic!("Unexpected status code: {:?}", response.status),
+                }
+            }
+            if !did_fail {
+                panic!("Quota test failed: {} files created", num_success);
+            }
+            if num_success == 0 {
+                panic!("Quota test failed: no files created");
+            }
+
+            mike_noquota
+                .request("DELETE", &path, "")
+                .await
+                .with_status(StatusCode::NO_CONTENT);
+            for i in 0..num_success {
+                mike_noquota
+                    .request(
+                        "DELETE",
+                        &format!("{}/mike/quota-test{i}", resource_type.base_path()),
+                        "",
+                    )
+                    .await
+                    .with_status(StatusCode::NO_CONTENT);
+            }
+        }
     }
 
     client.delete_default_containers().await;
     client.delete_default_containers_by_account("support").await;
+    mike_noquota.delete_default_containers().await;
     test.assert_is_empty().await;
 }
 

@@ -129,6 +129,7 @@ impl PropFindRequestHandler for Server {
             Depth::Zero => false,
             Depth::Infinity => {
                 if resource.account_id.is_none()
+                    || resource.resource.is_none()
                     || matches!(resource.collection, Collection::FileNode)
                 {
                     return Err(DavErrorCondition::new(
@@ -1009,7 +1010,7 @@ impl PropFindRequestHandler for Server {
                                             ))
                                             .with_supported_privilege(SupportedPrivilege::new(
                                                 Privilege::Unbind,
-                                                "Add resources to a collection",
+                                                "Remove resources from a collection",
                                             ))
                                             .with_supported_privilege(SupportedPrivilege::new(
                                                 Privilege::Unlock,
@@ -1193,8 +1194,10 @@ impl PropFindRequestHandler for Server {
                             if let ArchivedTimezone::IANA(tz) =
                                 &calendar.inner.preferences(account_id).time_zone
                             {
-                                fields
-                                    .push(DavPropertyValue::new(property.clone(), tz.to_string()));
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    Tz::from_id(tz.to_native()).unwrap_or(Tz::UTC).to_string(),
+                                ));
                             } else {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
@@ -1238,13 +1241,13 @@ impl PropFindRequestHandler for Server {
                         (CalDavProperty::MinDateTime, ArchivedResource::Calendar(_)) => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                DavValue::Timestamp(i64::MIN),
+                                DavValue::String("0001-01-01T00:00:00Z".to_string()),
                             ));
                         }
                         (CalDavProperty::MaxDateTime, ArchivedResource::Calendar(_)) => {
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                DavValue::Timestamp(32531605200),
+                                DavValue::String("9999-12-31T23:59:59Z".to_string()),
                             ));
                         }
                         (CalDavProperty::MaxInstances, ArchivedResource::Calendar(_)) => {
