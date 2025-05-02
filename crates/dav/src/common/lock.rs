@@ -11,6 +11,7 @@ use dav_proto::schema::request::{DavPropertyValue, DeadProperty};
 use dav_proto::schema::response::{BaseCondition, List, PropResponse};
 use dav_proto::{Condition, Depth, Timeout};
 use dav_proto::{RequestHeaders, schema::request::LockInfo};
+use groupware::hierarchy::DavHierarchy;
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
@@ -260,6 +261,13 @@ impl LockRequestHandler for Server {
 
             lock_item.expires = expires;
             if let LockRequest::Lock(lock_info) = lock_info {
+                // Validate lock_info
+                if lock_info.owner.as_ref().is_some_and(|o| {
+                    o.size() > self.core.groupware.dead_property_size.unwrap_or(512)
+                }) {
+                    return Err(DavError::Code(StatusCode::PAYLOAD_TOO_LARGE));
+                }
+
                 lock_item.lock_id = store::rand::random::<u64>() ^ expires;
                 lock_item.owner = access_token.primary_id;
                 lock_item.depth_infinity = matches!(headers.depth, Depth::Infinity);
@@ -270,15 +278,19 @@ impl LockRequestHandler for Server {
             let base_path = base_path.get_or_insert_with(|| headers.base_uri().unwrap_or_default());
             let active_lock = lock_item.to_active_lock(format!("{base_path}/{resource_path}"));
 
-            HttpResponse::new(StatusCode::CREATED)
-                .with_lock_token(&active_lock.lock_token.as_ref().unwrap().0)
-                .with_xml_body(
-                    PropResponse::new(vec![DavPropertyValue::new(
-                        WebDavProperty::LockDiscovery,
-                        vec![active_lock],
-                    )])
-                    .to_string(),
-                )
+            HttpResponse::new(if if_lock_token == 0 {
+                StatusCode::CREATED
+            } else {
+                StatusCode::OK
+            })
+            .with_lock_token(&active_lock.lock_token.as_ref().unwrap().0)
+            .with_xml_body(
+                PropResponse::new(vec![DavPropertyValue::new(
+                    WebDavProperty::LockDiscovery,
+                    vec![active_lock],
+                )])
+                .to_string(),
+            )
         } else {
             let lock_id = headers
                 .lock_token
@@ -542,10 +554,14 @@ impl LockRequestHandler for Server {
                 // Fetch sync token
                 if needs_sync_token && resource_state.sync_token.is_none() {
                     let change_id = self
-                        .store()
-                        .get_last_change_id(resource_state.account_id, resource_state.collection)
+                        .fetch_dav_resources(
+                            access_token,
+                            resource_state.account_id,
+                            resource_state.collection.main_collection(),
+                        )
                         .await
-                        .caused_by(trc::location!())?;
+                        .caused_by(trc::location!())?
+                        .modseq;
                     resource_state.sync_token =
                         Some(Urn::Sync(change_id.unwrap_or_default()).to_string());
                 }
@@ -679,7 +695,7 @@ impl<'x> LockCaches<'x> {
     pub fn is_cached(&self, resource_state: &ResourceState<'_>) -> Option<usize> {
         self.caches.iter().position(|cache| {
             resource_state.account_id == cache.account_id
-                && resource_state.collection == cache.collection
+                && resource_state.collection.main_collection() == cache.collection.main_collection()
         })
     }
 
@@ -844,13 +860,13 @@ impl ArchivedLockItem {
 
 impl OwnedUri<'_> {
     pub fn lock_key(&self) -> Vec<u8> {
-        build_lock_key(self.account_id, self.collection)
+        build_lock_key(self.account_id, self.collection.main_collection())
     }
 }
 
 impl ResourceState<'_> {
     pub fn lock_key(&self) -> Vec<u8> {
-        build_lock_key(self.account_id, self.collection)
+        build_lock_key(self.account_id, self.collection.main_collection())
     }
 }
 

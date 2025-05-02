@@ -45,7 +45,9 @@ impl GroupwareConfig {
             live_property_size: config
                 .property("dav.limits.size.live-property")
                 .unwrap_or(250),
-            max_lock_timeout: config.property("dav.limits.timeout.max-lock").unwrap_or(60),
+            max_lock_timeout: config
+                .property("dav.limits.timeout.max-lock")
+                .unwrap_or(3600),
             max_locks_per_user: config
                 .property("dav.limits.max-locks-per-user")
                 .unwrap_or(10),
