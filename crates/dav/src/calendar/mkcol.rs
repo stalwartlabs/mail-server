@@ -22,6 +22,7 @@ use trc::AddContext;
 use crate::{
     DavError, DavMethod, PropStatBuilder,
     common::{
+        ExtractETag,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
@@ -130,17 +131,20 @@ impl CalendarMkColRequestHandler for Server {
         calendar
             .insert(access_token, account_id, document_id, &mut batch)
             .caused_by(trc::location!())?;
+        let etag = batch.etag();
         self.commit_batch(batch).await.caused_by(trc::location!())?;
 
         if let Some(prop_stat) = return_prop_stat {
-            Ok(HttpResponse::new(StatusCode::CREATED).with_xml_body(
-                MkColResponse::new(prop_stat.build())
-                    .with_namespace(Namespace::CalDav)
-                    .with_mkcalendar(is_mkcalendar)
-                    .to_string(),
-            ))
+            Ok(HttpResponse::new(StatusCode::CREATED)
+                .with_xml_body(
+                    MkColResponse::new(prop_stat.build())
+                        .with_namespace(Namespace::CalDav)
+                        .with_mkcalendar(is_mkcalendar)
+                        .to_string(),
+                )
+                .with_etag_opt(etag))
         } else {
-            Ok(HttpResponse::new(StatusCode::CREATED))
+            Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
         }
     }
 }

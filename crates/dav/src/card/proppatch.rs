@@ -273,6 +273,7 @@ impl CardPropPatchRequestHandler for Server {
                 }
                 (DavProperty::WebDav(WebDavProperty::CreationDate), DavValue::Timestamp(dt)) => {
                     address_book.created = dt;
+                    items.insert_ok(property.property);
                 }
                 (
                     DavProperty::WebDav(WebDavProperty::ResourceType),
@@ -354,6 +355,7 @@ impl CardPropPatchRequestHandler for Server {
                 }
                 (DavProperty::WebDav(WebDavProperty::CreationDate), DavValue::Timestamp(dt)) => {
                     card.created = dt;
+                    items.insert_ok(property.property);
                 }
                 (DavProperty::DeadProperty(dead), DavValue::DeadProperty(values))
                     if self.core.groupware.dead_property_size.is_some() =>

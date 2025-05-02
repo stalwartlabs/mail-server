@@ -186,6 +186,7 @@ impl FilePropPatchRequestHandler for Server {
                 }
                 (DavProperty::WebDav(WebDavProperty::CreationDate), DavValue::Timestamp(dt)) => {
                     file.created = dt;
+                    items.insert_ok(property.property);
                 }
                 (DavProperty::WebDav(WebDavProperty::GetContentType), DavValue::String(name))
                     if file.file.is_some() =>

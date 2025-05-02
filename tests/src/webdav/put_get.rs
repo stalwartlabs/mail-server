@@ -151,24 +151,48 @@ pub async fn test(test: &WebDavTest) {
 
     // PUT requests cannot exceed quota
     let mike_noquota = test.client("mike");
-    for (path, ct, content) in [
-        ("/dav/file/mike/file1.txt", "text/plain", TEST_FILE_1),
-        (
-            "/dav/card/mike/default/card1.vcf",
-            "text/vcard; charset=utf-8",
-            TEST_VCARD_1,
-        ),
-        (
-            "/dav/cal/mike/default/event1.ics",
-            "text/calendar; charset=utf-8",
-            TEST_ICAL_1,
-        ),
+    for resource_type in [
+        DavResourceName::File,
+        DavResourceName::Card,
+        DavResourceName::Cal,
     ] {
+        let path = format!("{}/mike/quota-test/", resource_type.base_path());
         mike_noquota
-            .request_with_headers("PUT", path, [("content-type", ct)], content)
+            .mkcol("MKCOL", &path, [], [])
             .await
-            .with_status(StatusCode::PRECONDITION_FAILED)
-            .with_failed_precondition("D:quota-not-exceeded", "");
+            .with_status(StatusCode::CREATED);
+        let mut num_success = 0;
+        let mut did_fail = false;
+
+        for i in 0..100 {
+            let content = resource_type.generate();
+            let available = mike_noquota.available_quota(&path).await;
+
+            let response = mike_noquota
+                .request_with_headers("PUT", &format!("{path}file{i}"), [], &content)
+                .await;
+            if available > content.len() as u64 {
+                num_success += 1;
+                response.with_status(StatusCode::CREATED);
+            } else {
+                response
+                    .with_status(StatusCode::PRECONDITION_FAILED)
+                    .with_failed_precondition("D:quota-not-exceeded", "");
+                did_fail = true;
+                break;
+            }
+        }
+        if !did_fail {
+            panic!("Quota test failed: {} files created", num_success);
+        }
+        if num_success == 0 {
+            panic!("Quota test failed: no files created");
+        }
+
+        mike_noquota
+            .request("DELETE", &path, "")
+            .await
+            .with_status(StatusCode::NO_CONTENT);
     }
 
     // PUT precondition enforcement

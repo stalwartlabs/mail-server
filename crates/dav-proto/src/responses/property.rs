@@ -228,6 +228,12 @@ impl DavProperty {
     }
 }
 
+impl AsRef<str> for DavProperty {
+    fn as_ref(&self) -> &str {
+        self.tag_name().0
+    }
+}
+
 impl Display for ReportSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("<D:supported-report><D:report>")?;
