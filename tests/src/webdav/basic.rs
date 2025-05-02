@@ -30,14 +30,14 @@ pub async fn test(test: &WebDavTest) {
     client
         .request("PROPFIND", "/.well-known/carddav", "")
         .await
-        .match_many(
+        .with_values(
             "D:multistatus.D:response.D:href",
             ["/dav/card/", "/dav/card/john/"],
         );
     test.client("jane")
         .request("PROPFIND", "/.well-known/caldav", "")
         .await
-        .match_many(
+        .with_values(
             "D:multistatus.D:response.D:href",
             ["/dav/cal/", "/dav/cal/jane/", "/dav/cal/support/"],
         );

@@ -94,11 +94,11 @@ pub async fn test(test: &WebDavTest) {
             .mkcol("MKCOL", path, ["D:collection", resource_type], [])
             .await
             .with_status(StatusCode::FORBIDDEN)
-            .match_one(
+            .with_value(
                 "D:mkcol-response.D:propstat.D:error.D:valid-resourcetype",
                 "",
             )
-            .match_one("D:mkcol-response.D:propstat.D:prop.D:resourcetype", "");
+            .with_value("D:mkcol-response.D:propstat.D:prop.D:resourcetype", "");
     }
 
     // Create using extended MKCOL
@@ -172,8 +172,8 @@ pub async fn test(test: &WebDavTest) {
         )
         .await
         .with_status(StatusCode::CREATED)
-        .match_one("A:mkcalendar-response.D:propstat.D:prop.D:displayname", "")
-        .match_many(
+        .with_value("A:mkcalendar-response.D:propstat.D:prop.D:displayname", "")
+        .with_values(
             "A:mkcalendar-response.D:propstat.D:status",
             ["HTTP/1.1 200 OK"],
         );

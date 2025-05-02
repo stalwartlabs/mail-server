@@ -46,9 +46,12 @@ use utils::config::Config;
 
 pub mod basic;
 pub mod copy_move;
+pub mod lock;
 pub mod mkcol;
+pub mod multiget;
 pub mod prop;
 pub mod put_get;
+pub mod sync;
 
 const SERVER: &str = r#"
 [server]
@@ -358,11 +361,32 @@ pub async fn webdav_tests() {
     )
     .await;
 
+    /*
+     TODO:
+
+     - Principals:
+       - PrincipalMatch
+       - PrincipalPropertySearch
+       - PrincipalSearchPropertySet
+       - Expand property
+     - ACLs:
+       - ACL Method
+       - AclPrincipalPropSet
+
+     - Addressbook Query
+     - Calendar Query
+     - Freebusy Query
+
+    */
+
     basic::test(&handle).await;
     put_get::test(&handle).await;
     mkcol::test(&handle).await;
     copy_move::test(&handle).await;
     prop::test(&handle).await;
+    multiget::test(&handle).await;
+    sync::test(&handle).await;
+    lock::test(&handle).await;
 
     // Print elapsed time
     let elapsed = start_time.elapsed();
@@ -784,8 +808,15 @@ impl DavResponse {
             .map(|(_, value)| value.as_str())
     }
 
+    pub fn value(&self, name: &str) -> &str {
+        self.find_keys(name).next().unwrap_or_else(|| {
+            self.dump_response();
+            panic!("Key {name} not found.")
+        })
+    }
+
     // Poor man's XPath
-    pub fn match_one(self, query: &str, expect: impl AsRef<str>) -> Self {
+    pub fn with_value(self, query: &str, expect: impl AsRef<str>) -> Self {
         let expect = expect.as_ref();
         if let Some(value) = self.find_keys(query).next() {
             if value != expect {
@@ -799,7 +830,7 @@ impl DavResponse {
         self
     }
 
-    pub fn match_many<I, T>(self, query: &str, expect: I) -> Self
+    pub fn with_values<I, T>(self, query: &str, expect: I) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
