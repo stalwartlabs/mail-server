@@ -29,7 +29,7 @@ RUN \
 # Install cargo-binstall
 RUN curl --retry 5 -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 # Install cargo-chef & sccache & cargo-zigbuild
-RUN cargo binstall --no-confirm cargo-chef sccache cargo-zigbuild
+RUN cargo binstall --no-confirm cargo-chef sccache cargo-zigbuild@v0.19.8
 
 # *****************
 # Planner
