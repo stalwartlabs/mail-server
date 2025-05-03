@@ -247,21 +247,18 @@ impl<'x> DavQuery<'x> {
         expand: ExpandProperty,
         headers: RequestHeaders<'x>,
     ) -> Self {
+        let mut props = Vec::with_capacity(expand.properties.len());
+        for item in expand.properties {
+            if !matches!(item.property, DavProperty::DeadProperty(_))
+                && !props.contains(&item.property)
+            {
+                props.push(item.property);
+            }
+        }
+
         Self {
             resource: DavQueryResource::Uri(resource),
-            propfind: PropFind::Prop(
-                expand
-                    .properties
-                    .into_iter()
-                    .filter_map(|item| {
-                        if !matches!(item.property, DavProperty::DeadProperty(_)) {
-                            Some(item.property)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect(),
-            ),
+            propfind: PropFind::Prop(props),
             depth: match headers.depth {
                 Depth::Zero => 0,
                 _ => 1,

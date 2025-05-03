@@ -49,6 +49,7 @@ pub mod copy_move;
 pub mod lock;
 pub mod mkcol;
 pub mod multiget;
+pub mod principals;
 pub mod prop;
 pub mod put_get;
 pub mod sync;
@@ -218,6 +219,19 @@ disabled-events = ["network.*"]
  
 "#;
 
+pub const TEST_DAV_USERS: &[(&str, &str, &str, &str)] = &[
+    ("admin", "secret1", "Superuser", "admin@example,com"),
+    ("john", "secret2", "John Doe", "jdoe@example.com"),
+    (
+        "jane",
+        "secret3",
+        "Jane Doe-Smith",
+        "jane.smith@example.com",
+    ),
+    ("bill", "secret4", "Bill Foobar", "bill@example,com"),
+    ("mike", "secret5", "Mike Noquota", "mike@example,com"),
+];
+
 #[allow(dead_code)]
 pub struct WebDavTest {
     server: Server,
@@ -318,21 +332,15 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
 
     // Create test accounts
     let mut clients = AHashMap::new();
-    for (account, secret, name, email) in [
-        ("admin", "secret1", "Superuser", "admin@example,com"),
-        ("john", "secret2", "John Doe", "jdoe@example.com"),
-        ("jane", "secret3", "Jane Smith", "jane.smith@example.com"),
-        ("bill", "secret4", "Bill Foobar", "bill@example,com"),
-        ("mike", "secret5", "Mike Noquota", "mike@example,com"),
-    ] {
+    for (account, secret, name, email) in TEST_DAV_USERS {
         let account_id = store
             .create_test_user(account, secret, name, &[email])
             .await;
         clients.insert(
-            account,
+            *account,
             DummyWebDavClient::new(account_id, account, secret, email),
         );
-        if account == "mike" {
+        if *account == "mike" {
             store.set_test_quota(account, 1024).await;
         }
     }
@@ -364,11 +372,6 @@ pub async fn webdav_tests() {
     /*
      TODO:
 
-     - Principals:
-       - PrincipalMatch
-       - PrincipalPropertySearch
-       - PrincipalSearchPropertySet
-       - Expand property
      - ACLs:
        - ACL Method
        - AclPrincipalPropSet
@@ -387,6 +390,7 @@ pub async fn webdav_tests() {
     multiget::test(&handle).await;
     sync::test(&handle).await;
     lock::test(&handle).await;
+    principals::test(&handle).await;
 
     // Print elapsed time
     let elapsed = start_time.elapsed();
