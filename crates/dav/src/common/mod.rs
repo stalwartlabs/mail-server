@@ -40,6 +40,7 @@ pub mod uri;
 
 #[derive(Default, Debug)]
 pub(crate) struct DavQuery<'x> {
+    pub uri: &'x str,
     pub resource: DavQueryResource<'x>,
     pub propfind: PropFind,
     pub sync_type: SyncType,
@@ -152,6 +153,7 @@ impl<'x> DavQuery<'x> {
             },
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
+            uri: headers.uri,
             ..Default::default()
         }
     }
@@ -169,6 +171,7 @@ impl<'x> DavQuery<'x> {
             propfind: multiget.properties,
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
+            uri: headers.uri,
             ..Default::default()
         }
     }
@@ -188,6 +191,7 @@ impl<'x> DavQuery<'x> {
             limit: query.limit,
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
+            uri: headers.uri,
             ..Default::default()
         }
     }
@@ -211,6 +215,7 @@ impl<'x> DavQuery<'x> {
             propfind: query.properties,
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
+            uri: headers.uri,
             ..Default::default()
         }
     }
@@ -239,6 +244,7 @@ impl<'x> DavQuery<'x> {
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             expand: false,
+            uri: headers.uri,
         }
     }
 
@@ -266,6 +272,7 @@ impl<'x> DavQuery<'x> {
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             expand: true,
+            uri: headers.uri,
             ..Default::default()
         }
     }

@@ -352,6 +352,7 @@ impl PropFindRequestHandler for Server {
         let mut ctag = None;
         let mut paths;
         let mut query_filter = None;
+        let mut max_results = self.core.groupware.max_match_results;
 
         //let c = println!("handling DAV query {query:#?}");
 
@@ -405,10 +406,7 @@ impl PropFindRequestHandler for Server {
                 // Filter by changelog
                 match query.sync_type {
                     SyncType::From(change_id) => {
-                        let limit = std::cmp::min(
-                            query.limit.unwrap_or(u32::MAX) as usize,
-                            self.core.groupware.max_changes,
-                        );
+                        max_results = self.core.groupware.max_changes;
                         let container_changes = self
                             .store()
                             .changes(account_id, collection_container, Query::Since(change_id))
@@ -449,14 +447,10 @@ impl PropFindRequestHandler for Server {
                         .flatten()
                         {
                             let changes = RoaringBitmap::from_iter(
-                                changes
-                                    .changes
-                                    .iter()
-                                    .filter_map(|change| match change {
-                                        Change::Insert(id) | Change::Update(id) => Some(*id as u32),
-                                        _ => None,
-                                    })
-                                    .take(limit),
+                                changes.changes.iter().filter_map(|change| match change {
+                                    Change::Insert(id) | Change::Update(id) => Some(*id as u32),
+                                    _ => None,
+                                }),
                             );
                             if let Some(document_ids) = document_ids {
                                 *document_ids &= changes;
@@ -665,13 +659,6 @@ impl PropFindRequestHandler for Server {
             DavQueryResource::None => unreachable!(),
         }
 
-        if query.depth == usize::MAX && paths.len() > self.core.groupware.max_match_results {
-            return Err(DavError::Condition(DavErrorCondition::new(
-                StatusCode::PRECONDITION_FAILED,
-                BaseCondition::NumberOfMatchesWithinLimit,
-            )));
-        }
-
         let mut skip_not_found = query.expand;
         let properties = match &query.propfind {
             PropFind::PropName => {
@@ -725,6 +712,7 @@ impl PropFindRequestHandler for Server {
         };
 
         let view_as_id = access_token.primary_id();
+        let mut limit = std::cmp::min(query.limit.unwrap_or(u32::MAX) as usize, max_results);
         for item in paths {
             let account_id = item.account_id;
             let document_id = item.document_id;
@@ -1318,6 +1306,22 @@ impl PropFindRequestHandler for Server {
                 prop_stat.push(PropStat::new_list(vec![]));
             }
             response.add_response(Response::new_propstat(item.name, prop_stat));
+
+            limit -= 1;
+            if limit == 0 {
+                break;
+            }
+        }
+
+        if limit == 0 {
+            response.add_response(
+                Response::new_status([query.uri], StatusCode::INSUFFICIENT_STORAGE)
+                    .with_error(BaseCondition::NumberOfMatchesWithinLimit)
+                    .with_response_description(format!(
+                        "The number of matches exceeds the limit of {}",
+                        query.limit.unwrap_or(max_results as u32)
+                    )),
+            );
         }
 
         Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
