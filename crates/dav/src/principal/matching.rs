@@ -68,6 +68,7 @@ impl PrincipalMatching for Server {
                                 depth: usize::MAX,
                                 ret: headers.ret,
                                 depth_no_root: headers.depth_no_root,
+                                uri: headers.uri,
                                 ..Default::default()
                             },
                         )

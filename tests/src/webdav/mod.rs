@@ -45,6 +45,7 @@ use tokio::sync::watch;
 use utils::config::Config;
 
 pub mod basic;
+pub mod card_query;
 pub mod copy_move;
 pub mod lock;
 pub mod mkcol;
@@ -375,8 +376,6 @@ pub async fn webdav_tests() {
      - ACLs:
        - ACL Method
        - AclPrincipalPropSet
-
-     - Addressbook Query
      - Calendar Query
      - Freebusy Query
 
@@ -391,6 +390,7 @@ pub async fn webdav_tests() {
     sync::test(&handle).await;
     lock::test(&handle).await;
     principals::test(&handle).await;
+    card_query::test(&handle).await;
 
     // Print elapsed time
     let elapsed = start_time.elapsed();
@@ -767,6 +767,15 @@ impl DavResponse {
             .collect::<Vec<_>>();
         hrefs.sort_unstable();
         hrefs
+    }
+
+    pub fn with_href_count(self, count: usize) -> Self {
+        let href_count = self.find_keys("D:multistatus.D:response.D:href").count();
+        if href_count != count {
+            self.dump_response();
+            panic!("Expected {} hrefs but got {}", count, href_count);
+        }
+        self
     }
 
     pub fn with_hrefs<'x>(self, hrefs: impl IntoIterator<Item = &'x str>) -> Self {

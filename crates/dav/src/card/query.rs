@@ -210,8 +210,9 @@ pub(crate) fn serialize_vcard_with_props(
     if !props.is_empty() {
         let mut vcard = String::with_capacity(128);
         let _ = write!(&mut vcard, "BEGIN:VCARD\r\n");
-        for item in props {
-            for entry in card.entries.iter() {
+
+        for entry in card.entries.iter() {
+            for item in props {
                 if entry.name == item.name && entry.group == item.group {
                     let _ = entry.write_to(&mut vcard, !item.no_value);
                     break;
