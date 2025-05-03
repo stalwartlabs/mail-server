@@ -491,7 +491,7 @@ impl PropFindRequestHandler for Server {
                                 } else {
                                     containers.contains(item.document_id)
                                 }
-                            })
+                            }) && (!query.depth_no_root || item.name != resource)
                         })
                         .map(|item| {
                             PropFindItem::new(resources.format_resource(item), account_id, item)

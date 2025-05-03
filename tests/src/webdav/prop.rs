@@ -85,20 +85,23 @@ pub async fn test(test: &WebDavTest) {
         }
 
         // Test 5: PROPFIND Depth 1 on user base path
-        let response = client
+        client
             .request_with_headers("PROPFIND", &user_base_path, [("depth", "1")], "")
-            .await;
-        if resource_type != DavResourceName::File {
-            response.with_status(StatusCode::MULTI_STATUS).with_hrefs([
-                format!("{user_base_path}/").as_str(),
-                format!("{user_base_path}/default/").as_str(),
-                &test_base_path,
-            ]);
-        } else {
-            response
-                .with_status(StatusCode::MULTI_STATUS)
-                .with_hrefs([format!("{user_base_path}/").as_str(), &test_base_path]);
-        }
+            .await
+            .with_status(StatusCode::MULTI_STATUS)
+            .with_hrefs(
+                [
+                    format!("{user_base_path}/default/").as_str(),
+                    format!("{user_base_path}/").as_str(),
+                    &test_base_path,
+                ]
+                .into_iter()
+                .skip(if resource_type == DavResourceName::File {
+                    1
+                } else {
+                    0
+                }),
+            );
 
         // Test 6: PROPFIND Depth 1 on created collection
         client
@@ -117,7 +120,60 @@ pub async fn test(test: &WebDavTest) {
                 StatusCode::MULTI_STATUS
             });
 
-        // Test 8: Retrieve all static properties
+        // Test 8 PROPFIND with depth-no-root
+        client
+            .request_with_headers(
+                "PROPFIND",
+                &user_base_path,
+                [("depth", "1"), ("prefer", "depth-noroot")],
+                "",
+            )
+            .await
+            .with_status(StatusCode::MULTI_STATUS)
+            .with_hrefs(
+                [
+                    format!("{user_base_path}/default/").as_str(),
+                    &test_base_path,
+                ]
+                .into_iter()
+                .skip(if resource_type == DavResourceName::File {
+                    1
+                } else {
+                    0
+                }),
+            );
+        client
+            .request_with_headers(
+                "PROPFIND",
+                &test_base_path,
+                [("depth", "1"), ("prefer", "depth-noroot")],
+                "",
+            )
+            .await
+            .with_status(StatusCode::MULTI_STATUS)
+            .with_hrefs([test_path.as_str()]);
+
+        // Test 8 PROPFIND with prefer return=minimal
+        let response = client
+            .propfind_with_headers(&test_base_path, ALL_DAV_PROPERTIES, [])
+            .await;
+        response
+            .properties(&test_base_path)
+            .is_defined(DavProperty::WebDav(WebDavProperty::GetETag))
+            .is_defined(DavProperty::Principal(PrincipalProperty::GroupMembership));
+        let response = client
+            .propfind_with_headers(
+                &test_base_path,
+                ALL_DAV_PROPERTIES,
+                [("prefer", "return=minimal")],
+            )
+            .await;
+        response
+            .properties(&test_base_path)
+            .is_defined(DavProperty::WebDav(WebDavProperty::GetETag))
+            .is_undefined(DavProperty::Principal(PrincipalProperty::GroupMembership));
+
+        // Test 9: Retrieve all static properties
         for (path, etag, is_file) in [
             (&test_base_path, &etag_folder, false),
             (&test_path, &etag_file, true),
@@ -370,11 +426,34 @@ pub async fn test(test: &WebDavTest) {
             }
         }
 
+        // Test 10: expand-property report
+        for path in [&test_base_path, &test_path] {
+            let response = client
+                .request("REPORT", path, EXPAND_REPORT_QUERY)
+                .await
+                .with_status(StatusCode::MULTI_STATUS)
+                .into_propfind_response(None);
+            let properties = response.properties(path);
+            for prop in [
+                DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+                DavProperty::WebDav(WebDavProperty::Owner),
+            ] {
+                properties.get(prop).with_some_values([
+                    format!(
+                        "D:response.D:href:{}/jane/",
+                        DavResourceName::Principal.base_path(),
+                    )
+                    .as_str(),
+                    "D:response.D:propstat.D:prop.D:displayname:Jane Doe-Smith",
+                ]);
+            }
+        }
+
         for (path, etag, is_file) in [
             (&test_base_path, &etag_folder, false),
             (&test_path, &etag_file, true),
         ] {
-            // Test 9: PROPPATCH should fail when a precondition fails
+            // Test 11: PROPPATCH should fail when a precondition fails
             client
                 .proppatch(
                     path,
@@ -407,7 +486,7 @@ pub async fn test(test: &WebDavTest) {
                 .with_status(StatusCode::OK)
                 .without_values([etag.as_str()]);
 
-            // Test 10: PROPPATCH set on DAV properties
+            // Test 12: PROPPATCH set on DAV properties
             client
                 .patch_and_check(
                     path,
@@ -431,7 +510,7 @@ pub async fn test(test: &WebDavTest) {
                 )
                 .await;
 
-            // Test 11: PROPPATCH remove on DAV properties
+            // Test 13: PROPPATCH remove on DAV properties
             let mut props = vec![
                 (
                     DavProperty::DeadProperty(DeadElementTag::new(
@@ -450,7 +529,7 @@ pub async fn test(test: &WebDavTest) {
 
             match resource_type {
                 DavResourceName::File if is_file => {
-                    // Test 12: Change a file's content-type
+                    // Test 14: Change a file's content-type
                     client
                         .patch_and_check(
                             path,
@@ -462,7 +541,7 @@ pub async fn test(test: &WebDavTest) {
                         .await;
                 }
                 DavResourceName::Cal if !is_file => {
-                    // Test 13: Change a calendar's properties
+                    // Test 15: Change a calendar's properties
                     client
                         .patch_and_check(
                             path,
@@ -498,7 +577,7 @@ pub async fn test(test: &WebDavTest) {
                         .await;
                 }
                 DavResourceName::Card if !is_file => {
-                    // Test 14: Change an addressbook's properties
+                    // Test 16: Change an addressbook's properties
                     client
                         .patch_and_check(
                             path,
@@ -521,7 +600,7 @@ pub async fn test(test: &WebDavTest) {
                 _ => (),
             }
 
-            // Test 15: PROPPATCH should fail on large properties
+            // Test 17: PROPPATCH should fail on large properties
             let mut chunky_props = vec![
                 DavProperty::WebDav(WebDavProperty::DisplayName),
                 DavProperty::DeadProperty(DeadElementTag::new(
@@ -572,7 +651,7 @@ pub async fn test(test: &WebDavTest) {
                     .with_description("Property value is too long");
             }
 
-            // Test 16: PROPPATCH should fail on invalid calendar property values
+            // Test 18: PROPPATCH should fail on invalid calendar property values
             if !is_file && resource_type == DavResourceName::Cal {
                 let response = client
                     .proppatch(
@@ -603,7 +682,16 @@ pub async fn test(test: &WebDavTest) {
                     .with_description("Invalid calendar timezone");
             }
         }
+
+        client
+            .request("DELETE", &test_base_path, "")
+            .await
+            .with_status(StatusCode::NO_CONTENT);
     }
+
+    client.delete_default_containers().await;
+    client.delete_default_containers_by_account("support").await;
+    test.assert_is_empty().await;
 }
 
 #[derive(Debug)]
@@ -636,6 +724,16 @@ impl DavMultiStatus {
                 )
             }),
         }
+    }
+
+    pub fn with_hrefs<'x>(&self, expect_hrefs: impl IntoIterator<Item = &'x str>) -> &Self {
+        let expect_hrefs: AHashSet<_> = expect_hrefs.into_iter().collect();
+        let hrefs: AHashSet<_> = self.hrefs.keys().map(|s| s.as_str()).collect();
+        if hrefs != expect_hrefs {
+            self.response.dump_response();
+            panic!("Expected hrefs {expect_hrefs:?}, but got {hrefs:?}",);
+        }
+        self
     }
 }
 
@@ -671,6 +769,33 @@ impl DavPropertyResult<'_> {
                 )
             })
     }
+
+    pub fn is_defined(&self, name: impl AsRef<str>) -> &Self {
+        if self
+            .properties
+            .0
+            .iter()
+            .any(|prop| prop.values.contains_key(name.as_ref()))
+        {
+            self
+        } else {
+            self.response.dump_response();
+            panic!("Expected property {} to be defined", name.as_ref());
+        }
+    }
+
+    pub fn is_undefined(&self, name: impl AsRef<str>) -> &Self {
+        if self
+            .properties
+            .0
+            .iter()
+            .any(|prop| prop.values.contains_key(name.as_ref()))
+        {
+            self.response.dump_response();
+            panic!("Expected property {} to be undefined", name.as_ref());
+        }
+        self
+    }
 }
 
 impl<'x> DavQueryResult<'x> {
@@ -686,6 +811,23 @@ impl<'x> DavQueryResult<'x> {
             self.response.dump_response();
             panic!("Expected {expected_values:?} values, but got {values:?}",);
         }
+        self
+    }
+
+    pub fn with_some_values(&self, expected_values: impl IntoIterator<Item = &'x str>) -> &Self {
+        let values = self
+            .values
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<AHashSet<_>>();
+
+        for expected_value in expected_values {
+            if !values.contains(expected_value) {
+                self.response.dump_response();
+                panic!("Expected at least one of {expected_value:?} values, but got {values:?}",);
+            }
+        }
+
         self
     }
 
@@ -899,6 +1041,19 @@ impl DummyWebDavClient {
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
     {
+        self.propfind_with_headers(path, properties, []).await
+    }
+
+    pub async fn propfind_with_headers<I, T>(
+        &self,
+        path: &str,
+        properties: I,
+        headers: impl IntoIterator<Item = (&'static str, &str)>,
+    ) -> DavMultiStatus
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
         let mut request = concat!(
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
             "<D:propfind xmlns:D=\"DAV:\" xmlns:A=\"urn:ietf:params:xml:ns:caldav\" ",
@@ -913,7 +1068,7 @@ impl DummyWebDavClient {
 
         request.push_str("</D:prop></D:propfind>");
 
-        self.request("PROPFIND", path, &request)
+        self.request_with_headers("PROPFIND", path, headers, &request)
             .await
             .with_status(StatusCode::MULTI_STATUS)
             .into_propfind_response(None)
@@ -975,7 +1130,21 @@ impl Default for DavItem {
     }
 }
 
-const ALL_DAV_PROPERTIES: &[DavProperty] = &[
+const EXPAND_REPORT_QUERY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<D:expand-property xmlns:D="DAV:" 
+ xmlns:A="urn:ietf:params:xml:ns:caldav" 
+ xmlns:B="urn:ietf:params:xml:ns:carddav">
+   <A:property name="calendar-description"/>
+   <B:property name="addressbook-description"/>
+   <D:property name="current-user-principal">
+      <D:property name="displayname"/>
+   </D:property>
+   <D:property name="owner">
+      <D:property name="displayname"/>
+   </D:property>
+</D:expand-property>"#;
+
+pub const ALL_DAV_PROPERTIES: &[DavProperty] = &[
     DavProperty::WebDav(WebDavProperty::CreationDate),
     DavProperty::WebDav(WebDavProperty::DisplayName),
     DavProperty::WebDav(WebDavProperty::GetContentLanguage),

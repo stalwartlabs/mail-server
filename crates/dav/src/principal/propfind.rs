@@ -234,13 +234,9 @@ impl PrincipalPropFind for Server {
                         }
                     },
                     DavProperty::Principal(principal_property) => match principal_property {
-                        PrincipalProperty::AlternateURISet => {
-                            fields.push(DavPropertyValue::empty(property.clone()));
-                        }
-                        PrincipalProperty::GroupMemberSet => {
-                            fields.push(DavPropertyValue::empty(property.clone()));
-                        }
-                        PrincipalProperty::GroupMembership => {
+                        PrincipalProperty::AlternateURISet
+                        | PrincipalProperty::GroupMemberSet
+                        | PrincipalProperty::GroupMembership => {
                             fields.push(DavPropertyValue::empty(property.clone()));
                         }
                         PrincipalProperty::PrincipalURL => {

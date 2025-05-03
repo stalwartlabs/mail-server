@@ -81,8 +81,15 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::CREATED);
 
-        // Test 5: Creating a file under a locked resource without a lock token should fail
+        // Test 5: Creating a lock under an infinity locked resource should fail
         let file_path = format!("{path}/file.txt");
+        client
+            .lock_create(&file_path, "super-owner", true, "0", "Second-123")
+            .await
+            .with_status(StatusCode::LOCKED)
+            .with_value("D:error.D:lock-token-submitted.D:href", &path);
+
+        // Test 6: Creating a file under a locked resource without a lock token should fail
         let contents = resource_type.generate();
         client
             .request("PUT", &file_path, &contents)
@@ -90,7 +97,7 @@ pub async fn test(test: &WebDavTest) {
             .with_status(StatusCode::LOCKED)
             .with_value("D:error.D:lock-token-submitted.D:href", &path);
 
-        // Test 6: Creating a file under a locked resource with a lock token should succeed
+        // Test 7: Creating a file under a locked resource with a lock token should succeed
         client
             .request_with_headers(
                 "PUT",
@@ -101,7 +108,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::CREATED);
 
-        // Test 7: Locks should be included in propfind responses
+        // Test 8: Locks should be included in propfind responses
         let response = client
             .propfind(&path, [DavProperty::WebDav(WebDavProperty::LockDiscovery)])
             .await;
@@ -120,7 +127,7 @@ pub async fn test(test: &WebDavTest) {
                 ]);
         }
 
-        // Test 8: Delete with and without a lock token
+        // Test 9: Delete with and without a lock token
         client
             .request("DELETE", &path, "")
             .await
@@ -136,7 +143,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::NO_CONTENT);
 
-        // Test 9: Unlock with and without a lock token
+        // Test 10: Unlock with and without a lock token
         client
             .unlock(&path, "urn:stalwart:davlock:1234")
             .await
@@ -147,7 +154,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::NO_CONTENT);
 
-        // Test 10: Locking with a large dead property should fail
+        // Test 11: Locking with a large dead property should fail
         let path = format!("{base_path}/invalid-lock");
         client
             .lock_create(
@@ -163,7 +170,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::PAYLOAD_TOO_LARGE);
 
-        // Test 11: Too many locks should fail
+        // Test 12: Too many locks should fail
         for i in 0..test.server.core.groupware.max_locks_per_user {
             client
                 .lock_create(
