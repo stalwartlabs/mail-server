@@ -65,7 +65,7 @@ impl FileCopyMoveRequestHandler for Server {
                     from_account_id,
                     Collection::FileNode,
                     if is_move {
-                        [Acl::Read, Acl::Modify].as_slice().iter().copied()
+                        [Acl::Read, Acl::Delete].as_slice().iter().copied()
                     } else {
                         [Acl::Read].as_slice().iter().copied()
                     },

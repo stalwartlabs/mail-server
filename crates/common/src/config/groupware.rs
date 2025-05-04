@@ -14,8 +14,7 @@ pub struct GroupwareConfig {
     pub live_property_size: usize,
     pub max_lock_timeout: u64,
     pub max_locks_per_user: usize,
-    pub max_changes: usize,
-    pub max_match_results: usize,
+    pub max_results: usize,
 
     // Calendar settings
     pub max_ical_size: usize,
@@ -51,10 +50,7 @@ impl GroupwareConfig {
             max_locks_per_user: config
                 .property("dav.limits.max-locks-per-user")
                 .unwrap_or(10),
-            max_changes: config.property("dav.limits.max-changes").unwrap_or(1000),
-            max_match_results: config
-                .property("dav.limits.max-match-results")
-                .unwrap_or(1000),
+            max_results: config.property("dav.limits.max-results").unwrap_or(2000),
             max_vcard_size: config
                 .property("dav.limits.size.vcard")
                 .unwrap_or(512 * 1024),

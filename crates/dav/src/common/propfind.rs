@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{
+    ArchivedResource, DavCollection, DavQuery, DavQueryFilter, ETag, SyncType,
+    acl::{DavAclHandler, Privileges},
+    lock::{LockData, build_lock_key},
+    uri::{UriResource, Urn},
+};
 use crate::{
     DavError, DavErrorCondition,
     calendar::{
@@ -14,7 +20,7 @@ use crate::{
         CARD_CONTAINER_PROPS, CARD_ITEM_PROPS,
         query::{serialize_vcard_with_props, vcard_query},
     },
-    common::{DavQueryResource, uri::DavUriResource},
+    common::{DavQueryResource, acl::current_user_privilege_set, uri::DavUriResource},
     file::{FILE_CONTAINER_PROPS, FILE_ITEM_PROPS},
     principal::{CurrentUserPrincipal, propfind::PrincipalPropFind},
 };
@@ -56,13 +62,6 @@ use store::{
     write::{AlignedBytes, Archive},
 };
 use trc::AddContext;
-
-use super::{
-    ArchivedResource, DavCollection, DavQuery, DavQueryFilter, ETag, SyncType,
-    acl::{DavAclHandler, Privileges},
-    lock::{LockData, build_lock_key},
-    uri::{UriResource, Urn},
-};
 
 pub(crate) trait PropFindRequestHandler: Sync + Send {
     fn handle_propfind_request(
@@ -307,7 +306,9 @@ impl PropFindRequestHandler for Server {
 
             if return_children {
                 let ids = if !matches!(resource.collection, Collection::Principal) {
-                    RoaringBitmap::from_iter(access_token.all_ids())
+                    RoaringBitmap::from_iter(
+                        access_token.all_ids_by_collection(resource.collection),
+                    )
                 } else {
                     // Return all principals
                     let principals = self
@@ -352,7 +353,6 @@ impl PropFindRequestHandler for Server {
         let mut ctag = None;
         let mut paths;
         let mut query_filter = None;
-        let mut max_results = self.core.groupware.max_match_results;
 
         //let c = println!("handling DAV query {query:#?}");
 
@@ -406,7 +406,6 @@ impl PropFindRequestHandler for Server {
                 // Filter by changelog
                 match query.sync_type {
                     SyncType::From(change_id) => {
-                        max_results = self.core.groupware.max_changes;
                         let container_changes = self
                             .store()
                             .changes(account_id, collection_container, Query::Since(change_id))
@@ -532,12 +531,10 @@ impl PropFindRequestHandler for Server {
                 };
 
                 if paths.is_empty() && query.sync_type.is_none() {
-                    if let Some(resource) = resource.resource {
-                        response.add_response(Response::new_status(
-                            [resources.format_item(resource)],
-                            StatusCode::NOT_FOUND,
-                        ));
-                    }
+                    response.add_response(
+                        Response::new_status([query.uri], StatusCode::NOT_FOUND)
+                            .with_response_description("No resources found"),
+                    );
 
                     return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
                         .with_xml_body(response.to_string()));
@@ -712,7 +709,10 @@ impl PropFindRequestHandler for Server {
         };
 
         let view_as_id = access_token.primary_id();
-        let mut limit = std::cmp::min(query.limit.unwrap_or(u32::MAX) as usize, max_results);
+        let mut limit = std::cmp::min(
+            query.limit.unwrap_or(u32::MAX) as usize,
+            self.core.groupware.max_results,
+        );
         for item in paths {
             let account_id = item.account_id;
             let document_id = item.document_id;
@@ -1027,15 +1027,34 @@ impl PropFindRequestHandler for Server {
                             ));
                         }
                         WebDavProperty::CurrentUserPrivilegeSet => {
-                            if let Some(acls) = archive.acls() {
-                                fields.push(DavPropertyValue::new(
-                                    property.clone(),
-                                    access_token.current_privilege_set(
+                            let privileges = if access_token.is_member(account_id) {
+                                Privilege::all(matches!(
+                                    collection,
+                                    Collection::Calendar | Collection::CalendarEvent
+                                ))
+                            } else if let Some(acls) = archive.acls() {
+                                access_token.current_privilege_set(
+                                    account_id,
+                                    acls,
+                                    collection_container == Collection::Calendar,
+                                )
+                            } else if let Some(parent_id) = item.parent_id {
+                                current_user_privilege_set(
+                                    self.document_acl(
+                                        access_token.primary_id(),
                                         account_id,
-                                        acls,
-                                        collection_container == Collection::Calendar,
-                                    ),
-                                ));
+                                        collection_container,
+                                        parent_id,
+                                    )
+                                    .await
+                                    .caused_by(trc::location!())?,
+                                )
+                            } else {
+                                vec![]
+                            };
+
+                            if !privileges.is_empty() {
+                                fields.push(DavPropertyValue::new(property.clone(), privileges));
                             } else if !skip_not_found {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
@@ -1319,8 +1338,15 @@ impl PropFindRequestHandler for Server {
                     .with_error(BaseCondition::NumberOfMatchesWithinLimit)
                     .with_response_description(format!(
                         "The number of matches exceeds the limit of {}",
-                        query.limit.unwrap_or(max_results as u32)
+                        query
+                            .limit
+                            .unwrap_or(self.core.groupware.max_results as u32)
                     )),
+            );
+        } else if response.response.0.is_empty() && query.sync_type.is_none() {
+            response.add_response(
+                Response::new_status([query.uri], StatusCode::NOT_FOUND)
+                    .with_response_description("No resources found"),
             );
         }
 

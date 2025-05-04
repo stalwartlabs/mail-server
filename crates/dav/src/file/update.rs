@@ -138,7 +138,7 @@ impl FileUpdateRequestHandler for Server {
             // Verify that the node is a file
             if let Some(file) = node.inner.file.as_ref() {
                 if BlobHash::generate(&bytes).as_slice() == file.blob_hash.0.as_slice() {
-                    return Ok(HttpResponse::new(StatusCode::OK));
+                    return Ok(HttpResponse::new(StatusCode::NO_CONTENT));
                 }
             } else {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
