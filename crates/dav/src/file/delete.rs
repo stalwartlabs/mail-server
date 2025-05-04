@@ -74,7 +74,7 @@ impl FileDeleteRequestHandler for Server {
                 .await
                 .caused_by(trc::location!())?;
             if permissions.len() != sorted_ids.len() as u64
-                || sorted_ids.iter().all(|id| permissions.contains(*id))
+                || !sorted_ids.iter().all(|id| permissions.contains(*id))
             {
                 return Err(DavError::Code(StatusCode::FORBIDDEN));
             }

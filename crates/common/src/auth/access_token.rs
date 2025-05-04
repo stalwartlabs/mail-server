@@ -434,6 +434,19 @@ impl AccessToken {
             .chain(self.access_to.iter().map(|(id, _)| *id))
     }
 
+    pub fn all_ids_by_collection(&self, collection: Collection) -> impl Iterator<Item = u32> {
+        [self.primary_id]
+            .into_iter()
+            .chain(self.member_of.iter().copied())
+            .chain(self.access_to.iter().filter_map(move |(id, cols)| {
+                if cols.contains(collection) {
+                    Some(*id)
+                } else {
+                    None
+                }
+            }))
+    }
+
     pub fn is_member(&self, account_id: u32) -> bool {
         self.primary_id == account_id
             || self.member_of.contains(&account_id)

@@ -44,6 +44,7 @@ use store::rand::{Rng, distr::Alphanumeric, rng};
 use tokio::sync::watch;
 use utils::config::Config;
 
+pub mod acl;
 pub mod basic;
 pub mod card_query;
 pub mod copy_move;
@@ -55,183 +56,51 @@ pub mod prop;
 pub mod put_get;
 pub mod sync;
 
-const SERVER: &str = r#"
-[server]
-hostname = "webdav.example.org"
-http.url = "'https://127.0.0.1:8899'"
+#[tokio::test]
+pub async fn webdav_tests() {
+    // Prepare settings
+    let start_time = Instant::now();
+    let delete = true;
+    let handle = init_webdav_tests(
+        &std::env::var("STORE")
+            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+        delete,
+    )
+    .await;
 
-[server.listener.webdav]
-bind = ["127.0.0.1:8899"]
-protocol = "http"
-max-connections = 81920
-tls.implicit = true
+    /*
+     TODO:
 
-[server.socket]
-reuse-addr = true
+     - Calendar Query
+     - Freebusy Query
 
-[server.tls]
-enable = true
-implicit = false
-certificate = "default"
+    */
 
-[session.ehlo]
-reject-non-fqdn = false
+    basic::test(&handle).await;
+    put_get::test(&handle).await;
+    mkcol::test(&handle).await;
+    copy_move::test(&handle).await;
+    prop::test(&handle).await;
+    multiget::test(&handle).await;
+    sync::test(&handle).await;
+    lock::test(&handle).await;
+    principals::test(&handle).await;
+    acl::test(&handle).await;
+    card_query::test(&handle).await;
 
-[session.rcpt]
-relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
-        { else = false } ]
-directory = "'{STORE}'"
+    // Print elapsed time
+    let elapsed = start_time.elapsed();
+    println!(
+        "Elapsed: {}.{:03}s",
+        elapsed.as_secs(),
+        elapsed.subsec_millis()
+    );
 
-[session.rcpt.errors]
-total = 5
-wait = "1ms"
-
-[queue]
-path = "{TMP}"
-hash = 64
-
-[report]
-path = "{TMP}"
-hash = 64
-
-[resolver]
-type = "system"
-
-[queue.outbound]
-next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
-            { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
-            { else = false } ]
-
-[session.data.add-headers]
-delivered-to = false
-
-[session.extensions]
-future-release = [ { if = "!is_empty(authenticated_as)", then = "99999999d"},
-                { else = false } ]
-
-[store."sqlite"]
-type = "sqlite"
-path = "{TMP}/sqlite.db"
-
-[store."rocksdb"]
-type = "rocksdb"
-path = "{TMP}/rocks.db"
-
-[store."foundationdb"]
-type = "foundationdb"
-
-[store."postgresql"]
-type = "postgresql"
-host = "localhost"
-port = 5432
-database = "stalwart"
-user = "postgres"
-password = "mysecretpassword"
-
-[store."psql-replica"]
-type = "sql-read-replica"
-primary = "postgresql"
-replicas = "postgresql"
-
-[store."mysql"]
-type = "mysql"
-host = "localhost"
-port = 3307
-database = "stalwart"
-user = "root"
-password = "password"
-
-[store."elastic"]
-type = "elasticsearch"
-url = "https://localhost:9200"
-user = "elastic"
-password = "RtQ-Lu6+o4rxx=XJplVJ"
-disable = true
-
-[store."elastic".tls]
-allow-invalid-certs = true
-
-[certificate.default]
-cert = "%{file:{CERT}}%"
-private-key = "%{file:{PK}}%"
-
-[storage]
-data = "{STORE}"
-fts = "{STORE}"
-blob = "{STORE}"
-lookup = "{STORE}"
-directory = "{STORE}"
-
-[jmap.protocol]
-set.max-objects = 100000
-
-[jmap.protocol.request]
-max-concurrent = 8
-
-[jmap.protocol.upload]
-max-size = 5000000
-max-concurrent = 4
-ttl = "1m"
-
-[jmap.protocol.upload.quota]
-files = 3
-size = 50000
-
-[jmap.rate-limit]
-account = "1000/1m"
-authentication = "100/2s"
-anonymous = "100/1m"
-
-[store."auth"]
-type = "sqlite"
-path = "{TMP}/auth.db"
-
-[store."auth".query]
-name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
-members = "SELECT member_of FROM group_members WHERE name = ?"
-recipients = "SELECT name FROM emails WHERE address = ?"
-emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
-verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
-expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
-domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
-
-[directory."{STORE}"]
-type = "internal"
-store = "{STORE}"
-
-[oauth]
-key = "parerga_und_paralipomena"
-
-[oauth.auth]
-max-attempts = 1
-
-[oauth.expiry]
-user-code = "1s"
-token = "1s"
-refresh-token = "3s"
-refresh-token-renew = "2s"
-
-[tracer.console]
-type = "console"
-level = "{LEVEL}"
-multiline = false
-ansi = true
-disabled-events = ["network.*"]
- 
-"#;
-
-pub const TEST_DAV_USERS: &[(&str, &str, &str, &str)] = &[
-    ("admin", "secret1", "Superuser", "admin@example,com"),
-    ("john", "secret2", "John Doe", "jdoe@example.com"),
-    (
-        "jane",
-        "secret3",
-        "Jane Doe-Smith",
-        "jane.smith@example.com",
-    ),
-    ("bill", "secret4", "Bill Foobar", "bill@example,com"),
-    ("mike", "secret5", "Mike Noquota", "mike@example,com"),
-];
+    // Remove test data
+    if delete {
+        handle.temp_dir.delete();
+    }
+}
 
 #[allow(dead_code)]
 pub struct WebDavTest {
@@ -355,54 +224,6 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
         clients,
         temp_dir,
         shutdown_tx,
-    }
-}
-
-#[tokio::test]
-pub async fn webdav_tests() {
-    // Prepare settings
-    let start_time = Instant::now();
-    let delete = true;
-    let handle = init_webdav_tests(
-        &std::env::var("STORE")
-            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
-        delete,
-    )
-    .await;
-
-    /*
-     TODO:
-
-     - ACLs:
-       - ACL Method
-       - AclPrincipalPropSet
-     - Calendar Query
-     - Freebusy Query
-
-    */
-
-    basic::test(&handle).await;
-    put_get::test(&handle).await;
-    mkcol::test(&handle).await;
-    copy_move::test(&handle).await;
-    prop::test(&handle).await;
-    multiget::test(&handle).await;
-    sync::test(&handle).await;
-    lock::test(&handle).await;
-    principals::test(&handle).await;
-    card_query::test(&handle).await;
-
-    // Print elapsed time
-    let elapsed = start_time.elapsed();
-    println!(
-        "Elapsed: {}.{:03}s",
-        elapsed.as_secs(),
-        elapsed.subsec_millis()
-    );
-
-    // Remove test data
-    if delete {
-        handle.temp_dir.delete();
     }
 }
 
@@ -1164,3 +985,181 @@ fn generate_random_name(length: usize) -> String {
         .map(|_| rng.sample(Alphanumeric) as char)
         .collect()
 }
+
+const SERVER: &str = r#"
+[server]
+hostname = "webdav.example.org"
+http.url = "'https://127.0.0.1:8899'"
+
+[server.listener.webdav]
+bind = ["127.0.0.1:8899"]
+protocol = "http"
+max-connections = 81920
+tls.implicit = true
+
+[server.socket]
+reuse-addr = true
+
+[server.tls]
+enable = true
+implicit = false
+certificate = "default"
+
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
+        { else = false } ]
+directory = "'{STORE}'"
+
+[session.rcpt.errors]
+total = 5
+wait = "1ms"
+
+[queue]
+path = "{TMP}"
+hash = 64
+
+[report]
+path = "{TMP}"
+hash = 64
+
+[resolver]
+type = "system"
+
+[queue.outbound]
+next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
+            { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
+            { else = false } ]
+
+[session.data.add-headers]
+delivered-to = false
+
+[session.extensions]
+future-release = [ { if = "!is_empty(authenticated_as)", then = "99999999d"},
+                { else = false } ]
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/sqlite.db"
+
+[store."rocksdb"]
+type = "rocksdb"
+path = "{TMP}/rocks.db"
+
+[store."foundationdb"]
+type = "foundationdb"
+
+[store."postgresql"]
+type = "postgresql"
+host = "localhost"
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+[store."psql-replica"]
+type = "sql-read-replica"
+primary = "postgresql"
+replicas = "postgresql"
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
+port = 3307
+database = "stalwart"
+user = "root"
+password = "password"
+
+[store."elastic"]
+type = "elasticsearch"
+url = "https://localhost:9200"
+user = "elastic"
+password = "RtQ-Lu6+o4rxx=XJplVJ"
+disable = true
+
+[store."elastic".tls]
+allow-invalid-certs = true
+
+[certificate.default]
+cert = "%{file:{CERT}}%"
+private-key = "%{file:{PK}}%"
+
+[storage]
+data = "{STORE}"
+fts = "{STORE}"
+blob = "{STORE}"
+lookup = "{STORE}"
+directory = "{STORE}"
+
+[jmap.protocol]
+set.max-objects = 100000
+
+[jmap.protocol.request]
+max-concurrent = 8
+
+[jmap.protocol.upload]
+max-size = 5000000
+max-concurrent = 4
+ttl = "1m"
+
+[jmap.protocol.upload.quota]
+files = 3
+size = 50000
+
+[jmap.rate-limit]
+account = "1000/1m"
+authentication = "100/2s"
+anonymous = "100/1m"
+
+[store."auth"]
+type = "sqlite"
+path = "{TMP}/auth.db"
+
+[store."auth".query]
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ?"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
+
+[directory."{STORE}"]
+type = "internal"
+store = "{STORE}"
+
+[oauth]
+key = "parerga_und_paralipomena"
+
+[oauth.auth]
+max-attempts = 1
+
+[oauth.expiry]
+user-code = "1s"
+token = "1s"
+refresh-token = "3s"
+refresh-token-renew = "2s"
+
+[tracer.console]
+type = "console"
+level = "{LEVEL}"
+multiline = false
+ansi = true
+disabled-events = ["network.*"]
+ 
+"#;
+
+pub const TEST_DAV_USERS: &[(&str, &str, &str, &str)] = &[
+    ("admin", "secret1", "Superuser", "admin@example,com"),
+    ("john", "secret2", "John Doe", "jdoe@example.com"),
+    (
+        "jane",
+        "secret3",
+        "Jane Doe-Smith",
+        "jane.smith@example.com",
+    ),
+    ("bill", "secret4", "Bill Foobar", "bill@example,com"),
+    ("mike", "secret5", "Mike Noquota", "mike@example,com"),
+];

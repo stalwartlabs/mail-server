@@ -30,31 +30,7 @@ pub async fn test(test: &WebDavTest) {
 
     // Test 1: RFC6352 8.6.3 example 1
     let response = client
-        .request(
-            "REPORT",
-            &default_path,
-            r#"<?xml version="1.0" encoding="utf-8" ?>
-   <C:addressbook-query xmlns:D="DAV:"
-                     xmlns:C="urn:ietf:params:xml:ns:carddav">
-     <D:prop>
-       <D:getetag/>
-       <C:address-data>
-         <C:prop name="VERSION"/>
-         <C:prop name="UID"/>
-         <C:prop name="NICKNAME"/>
-         <C:prop name="EMAIL"/>
-         <C:prop name="FN"/>
-       </C:address-data>
-     </D:prop>
-     <C:filter>
-       <C:prop-filter name="NICKNAME">
-         <C:text-match collation="i;unicode-casemap"
-                       match-type="equals"
-         >charlie</C:text-match>
-       </C:prop-filter>
-     </C:filter>
-   </C:addressbook-query>"#,
-        )
+        .request("REPORT", &default_path, QUERY1)
         .await
         .with_status(StatusCode::MULTI_STATUS)
         .with_hrefs([uri_carlos])
@@ -81,35 +57,7 @@ END:VCARD
 
     // Test 2: RFC6352 8.6.3 example 2
     let response = client
-        .request(
-            "REPORT",
-            &default_path,
-            r#"<?xml version="1.0" encoding="utf-8" ?>
-   <C:addressbook-query xmlns:D="DAV:"
-                     xmlns:C="urn:ietf:params:xml:ns:carddav">
-     <D:prop>
-       <D:getetag/>
-       <C:address-data>
-         <C:prop name="FN"/>
-         <C:prop name="BDAY"/>
-         <C:prop name="CATEGORIES"/>
-         <C:prop name="LANG"/>
-       </C:address-data>
-     </D:prop>
-     <C:filter test="anyof">
-       <C:prop-filter name="FN">
-         <C:text-match collation="i;unicode-casemap"
-                       match-type="contains"
-         >john</C:text-match>
-       </C:prop-filter>
-       <C:prop-filter name="EMAIL">
-         <C:text-match collation="i;unicode-casemap"
-                       match-type="contains"
-         >rodriguez</C:text-match>
-       </C:prop-filter>
-     </C:filter>
-   </C:addressbook-query>"#,
-        )
+        .request("REPORT", &default_path, QUERY2)
         .await
         .with_status(StatusCode::MULTI_STATUS)
         .with_hrefs([uri_carlos, uri_sarah])
@@ -154,24 +102,7 @@ END:VCARD
 
     // Test 3: Search within parameters
     let response = client
-        .request(
-            "REPORT",
-            &default_path,
-            r#"<?xml version="1.0" encoding="utf-8" ?>
-<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
-  <D:prop>
-    <D:getetag/>
-    <C:address-data/>
-  </D:prop>
-  <C:filter test="anyof">
-    <C:prop-filter name="ADR">
-      <C:param-filter name="LABEL">
-        <C:text-match collation="i;unicode-casemap" match-type="contains">enterprise</C:text-match>
-      </C:param-filter>
-    </C:prop-filter>
-  </C:filter>
-</C:addressbook-query>"#,
-        )
+        .request("REPORT", &default_path, QUERY3)
         .await
         .with_status(StatusCode::MULTI_STATUS)
         .with_hrefs([uri_acme])
@@ -185,10 +116,91 @@ END:VCARD
 
     // Test 4: Search using limit
     client
-        .request(
-            "REPORT",
-            &default_path,
-            r#"<?xml version="1.0" encoding="utf-8" ?>
+        .request("REPORT", &default_path, QUERY4)
+        .await
+        .with_status(StatusCode::MULTI_STATUS)
+        .with_value(
+            "D:multistatus.D:response.D:status",
+            "HTTP/1.1 507 Insufficient Storage",
+        )
+        .with_value(
+            "D:multistatus.D:response.D:error.D:number-of-matches-within-limits",
+            "",
+        )
+        .with_value(
+            "D:multistatus.D:response.D:responsedescription",
+            "The number of matches exceeds the limit of 2",
+        )
+        .with_href_count(3);
+
+    client.delete_default_containers().await;
+    test.assert_is_empty().await;
+}
+
+const QUERY1: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
+   <C:addressbook-query xmlns:D="DAV:"
+                     xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:prop>
+       <D:getetag/>
+       <C:address-data>
+         <C:prop name="VERSION"/>
+         <C:prop name="UID"/>
+         <C:prop name="NICKNAME"/>
+         <C:prop name="EMAIL"/>
+         <C:prop name="FN"/>
+       </C:address-data>
+     </D:prop>
+     <C:filter>
+       <C:prop-filter name="NICKNAME">
+         <C:text-match collation="i;unicode-casemap"
+                       match-type="equals"
+         >charlie</C:text-match>
+       </C:prop-filter>
+     </C:filter>
+   </C:addressbook-query>"#;
+
+const QUERY2: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
+   <C:addressbook-query xmlns:D="DAV:"
+                     xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:prop>
+       <D:getetag/>
+       <C:address-data>
+         <C:prop name="FN"/>
+         <C:prop name="BDAY"/>
+         <C:prop name="CATEGORIES"/>
+         <C:prop name="LANG"/>
+       </C:address-data>
+     </D:prop>
+     <C:filter test="anyof">
+       <C:prop-filter name="FN">
+         <C:text-match collation="i;unicode-casemap"
+                       match-type="contains"
+         >john</C:text-match>
+       </C:prop-filter>
+       <C:prop-filter name="EMAIL">
+         <C:text-match collation="i;unicode-casemap"
+                       match-type="contains"
+         >rodriguez</C:text-match>
+       </C:prop-filter>
+     </C:filter>
+   </C:addressbook-query>"#;
+
+const QUERY3: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
+<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+  <D:prop>
+    <D:getetag/>
+    <C:address-data/>
+  </D:prop>
+  <C:filter test="anyof">
+    <C:prop-filter name="ADR">
+      <C:param-filter name="LABEL">
+        <C:text-match collation="i;unicode-casemap" match-type="contains">enterprise</C:text-match>
+      </C:param-filter>
+    </C:prop-filter>
+  </C:filter>
+</C:addressbook-query>"#;
+
+const QUERY4: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
    <C:addressbook-query xmlns:D="DAV:"
                      xmlns:C="urn:ietf:params:xml:ns:carddav">
      <D:prop>
@@ -209,27 +221,7 @@ END:VCARD
      <C:limit>
        <C:nresults>2</C:nresults>
      </C:limit>
-   </C:addressbook-query>"#,
-        )
-        .await
-        .with_status(StatusCode::MULTI_STATUS)
-        .with_value(
-            "D:multistatus.D:response.D:status",
-            "HTTP/1.1 507 Insufficient Storage",
-        )
-        .with_value(
-            "D:multistatus.D:response.D:error.D:number-of-matches-within-limits",
-            "",
-        )
-        .with_value(
-            "D:multistatus.D:response.D:responsedescription",
-            "The number of matches exceeds the limit of 2",
-        )
-        .with_href_count(3);
-
-    client.delete_default_containers().await;
-    test.assert_is_empty().await;
-}
+   </C:addressbook-query>"#;
 
 const VCARD1: &str = r#"BEGIN:VCARD
 VERSION:4.0

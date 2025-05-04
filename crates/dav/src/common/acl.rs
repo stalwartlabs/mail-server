@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{
+    DavError, DavErrorCondition, DavResourceName, common::uri::DavUriResource,
+    principal::propfind::PrincipalPropFind,
+};
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use dav_proto::{
     RequestHeaders,
@@ -29,11 +33,6 @@ use rkyv::vec::ArchivedVec;
 use store::{ahash::AHashSet, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
-
-use crate::{
-    DavError, DavErrorCondition, DavResourceName, common::uri::DavUriResource,
-    principal::propfind::PrincipalPropFind,
-};
 
 use super::ArchivedResource;
 
@@ -144,8 +143,10 @@ impl DavAclHandler for Server {
             .await?;
 
         if grants.len() != acls.len() || acls.iter().zip(grants.iter()).any(|(a, b)| a != b) {
-            let mut batch = BatchBuilder::new();
+            // Refresh ACLs
+            self.refresh_archived_acls(&grants, acls).await;
 
+            let mut batch = BatchBuilder::new();
             match container {
                 ArchivedResource::Calendar(calendar) => {
                     let mut new_calendar = calendar
@@ -331,7 +332,6 @@ impl DavAclHandler for Server {
                     Privilege::WriteContent => {
                         acls.insert(Acl::Modify);
                         acls.insert(Acl::ModifyItems);
-                        acls.insert(Acl::RemoveItems);
                     }
                     Privilege::WriteProperties => {
                         acls.insert(Acl::Modify);
@@ -482,26 +482,6 @@ impl DavAclHandler for Server {
         {
             for grant in grants.iter() {
                 let grant_account_id = u32::from(grant.account_id);
-                let mut privileges = Vec::with_capacity(4);
-                let acl = Bitmap::<Acl>::from(&grant.grants);
-                if acl.contains(Acl::Read) || acl.contains(Acl::ReadItems) {
-                    privileges.push(Privilege::Read);
-                }
-                if acl.contains(Acl::Modify)
-                    || acl.contains(Acl::Delete)
-                    || acl.contains(Acl::ModifyItems)
-                    || acl.contains(Acl::RemoveItems)
-                {
-                    privileges.push(Privilege::Write);
-                }
-                if acl.contains(Acl::Administer) {
-                    privileges.push(Privilege::ReadAcl);
-                    privileges.push(Privilege::WriteAcl);
-                }
-                if acl.contains(Acl::ReadFreeBusy) {
-                    privileges.push(Privilege::ReadFreeBusy);
-                }
-
                 let principal = if let Some(expand) = expand {
                     self.expand_principal(access_token, grant_account_id, expand)
                         .await?
@@ -530,7 +510,12 @@ impl DavAclHandler for Server {
                     )))
                 };
 
-                aces.push(Ace::new(principal, GrantDeny::grant(privileges)));
+                aces.push(Ace::new(
+                    principal,
+                    GrantDeny::grant(current_user_privilege_set(Bitmap::<Acl>::from(
+                        &grant.grants,
+                    ))),
+                ));
             }
         }
 
@@ -557,28 +542,37 @@ impl Privileges for AccessToken {
         if self.is_member(account_id) {
             Privilege::all(is_calendar)
         } else {
-            let mut acls = AHashSet::with_capacity(16);
-            for grant in grants.effective_acl(self) {
-                match grant {
-                    Acl::Read | Acl::ReadItems => {
-                        acls.insert(Privilege::Read);
-                        acls.insert(Privilege::ReadCurrentUserPrivilegeSet);
-                    }
-                    Acl::Modify | Acl::Delete | Acl::ModifyItems | Acl::RemoveItems => {
-                        acls.insert(Privilege::Write);
-                    }
-                    Acl::Administer => {
-                        acls.insert(Privilege::ReadAcl);
-                        acls.insert(Privilege::WriteAcl);
-                    }
-                    Acl::ReadFreeBusy => {
-                        acls.insert(Privilege::ReadFreeBusy);
-                    }
-                    _ => {}
-                }
-            }
-
-            acls.into_iter().collect()
+            current_user_privilege_set(grants.effective_acl(self))
         }
     }
+}
+
+pub(crate) fn current_user_privilege_set(acl_bitmap: Bitmap<Acl>) -> Vec<Privilege> {
+    let mut acls = AHashSet::with_capacity(16);
+    for grant in acl_bitmap {
+        match grant {
+            Acl::Read | Acl::ReadItems => {
+                acls.insert(Privilege::Read);
+                acls.insert(Privilege::ReadCurrentUserPrivilegeSet);
+            }
+            Acl::Modify => {
+                acls.insert(Privilege::WriteProperties);
+            }
+            Acl::ModifyItems => {
+                acls.insert(Privilege::WriteContent);
+            }
+            Acl::Delete | Acl::RemoveItems => {
+                acls.insert(Privilege::Write);
+            }
+            Acl::Administer => {
+                acls.insert(Privilege::ReadAcl);
+                acls.insert(Privilege::WriteAcl);
+            }
+            Acl::ReadFreeBusy => {
+                acls.insert(Privilege::ReadFreeBusy);
+            }
+            _ => {}
+        }
+    }
+    acls.into_iter().collect()
 }

@@ -28,9 +28,7 @@ impl Server {
             .chain(access_token.member_of.clone().iter())
         {
             for acl_item in self
-                .core
-                .storage
-                .data
+                .store()
                 .acl_query(AclQuery::SharedWith {
                     grant_account_id,
                     to_account_id,
@@ -91,5 +89,25 @@ impl Server {
             }
         }
         Ok(false)
+    }
+
+    pub async fn document_acl(
+        &self,
+        grant_account_id: u32,
+        to_account_id: u32,
+        to_collection: impl Into<u8>,
+        to_document_id: u32,
+    ) -> trc::Result<Bitmap<Acl>> {
+        self.core
+            .storage
+            .data
+            .get_value::<u64>(ValueKey {
+                account_id: to_account_id,
+                collection: to_collection.into(),
+                document_id: to_document_id,
+                class: ValueClass::Acl(grant_account_id),
+            })
+            .await
+            .map(|v| v.map(Bitmap::<Acl>::from).unwrap_or_default())
     }
 }

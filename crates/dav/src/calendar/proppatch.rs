@@ -97,9 +97,9 @@ impl CalendarPropPatchRequestHandler for Server {
         // Verify ACL
         if !access_token.is_member(account_id) {
             let (acl, document_id) = if resource.is_container() {
-                (Acl::Read, resource.document_id)
+                (Acl::Modify, resource.document_id)
             } else {
-                (Acl::ReadItems, resource.parent_id.unwrap())
+                (Acl::ModifyItems, resource.parent_id.unwrap())
             };
 
             if !self

@@ -16,7 +16,7 @@ use jmap_proto::{
     types::{
         acl::Acl,
         property::Property,
-        value::{AclGrant, MaybePatchValue, Value},
+        value::{AclGrant, ArchivedAclGrant, MaybePatchValue, Value},
     },
 };
 use utils::map::bitmap::Bitmap;
@@ -155,6 +155,49 @@ impl Server {
             for value in acl_changes {
                 changed_principals.add_change(
                     value.account_id,
+                    Type::Individual,
+                    PrincipalField::EnabledPermissions,
+                );
+            }
+        }
+
+        self.increment_token_revision(changed_principals).await;
+    }
+
+    pub async fn refresh_archived_acls(
+        &self,
+        acl_changes: &[AclGrant],
+        acl_current: &[ArchivedAclGrant],
+    ) {
+        let mut changed_principals = ChangedPrincipals::new();
+        for current_item in acl_current.iter() {
+            let mut invalidate = true;
+            for change_item in acl_changes {
+                if change_item.account_id == current_item.account_id {
+                    invalidate = change_item.grants != current_item.grants;
+                    break;
+                }
+            }
+            if invalidate {
+                changed_principals.add_change(
+                    current_item.account_id.to_native(),
+                    Type::Individual,
+                    PrincipalField::EnabledPermissions,
+                );
+            }
+        }
+
+        for change_item in acl_changes {
+            let mut invalidate = true;
+            for current_item in acl_current.iter() {
+                if change_item.account_id == current_item.account_id {
+                    invalidate = change_item.grants != current_item.grants;
+                    break;
+                }
+            }
+            if invalidate {
+                changed_principals.add_change(
+                    change_item.account_id,
                     Type::Individual,
                     PrincipalField::EnabledPermissions,
                 );
