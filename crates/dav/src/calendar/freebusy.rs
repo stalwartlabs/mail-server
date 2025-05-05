@@ -124,6 +124,9 @@ impl CalendarFreebusyRequestHandler for Server {
                 .map(|resource| resource.document_id)
                 .collect::<Vec<_>>();
 
+            let mut fb_entries: AHashMap<ICalendarFreeBusyType, Vec<(i64, i64)>> =
+                AHashMap::with_capacity(document_ids.len());
+
             for document_id in document_ids {
                 let archive = if let Some(archive) = self
                     .get_archive(account_id, Collection::CalendarEvent, document_id)
@@ -192,45 +195,38 @@ impl CalendarFreebusyRequestHandler for Server {
                                 if event.comp_id == component_id
                                     && range.is_in_range(false, event.start, event.end)
                                 {
-                                    events_in_range.push(ICalendarValue::Period(
-                                        ICalendarPeriod::Range {
-                                            start: PartialDateTime::from_utc_timestamp(event.start),
-                                            end: PartialDateTime::from_utc_timestamp(event.end),
-                                        },
-                                    ));
+                                    events_in_range.push((event.start, event.end));
                                 }
                             }
 
                             if !events_in_range.is_empty() {
-                                entries.push(ICalendarEntry {
-                                    name: ICalendarProperty::Freebusy,
-                                    params: vec![ICalendarParameter::Fbtype(fbtype)],
-                                    values: events_in_range,
-                                });
+                                fb_entries
+                                    .entry(fbtype)
+                                    .or_default()
+                                    .extend(events_in_range);
                             }
                         }
                         ArchivedICalendarComponentType::VFreebusy => {
                             for entry in component.entries.iter() {
                                 if matches!(entry.name, ArchivedICalendarProperty::Freebusy) {
                                     let mut fb_in_range =
-                                        freebusy_in_range(entry, &range, true, default_tz)
-                                            .peekable();
+                                        freebusy_in_range_utc(entry, &range, default_tz).peekable();
                                     if fb_in_range.peek().is_some() {
-                                        entries.push(ICalendarEntry {
-                                            name: ICalendarProperty::Freebusy,
-                                            params: entry
-                                                .params
-                                                .iter()
-                                                .filter(|param| {
-                                                    matches!(
-                                                        param,
-                                                        ArchivedICalendarParameter::Fbtype(_)
-                                                    )
-                                                })
-                                                .filter_map(|v| rkyv_deserialize(v).ok())
-                                                .collect(),
-                                            values: fb_in_range.collect(),
-                                        });
+                                        let fb_type = entry
+                                            .params
+                                            .iter()
+                                            .find_map(|param| {
+                                                if let ArchivedICalendarParameter::Fbtype(param) =
+                                                    param
+                                                {
+                                                    rkyv_deserialize(param).ok()
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .unwrap_or(ICalendarFreeBusyType::Busy);
+
+                                        fb_entries.entry(fb_type).or_default().extend(fb_in_range);
                                     }
                                 }
                             }
@@ -238,6 +234,14 @@ impl CalendarFreebusyRequestHandler for Server {
                         _ => {}
                     }
                 }
+            }
+
+            for (fbtype, events_in_range) in fb_entries {
+                entries.push(ICalendarEntry {
+                    name: ICalendarProperty::Freebusy,
+                    params: vec![ICalendarParameter::Fbtype(fbtype)],
+                    values: merge_intervals(events_in_range),
+                });
             }
         }
 
@@ -275,10 +279,44 @@ impl CalendarFreebusyRequestHandler for Server {
     }
 }
 
+fn merge_intervals(mut intervals: Vec<(i64, i64)>) -> Vec<ICalendarValue> {
+    if intervals.len() > 1 {
+        intervals.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let mut unique_intervals = Vec::new();
+        let mut start_time = intervals[0].0;
+        let mut end_time = intervals[0].1;
+
+        for &(curr_start, curr_end) in intervals.iter().skip(1) {
+            if curr_start <= end_time {
+                end_time = end_time.max(curr_end);
+            } else {
+                unique_intervals.push(build_ical_value(start_time, end_time));
+                start_time = curr_start;
+                end_time = curr_end;
+            }
+        }
+
+        unique_intervals.push(build_ical_value(start_time, end_time));
+        unique_intervals
+    } else {
+        intervals
+            .into_iter()
+            .map(|(start, end)| build_ical_value(start, end))
+            .collect()
+    }
+}
+
+fn build_ical_value(from: i64, to: i64) -> ICalendarValue {
+    ICalendarValue::Period(ICalendarPeriod::Range {
+        start: PartialDateTime::from_utc_timestamp(from),
+        end: PartialDateTime::from_utc_timestamp(to),
+    })
+}
+
 pub(crate) fn freebusy_in_range(
     entry: &ArchivedICalendarEntry,
     range: &TimeRange,
-    to_utc: bool,
     default_tz: Tz,
 ) -> impl Iterator<Item = ICalendarValue> {
     let tz = entry
@@ -292,15 +330,34 @@ pub(crate) fn freebusy_in_range(
                 let start = start.timestamp();
                 let end = end.timestamp();
                 if range.is_in_range(false, start, end) {
-                    if to_utc {
-                        ICalendarValue::Period(ICalendarPeriod::Range {
-                            start: PartialDateTime::from_utc_timestamp(start),
-                            end: PartialDateTime::from_utc_timestamp(end),
-                        })
-                        .into()
-                    } else {
-                        rkyv_deserialize(value).ok()
-                    }
+                    rkyv_deserialize(value).ok()
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        }
+    })
+}
+
+fn freebusy_in_range_utc(
+    entry: &ArchivedICalendarEntry,
+    range: &TimeRange,
+    default_tz: Tz,
+) -> impl Iterator<Item = (i64, i64)> {
+    let tz = entry
+        .tz_id()
+        .and_then(|tz_id| Tz::from_str(tz_id).ok())
+        .unwrap_or(default_tz);
+
+    entry.values.iter().filter_map(move |value| {
+        if let ArchivedICalendarValue::Period(period) = &value {
+            period.time_range(tz).and_then(|(start, end)| {
+                let start = start.timestamp();
+                let end = end.timestamp();
+                if range.is_in_range(false, start, end) {
+                    Some((start, end))
                 } else {
                     None
                 }
