@@ -46,6 +46,7 @@ use utils::config::Config;
 
 pub mod acl;
 pub mod basic;
+pub mod cal_query;
 pub mod card_query;
 pub mod copy_move;
 pub mod lock;
@@ -67,14 +68,6 @@ pub async fn webdav_tests() {
         delete,
     )
     .await;
-
-    /*
-     TODO:
-
-     - Calendar Query
-     - Freebusy Query
-
-    */
 
     basic::test(&handle).await;
     put_get::test(&handle).await;

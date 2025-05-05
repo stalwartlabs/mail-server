@@ -27,7 +27,10 @@ use groupware::{calendar::CalendarEvent, hierarchy::DavHierarchy};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
-use store::write::serialize::rkyv_deserialize;
+use store::{
+    ahash::AHashMap,
+    write::{now, serialize::rkyv_deserialize},
+};
 use trc::AddContext;
 
 pub(crate) trait CalendarFreebusyRequestHandler: Sync + Send {
@@ -86,8 +89,30 @@ impl CalendarFreebusyRequestHandler for Server {
         };
 
         // Build FreeBusy component
-        let mut entries = Vec::new();
+        let mut entries = Vec::with_capacity(6);
         if let Some(range) = request.range {
+            entries.push(ICalendarEntry {
+                name: ICalendarProperty::Dtstart,
+                params: vec![],
+                values: vec![ICalendarValue::PartialDateTime(Box::new(
+                    PartialDateTime::from_utc_timestamp(range.start),
+                ))],
+            });
+            entries.push(ICalendarEntry {
+                name: ICalendarProperty::Dtend,
+                params: vec![],
+                values: vec![ICalendarValue::PartialDateTime(Box::new(
+                    PartialDateTime::from_utc_timestamp(range.end),
+                ))],
+            });
+            entries.push(ICalendarEntry {
+                name: ICalendarProperty::Dtstamp,
+                params: vec![],
+                values: vec![ICalendarValue::PartialDateTime(Box::new(
+                    PartialDateTime::from_utc_timestamp(now() as i64),
+                ))],
+            });
+
             let document_ids = resources
                 .children(resource.document_id)
                 .filter(|resource| {

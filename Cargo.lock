@@ -7322,6 +7322,7 @@ dependencies = [
  "base64 0.22.1",
  "biscuit",
  "bytes",
+ "calcard",
  "chrono",
  "common",
  "compact_str",

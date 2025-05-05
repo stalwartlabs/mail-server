@@ -4,6 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{
+    DavError,
+    common::{
+        CalendarFilter, DavQuery,
+        propfind::{PropFindItem, PropFindRequestHandler},
+        uri::DavUriResource,
+    },
+};
 use calcard::{
     common::{PartialDateTime, timezone::Tz},
     icalendar::{
@@ -26,20 +34,8 @@ use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::Collection};
 use std::{fmt::Write, slice::Iter, str::FromStr};
-use store::{
-    ahash::{AHashMap, AHashSet},
-    write::serialize::rkyv_deserialize,
-};
+use store::{ahash::AHashMap, write::serialize::rkyv_deserialize};
 use trc::AddContext;
-
-use crate::{
-    DavError,
-    common::{
-        CalendarFilter, DavQuery,
-        propfind::{PropFindItem, PropFindRequestHandler},
-        uri::DavUriResource,
-    },
-};
 
 use super::freebusy::freebusy_in_range;
 
@@ -129,11 +125,23 @@ impl CalendarQueryRequestHandler for Server {
     }
 }
 
-pub(crate) fn is_resource_in_time_range(resource: &DavResource, range: &TimeRange) -> bool {
+pub(crate) fn is_resource_in_time_range(resource: &DavResource, filter: &TimeRange) -> bool {
     if let Some((start, end)) = resource.event_time_range() {
-        // Check if either the start or end of the resource is within the range
-        let range = range.start..=range.end;
-        range.contains(&start) || range.contains(&end)
+        /*let range_from = DateTime::from_timestamp(filter.start, 0).unwrap();
+        let range_end = DateTime::from_timestamp(filter.end, 0).unwrap();
+        let result = ((filter.start < end) || (filter.start <= start))
+            && (filter.end > start || filter.end >= end);
+
+        let c = println!(
+            "filter from {range_from} to {range_end}, resource is {} from {} to {}, result: {}",
+            resource.name,
+            DateTime::from_timestamp(start, 0).unwrap(),
+            DateTime::from_timestamp(end, 0).unwrap(),
+            result
+        );*/
+
+        ((filter.start < end) || (filter.start <= start))
+            && (filter.end > start || filter.end >= end)
     } else {
         // If the resource does not have a time range, it is not in the range
         false
@@ -215,7 +223,6 @@ pub fn try_parse_tz(tz: &Timezone) -> Option<Tz> {
 
 pub(crate) struct CalendarQueryHandler {
     default_tz: Tz,
-    filtered_components: AHashSet<u16>,
     expanded_times: Vec<CalendarEvent<i64, i64>>,
 }
 
@@ -227,7 +234,6 @@ impl CalendarQueryHandler {
     ) -> Self {
         Self {
             default_tz,
-            filtered_components: AHashSet::new(),
             expanded_times: max_time_range
                 .map(|max_time_range| {
                     event
@@ -256,11 +262,13 @@ impl CalendarQueryHandler {
                     is_all = true;
                 }
                 Filter::Property { prop, op, comp } => {
-                    let mut result = false;
+                    let mut properties = find_components(ical, comp)
+                        .flat_map(|(_, comp)| find_properties(comp, prop))
+                        .peekable();
 
-                    for (_, comp) in find_components(ical, comp) {
-                        if let Some(entry) = find_property(comp, prop) {
-                            result = match op {
+                    let result = if properties.peek().is_some() {
+                        properties.any(|entry| {
+                            match op {
                                 FilterOp::Exists => true,
                                 FilterOp::Undefined => false,
                                 FilterOp::TextMatch(text_match) => {
@@ -268,7 +276,7 @@ impl CalendarQueryHandler {
 
                                     for value in entry.values.iter() {
                                         if let Some(text) = value.as_text() {
-                                            if text_match.matches(&text.to_lowercase()) {
+                                            if text_match.matches(text) {
                                                 matched_any = true;
                                                 break;
                                             }
@@ -300,15 +308,13 @@ impl CalendarQueryHandler {
                                         false
                                     }
                                 }
-                            };
-
-                            if result {
-                                break;
                             }
-                        }
-                    }
+                        })
+                    } else {
+                        matches!(op, FilterOp::Undefined)
+                    };
 
-                    if result || matches!(op, FilterOp::Undefined) {
+                    if result {
                         matches_one = true;
                     } else if is_all {
                         return false;
@@ -320,31 +326,31 @@ impl CalendarQueryHandler {
                     op,
                     comp,
                 } => {
-                    let mut result = false;
+                    let mut parameters = find_components(ical, comp)
+                        .flat_map(|(_, comp)| {
+                            find_properties(comp, prop)
+                                .filter_map(|entry| find_parameter(entry, param))
+                        })
+                        .peekable();
 
-                    for (_, comp) in find_components(ical, comp) {
-                        if let Some(entry) =
-                            find_property(comp, prop).and_then(|entry| find_parameter(entry, param))
-                        {
-                            result = match op {
-                                FilterOp::Exists => true,
-                                FilterOp::Undefined => false,
-                                FilterOp::TextMatch(text_match) => {
-                                    if let Some(text) = entry.as_text() {
-                                        text_match.matches(&text.to_lowercase())
-                                    } else {
-                                        false
-                                    }
+                    let result = if parameters.peek().is_some() {
+                        parameters.any(|entry| match op {
+                            FilterOp::Exists => true,
+                            FilterOp::Undefined => false,
+                            FilterOp::TextMatch(text_match) => {
+                                if let Some(text) = entry.as_text() {
+                                    text_match.matches(text)
+                                } else {
+                                    false
                                 }
-                                FilterOp::TimeRange(_) => false,
-                            };
-                            if result {
-                                break;
                             }
-                        }
-                    }
+                            FilterOp::TimeRange(_) => false,
+                        })
+                    } else {
+                        matches!(op, FilterOp::Undefined)
+                    };
 
-                    if result || matches!(op, FilterOp::Undefined) {
+                    if result {
                         matches_one = true;
                     } else if is_all {
                         return false;
@@ -355,14 +361,13 @@ impl CalendarQueryHandler {
                         FilterOp::Exists => find_components(ical, comp).next().is_some(),
                         FilterOp::Undefined => find_components(ical, comp).next().is_none(),
                         FilterOp::TimeRange(range) => {
-                            let matching_comp_ids = find_components(ical, comp)
-                                .map(|(id, comp)| (id as u16, &comp.component_type))
-                                .collect::<AHashMap<_, _>>();
-                            if !matching_comp_ids.is_empty() {
-                                let filtered_components = self
-                                    .expanded_times
-                                    .iter()
-                                    .filter(|event| {
+                            if !matches!(comp.last(), Some(ICalendarComponentType::VAlarm)) {
+                                let matching_comp_ids = find_components(ical, comp)
+                                    .map(|(id, comp)| (id as u16, &comp.component_type))
+                                    .collect::<AHashMap<_, _>>();
+
+                                !matching_comp_ids.is_empty()
+                                    && self.expanded_times.iter().any(|event| {
                                         matching_comp_ids.get(&event.comp_id).is_some_and(|ct| {
                                             range.is_in_range(
                                                 ct == &&ICalendarComponentType::VTodo,
@@ -371,17 +376,32 @@ impl CalendarQueryHandler {
                                             )
                                         })
                                     })
-                                    .map(|event| event.comp_id)
-                                    .collect::<AHashSet<_>>();
-                                if self.filtered_components.is_empty() {
-                                    self.filtered_components = filtered_components;
-                                } else {
-                                    self.filtered_components
-                                        .retain(|id| filtered_components.contains(id));
-                                }
-                                !self.filtered_components.is_empty()
                             } else {
-                                false
+                                let matching_comp_ids = event
+                                    .data
+                                    .alarms
+                                    .iter()
+                                    .map(|alarm| (alarm.comp_id.to_native(), alarm))
+                                    .collect::<AHashMap<_, _>>();
+
+                                !matching_comp_ids.is_empty()
+                                    && self.expanded_times.iter().any(|event| {
+                                        matching_comp_ids.get(&event.comp_id).is_some_and(|ct| {
+                                            ct.alarms.iter().any(|alarm| {
+                                                alarm
+                                                    .to_timestamp(
+                                                        event.start,
+                                                        event.end,
+                                                        self.default_tz,
+                                                    )
+                                                    .is_some_and(|timestamp| {
+                                                        range.is_in_range(
+                                                            false, timestamp, timestamp,
+                                                        )
+                                                    })
+                                            })
+                                        })
+                                    })
                             }
                         }
                         FilterOp::TextMatch(_) => false,
@@ -403,7 +423,8 @@ impl CalendarQueryHandler {
         let mut out = String::with_capacity(event.size.to_native() as usize);
         let _v = [0.into()];
         let mut component_iter: Iter<'_, rkyv::rend::u16_le> = _v.iter();
-        let mut component_stack = Vec::with_capacity(4);
+        let mut component_stack: Vec<(&ArchivedICalendarComponent, Iter<'_, rkyv::rend::u16_le>)> =
+            Vec::with_capacity(4);
 
         if data.expand.is_some() {
             self.expanded_times
@@ -419,14 +440,6 @@ impl CalendarQueryHandler {
                     .components
                     .get(component_id as usize)
                     .unwrap();
-
-                // Skip filtered components
-                if !self.filtered_components.is_empty()
-                    && component.component_type.has_time_ranges()
-                    && !self.filtered_components.contains(&component_id)
-                {
-                    continue;
-                }
 
                 // Limit recurrence override
                 if let Some(limit_recurrence) = &data.limit_recurrence {
@@ -469,10 +482,12 @@ impl CalendarQueryHandler {
                             data.properties
                                 .iter()
                                 .find(|prop| {
-                                    prop.component
-                                        .as_ref()
-                                        .is_none_or(|comp| comp == &component.component_type)
-                                        && prop.name.as_ref().is_none_or(|name| name == &entry.name)
+                                    prop.component.as_ref().is_none_or(|comp| {
+                                        comp == &component.component_type
+                                            || component_stack.iter().any(|(parent_comp, _)| {
+                                                comp == &parent_comp.component_type
+                                            })
+                                    }) && prop.name.as_ref().is_none_or(|name| name == &entry.name)
                                 })
                                 .map(|prop| (entry, !prop.no_value))
                         }
@@ -481,112 +496,110 @@ impl CalendarQueryHandler {
 
                 // Expand recurrences
                 let component_name = component.component_type.as_str();
-                if let Some(expand) = &data.expand {
-                    let is_recurrent = component.is_recurrent();
-                    let is_recurrence_override = component.is_recurrence_override();
-                    if is_recurrent || is_recurrence_override {
-                        let is_todo = component.component_type == ICalendarComponentType::VTodo;
-                        let mut has_duration = false;
-                        let entries = entries
-                            .filter(|(entry, _)| match &entry.name {
-                                ArchivedICalendarProperty::Dtstart
-                                | ArchivedICalendarProperty::Dtend
-                                | ArchivedICalendarProperty::Exdate
-                                | ArchivedICalendarProperty::Exrule
-                                | ArchivedICalendarProperty::Rdate
-                                | ArchivedICalendarProperty::Rrule
-                                | ArchivedICalendarProperty::RecurrenceId => false,
-                                ArchivedICalendarProperty::Due
-                                | ArchivedICalendarProperty::Completed
-                                | ArchivedICalendarProperty::Created => is_recurrent,
-                                ArchivedICalendarProperty::Duration => {
-                                    has_duration = true;
-                                    true
-                                }
-                                _ => true,
-                            })
-                            .collect::<Vec<_>>();
-                        for event in &self.expanded_times {
-                            if event.comp_id == component_id
-                                && expand.is_in_range(is_todo, event.start, event.end)
-                            {
-                                let _ = write!(&mut out, "BEGIN:{component_name}\r\n");
-
-                                // Write DTSTART, DTEND and RECURRENCE-ID
-                                let mut entry = ICalendarEntry {
-                                    name: ICalendarProperty::Dtstart,
-                                    params: vec![],
-                                    values: vec![ICalendarValue::PartialDateTime(Box::new(
-                                        PartialDateTime::from_utc_timestamp(event.start),
-                                    ))],
-                                };
-                                let _ = entry.write_to(&mut out);
-                                if is_recurrence_override {
-                                    entry.name = ICalendarProperty::RecurrenceId;
-                                    let _ = entry.write_to(&mut out);
-                                }
-                                if !has_duration {
-                                    entry.name = ICalendarProperty::Dtend;
-                                    entry.values = vec![ICalendarValue::PartialDateTime(Box::new(
-                                        PartialDateTime::from_utc_timestamp(event.end),
-                                    ))];
-                                    let _ = entry.write_to(&mut out);
-                                }
-
-                                // Write other component entries
-                                for (entry, with_value) in &entries {
-                                    let _ = entry.write_to(&mut out, *with_value);
-                                }
-                                let _ = write!(&mut out, "END:{component_name}\r\n");
-                            }
-                        }
-                        continue;
-                    }
-                }
-
-                // Skip filtered components
-                if entries.peek().is_none() {
-                    continue;
-                }
-
-                let _ = write!(&mut out, "BEGIN:{component_name}\r\n");
-
-                if data.limit_freebusy.is_none()
-                    || component.component_type != ICalendarComponentType::VFreebusy
+                if let Some(expand) = &data
+                    .expand
+                    .filter(|_| component.component_type.has_time_ranges())
                 {
-                    for (entry, with_value) in entries {
-                        let _ = entry.write_to(&mut out, with_value);
-                    }
-                } else {
-                    // Filter freebusy
-                    let range = data.limit_freebusy.unwrap();
-                    for (entry, with_value) in entries {
-                        if matches!(entry.name, ArchivedICalendarProperty::Freebusy) {
-                            let mut fb_in_range =
-                                freebusy_in_range(entry, &range, false, self.default_tz).peekable();
-                            if fb_in_range.peek().is_none() {
-                                continue;
-                            } else {
-                                let _ = ICalendarEntry {
-                                    name: ICalendarProperty::Freebusy,
-                                    params: rkyv_deserialize(&entry.params)
-                                        .ok()
-                                        .unwrap_or_default(),
-                                    values: fb_in_range.collect(),
-                                }
-                                .write_to(&mut out);
+                    let is_recurrent = component.is_recurrent();
+                    let is_recurrent_or_override =
+                        is_recurrent || component.is_recurrence_override();
+                    let is_todo = component.component_type == ICalendarComponentType::VTodo;
+                    let mut has_duration = false;
+                    let entries = entries
+                        .filter(|(entry, _)| match &entry.name {
+                            ArchivedICalendarProperty::Dtstart
+                            | ArchivedICalendarProperty::Dtend
+                            | ArchivedICalendarProperty::Exdate
+                            | ArchivedICalendarProperty::Exrule
+                            | ArchivedICalendarProperty::Rdate
+                            | ArchivedICalendarProperty::Rrule
+                            | ArchivedICalendarProperty::RecurrenceId => false,
+                            ArchivedICalendarProperty::Due
+                            | ArchivedICalendarProperty::Completed
+                            | ArchivedICalendarProperty::Created => is_recurrent,
+                            ArchivedICalendarProperty::Duration => {
+                                has_duration = true;
+                                true
                             }
-                        } else {
+                            _ => true,
+                        })
+                        .collect::<Vec<_>>();
+                    for event in &self.expanded_times {
+                        if event.comp_id == component_id
+                            && (!is_recurrent_or_override
+                                || expand.is_in_range(is_todo, event.start, event.end))
+                        {
+                            let _ = write!(&mut out, "BEGIN:{component_name}\r\n");
+
+                            // Write DTSTART, DTEND and RECURRENCE-ID
+                            let mut entry = ICalendarEntry {
+                                name: ICalendarProperty::Dtstart,
+                                params: vec![],
+                                values: vec![ICalendarValue::PartialDateTime(Box::new(
+                                    PartialDateTime::from_utc_timestamp(event.start),
+                                ))],
+                            };
+                            let _ = entry.write_to(&mut out);
+                            if is_recurrent_or_override {
+                                entry.name = ICalendarProperty::RecurrenceId;
+                                let _ = entry.write_to(&mut out);
+                            }
+                            if !has_duration {
+                                entry.name = ICalendarProperty::Dtend;
+                                entry.values = vec![ICalendarValue::PartialDateTime(Box::new(
+                                    PartialDateTime::from_utc_timestamp(event.end),
+                                ))];
+                                let _ = entry.write_to(&mut out);
+                            }
+
+                            // Write other component entries
+                            for (entry, with_value) in &entries {
+                                let _ = entry.write_to(&mut out, *with_value);
+                            }
+                            let _ = write!(&mut out, "END:{component_name}\r\n");
+                        }
+                    }
+                } else if entries.peek().is_some() {
+                    let _ = write!(&mut out, "BEGIN:{component_name}\r\n");
+
+                    if data.limit_freebusy.is_none()
+                        || component.component_type != ICalendarComponentType::VFreebusy
+                    {
+                        for (entry, with_value) in entries {
                             let _ = entry.write_to(&mut out, with_value);
                         }
+                    } else {
+                        // Filter freebusy
+                        let range = data.limit_freebusy.unwrap();
+                        for (entry, with_value) in entries {
+                            if matches!(entry.name, ArchivedICalendarProperty::Freebusy) {
+                                let mut fb_in_range =
+                                    freebusy_in_range(entry, &range, false, self.default_tz)
+                                        .peekable();
+                                if fb_in_range.peek().is_none() {
+                                    continue;
+                                } else {
+                                    let _ = ICalendarEntry {
+                                        name: ICalendarProperty::Freebusy,
+                                        params: rkyv_deserialize(&entry.params)
+                                            .ok()
+                                            .unwrap_or_default(),
+                                        values: fb_in_range.collect(),
+                                    }
+                                    .write_to(&mut out);
+                                }
+                            } else {
+                                let _ = entry.write_to(&mut out, with_value);
+                            }
+                        }
                     }
-                }
 
-                if !component.component_ids.is_empty() {
-                    component_stack.push((component, component_iter));
-                    component_iter = component.component_ids.iter();
-                } else {
-                    let _ = write!(&mut out, "END:{component_name}\r\n");
+                    if !component.component_ids.is_empty() {
+                        component_stack.push((component, component_iter));
+                        component_iter = component.component_ids.iter();
+                    } else if component.component_ids.is_empty() {
+                        let _ = write!(&mut out, "END:{component_name}\r\n");
+                    }
                 }
             } else if let Some((component, iter)) = component_stack.pop() {
                 let _ = write!(&mut out, "END:{}\r\n", component.component_type.as_str());
@@ -623,11 +636,11 @@ fn find_components<'x>(
 }
 
 #[inline(always)]
-fn find_property<'x>(
+fn find_properties<'x>(
     comp: &'x ArchivedICalendarComponent,
     prop: &ICalendarProperty,
-) -> Option<&'x ArchivedICalendarEntry> {
-    comp.entries.iter().find(|entry| &entry.name == prop)
+) -> impl Iterator<Item = &'x ArchivedICalendarEntry> {
+    comp.entries.iter().filter(move |entry| &entry.name == prop)
 }
 
 #[inline(always)]

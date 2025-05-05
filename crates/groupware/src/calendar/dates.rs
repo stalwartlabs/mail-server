@@ -4,17 +4,23 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{ArchivedCalendarEventData, ArchivedTimezone, CalendarEventData, Timezone};
+use super::{
+    Alarm, AlarmDelta, ArchivedAlarmDelta, ArchivedCalendarEventData, ArchivedTimezone,
+    CalendarEventData, Timezone,
+};
 use crate::calendar::ComponentTimeRange;
 use calcard::{
     common::timezone::Tz,
     icalendar::{
-        ICalendar,
+        ICalendar, ICalendarComponent, ICalendarParameter, ICalendarProperty, ICalendarValue,
+        Related,
         dates::{CalendarEvent, TimeOrDelta},
     },
 };
 use chrono::{DateTime, TimeZone};
 use dav_proto::schema::property::TimeRange;
+use rkyv::time;
+use std::str::FromStr;
 use store::{
     ahash::AHashMap,
     write::{bitpack::BitpackIterator, key::KeySerializer},
@@ -22,11 +28,12 @@ use store::{
 use utils::codec::leb128::Leb128Reader;
 
 impl CalendarEventData {
-    pub fn new(event: ICalendar, max_expansions: usize) -> Self {
+    pub fn new(ical: ICalendar, default_tz: Tz, max_expansions: usize) -> Self {
         let mut ranges = TimeRanges::default();
 
-        let expanded = event.expand_dates(Tz::Floating, max_expansions);
+        let expanded = ical.expand_dates(default_tz, max_expansions);
         let mut groups: AHashMap<(u16, u16, u16, i32), Vec<i64>> = AHashMap::with_capacity(16);
+        let mut alarms = AHashMap::with_capacity(16);
 
         for event in expanded.events {
             let start_naive = event.start.naive_local();
@@ -53,8 +60,30 @@ impl CalendarEventData {
                     )
                 }
             };
-            ranges.update(start_timestamp_utc, start_timestamp_naive);
-            ranges.update(end_timestamp_utc, end_timestamp_naive);
+
+            // Expand alarms
+            let mut min = std::cmp::min(start_timestamp_utc, end_timestamp_utc);
+            let mut max = std::cmp::max(start_timestamp_utc, end_timestamp_utc);
+            for alarm_delta in alarms.entry(event.comp_id).or_insert_with(|| {
+                ical.alarms_for_id(event.comp_id)
+                    .filter_map(|alarm| alarm.expand_alarm())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice()
+            }) {
+                if let Some(alarm_time) =
+                    alarm_delta.to_timestamp(start_timestamp_utc, end_timestamp_utc, default_tz)
+                {
+                    if alarm_time < min {
+                        min = alarm_time;
+                    }
+                    if alarm_time > max {
+                        max = alarm_time;
+                    }
+                }
+            }
+
+            ranges.update_base_offset(start_timestamp_naive, end_timestamp_naive);
+            ranges.update_utc_min_max(min, max);
             groups
                 .entry((
                     start_tz,
@@ -73,14 +102,16 @@ impl CalendarEventData {
                 // Bitpack instances
                 let mut instance_offsets = Vec::with_capacity(instances.len());
                 for instance in instances {
-                    instance_offsets.push((ranges.base_offset - instance) as u32);
+                    debug_assert!(instance >= ranges.base_offset);
+                    instance_offsets.push((instance - ranges.base_offset) as u32);
                 }
+
                 KeySerializer::new(instance_offsets.len() * std::mem::size_of::<u32>())
                     .bitpack_sorted(&instance_offsets)
                     .finalize()
             } else {
                 KeySerializer::new(std::mem::size_of::<u32>())
-                    .write_leb128((ranges.base_offset - instances.first().unwrap()) as u32)
+                    .write_leb128((instances.first().unwrap() - ranges.base_offset) as u32)
                     .finalize()
             };
 
@@ -98,8 +129,19 @@ impl CalendarEventData {
         }
 
         CalendarEventData {
-            event,
+            event: ical,
             time_ranges: events.into_boxed_slice(),
+            alarms: alarms
+                .into_iter()
+                .filter_map(|(comp_id, alarms)| {
+                    if !alarms.is_empty() {
+                        Some(Alarm { comp_id, alarms })
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
             base_offset: ranges.base_offset,
             base_time_utc: (ranges.min_time_utc - ranges.base_offset) as u32,
             duration: (ranges.max_time_utc - ranges.min_time_utc) as u32,
@@ -119,9 +161,8 @@ impl ArchivedCalendarEventData {
     pub fn expand(&self, default_tz: Tz, limit: TimeRange) -> Option<Vec<CalendarEvent<i64, i64>>> {
         let mut expansion = Vec::with_capacity(self.time_ranges.len());
         let base_offset = self.base_offset.to_native();
-        let expansion_limit = limit.start..=limit.end;
 
-        for range in self.time_ranges.iter() {
+        'outer: for range in self.time_ranges.iter() {
             let instances = range.instances.as_ref();
             let (offset_or_count, bytes_read) = instances.read_leb128::<u32>()?;
 
@@ -157,14 +198,16 @@ impl ArchivedCalendarEventData {
                         .single()?
                         .timestamp();
 
-                    if expansion_limit.contains(&start) || expansion_limit.contains(&end) {
+                    if ((start < limit.end) || (start <= limit.start))
+                        && (end > limit.start || end >= limit.end)
+                    {
                         expansion.push(CalendarEvent {
                             comp_id,
                             start,
                             end,
                         });
-                    } else if end > limit.end {
-                        break;
+                    } else if start > limit.end {
+                        continue 'outer;
                     }
                 }
             } else {
@@ -184,7 +227,9 @@ impl ArchivedCalendarEventData {
                     .single()?
                     .timestamp();
 
-                if expansion_limit.contains(&start) || expansion_limit.contains(&end) {
+                if ((start < limit.end) || (start <= limit.start))
+                    && (end > limit.start || end >= limit.end)
+                {
                     expansion.push(CalendarEvent {
                         comp_id,
                         start,
@@ -198,7 +243,7 @@ impl ArchivedCalendarEventData {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct TimeRanges {
     max_time_utc: i64,
     min_time_utc: i64,
@@ -206,16 +251,22 @@ struct TimeRanges {
 }
 
 impl TimeRanges {
-    pub fn update(&mut self, utc_timestamp: i64, naive_timestamp: i64) {
-        if utc_timestamp > self.max_time_utc {
-            self.max_time_utc = utc_timestamp;
-        }
-        if utc_timestamp < self.min_time_utc || self.max_time_utc == 0 {
-            self.min_time_utc = utc_timestamp;
-        }
-        let offset = std::cmp::min(utc_timestamp, naive_timestamp);
+    pub fn update_base_offset(&mut self, t1: i64, t2: i64) {
+        let offset = std::cmp::min(t1, t2);
         if offset < self.base_offset || self.base_offset == 0 {
             self.base_offset = offset;
+        }
+    }
+
+    pub fn update_utc_min_max(&mut self, min: i64, max: i64) {
+        if min < self.min_time_utc || self.min_time_utc == 0 {
+            self.min_time_utc = min;
+        }
+        if max > self.max_time_utc {
+            self.max_time_utc = max;
+        }
+        if min < self.base_offset || self.base_offset == 0 {
+            self.base_offset = min;
         }
     }
 }
@@ -255,6 +306,88 @@ impl ArchivedTimezone {
                 .filter_map(|t| t.timezone().map(|x| x.1))
                 .next(),
             ArchivedTimezone::Default => None,
+        }
+    }
+}
+
+pub trait ExpandAlarm {
+    fn expand_alarm(&self) -> Option<AlarmDelta>;
+}
+
+impl ExpandAlarm for ICalendarComponent {
+    fn expand_alarm(&self) -> Option<AlarmDelta> {
+        for entry in self.entries.iter() {
+            if matches!(entry.name, ICalendarProperty::Trigger) {
+                let mut tz = None;
+                let mut trigger_start = true;
+
+                for param in entry.params.iter() {
+                    match param {
+                        ICalendarParameter::Related(related) => {
+                            trigger_start = matches!(related, Related::Start);
+                        }
+                        ICalendarParameter::Tzid(tz_id) => {
+                            tz = Tz::from_str(tz_id).ok();
+                        }
+                        _ => {}
+                    }
+                }
+
+                return match entry.values.first()? {
+                    ICalendarValue::PartialDateTime(dt) => {
+                        let tz = tz.unwrap_or(Tz::Floating);
+
+                        dt.to_date_time_with_tz(tz).map(|dt| {
+                            let timestamp = dt.timestamp();
+                            if !dt.timezone().is_floating() {
+                                AlarmDelta::FixedUtc(timestamp)
+                            } else {
+                                AlarmDelta::FixedFloating(timestamp)
+                            }
+                        })
+                    }
+                    ICalendarValue::Duration(duration) => {
+                        if trigger_start {
+                            Some(AlarmDelta::Start(duration.as_seconds()))
+                        } else {
+                            Some(AlarmDelta::End(duration.as_seconds()))
+                        }
+                    }
+                    _ => None,
+                };
+            }
+        }
+
+        None
+    }
+}
+
+impl AlarmDelta {
+    pub fn to_timestamp(&self, start: i64, end: i64, default_tz: Tz) -> Option<i64> {
+        match self {
+            AlarmDelta::Start(delta) => Some(start + delta),
+            AlarmDelta::End(delta) => Some(end + delta),
+            AlarmDelta::FixedUtc(timestamp) => Some(*timestamp),
+            AlarmDelta::FixedFloating(timestamp) => default_tz
+                .from_local_datetime(&DateTime::from_timestamp(*timestamp, 0)?.naive_local())
+                .single()
+                .map(|dt| dt.timestamp()),
+        }
+    }
+}
+
+impl ArchivedAlarmDelta {
+    pub fn to_timestamp(&self, start: i64, end: i64, default_tz: Tz) -> Option<i64> {
+        match self {
+            ArchivedAlarmDelta::Start(delta) => Some(start + delta.to_native()),
+            ArchivedAlarmDelta::End(delta) => Some(end + delta.to_native()),
+            ArchivedAlarmDelta::FixedUtc(timestamp) => Some(timestamp.to_native()),
+            ArchivedAlarmDelta::FixedFloating(timestamp) => default_tz
+                .from_local_datetime(
+                    &DateTime::from_timestamp(timestamp.to_native(), 0)?.naive_local(),
+                )
+                .single()
+                .map(|dt| dt.timestamp()),
         }
     }
 }

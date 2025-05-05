@@ -1454,11 +1454,27 @@ impl YesNo {
 
 impl TextMatch {
     pub fn matches(&self, text: &str) -> bool {
-        (match self.match_type {
-            MatchType::Equals => text == self.value,
-            MatchType::Contains => text.contains(&self.value),
-            MatchType::StartsWith => text.starts_with(&self.value),
-            MatchType::EndsWith => text.ends_with(&self.value),
-        }) ^ self.negate
+        match self.collation {
+            Collation::Octet => {
+                (match self.match_type {
+                    MatchType::Equals => text == self.value,
+                    MatchType::Contains => text.contains(&self.value),
+                    MatchType::StartsWith => text.starts_with(&self.value),
+                    MatchType::EndsWith => text.ends_with(&self.value),
+                }) ^ self.negate
+            }
+            _ => {
+                (match self.match_type {
+                    MatchType::Equals => text.to_lowercase() == self.value.to_lowercase(),
+                    MatchType::Contains => text.to_lowercase().contains(&self.value.to_lowercase()),
+                    MatchType::StartsWith => {
+                        text.to_lowercase().starts_with(&self.value.to_lowercase())
+                    }
+                    MatchType::EndsWith => {
+                        text.to_lowercase().ends_with(&self.value.to_lowercase())
+                    }
+                }) ^ self.negate
+            }
+        }
     }
 }
