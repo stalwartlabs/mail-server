@@ -21,10 +21,7 @@ use common::{
     core::BuildServer,
     manager::boot::build_ipc,
 };
-use dav_proto::{
-    Depth,
-    schema::property::{DavProperty, WebDavProperty},
-};
+use dav_proto::schema::property::{DavProperty, WebDavProperty};
 use groupware::{DavResourceName, hierarchy::DavHierarchy};
 use http::HttpSessionManager;
 use hyper::{HeaderMap, Method, StatusCode, header::AUTHORIZATION};
@@ -80,6 +77,7 @@ pub async fn webdav_tests() {
     principals::test(&handle).await;
     acl::test(&handle).await;
     card_query::test(&handle).await;
+    cal_query::test(&handle).await;
 
     // Print elapsed time
     let elapsed = start_time.elapsed();
@@ -334,39 +332,6 @@ impl DummyWebDavClient {
             body,
             xml,
         }
-    }
-
-    pub async fn sync_collection(
-        &self,
-        path: &str,
-        sync_token: &str,
-        depth: Depth,
-        properties: impl IntoIterator<Item = &str>,
-    ) -> DavResponse {
-        let mut request = concat!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-            "<D:sync-collection xmlns:D=\"DAV:\" xmlns:A=\"urn:ietf:params:xml:ns:caldav\" xmlns:B=\"urn:ietf:params:xml:ns:carddav\">",
-            "<D:prop>"
-        )
-        .to_string();
-
-        for property in properties {
-            request.push_str(&format!("<{property}/>"));
-        }
-
-        request.push_str("</D:prop><D:sync-token>");
-        request.push_str(sync_token);
-        request.push_str("</D:sync-token><D:sync-level>");
-        request.push_str(match depth {
-            Depth::One => "1",
-            Depth::Infinity => "infinite",
-            _ => "0",
-        });
-        request.push_str("</D:sync-level></D:sync-collection>");
-
-        self.request("REPORT", path, &request)
-            .await
-            .with_status(StatusCode::MULTI_STATUS)
     }
 
     pub async fn available_quota(&self, path: &str) -> u64 {

@@ -574,8 +574,7 @@ impl CalendarQueryHandler {
                         for (entry, with_value) in entries {
                             if matches!(entry.name, ArchivedICalendarProperty::Freebusy) {
                                 let mut fb_in_range =
-                                    freebusy_in_range(entry, &range, false, self.default_tz)
-                                        .peekable();
+                                    freebusy_in_range(entry, &range, self.default_tz).peekable();
                                 if fb_in_range.peek().is_none() {
                                     continue;
                                 } else {

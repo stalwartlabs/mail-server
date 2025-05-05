@@ -353,6 +353,11 @@ impl PropFindRequestHandler for Server {
         let mut ctag = None;
         let mut paths;
         let mut query_filter = None;
+        let mut limit = std::cmp::min(
+            query.limit.unwrap_or(u32::MAX) as usize,
+            self.core.groupware.max_results,
+        );
+        let mut is_sync_limited = false;
 
         //let c = println!("handling DAV query {query:#?}");
 
@@ -405,42 +410,29 @@ impl PropFindRequestHandler for Server {
 
                 // Filter by changelog
                 match query.sync_type {
-                    SyncType::From(change_id) => {
+                    SyncType::From { id, seq } => {
                         let container_changes = self
                             .store()
-                            .changes(account_id, collection_container, Query::Since(change_id))
+                            .changes(account_id, collection_container, Query::Since(id))
                             .await
                             .caused_by(trc::location!())?;
                         let children_changes = if container_has_children {
                             self.store()
-                                .changes(account_id, collection_children, Query::Since(change_id))
+                                .changes(account_id, collection_children, Query::Since(id))
                                 .await
                                 .caused_by(trc::location!())?
                                 .into()
                         } else {
                             None
                         };
-                        let change_id = std::cmp::max(
-                            container_changes.to_change_id,
-                            children_changes.as_ref().map_or(0, |c| c.to_change_id),
-                        );
 
-                        // Set sync token
-                        let sync_token = if change_id != 0 {
-                            let sync_token = Urn::Sync(change_id).to_string();
-                            data.accounts.entry(account_id).or_default().sync_token =
-                                sync_token.clone().into();
-                            sync_token
-                        } else {
-                            data.sync_token(self, account_id, collection_container)
-                                .await
-                                .caused_by(trc::location!())?
-                        };
-                        response.set_sync_token(sync_token);
-
+                        // Merge changes
+                        let mut total_changes = 0;
                         for (changes, document_ids) in [
-                            Some((container_changes, &mut display_containers)),
-                            children_changes.map(|changes| (changes, &mut display_children)),
+                            Some((&container_changes, &mut display_containers)),
+                            children_changes
+                                .as_ref()
+                                .map(|changes| (changes, &mut display_children)),
                         ]
                         .into_iter()
                         .flatten()
@@ -453,9 +445,62 @@ impl PropFindRequestHandler for Server {
                             );
                             if let Some(document_ids) = document_ids {
                                 *document_ids &= changes;
+                                total_changes += document_ids.len() as usize;
                             } else {
+                                total_changes += changes.len() as usize;
                                 *document_ids = Some(changes);
                             }
+                        }
+
+                        // Truncate changes
+                        if total_changes > limit {
+                            let mut offset = limit * seq as usize;
+                            let mut total_changes = 0;
+                            for document_ids in [&mut display_containers, &mut display_children]
+                                .into_iter()
+                                .flatten()
+                            {
+                                let mut new_document_ids = RoaringBitmap::new();
+                                for id in document_ids.iter() {
+                                    if offset > 0 {
+                                        offset -= 1;
+                                    } else if total_changes < limit {
+                                        new_document_ids.insert(id);
+                                        total_changes += 1;
+                                    } else {
+                                        is_sync_limited = true;
+                                    }
+                                }
+                                *document_ids = new_document_ids;
+                            }
+
+                            if is_sync_limited {
+                                response.set_sync_token(Urn::Sync { id, seq: seq + 1 }.to_string());
+                            }
+                        }
+
+                        if !is_sync_limited {
+                            // Set sync token
+                            let change_id = std::cmp::max(
+                                container_changes.to_change_id,
+                                children_changes.as_ref().map_or(0, |c| c.to_change_id),
+                            );
+                            let sync_token = if change_id != 0 {
+                                let sync_token = Urn::Sync {
+                                    id: change_id,
+                                    seq: 0,
+                                }
+                                .to_string();
+                                data.accounts.entry(account_id).or_default().sync_token =
+                                    sync_token.clone().into();
+                                sync_token
+                            } else {
+                                data.sync_token(self, account_id, collection_container)
+                                    .await
+                                    .caused_by(trc::location!())?
+                            };
+
+                            response.set_sync_token(sync_token);
                         }
                     }
                     SyncType::Initial => {
@@ -709,10 +754,6 @@ impl PropFindRequestHandler for Server {
         };
 
         let view_as_id = access_token.primary_id();
-        let mut limit = std::cmp::min(
-            query.limit.unwrap_or(u32::MAX) as usize,
-            self.core.groupware.max_results,
-        );
         for item in paths {
             let account_id = item.account_id;
             let document_id = item.document_id;
@@ -1332,7 +1373,7 @@ impl PropFindRequestHandler for Server {
             }
         }
 
-        if limit == 0 {
+        if limit == 0 || is_sync_limited {
             response.add_response(
                 Response::new_status([query.uri], StatusCode::INSUFFICIENT_STORAGE)
                     .with_error(BaseCondition::NumberOfMatchesWithinLimit)
@@ -1449,7 +1490,7 @@ impl PropFindData {
                 .await
                 .caused_by(trc::location!())?
                 .unwrap_or_default();
-            data.sync_token = Urn::Sync(id).to_string().into();
+            data.sync_token = Urn::Sync { id, seq: 0 }.to_string().into();
         }
 
         Ok(data.sync_token.clone().unwrap())

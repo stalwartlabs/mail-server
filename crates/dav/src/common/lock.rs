@@ -562,27 +562,32 @@ impl LockRequestHandler for Server {
                         .await
                         .caused_by(trc::location!())?
                         .modseq;
-                    resource_state.sync_token =
-                        Some(Urn::Sync(change_id.unwrap_or_default()).to_string());
+                    resource_state.sync_token = Some(
+                        Urn::Sync {
+                            id: change_id.unwrap_or_default(),
+                            seq: 0,
+                        }
+                        .to_string(),
+                    );
                 }
             }
 
             for cond in &if_.list {
                 match cond {
-                    Condition::StateToken { is_not, token }
-                        if token.starts_with("urn:stalwart:davsync:") =>
-                    {
-                        if !((resource_state
-                            .sync_token
-                            .as_ref()
-                            .is_some_and(|sync_token| sync_token == token))
+                    Condition::StateToken { is_not, token } => {
+                        if let Some(token) = Urn::try_extract_sync_id(token) {
+                            if !((resource_state
+                                .sync_token
+                                .as_deref()
+                                .and_then(Urn::try_extract_sync_id)
+                                .is_some_and(|sync_token| sync_token == token))
+                                ^ is_not)
+                            {
+                                continue 'outer;
+                            }
+                        } else if !((resource_state.lock_tokens.iter().any(|t| t == token))
                             ^ is_not)
                         {
-                            continue 'outer;
-                        }
-                    }
-                    Condition::StateToken { is_not, token } => {
-                        if !((resource_state.lock_tokens.iter().any(|t| t == token)) ^ is_not) {
                             continue 'outer;
                         }
                     }

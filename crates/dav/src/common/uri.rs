@@ -26,7 +26,7 @@ pub(crate) struct UriResource<A, R> {
 
 pub(crate) enum Urn {
     Lock(u64),
-    Sync(u64),
+    Sync { id: u64, seq: u32 },
 }
 
 pub(crate) type UnresolvedUri<'x> = UriResource<Option<u32>, Option<&'x str>>;
@@ -188,12 +188,28 @@ impl<A, R> UriResource<A, R> {
 }
 
 impl Urn {
+    pub fn try_extract_sync_id(token: &str) -> Option<&str> {
+        token
+            .strip_prefix("urn:stalwart:davsync:")
+            .map(|x| x.split_once(':').map(|(x, _)| x).unwrap_or(x))
+    }
+
     pub fn parse(input: &str) -> Option<Self> {
         let inbox = input.strip_prefix("urn:stalwart:")?;
         let (kind, id) = inbox.split_once(':')?;
         match kind {
             "davlock" => u64::from_str_radix(id, 16).ok().map(Urn::Lock),
-            "davsync" => u64::from_str_radix(id, 16).ok().map(Urn::Sync),
+            "davsync" => {
+                if let Some((id, seq)) = id.split_once(':') {
+                    let id = u64::from_str_radix(id, 16).ok()?;
+                    let seq = u32::from_str_radix(seq, 16).ok()?;
+                    Some(Urn::Sync { id, seq })
+                } else {
+                    u64::from_str_radix(id, 16)
+                        .ok()
+                        .map(|id| Urn::Sync { id, seq: 0 })
+                }
+            }
             _ => None,
         }
     }
@@ -205,9 +221,9 @@ impl Urn {
         }
     }
 
-    pub fn try_unwrap_sync(&self) -> Option<u64> {
+    pub fn try_unwrap_sync(&self) -> Option<(u64, u32)> {
         match self {
-            Urn::Sync(id) => Some(*id),
+            Urn::Sync { id, seq } => Some((*id, *seq)),
             _ => None,
         }
     }
@@ -217,7 +233,13 @@ impl Display for Urn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Urn::Lock(id) => write!(f, "urn:stalwart:davlock:{id:x}",),
-            Urn::Sync(id) => write!(f, "urn:stalwart:davsync:{id:x}"),
+            Urn::Sync { id, seq } => {
+                if *seq == 0 {
+                    write!(f, "urn:stalwart:davsync:{id:x}")
+                } else {
+                    write!(f, "urn:stalwart:davsync:{id:x}:{seq:x}")
+                }
+            }
         }
     }
 }

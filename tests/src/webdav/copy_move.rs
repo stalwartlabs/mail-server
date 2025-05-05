@@ -31,7 +31,7 @@ pub async fn test(test: &WebDavTest) {
 
         // Obtain sync token
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_eq!(
             response.hrefs().len(),
@@ -54,6 +54,7 @@ pub async fn test(test: &WebDavTest) {
                 &user_base_path,
                 prev_sync_token,
                 Depth::Infinity,
+                None,
                 ["D:getetag"],
             )
             .await;
@@ -103,7 +104,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::CREATED);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         replace_prefix(&mut hierarchy, &hierarchy_root, &new_hierarchy_root);
         assert_result(&response, &hierarchy);
@@ -122,7 +123,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::CREATED);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         let mut copied_hierarchy = hierarchy.clone();
         replace_prefix(&mut copied_hierarchy, &hierarchy_root, &new_hierarchy_root);
@@ -136,7 +137,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::NO_CONTENT);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
@@ -154,7 +155,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::NO_CONTENT);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         replace_prefix(&mut hierarchy, &new_hierarchy_root, &hierarchy_root);
         assert_result(&response, &hierarchy);
@@ -174,7 +175,7 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::NO_CONTENT);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         let mut orig_hierarchy = new_hierarchy.clone();
         replace_prefix(&mut orig_hierarchy, &new_hierarchy_root, &hierarchy_root);
@@ -205,12 +206,12 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::CREATED);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &orig_hierarchy);
         client.validate_values(&orig_hierarchy).await;
         let response = client
-            .sync_collection(&group_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&group_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         replace_prefix(
             &mut full_hierarchy,
@@ -260,7 +261,7 @@ pub async fn test(test: &WebDavTest) {
             hierarchy.push((folder_path, "".to_string()));
         }
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
@@ -316,7 +317,7 @@ pub async fn test(test: &WebDavTest) {
             .with_status(StatusCode::CREATED);
         rename(&mut hierarchy, &folder1_file1, &folder1_file1_new);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
@@ -338,7 +339,7 @@ pub async fn test(test: &WebDavTest) {
             &folder2_file1_from_folder1,
         );
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
@@ -357,7 +358,7 @@ pub async fn test(test: &WebDavTest) {
         delete(&mut hierarchy, &folder1_file2);
         rename(&mut hierarchy, &folder2_file1_from_folder1, &folder1_file2);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
@@ -376,7 +377,7 @@ pub async fn test(test: &WebDavTest) {
             .with_status(StatusCode::CREATED);
         copy(&mut hierarchy, &file3_path, &folder3_file3_from_folder1);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
@@ -395,7 +396,7 @@ pub async fn test(test: &WebDavTest) {
         delete(&mut hierarchy, &folder2_file2);
         copy(&mut hierarchy, &folder3_file3_from_folder1, &folder2_file2);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
@@ -440,12 +441,12 @@ pub async fn test(test: &WebDavTest) {
         ];
         delete(&mut hierarchy, &folder3_file1);
         let response = client
-            .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
         let response = client
-            .sync_collection(&group_base_path, "", Depth::Infinity, ["D:getetag"])
+            .sync_collection(&group_base_path, "", Depth::Infinity, None, ["D:getetag"])
             .await;
         assert_result(&response, &shared_hierarchy);
         client.validate_values(&shared_hierarchy).await;
@@ -470,7 +471,7 @@ pub async fn test(test: &WebDavTest) {
                 .with_status(StatusCode::CREATED);
             replace_prefix(&mut hierarchy, &folder3, &folder2_folder3);
             let response = client
-                .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+                .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
                 .await;
             assert_result(&response, &hierarchy);
             client.validate_values(&hierarchy).await;
@@ -501,7 +502,7 @@ pub async fn test(test: &WebDavTest) {
                 .await
                 .with_status(StatusCode::CREATED);
             let response = client
-                .sync_collection(&user_base_path, "", Depth::Infinity, ["D:getetag"])
+                .sync_collection(&user_base_path, "", Depth::Infinity, None, ["D:getetag"])
                 .await;
             copy_prefix(&mut hierarchy, &folder1, &folder2_folder1);
             assert_result(&response, &hierarchy);

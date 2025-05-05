@@ -56,7 +56,10 @@ pub(crate) enum SyncType {
     #[default]
     None,
     Initial,
-    From(u64),
+    From {
+        id: u64,
+        seq: u32,
+    },
 }
 
 #[derive(Default, Debug)]
@@ -233,7 +236,7 @@ impl<'x> DavQuery<'x> {
                 .as_deref()
                 .and_then(Urn::parse)
                 .and_then(|urn| urn.try_unwrap_sync())
-                .map(SyncType::From)
+                .map(|(id, seq)| SyncType::From { id, seq })
                 .unwrap_or(SyncType::Initial),
             depth: match changes.depth {
                 Depth::One => 1,
