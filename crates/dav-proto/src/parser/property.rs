@@ -383,13 +383,20 @@ impl Tokenizer<'_> {
 
 impl TimeRange {
     pub fn is_in_range(&self, match_overlap: bool, start: i64, end: i64) -> bool {
+        /*let c = println!(
+            "is_in_range ({match_overlap}): {} to {}, resource from {} to {}, result: {}",
+            chrono::DateTime::from_timestamp(self.start, 0).unwrap(),
+            chrono::DateTime::from_timestamp(self.end, 0).unwrap(),
+            chrono::DateTime::from_timestamp(start, 0).unwrap(),
+            chrono::DateTime::from_timestamp(end, 0).unwrap(),
+            result
+        );*/
         if !match_overlap {
             // RFC4791#9.9: (start <  DTEND AND end > DTSTART)
             self.start < end && self.end > start
         } else {
             // RFC4791#9.9: ((start <  DUE) OR (start <= DTSTART)) AND ((end > DTSTART) OR (end >= DUE))
-            let range = self.start..=self.end;
-            range.contains(&start) || range.contains(&end)
+            ((start < self.end) || (start <= self.start)) && (end > self.start || end >= self.end)
         }
     }
 

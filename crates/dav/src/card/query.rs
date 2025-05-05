@@ -120,8 +120,9 @@ pub(crate) fn vcard_query(card: &ArchivedVCard, filters: &AddressbookFilter) -> 
                 is_all = true;
             }
             Filter::Property { prop, op, .. } => {
-                let result = if let Some(entry) = find_property(card, prop) {
-                    match op {
+                let mut properties = find_properties(card, prop).peekable();
+                let result = if properties.peek().is_some() {
+                    properties.any(|entry| match op {
                         FilterOp::Exists => true,
                         FilterOp::Undefined => false,
                         FilterOp::TextMatch(text_match) => {
@@ -129,7 +130,7 @@ pub(crate) fn vcard_query(card: &ArchivedVCard, filters: &AddressbookFilter) -> 
 
                             for value in entry.values.iter() {
                                 if let Some(text) = value.as_text() {
-                                    if text_match.matches(&text.to_lowercase()) {
+                                    if text_match.matches(text) {
                                         matched_any = true;
                                         break;
                                     }
@@ -139,7 +140,7 @@ pub(crate) fn vcard_query(card: &ArchivedVCard, filters: &AddressbookFilter) -> 
                             matched_any
                         }
                         FilterOp::TimeRange(_) => false,
-                    }
+                    })
                 } else {
                     matches!(op, FilterOp::Undefined)
                 };
@@ -153,21 +154,22 @@ pub(crate) fn vcard_query(card: &ArchivedVCard, filters: &AddressbookFilter) -> 
             Filter::Parameter {
                 prop, param, op, ..
             } => {
-                let result = if let Some(entry) =
-                    find_property(card, prop).and_then(|entry| find_parameter(entry, param))
-                {
-                    match op {
+                let mut properties = find_properties(card, prop)
+                    .filter_map(|entry| find_parameter(entry, param))
+                    .peekable();
+                let result = if properties.peek().is_some() {
+                    properties.any(|entry| match op {
                         FilterOp::Exists => true,
                         FilterOp::Undefined => false,
                         FilterOp::TextMatch(text_match) => {
                             if let Some(text) = entry.as_text() {
-                                text_match.matches(&text.to_lowercase())
+                                text_match.matches(text)
                             } else {
                                 false
                             }
                         }
                         FilterOp::TimeRange(_) => false,
-                    }
+                    })
                 } else {
                     matches!(op, FilterOp::Undefined)
                 };
@@ -186,13 +188,13 @@ pub(crate) fn vcard_query(card: &ArchivedVCard, filters: &AddressbookFilter) -> 
 }
 
 #[inline(always)]
-fn find_property<'x>(
+fn find_properties<'x>(
     card: &'x ArchivedVCard,
     prop: &VCardPropertyWithGroup,
-) -> Option<&'x ArchivedVCardEntry> {
+) -> impl Iterator<Item = &'x ArchivedVCardEntry> {
     card.entries
         .iter()
-        .find(|entry| entry.name == prop.name && entry.group == prop.group)
+        .filter(move |entry| entry.name == prop.name && entry.group == prop.group)
 }
 
 #[inline(always)]

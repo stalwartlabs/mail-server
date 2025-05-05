@@ -796,6 +796,12 @@ impl DavPropertyResult<'_> {
         }
         self
     }
+
+    pub fn calendar_data(&self) -> DavQueryResult<'_> {
+        self.get(DavProperty::CalDav(CalDavProperty::CalendarData(
+            Default::default(),
+        )))
+    }
 }
 
 impl<'x> DavQueryResult<'x> {
@@ -809,7 +815,7 @@ impl<'x> DavQueryResult<'x> {
 
         if values != expected_values {
             self.response.dump_response();
-            panic!("Expected {expected_values:?} values, but got {values:?}",);
+            assert_eq!(values, expected_values,);
         }
         self
     }

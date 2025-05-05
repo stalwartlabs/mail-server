@@ -8,6 +8,7 @@ use std::collections::HashSet;
 
 use calcard::{
     Entry, Parser,
+    common::timezone::Tz,
     icalendar::{ICalendar, ICalendarComponentType},
 };
 use common::{Server, auth::AccessToken};
@@ -184,7 +185,8 @@ impl CalendarUpdateRequestHandler for Server {
                 .deserialize::<CalendarEvent>()
                 .caused_by(trc::location!())?;
             new_event.size = bytes.len() as u32;
-            new_event.data = CalendarEventData::new(ical, self.core.groupware.max_ical_instances);
+            new_event.data =
+                CalendarEventData::new(ical, Tz::Floating, self.core.groupware.max_ical_instances);
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
@@ -257,7 +259,11 @@ impl CalendarUpdateRequestHandler for Server {
                     name: name.to_string(),
                     parent_id: parent.document_id,
                 }],
-                data: CalendarEventData::new(ical, self.core.groupware.max_ical_instances),
+                data: CalendarEventData::new(
+                    ical,
+                    Tz::Floating,
+                    self.core.groupware.max_ical_instances,
+                ),
                 size: bytes.len() as u32,
                 ..Default::default()
             };
