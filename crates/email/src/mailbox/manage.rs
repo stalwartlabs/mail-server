@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::future::Future;
-
-use super::{cache::MessageMailboxCache, *};
+use super::*;
+use crate::cache::MessageCacheFetch;
 use common::{Server, config::jmap::settings::SpecialUse, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::collection::Collection;
+use std::future::Future;
 use store::write::BatchBuilder;
 use trc::AddContext;
 
@@ -79,8 +79,8 @@ impl MailboxFnc for Server {
     }
 
     async fn mailbox_create_path(&self, account_id: u32, path: &str) -> trc::Result<Option<u32>> {
-        let folders = self
-            .get_cached_mailboxes(account_id)
+        let cache = self
+            .get_cached_messages(account_id)
             .await
             .caused_by(trc::location!())?;
 
@@ -101,7 +101,8 @@ impl MailboxFnc for Server {
                     }
                 }
 
-                if let Some(item) = folders
+                if let Some(item) = cache
+                    .mailboxes
                     .items
                     .iter()
                     .find(|item| item.path.to_lowercase() == found_path)

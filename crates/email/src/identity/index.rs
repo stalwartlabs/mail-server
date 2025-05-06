@@ -5,18 +5,27 @@
  */
 
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use jmap_proto::types::collection::SyncCollection;
 
 use super::{ArchivedIdentity, Identity};
 
 impl IndexableObject for Identity {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
-        [IndexValue::LogChild { prefix: None }].into_iter()
+        [IndexValue::LogItem {
+            sync_collection: SyncCollection::Identity.into(),
+            prefix: None,
+        }]
+        .into_iter()
     }
 }
 
 impl IndexableObject for &ArchivedIdentity {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
-        [IndexValue::LogChild { prefix: None }].into_iter()
+        [IndexValue::LogItem {
+            sync_collection: SyncCollection::Identity.into(),
+            prefix: None,
+        }]
+        .into_iter()
     }
 }
 

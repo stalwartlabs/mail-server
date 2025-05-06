@@ -4,17 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Instant;
-
+use super::ToModSeq;
 use crate::{
     core::{Mailbox, Session, SessionData},
     op::ImapContext,
     spawn_op,
 };
 use common::listener::SessionStream;
-
 use directory::Permission;
-use email::message::cache::{MessageCacheAccess, MessageCacheFetch};
+use email::cache::{MessageCacheFetch, email::MessageCacheAccess};
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     parser::PushUnique,
@@ -22,13 +20,12 @@ use imap_proto::{
     receiver::Request,
 };
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
+use std::time::Instant;
 use store::{Deserialize, U32_LEN};
 use store::{
     IndexKeyPrefix, IterateParams, roaring::RoaringBitmap, write::key::DeserializeBigEndian,
 };
 use trc::AddContext;
-
-use super::ToModSeq;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_status(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {
@@ -188,7 +185,7 @@ impl<T: SessionStream> SessionData<T> {
                         Status::HighestModSeq => {
                             items_response.push((
                                 *item,
-                                StatusItemType::Number(account.state.email.to_modseq()),
+                                StatusItemType::Number(account.last_change_id.to_modseq()),
                             ));
                         }
                         Status::MailboxId => {

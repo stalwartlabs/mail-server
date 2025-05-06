@@ -8,7 +8,11 @@ use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::{
     error::set::SetError,
     types::{
-        blob::BlobId, collection::Collection, date::UTCDate, id::Id, keyword::Keyword,
+        blob::BlobId,
+        collection::{Collection, SyncCollection},
+        date::UTCDate,
+        id::Id,
+        keyword::Keyword,
         property::Property,
     },
 };
@@ -19,10 +23,9 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::mailbox::UidMailbox;
+use crate::{cache::MessageCacheFetch, mailbox::UidMailbox};
 
 use super::{
-    cache::MessageCacheFetch,
     index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue},
     ingest::{EmailIngest, IngestedEmail, ThreadResult},
     metadata::{HeaderName, HeaderValue, MessageData, MessageMetadata},
@@ -178,7 +181,7 @@ impl EmailCopy for Server {
             batch
                 .with_collection(Collection::Thread)
                 .update_document(thread_id)
-                .log_insert(None);
+                .log_container_insert(SyncCollection::Thread);
         }
 
         let document_id = self

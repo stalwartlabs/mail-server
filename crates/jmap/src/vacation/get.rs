@@ -11,7 +11,7 @@ use jmap_proto::{
     request::reference::MaybeReference,
     types::{
         any_id::AnyId,
-        collection::Collection,
+        collection::{Collection, SyncCollection},
         date::UTCDate,
         id::Id,
         property::Property,
@@ -54,7 +54,7 @@ impl VacationResponseGet for Server {
         let mut response = GetResponse {
             account_id: request.account_id.into(),
             state: self
-                .get_state(account_id, Collection::SieveScript)
+                .get_state(account_id, SyncCollection::SieveScript)
                 .await?
                 .into(),
             list: Vec::with_capacity(1),

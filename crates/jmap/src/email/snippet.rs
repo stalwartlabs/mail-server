@@ -4,15 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::blob::download::BlobDownload;
 use common::{Server, auth::AccessToken};
 use email::{
-    mailbox::cache::MessageMailboxCache,
-    message::{
-        cache::{MessageCacheFetch, MessageCacheAccess},
-        metadata::{
-            ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
-            MessageMetadata,
-        },
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    message::metadata::{
+        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
+        MessageMetadata,
     },
 };
 use jmap_proto::{
@@ -24,13 +22,10 @@ use jmap_proto::{
 };
 use mail_parser::decoders::html::html_to_text;
 use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer};
+use std::future::Future;
 use store::backend::MAX_TOKEN_LENGTH;
 use trc::AddContext;
 use utils::BlobHash;
-
-use crate::blob::download::BlobDownload;
-
-use std::future::Future;
 
 pub trait EmailSearchSnippet: Sync + Send {
     fn email_search_snippet(
@@ -97,13 +92,9 @@ impl EmailSearchSnippet for Server {
             .await
             .caused_by(trc::location!())?;
         let document_ids = if access_token.is_member(account_id) {
-            cached_messages.document_ids()
+            cached_messages.email_document_ids()
         } else {
-            let cached_mailboxes = self
-                .get_cached_mailboxes(account_id)
-                .await
-                .caused_by(trc::location!())?;
-            cached_messages.shared_messages(access_token, &cached_mailboxes, Acl::ReadItems)
+            cached_messages.shared_messages(access_token, Acl::ReadItems)
         };
 
         let email_ids = request.email_ids.unwrap();

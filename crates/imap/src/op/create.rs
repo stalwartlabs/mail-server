@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Instant;
-
 use crate::{
     core::{Session, SessionData},
     op::ImapContext,
@@ -14,15 +12,15 @@ use crate::{
 use common::{
     config::jmap::settings::SpecialUse, listener::SessionStream, storage::index::ObjectIndexBuilder,
 };
-
 use directory::Permission;
-use email::mailbox::cache::{MailboxCacheAccess, MessageMailboxCache};
+use email::cache::{MessageCacheFetch, mailbox::MailboxCacheAccess};
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
 };
 use jmap_proto::types::{acl::Acl, collection::Collection, id::Id};
+use std::time::Instant;
 use store::write::BatchBuilder;
 use trc::AddContext;
 
@@ -280,10 +278,10 @@ impl<T: SessionStream> SessionData<T> {
                 let special_use = attr_to_role(mailbox_role);
                 if self
                     .server
-                    .get_cached_mailboxes(account_id)
+                    .get_cached_messages(account_id)
                     .await
                     .caused_by(trc::location!())?
-                    .by_role(&special_use)
+                    .mailbox_by_role(&special_use)
                     .is_some()
                 {
                     return Err(trc::ImapEvent::Error

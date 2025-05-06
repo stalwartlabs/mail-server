@@ -4,15 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{
+    body::{ToBodyPart, truncate_html, truncate_plain},
+    headers::IntoForm,
+};
+use crate::{
+    blob::download::BlobDownload, changes::state::MessageCacheState, email::headers::HeaderToValue,
+};
 use common::{Server, auth::AccessToken};
-
 use email::{
-    mailbox::cache::MessageMailboxCache,
-    message::{
-        cache::{MessageCacheAccess, MessageCacheFetch},
-        metadata::{
-            ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageMetadata,
-        },
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    message::metadata::{
+        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageMetadata,
     },
 };
 use jmap_proto::{
@@ -28,20 +31,10 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-
+use std::{borrow::Cow, future::Future};
 use store::BlobClass;
 use trc::{AddContext, StoreEvent};
 use utils::BlobHash;
-
-use crate::{
-    blob::download::BlobDownload, changes::state::StateManager, email::headers::HeaderToValue,
-};
-use std::{borrow::Cow, future::Future};
-
-use super::{
-    body::{ToBodyPart, truncate_html, truncate_plain},
-    headers::IntoForm,
-};
 
 pub trait EmailGet: Sync + Send {
     fn email_get(
@@ -104,24 +97,21 @@ impl EmailGet for Server {
         let max_body_value_bytes = request.arguments.max_body_value_bytes.unwrap_or(0);
 
         let account_id = request.account_id.document_id();
-        let cached_messages = self
+        let cache = self
             .get_cached_messages(account_id)
             .await
             .caused_by(trc::location!())?;
         let message_ids = if access_token.is_member(account_id) {
-            cached_messages.document_ids()
+            cache.email_document_ids()
         } else {
-            let cached_mailboxes = self
-                .get_cached_mailboxes(account_id)
-                .await
-                .caused_by(trc::location!())?;
-            cached_messages.shared_messages(access_token, &cached_mailboxes, Acl::ReadItems)
+            cache.shared_messages(access_token, Acl::ReadItems)
         };
 
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            cached_messages
+            cache
+                .emails
                 .items
                 .iter()
                 .take(self.core.jmap.get_max_objects)
@@ -130,7 +120,7 @@ impl EmailGet for Server {
         };
         let mut response = GetResponse {
             account_id: request.account_id.into(),
-            state: self.get_state(account_id, Collection::Email).await?.into(),
+            state: cache.get_state(false).into(),
             list: Vec::with_capacity(ids.len()),
             not_found: vec![],
         };
@@ -177,7 +167,7 @@ impl EmailGet for Server {
                 .caused_by(trc::location!())?;
 
             // Obtain message data
-            let data = match cached_messages.by_id(&id.document_id()) {
+            let data = match cache.email_by_id(&id.document_id()) {
                 Some(data) => data,
                 None => {
                     response.not_found.push(id.into());
@@ -243,7 +233,7 @@ impl EmailGet for Server {
                     }
                     Property::Keywords => {
                         let mut obj = Object::with_capacity(2);
-                        for keyword in cached_messages.expand_keywords(data) {
+                        for keyword in cache.expand_keywords(data) {
                             obj.append(Property::_T(keyword.to_string()), true);
                         }
                         email.append(property.clone(), Value::Object(obj));

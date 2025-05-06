@@ -11,9 +11,13 @@ use crate::{IterateParams, LogKey, Store, U64_LEN, write::key::DeserializeBigEnd
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Change {
-    Insert(u64),
-    Update(u64),
-    Delete(u64),
+    InsertContainer(u64),
+    UpdateContainer(u64),
+    UpdateContainerProperty(u64),
+    DeleteContainer(u64),
+    InsertItem(u64),
+    UpdateItem(u64),
+    DeleteItem(u64),
 }
 
 #[derive(Debug)]
@@ -21,6 +25,8 @@ pub struct Changes {
     pub changes: Vec<Change>,
     pub from_change_id: u64,
     pub to_change_id: u64,
+    pub container_change_id: Option<u64>,
+    pub item_change_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -37,6 +43,8 @@ impl Default for Changes {
             changes: Vec::with_capacity(10),
             from_change_id: 0,
             to_change_id: 0,
+            container_change_id: None,
+            item_change_id: None,
         }
     }
 }
@@ -79,9 +87,16 @@ impl Store {
                         changelog.from_change_id = change_id;
                     }
                     changelog.to_change_id = change_id;
-                    changelog.deserialize(value).ok_or_else(|| {
-                        trc::Error::corrupted_key(key, value.into(), trc::location!())
-                    })?;
+                    let (has_container_changes, has_item_changes) =
+                        changelog.deserialize(value).ok_or_else(|| {
+                            trc::Error::corrupted_key(key, value.into(), trc::location!())
+                        })?;
+                    if has_container_changes {
+                        changelog.container_change_id = Some(change_id);
+                    }
+                    if has_item_changes {
+                        changelog.item_change_id = Some(change_id);
+                    }
                 }
                 Ok(true)
             },
@@ -139,29 +154,48 @@ impl Store {
 }
 
 impl Changes {
-    pub fn deserialize(&mut self, bytes: &[u8]) -> Option<()> {
+    pub fn deserialize(&mut self, bytes: &[u8]) -> Option<(bool, bool)> {
         let mut bytes_it = bytes.iter();
-        let total_inserts: usize = bytes_it.next_leb128()?;
-        let total_updates: usize = bytes_it.next_leb128()?;
-        let total_deletes: usize = bytes_it.next_leb128()?;
 
-        if total_inserts > 0 {
-            for _ in 0..total_inserts {
-                self.changes.push(Change::Insert(bytes_it.next_leb128()?));
+        let container_inserts: usize = bytes_it.next_leb128()?;
+        let container_updates: usize = bytes_it.next_leb128()?;
+        let container_property_changes: usize = bytes_it.next_leb128()?;
+        let container_deletes: usize = bytes_it.next_leb128()?;
+
+        let item_inserts: usize = bytes_it.next_leb128()?;
+        let item_updates: usize = bytes_it.next_leb128()?;
+        let item_deletes: usize = bytes_it.next_leb128()?;
+
+        let has_container_changes =
+            container_inserts + container_updates + container_property_changes + container_deletes
+                > 0;
+        let has_item_changes = item_inserts + item_updates + item_deletes > 0;
+
+        if container_inserts > 0 {
+            for _ in 0..container_inserts {
+                self.changes
+                    .push(Change::InsertContainer(bytes_it.next_leb128()?));
             }
         }
 
-        if total_updates > 0 {
-            'update_outer: for _ in 0..total_updates {
+        if container_updates > 0 || container_property_changes > 0 {
+            'update_outer: for change_pos in 0..(container_updates + container_property_changes) {
                 let id = bytes_it.next_leb128()?;
+                let mut is_property_change = change_pos >= container_updates;
 
                 for (idx, change) in self.changes.iter().enumerate() {
                     match change {
-                        Change::Insert(insert_id) if *insert_id == id => {
+                        Change::InsertContainer(insert_id) if *insert_id == id => {
                             // Item updated after inserted, no need to count this change.
                             continue 'update_outer;
                         }
-                        Change::Update(update_id) if *update_id == id => {
+                        Change::UpdateContainer(update_id) if *update_id == id => {
+                            // Move update to the front
+                            is_property_change = false;
+                            self.changes.remove(idx);
+                            break;
+                        }
+                        Change::UpdateContainerProperty(update_id) if *update_id == id => {
                             // Move update to the front
                             self.changes.remove(idx);
                             break;
@@ -170,21 +204,25 @@ impl Changes {
                     }
                 }
 
-                self.changes.push(Change::Update(id));
+                self.changes.push(if !is_property_change {
+                    Change::UpdateContainer(id)
+                } else {
+                    Change::UpdateContainerProperty(id)
+                });
             }
         }
 
-        if total_deletes > 0 {
-            'delete_outer: for _ in 0..total_deletes {
+        if container_deletes > 0 {
+            'delete_outer: for _ in 0..container_deletes {
                 let id = bytes_it.next_leb128()?;
 
                 'delete_inner: for (idx, change) in self.changes.iter().enumerate() {
                     match change {
-                        Change::Insert(insert_id) if *insert_id == id => {
+                        Change::InsertContainer(insert_id) if *insert_id == id => {
                             self.changes.remove(idx);
                             continue 'delete_outer;
                         }
-                        Change::Update(update_id) if *update_id == id => {
+                        Change::UpdateContainer(update_id) if *update_id == id => {
                             self.changes.remove(idx);
                             break 'delete_inner;
                         }
@@ -192,28 +230,136 @@ impl Changes {
                     }
                 }
 
-                self.changes.push(Change::Delete(id));
+                self.changes.push(Change::DeleteContainer(id));
             }
         }
 
-        Some(())
+        // Item changes
+        if item_inserts > 0 {
+            for _ in 0..item_inserts {
+                self.changes
+                    .push(Change::InsertItem(bytes_it.next_leb128()?));
+            }
+        }
+
+        if item_updates > 0 {
+            'update_outer: for _ in 0..item_updates {
+                let id = bytes_it.next_leb128()?;
+
+                for (idx, change) in self.changes.iter().enumerate() {
+                    match change {
+                        Change::InsertItem(insert_id) if *insert_id == id => {
+                            // Item updated after inserted, no need to count this change.
+                            continue 'update_outer;
+                        }
+                        Change::UpdateItem(update_id) if *update_id == id => {
+                            // Move update to the front
+                            self.changes.remove(idx);
+                            break;
+                        }
+                        _ => (),
+                    }
+                }
+
+                self.changes.push(Change::UpdateItem(id));
+            }
+        }
+
+        if item_deletes > 0 {
+            'delete_outer: for _ in 0..item_deletes {
+                let id = bytes_it.next_leb128()?;
+
+                'delete_inner: for (idx, change) in self.changes.iter().enumerate() {
+                    match change {
+                        Change::InsertItem(insert_id) if *insert_id == id => {
+                            self.changes.remove(idx);
+                            continue 'delete_outer;
+                        }
+                        Change::UpdateItem(update_id) if *update_id == id => {
+                            self.changes.remove(idx);
+                            break 'delete_inner;
+                        }
+                        _ => (),
+                    }
+                }
+
+                self.changes.push(Change::DeleteItem(id));
+            }
+        }
+
+        Some((has_container_changes, has_item_changes))
+    }
+}
+
+impl Changes {
+    pub fn total_container_changes(&self) -> usize {
+        self.changes
+            .iter()
+            .filter(|change| change.is_container_change())
+            .count()
+    }
+
+    pub fn total_item_changes(&self) -> usize {
+        self.changes
+            .iter()
+            .filter(|change| change.is_item_change())
+            .count()
     }
 }
 
 impl Change {
-    pub fn id(&self) -> u64 {
+    pub fn item_id(&self) -> Option<u64> {
         match self {
-            Change::Insert(id) => *id,
-            Change::Update(id) => *id,
-            Change::Delete(id) => *id,
+            Change::InsertItem(id) => Some(*id),
+            Change::UpdateItem(id) => Some(*id),
+            Change::DeleteItem(id) => Some(*id),
+            _ => None,
         }
     }
 
-    pub fn unwrap_id(self) -> u64 {
+    pub fn container_id(&self) -> Option<u64> {
         match self {
-            Change::Insert(id) => id,
-            Change::Update(id) => id,
-            Change::Delete(id) => id,
+            Change::InsertContainer(id) => Some(*id),
+            Change::UpdateContainer(id) => Some(*id),
+            Change::UpdateContainerProperty(id) => Some(*id),
+            Change::DeleteContainer(id) => Some(*id),
+            _ => None,
         }
+    }
+
+    pub fn try_unwrap_item_id(self) -> Option<u64> {
+        match self {
+            Change::InsertItem(id) => Some(id),
+            Change::UpdateItem(id) => Some(id),
+            Change::DeleteItem(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_container_id(self) -> Option<u64> {
+        match self {
+            Change::InsertContainer(id) => Some(id),
+            Change::UpdateContainer(id) => Some(id),
+            Change::UpdateContainerProperty(id) => Some(id),
+            Change::DeleteContainer(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn is_container_change(&self) -> bool {
+        matches!(
+            self,
+            Change::InsertContainer(_)
+                | Change::UpdateContainer(_)
+                | Change::UpdateContainerProperty(_)
+                | Change::DeleteContainer(_)
+        )
+    }
+
+    pub fn is_item_change(&self) -> bool {
+        matches!(
+            self,
+            Change::InsertItem(_) | Change::UpdateItem(_) | Change::DeleteItem(_)
+        )
     }
 }

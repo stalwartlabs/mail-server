@@ -22,7 +22,7 @@ use jmap_proto::{
     response::references::EvalObjectReferences,
     types::{
         blob::{BlobId, BlobSection},
-        collection::Collection,
+        collection::{Collection, SyncCollection},
         id::Id,
         property::Property,
         state::State,
@@ -39,7 +39,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{JmapMethods, blob::download::BlobDownload};
+use crate::{JmapMethods, blob::download::BlobDownload, changes::state::StateManager};
 use std::future::Future;
 
 pub struct SetContext<'x> {
@@ -92,7 +92,15 @@ impl SieveScriptSet for Server {
             resource_token: self.get_resource_token(access_token, account_id).await?,
             access_token,
             response: self
-                .prepare_set_response(&request, Collection::SieveScript)
+                .prepare_set_response(
+                    &request,
+                    self.assert_state(
+                        account_id,
+                        SyncCollection::SieveScript,
+                        &request.if_in_state,
+                    )
+                    .await?,
+                )
                 .await?,
         };
         let will_destroy = request.unwrap_destroy();

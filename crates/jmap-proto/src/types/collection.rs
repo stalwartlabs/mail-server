@@ -34,6 +34,21 @@ pub enum Collection {
     None = 13,
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum SyncCollection {
+    Email = 0,
+    Thread = 1,
+    Calendar = 2,
+    AddressBook = 3,
+    FileNode = 4,
+    Identity = 5,
+    EmailSubmission = 6,
+    SieveScript = 7,
+    #[default]
+    None = 8,
+}
+
 impl Collection {
     pub fn main_collection(&self) -> Collection {
         match self {
@@ -96,6 +111,22 @@ impl From<u8> for Collection {
     }
 }
 
+impl From<u8> for SyncCollection {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => SyncCollection::Email,
+            1 => SyncCollection::Thread,
+            2 => SyncCollection::Calendar,
+            3 => SyncCollection::AddressBook,
+            4 => SyncCollection::FileNode,
+            5 => SyncCollection::Identity,
+            6 => SyncCollection::EmailSubmission,
+            7 => SyncCollection::SieveScript,
+            _ => SyncCollection::None,
+        }
+    }
+}
+
 impl From<u64> for Collection {
     fn from(v: u64) -> Self {
         match v {
@@ -119,6 +150,12 @@ impl From<u64> for Collection {
 
 impl From<Collection> for u8 {
     fn from(v: Collection) -> Self {
+        v as u8
+    }
+}
+
+impl From<SyncCollection> for u8 {
+    fn from(v: SyncCollection) -> Self {
         v as u8
     }
 }
@@ -170,10 +207,6 @@ impl Collection {
             Collection::FileNode => "fileNode",
             Collection::None => "",
         }
-    }
-
-    pub fn as_child_update(&self) -> u8 {
-        u8::MAX - u8::from(*self)
     }
 }
 

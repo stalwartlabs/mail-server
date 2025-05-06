@@ -10,7 +10,7 @@ use email::identity::{ArchivedEmailAddress, Identity};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        collection::Collection,
+        collection::{Collection, SyncCollection},
         property::Property,
         value::{Object, Value},
     },
@@ -69,7 +69,7 @@ impl IdentityGet for Server {
         let mut response = GetResponse {
             account_id: request.account_id.into(),
             state: self
-                .get_state(account_id, Collection::Identity)
+                .get_state(account_id, SyncCollection::Identity)
                 .await?
                 .into(),
             list: Vec::with_capacity(ids.len()),

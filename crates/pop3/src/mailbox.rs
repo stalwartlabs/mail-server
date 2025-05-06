@@ -8,11 +8,8 @@ use std::collections::BTreeMap;
 
 use common::{config::jmap::settings::SpecialUse, listener::SessionStream};
 use email::{
-    mailbox::{
-        INBOX_ID,
-        cache::{MailboxCacheAccess, MessageMailboxCache},
-    },
-    message::cache::MessageCacheFetch,
+    cache::{MessageCacheFetch, mailbox::MailboxCacheAccess},
+    mailbox::INBOX_ID,
 };
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
@@ -42,23 +39,18 @@ pub struct Message {
 impl<T: SessionStream> Session<T> {
     pub async fn fetch_mailbox(&self, account_id: u32) -> trc::Result<Mailbox> {
         // Obtain UID validity
-        let message_cache = self
+        let cache = self
             .server
             .get_cached_messages(account_id)
             .await
             .caused_by(trc::location!())?;
 
-        if message_cache.items.is_empty() {
+        if cache.emails.items.is_empty() {
             return Ok(Mailbox::default());
         }
 
-        let mailbox_cache = self
-            .server
-            .get_cached_mailboxes(account_id)
-            .await
-            .caused_by(trc::location!())?;
-        let uid_validity = mailbox_cache
-            .by_role(&SpecialUse::Inbox)
+        let uid_validity = cache
+            .mailbox_by_role(&SpecialUse::Inbox)
             .map(|x| x.uid_validity)
             .unwrap_or_default();
 
@@ -87,13 +79,10 @@ impl<T: SessionStream> Session<T> {
                 )
                 .no_values(),
                 |key, _| {
-                    let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
-                    if mailbox_cache.has_id(&document_id) {
-                        message_sizes.insert(
-                            document_id,
-                            key.deserialize_be_u32(key.len() - (U32_LEN * 2))?,
-                        );
-                    }
+                    message_sizes.insert(
+                        key.deserialize_be_u32(key.len() - U32_LEN)?,
+                        key.deserialize_be_u32(key.len() - (U32_LEN * 2))?,
+                    );
 
                     Ok(true)
                 },
@@ -102,7 +91,8 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
 
         // Sort by UID
-        let message_map = message_cache
+        let message_map = cache
+            .emails
             .items
             .iter()
             .filter_map(|message| {

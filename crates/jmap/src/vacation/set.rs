@@ -6,6 +6,8 @@
 
 use std::borrow::Cow;
 
+use super::get::VacationResponseGet;
+use crate::{JmapMethods, changes::state::StateManager};
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use email::sieve::{
     SieveScript, VacationResponse, activate::SieveScriptActivate, delete::SieveScriptDelete,
@@ -15,7 +17,7 @@ use jmap_proto::{
     method::set::{RequestArguments, SetRequest, SetResponse},
     response::references::EvalObjectReferences,
     types::{
-        collection::Collection,
+        collection::{Collection, SyncCollection},
         date::UTCDate,
         id::Id,
         property::Property,
@@ -30,10 +32,6 @@ use store::{
     write::{BatchBuilder, LegacyBincode},
 };
 use trc::AddContext;
-
-use crate::JmapMethods;
-
-use super::get::VacationResponseGet;
 
 pub trait VacationResponseSet: Sync + Send {
     fn vacation_response_set(
@@ -53,7 +51,15 @@ impl VacationResponseSet for Server {
     ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut response = self
-            .prepare_set_response(&request, Collection::SieveScript)
+            .prepare_set_response(
+                &request,
+                self.assert_state(
+                    account_id,
+                    SyncCollection::SieveScript,
+                    &request.if_in_state,
+                )
+                .await?,
+            )
             .await?;
         let will_destroy = request.unwrap_destroy();
         let resource_token = self.get_resource_token(access_token, account_id).await?;

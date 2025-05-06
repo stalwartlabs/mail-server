@@ -4,9 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Instant};
-
+use crate::{
+    core::{SelectedMailbox, Session, SessionData, State},
+    op::ImapContext,
+};
 use ahash::AHashSet;
+use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::{
     Command, StatusResponse,
@@ -17,18 +20,12 @@ use imap_proto::{
     },
     receiver::Request,
 };
-
-use common::listener::SessionStream;
-use jmap_proto::types::{collection::Collection, type_state::DataType};
+use jmap_proto::types::{collection::SyncCollection, type_state::DataType};
+use std::{sync::Arc, time::Instant};
 use store::query::log::Query;
 use tokio::io::AsyncReadExt;
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
-
-use crate::{
-    core::{SelectedMailbox, Session, SessionData, State},
-    op::ImapContext,
-};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_idle(&mut self, request: Request<Command>) -> trc::Result<()> {
@@ -205,7 +202,7 @@ impl<T: SessionStream> SessionData<T> {
                     .store()
                     .changes(
                         mailbox.id.account_id,
-                        Collection::Email,
+                        SyncCollection::Email,
                         Query::Since(modseq),
                     )
                     .await
@@ -216,10 +213,12 @@ impl<T: SessionStream> SessionData<T> {
                         .changes
                         .into_iter()
                         .filter_map(|change| {
-                            state
-                                .id_to_imap
-                                .get(&((change.unwrap_id() & u32::MAX as u64) as u32))
-                                .map(|id| id.uid)
+                            change.try_unwrap_item_id().and_then(|item_id| {
+                                state
+                                    .id_to_imap
+                                    .get(&((item_id & u32::MAX as u64) as u32))
+                                    .map(|id| id.uid)
+                            })
                         })
                         .collect::<AHashSet<_>>()
                 };

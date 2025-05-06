@@ -4,8 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::metadata::{
+    Addr, Address, ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
+    ArchivedMessageData, ArchivedMessageMetadata, ArchivedMessageMetadataContents,
+    ArchivedMessageMetadataPart, ArchivedMetadataPartType, DecodedPartContent, Group, HeaderName,
+    HeaderValue, MessageData, MessageMetadata, MessageMetadataPart,
+};
 use common::storage::index::{IndexValue, IndexableObject, ObjectIndexBuilder};
-use jmap_proto::types::{collection::Collection, property::Property};
+use jmap_proto::types::{collection::SyncCollection, property::Property};
 use mail_parser::{
     decoders::html::html_to_text,
     parsers::{fields::thread::thread_name, preview::preview_text},
@@ -20,13 +26,6 @@ use store::{
 };
 use trc::AddContext;
 use utils::BlobHash;
-
-use super::metadata::{
-    Addr, Address, ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
-    ArchivedMessageData, ArchivedMessageMetadata, ArchivedMessageMetadataContents,
-    ArchivedMessageMetadataPart, ArchivedMetadataPartType, DecodedPartContent, Group, HeaderName,
-    HeaderValue, MessageData, MessageMetadata, MessageMetadataPart,
-};
 
 pub const MAX_MESSAGE_PARTS: usize = 1000;
 pub const MAX_ID_LENGTH: usize = 100;
@@ -577,15 +576,16 @@ impl IndexMessage for BatchBuilder {
 impl IndexableObject for MessageData {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::LogChild {
+            IndexValue::LogItem {
+                sync_collection: SyncCollection::Email.into(),
                 prefix: self.thread_id.into(),
             },
-            IndexValue::LogParent {
-                collection: Collection::Thread.into(),
+            IndexValue::LogContainerProperty {
+                sync_collection: SyncCollection::Thread.into(),
                 ids: vec![self.thread_id],
             },
-            IndexValue::LogParent {
-                collection: Collection::Mailbox.as_child_update(),
+            IndexValue::LogContainerProperty {
+                sync_collection: SyncCollection::Email.into(),
                 ids: self.mailboxes.iter().map(|m| m.mailbox_id).collect(),
             },
         ]
@@ -596,15 +596,16 @@ impl IndexableObject for MessageData {
 impl IndexableObject for &ArchivedMessageData {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::LogChild {
+            IndexValue::LogItem {
+                sync_collection: SyncCollection::Email.into(),
                 prefix: self.thread_id.to_native().into(),
             },
-            IndexValue::LogParent {
-                collection: Collection::Thread.into(),
+            IndexValue::LogContainerProperty {
+                sync_collection: SyncCollection::Thread.into(),
                 ids: vec![self.thread_id.to_native()],
             },
-            IndexValue::LogParent {
-                collection: Collection::Mailbox.as_child_update(),
+            IndexValue::LogContainerProperty {
+                sync_collection: SyncCollection::Email.into(),
                 ids: self
                     .mailboxes
                     .iter()

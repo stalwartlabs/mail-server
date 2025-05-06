@@ -23,8 +23,8 @@ use utils::{
 };
 
 use crate::{
-    CacheSwap, Caches, Data, DavResource, DavResources, MailboxCache, MailboxStoreCache,
-    MessageStoreCache, MessageUidCache, TlsConnectors,
+    CacheSwap, Caches, Data, DavResource, DavResources, MailboxCache, MessageStoreCache,
+    MessageUidCache, TlsConnectors,
     auth::{AccessToken, roles::RolePermissions},
     config::smtp::resolver::{Policy, Tlsa},
     listener::blocked::BlockedIps,
@@ -107,21 +107,14 @@ impl Caches {
                 MB_5,
                 std::mem::size_of::<RolePermissions>() as u64,
             ),
-            mailboxes: Cache::from_config(
-                config,
-                "mailbox",
-                MB_10,
-                (std::mem::size_of::<u32>()
-                    + std::mem::size_of::<CacheSwap<MailboxStoreCache>>()
-                    + (15 * (std::mem::size_of::<MailboxCache>() + 60))) as u64,
-            ),
             messages: Cache::from_config(
                 config,
                 "message",
                 MB_10,
                 (std::mem::size_of::<u32>()
                     + std::mem::size_of::<CacheSwap<MessageStoreCache>>()
-                    + (1024 * std::mem::size_of::<MessageUidCache>())) as u64,
+                    + (1024 * std::mem::size_of::<MessageUidCache>())
+                    + (15 * (std::mem::size_of::<MailboxCache>() + 60))) as u64,
             ),
             dav: Cache::from_config(
                 config,

@@ -149,7 +149,6 @@ pub struct Caches {
     pub permissions: Cache<u32, Arc<RolePermissions>>,
 
     pub messages: Cache<u32, CacheSwap<MessageStoreCache>>,
-    pub mailboxes: Cache<u32, CacheSwap<MailboxStoreCache>>,
     pub dav: Cache<DavResourceId, Arc<DavResources>>,
 
     pub bayes: CacheWithTtl<TokenHash, Weights>,
@@ -168,21 +167,28 @@ pub struct Caches {
 pub struct CacheSwap<T>(pub Arc<ArcSwap<T>>);
 
 #[derive(Debug, Clone)]
-pub struct MailboxStoreCache {
-    pub change_id: u64,
-    pub index: AHashMap<u32, u32>,
-    pub items: Vec<MailboxCache>,
+pub struct MessageStoreCache {
+    pub emails: Arc<MessagesCache>,
+    pub mailboxes: Arc<MailboxesCache>,
     pub update_lock: Arc<Semaphore>,
+    pub last_change_id: u64,
     pub size: u64,
 }
 
 #[derive(Debug, Clone)]
-pub struct MessageStoreCache {
+pub struct MailboxesCache {
+    pub change_id: u64,
+    pub index: AHashMap<u32, u32>,
+    pub items: Vec<MailboxCache>,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessagesCache {
     pub change_id: u64,
     pub items: Vec<MessageCache>,
     pub index: AHashMap<u32, u32>,
     pub keywords: Vec<String>,
-    pub update_lock: Arc<Semaphore>,
     pub size: u64,
 }
 
@@ -311,12 +317,6 @@ impl CacheItemWeight for MessageStoreCache {
     }
 }
 
-impl CacheItemWeight for MailboxStoreCache {
-    fn weight(&self) -> u64 {
-        self.size
-    }
-}
-
 impl CacheItemWeight for HttpAuthCache {
     fn weight(&self) -> u64 {
         std::mem::size_of::<HttpAuthCache>() as u64
@@ -427,7 +427,6 @@ impl Default for Caches {
             access_tokens: Cache::new(1024, 10 * 1024 * 1024),
             http_auth: Cache::new(1024, 10 * 1024 * 1024),
             permissions: Cache::new(1024, 10 * 1024 * 1024),
-            mailboxes: Cache::new(1024, 10 * 1024 * 1024),
             messages: Cache::new(1024, 25 * 1024 * 1024),
             dav: Cache::new(1024, 10 * 1024 * 1024),
             bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
@@ -616,14 +615,14 @@ impl MessageStoreCache {
         bytes.extend_from_slice(message_id);
         let mut hash = store::gxhash::gxhash32(&bytes, 791120);
 
-        if self.items.is_empty() {
+        if self.emails.items.is_empty() {
             return hash;
         }
 
         // Naive pass, assume hash is unique
         let mut threads_ids = RoaringBitmap::new();
         let mut is_unique_hash = true;
-        for item in self.items.iter() {
+        for item in self.emails.items.iter() {
             if is_unique_hash && item.thread_id != hash {
                 is_unique_hash = false;
             }

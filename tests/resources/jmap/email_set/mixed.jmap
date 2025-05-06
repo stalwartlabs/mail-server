@@ -53,7 +53,7 @@
       },
       {
         "name": "To",
-        "value": " \"Colleagues\": \"James Smythe\" <james@vandelay.com>; \r\n\t\"Friends\": <jane@example.com>, \r\n\t\"=?utf-8?Q?John_Sm=C3=AEth?=\" <john@example.com>"
+        "value": " \"Colleagues\": \"James Smythe\" <james@vandelay.com>;\r\n\t\"Friends\": <jane@example.com>, \r\n\t\"=?utf-8?Q?John_Sm=C3=AEth?=\" <john@example.com>;"
       },
       {
         "name": "MIME-Version",

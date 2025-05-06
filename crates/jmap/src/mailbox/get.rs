@@ -5,10 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
-use email::{
-    mailbox::cache::{MailboxCacheAccess, MessageMailboxCache},
-    message::cache::{MessageCacheAccess, MessageCacheFetch},
-};
+use email::cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -50,19 +47,17 @@ impl MailboxGet for Server {
             Property::MyRights,
         ]);
         let account_id = request.account_id.document_id();
-        let mailbox_cache = self.get_cached_mailboxes(account_id).await?;
-        let message_cache = self.get_cached_messages(account_id).await?;
+        let cache = self.get_cached_messages(account_id).await?;
         let shared_ids = if access_token.is_shared(account_id) {
-            mailbox_cache
-                .shared_mailboxes(access_token, Acl::Read)
-                .into()
+            cache.shared_mailboxes(access_token, Acl::Read).into()
         } else {
             None
         };
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            mailbox_cache
+            cache
+                .mailboxes
                 .index
                 .keys()
                 .filter(|id| shared_ids.as_ref().is_none_or(|ids| ids.contains(**id)))
@@ -73,7 +68,7 @@ impl MailboxGet for Server {
         };
         let mut response = GetResponse {
             account_id: request.account_id.into(),
-            state: Some(mailbox_cache.change_id.into()),
+            state: Some(cache.mailboxes.change_id.into()),
             list: Vec::with_capacity(ids.len()),
             not_found: vec![],
         };
@@ -82,7 +77,7 @@ impl MailboxGet for Server {
             // Obtain the mailbox object
             let document_id = id.document_id();
             let cached_mailbox = if let Some(mailbox) =
-                mailbox_cache.by_id(&document_id).filter(|_| {
+                cache.mailbox_by_id(&document_id).filter(|_| {
                     shared_ids
                         .as_ref()
                         .is_none_or(|ids| ids.contains(document_id))
@@ -115,22 +110,22 @@ impl MailboxGet for Server {
                         }
                     }
                     Property::TotalEmails => {
-                        Value::UnsignedInt(message_cache.in_mailbox(document_id).count() as u64)
+                        Value::UnsignedInt(cache.in_mailbox(document_id).count() as u64)
                     }
                     Property::UnreadEmails => Value::UnsignedInt(
-                        message_cache
+                        cache
                             .in_mailbox_without_keyword(document_id, &Keyword::Seen)
                             .count() as u64,
                     ),
                     Property::TotalThreads => Value::UnsignedInt(
-                        message_cache
+                        cache
                             .in_mailbox(document_id)
                             .map(|m| m.thread_id)
                             .collect::<AHashSet<_>>()
                             .len() as u64,
                     ),
                     Property::UnreadThreads => Value::UnsignedInt(
-                        message_cache
+                        cache
                             .in_mailbox_without_keyword(document_id, &Keyword::Seen)
                             .map(|m| m.thread_id)
                             .collect::<AHashSet<_>>()

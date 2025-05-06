@@ -184,6 +184,7 @@ impl PrincipalPropFind for Server {
                             fields.push(DavPropertyValue::new(property.clone(), quota.used));
                         }
                         WebDavProperty::SyncToken if !is_principal => {
+                            let todo = "fix";
                             let id = self
                                 .store()
                                 .get_last_change_id(account_id, collection)

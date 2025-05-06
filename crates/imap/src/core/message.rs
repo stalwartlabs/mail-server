@@ -6,7 +6,7 @@
 
 use ahash::AHashMap;
 use common::listener::SessionStream;
-use email::message::cache::MessageCacheFetch;
+use email::cache::MessageCacheFetch;
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
 use std::collections::BTreeMap;
@@ -31,12 +31,13 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .caused_by(trc::location!())?;
 
-        if current_state.is_some_and(|state| state == cached_messages.change_id) {
+        if current_state.is_some_and(|state| state == cached_messages.emails.change_id) {
             return Ok(None);
         }
 
         // Obtain UID next and assign UIDs
         let uid_map = cached_messages
+            .emails
             .items
             .iter()
             .filter_map(|item| {
@@ -72,7 +73,7 @@ impl<T: SessionStream> SessionData<T> {
             id_to_imap,
             uid_to_id,
             uid_max,
-            modseq: cached_messages.change_id,
+            modseq: cached_messages.emails.change_id,
             next_state: None,
         }))
     }
@@ -159,21 +160,6 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         Ok(modseq)
-    }
-
-    pub async fn get_modseq(&self, account_id: u32) -> trc::Result<Option<u64>> {
-        // Obtain current modseq
-        self.server
-            .core
-            .storage
-            .data
-            .get_last_change_id(account_id, Collection::Email)
-            .await
-            .add_context(|e| {
-                e.caused_by(trc::location!())
-                    .account_id(account_id)
-                    .collection(Collection::Email)
-            })
     }
 
     pub async fn get_uid_next(&self, mailbox: &MailboxId) -> trc::Result<u32> {

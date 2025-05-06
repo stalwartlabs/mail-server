@@ -9,7 +9,6 @@ use common::config::jmap::settings::SpecialUse;
 use jmap_proto::types::value::AclGrant;
 use store::{SERIALIZE_MAILBOX_V1, SerializedVersion};
 
-pub mod cache;
 pub mod destroy;
 pub mod index;
 pub mod manage;

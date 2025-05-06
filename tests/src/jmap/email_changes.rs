@@ -6,7 +6,11 @@
 
 use jmap_proto::{
     parser::{JsonObjectParser, json::Parser},
-    types::{collection::Collection, id::Id, state::State},
+    types::{
+        collection::{Collection, SyncCollection},
+        id::Id,
+        state::State,
+    },
 };
 use store::{ahash::AHashSet, write::BatchBuilder};
 
@@ -139,23 +143,29 @@ pub async fn test(params: &mut JMAPTest) {
         for change in changes {
             match change {
                 LogAction::Insert(id) => {
-                    batch.update_document(id as u32).log_insert(None);
+                    batch
+                        .update_document(id as u32)
+                        .log_item_insert(SyncCollection::Email, None);
                 }
                 LogAction::Update(id) => {
-                    batch.update_document(id as u32).log_update(None);
+                    batch
+                        .update_document(id as u32)
+                        .log_item_update(SyncCollection::Email, None);
                 }
                 LogAction::Delete(id) => {
-                    batch.update_document(id as u32).log_delete(None);
+                    batch
+                        .update_document(id as u32)
+                        .log_item_delete(SyncCollection::Email, None);
                 }
                 LogAction::UpdateChild(id) => {
-                    batch.log_parent_update(Collection::Email, id as u32);
+                    batch.log_container_property_change(SyncCollection::Email, id as u32);
                 }
                 LogAction::Move(old_id, new_id) => {
                     batch
                         .update_document(old_id as u32)
-                        .log_delete(None)
+                        .log_item_delete(SyncCollection::Email, None)
                         .update_document(new_id as u32)
-                        .log_insert(None);
+                        .log_item_insert(SyncCollection::Email, None);
                 }
             }
         }
@@ -297,7 +307,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     let changes = params
         .client
-        .email_changes(State::Initial.to_string(), 0.into())
+        .email_changes(State::Initial.to_string(), None)
         .await
         .unwrap();
     let mut created = changes

@@ -8,14 +8,16 @@ use common::storage::{
     folder::FolderHierarchy,
     index::{IndexValue, IndexableAndSerializableObject, IndexableObject},
 };
-use jmap_proto::types::value::AclGrant;
+use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
 
 use super::{ArchivedMailbox, Mailbox};
 
 impl IndexableObject for Mailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogContainer {
+                sync_collection: SyncCollection::Email.into(),
+            },
             IndexValue::Acl {
                 value: (&self.acls).into(),
             },
@@ -27,7 +29,9 @@ impl IndexableObject for Mailbox {
 impl IndexableObject for &ArchivedMailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogContainer {
+                sync_collection: SyncCollection::Email.into(),
+            },
             IndexValue::Acl {
                 value: self
                     .acls

@@ -2,9 +2,9 @@ Date: Sat, 20 Nov 2021 22:22:01 +0000
 From: "Art Vandelay (Vandelay Industries)" <art@vandelay.com>
 Message-ID: <my-message-id>
 Subject: =?utf-8?Q?Why_not_both_importing_AND_exporting=3F_=E2=98=BA?=
-To: "Colleagues": "James Smythe" <james@vandelay.com>; 
+To: "Colleagues": "James Smythe" <james@vandelay.com>;
 	"Friends": <jane@example.com>, 
-	"=?utf-8?Q?John_Sm=C3=AEth?=" <john@example.com>
+	"=?utf-8?Q?John_Sm=C3=AEth?=" <john@example.com>;
 MIME-Version: 1.0
 Content-Type: multipart/mixed; 
 	boundary="boundary_0"

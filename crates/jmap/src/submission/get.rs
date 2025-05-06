@@ -11,7 +11,7 @@ use email::submission::{
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        collection::Collection,
+        collection::{Collection, SyncCollection},
         date::UTCDate,
         id::Id,
         property::Property,
@@ -69,7 +69,7 @@ impl EmailSubmissionGet for Server {
         let mut response = GetResponse {
             account_id: request.account_id.into(),
             state: self
-                .get_state(account_id, Collection::EmailSubmission)
+                .get_state(account_id, SyncCollection::EmailSubmission)
                 .await?
                 .into(),
             list: Vec::with_capacity(ids.len()),

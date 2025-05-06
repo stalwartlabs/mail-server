@@ -4,11 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::changes::state::StateManager;
 use common::Server;
-use email::message::cache::MessageCacheFetch;
+use email::cache::MessageCacheFetch;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
-    types::{collection::Collection, id::Id, property::Property, value::Object},
+    types::{
+        collection::{Collection, SyncCollection},
+        id::Id,
+        property::Property,
+        value::Object,
+    },
 };
 use std::future::Future;
 use store::{
@@ -17,8 +23,6 @@ use store::{
     roaring::RoaringBitmap,
 };
 use trc::AddContext;
-
-use crate::changes::state::StateManager;
 
 pub trait ThreadGet: Sync + Send {
     fn thread_get(
@@ -38,6 +42,7 @@ impl ThreadGet for Server {
             .get_cached_messages(account_id)
             .await
             .caused_by(trc::location!())?
+            .emails
             .items
         {
             thread_map
@@ -61,7 +66,10 @@ impl ThreadGet for Server {
             .is_none_or(|p| p.unwrap().contains(&Property::EmailIds));
         let mut response = GetResponse {
             account_id: request.account_id.into(),
-            state: self.get_state(account_id, Collection::Thread).await?.into(),
+            state: self
+                .get_state(account_id, SyncCollection::Thread)
+                .await?
+                .into(),
             list: Vec::with_capacity(ids.len()),
             not_found: vec![],
         };

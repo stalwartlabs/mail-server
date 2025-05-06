@@ -4,15 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::ops::Range;
-
 use common::{Server, auth::AccessToken};
-use email::{
-    mailbox::cache::MessageMailboxCache,
-    message::cache::{MessageCacheFetch, MessageCacheAccess},
-};
+use email::cache::MessageCacheFetch;
+use email::cache::email::MessageCacheAccess;
 use jmap_proto::types::{acl::Acl, blob::BlobId, collection::Collection};
 use std::future::Future;
+use std::ops::Range;
 use store::BlobClass;
 use trc::AddContext;
 use utils::BlobHash;
@@ -67,14 +64,7 @@ impl BlobDownload for Server {
                             .get_cached_messages(*account_id)
                             .await
                             .caused_by(trc::location!())?
-                            .shared_messages(
-                                access_token,
-                                self.get_cached_mailboxes(*account_id)
-                                    .await
-                                    .caused_by(trc::location!())?
-                                    .as_ref(),
-                                Acl::ReadItems,
-                            )
+                            .shared_messages(access_token, Acl::ReadItems)
                             .contains(*document_id)
                         {
                             return Ok(None);
@@ -142,14 +132,7 @@ impl BlobDownload for Server {
                                 .get_cached_messages(*account_id)
                                 .await
                                 .caused_by(trc::location!())?
-                                .shared_messages(
-                                    access_token,
-                                    self.get_cached_mailboxes(*account_id)
-                                        .await
-                                        .caused_by(trc::location!())?
-                                        .as_ref(),
-                                    Acl::ReadItems,
-                                )
+                                .shared_messages(access_token, Acl::ReadItems)
                                 .contains(*document_id)
                     } else {
                         access_token.is_member(*account_id)

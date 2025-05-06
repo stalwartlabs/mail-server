@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Instant};
-
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
     spawn_op,
@@ -13,7 +11,7 @@ use crate::{
 use ahash::AHashMap;
 use common::listener::SessionStream;
 use directory::Permission;
-use email::message::cache::MessageCacheFetch;
+use email::cache::MessageCacheFetch;
 use imap_proto::{
     Command, StatusResponse,
     protocol::{
@@ -22,6 +20,7 @@ use imap_proto::{
     },
     receiver::Request,
 };
+use std::{sync::Arc, time::Instant};
 use trc::AddContext;
 
 impl<T: SessionStream> Session<T> {
@@ -89,7 +88,7 @@ impl<T: SessionStream> SessionData<T> {
         // Group messages by thread
         let mut threads: AHashMap<u32, Vec<u32>> = AHashMap::new();
         let state = mailbox.state.lock();
-        for item in &cache.items {
+        for item in &cache.emails.items {
             if result_set.results.contains(item.document_id) {
                 if let Some((imap_id, _)) = state.map_result_id(item.document_id, is_uid) {
                     threads.entry(item.thread_id).or_default().push(imap_id);

@@ -96,12 +96,19 @@ pub struct BatchBuilder {
     current_collection: Option<u8>,
     current_document_id: Option<u32>,
     changes: VecMap<u32, ChangeLogBuilder>,
-    changed_collections: VecMap<u32, (u64, Bitmap<ShortId>)>,
+    changed_collections: VecMap<u32, ChangedCollection>,
     has_assertions: bool,
     batch_size: usize,
     batch_ops: usize,
     commit_points: Vec<usize>,
     ops: Vec<Operation>,
+}
+
+#[derive(Debug, Default)]
+pub struct ChangedCollection {
+    pub change_id: u64,
+    pub changed_containers: Bitmap<ShortId>,
+    pub changed_items: Bitmap<ShortId>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]

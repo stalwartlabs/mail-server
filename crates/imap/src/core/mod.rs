@@ -97,13 +97,7 @@ pub struct Account {
     pub prefix: Option<String>,
     pub mailbox_names: BTreeMap<String, u32>,
     pub mailbox_state: AHashMap<u32, Mailbox>,
-    pub state: AccountState,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct AccountState {
-    pub email: u64,
-    pub mailbox: u64,
+    pub last_change_id: u64,
 }
 
 #[derive(Debug, Default, Clone)]

@@ -16,7 +16,7 @@ pub struct JmapConfig {
     pub query_max_results: usize,
     pub snippet_max_results: usize,
 
-    pub changes_max_results: usize,
+    pub changes_max_results: Option<usize>,
     pub changes_max_history: Option<Duration>,
 
     pub request_max_size: usize,
@@ -242,8 +242,8 @@ impl JmapConfig {
                 .property("jmap.protocol.query.max-results")
                 .unwrap_or(5000),
             changes_max_results: config
-                .property("jmap.protocol.changes.max-results")
-                .unwrap_or(5000),
+                .property_or_default::<Option<usize>>("jmap.protocol.changes.max-results", "5000")
+                .unwrap_or_default(),
             changes_max_history: config
                 .property_or_default::<Option<Duration>>("jmap.protocol.changes.max-history", "30d")
                 .unwrap_or_default(),

@@ -4,27 +4,23 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use ahash::AHashSet;
-use common::Server;
-use directory::{QueryBy, backend::internal::manage::ManageDirectory};
-use email::{
-    mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
-    message::{
-        cache::{MessageCacheAccess, MessageCacheFetch},
-        delete::EmailDeletion,
-    },
-};
-use imap_proto::ResponseType;
-use jmap_proto::types::{collection::Collection, id::Id};
-use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
-
+use super::JMAPTest;
 use crate::{
     directory::internal::TestInternalDirectory,
     imap::{AssertResult, ImapConnection, Type},
     jmap::assert_is_empty,
 };
-
-use super::JMAPTest;
+use ahash::AHashSet;
+use common::Server;
+use directory::{QueryBy, backend::internal::manage::ManageDirectory};
+use email::{
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
+    message::delete::EmailDeletion,
+};
+use imap_proto::ResponseType;
+use jmap_proto::types::{collection::Collection, id::Id};
+use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running purge tests...");

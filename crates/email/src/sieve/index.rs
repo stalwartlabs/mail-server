@@ -5,7 +5,7 @@
  */
 
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
-use jmap_proto::types::property::Property;
+use jmap_proto::types::{collection::SyncCollection, property::Property};
 
 use super::{ArchivedSieveScript, SieveScript};
 
@@ -25,7 +25,10 @@ impl IndexableObject for SieveScript {
             IndexValue::Blob {
                 value: self.blob_hash.clone(),
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogItem {
+                sync_collection: SyncCollection::SieveScript.into(),
+                prefix: None,
+            },
             IndexValue::Quota { used: self.size },
         ]
         .into_iter()
@@ -50,7 +53,10 @@ impl IndexableObject for &ArchivedSieveScript {
             IndexValue::Blob {
                 value: (&self.blob_hash).into(),
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogItem {
+                sync_collection: SyncCollection::SieveScript.into(),
+                prefix: None,
+            },
             IndexValue::Quota {
                 used: u32::from(self.size),
             },
