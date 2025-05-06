@@ -411,6 +411,7 @@ impl PropFindRequestHandler for Server {
                 // Filter by changelog
                 match query.sync_type {
                     SyncType::From { id, seq } => {
+                        let todo = "fix";
                         let container_changes = self
                             .store()
                             .changes(account_id, collection_container, Query::Since(id))
@@ -439,7 +440,9 @@ impl PropFindRequestHandler for Server {
                         {
                             let changes = RoaringBitmap::from_iter(
                                 changes.changes.iter().filter_map(|change| match change {
-                                    Change::Insert(id) | Change::Update(id) => Some(*id as u32),
+                                    Change::InsertItem(id) | Change::UpdateItem(id) => {
+                                        Some(*id as u32)
+                                    }
                                     _ => None,
                                 }),
                             );
@@ -872,6 +875,7 @@ impl PropFindRequestHandler for Server {
                                 let ctag = if let Some(ctag) = ctag {
                                     ctag
                                 } else {
+                                    let todo = "fix";
                                     self.store()
                                         .get_last_change_id(account_id, collection)
                                         .await?
@@ -1484,6 +1488,7 @@ impl PropFindData {
         let data = self.accounts.entry(account_id).or_default();
 
         if data.sync_token.is_none() {
+            let todo = "fix";
             let id = server
                 .store()
                 .get_last_change_id(account_id, collection_children)

@@ -6,12 +6,13 @@
 
 use std::{sync::Arc, time::Duration};
 
+use super::assert_is_empty;
 use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
 use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
-use email::message::{
-    cache::{MessageCacheAccess, MessageCacheFetch},
-    metadata::MessageData,
+use email::{
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    message::metadata::MessageData,
 };
 use futures::future::join_all;
 use jmap_client::{
@@ -24,8 +25,6 @@ use store::{
     rand::{self, Rng},
     roaring::RoaringBitmap,
 };
-
-use super::assert_is_empty;
 
 const TEST_USER_ID: u32 = 1;
 const NUM_PASSES: usize = 1;

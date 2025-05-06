@@ -9,7 +9,7 @@ use directory::QueryBy;
 use http_proto::HttpSessionData;
 use jmap_proto::{
     method::query::{Filter, QueryRequest, QueryResponse, RequestArguments},
-    types::collection::Collection,
+    types::{collection::Collection, state::State},
 };
 use store::{query::ResultSet, roaring::RoaringBitmap};
 
@@ -90,7 +90,9 @@ impl PrincipalQuery for Server {
                 .unwrap_or_default();
         }
 
-        let (response, paginate) = self.build_query_response(&result_set, &request).await?;
+        let (response, paginate) = self
+            .build_query_response(&result_set, State::Initial, &request)
+            .await?;
 
         if let Some(paginate) = paginate {
             self.sort(result_set, Vec::new(), paginate, response).await

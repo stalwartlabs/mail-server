@@ -4,28 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Instant};
-
+use super::{ImapContext, ToModSeq};
+use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
 use ahash::AHashMap;
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::message::{
-    cache::{MessageCacheFetch, MessageCacheAccess},
-    delete::EmailDeletion,
-    metadata::MessageData,
+use email::{
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    message::{delete::EmailDeletion, metadata::MessageData},
 };
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     parser::parse_sequence_set,
     receiver::{Request, Token},
 };
-use trc::AddContext;
-
-use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
-use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{acl::Acl, collection::Collection, keyword::Keyword};
+use std::{sync::Arc, time::Instant};
 use store::{roaring::RoaringBitmap, write::BatchBuilder};
-
-use super::{ImapContext, ToModSeq};
+use trc::AddContext;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_expunge(

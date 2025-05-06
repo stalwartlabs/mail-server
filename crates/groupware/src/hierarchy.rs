@@ -60,6 +60,8 @@ impl DavHierarchy for Server {
         account_id: u32,
         collection: Collection,
     ) -> trc::Result<Arc<DavResources>> {
+        let todo = "fix";
+
         let is_files = collection == Collection::FileNode;
         let mut change_id = self
             .store()

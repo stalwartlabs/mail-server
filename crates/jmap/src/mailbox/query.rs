@@ -4,22 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{JmapMethods, changes::state::MessageCacheState};
 use common::{Server, auth::AccessToken, config::jmap::settings::SpecialUse};
-use email::mailbox::cache::{MailboxCacheAccess, MessageMailboxCache};
+use email::cache::{MessageCacheFetch, mailbox::MailboxCacheAccess};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::mailbox::QueryArguments,
     types::{acl::Acl, collection::Collection},
 };
-use store::{
-    query::{self},
-    roaring::RoaringBitmap,
-};
-
-use crate::JmapMethods;
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
+};
+use store::{
+    query::{self},
+    roaring::RoaringBitmap,
 };
 
 pub trait MailboxQuery: Sync + Send {
@@ -40,7 +39,7 @@ impl MailboxQuery for Server {
         let sort_as_tree = request.arguments.sort_as_tree.unwrap_or(false);
         let filter_as_tree = request.arguments.filter_as_tree.unwrap_or(false);
         let mut filters = Vec::with_capacity(request.filter.len());
-        let mailboxes = self.get_cached_mailboxes(account_id).await?;
+        let mailboxes = self.get_cached_messages(account_id).await?;
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
@@ -48,6 +47,7 @@ impl MailboxQuery for Server {
                     let parent_id = parent_id.map(|id| id.document_id()).unwrap_or(u32::MAX);
                     filters.push(query::Filter::is_in_set(
                         mailboxes
+                            .mailboxes
                             .items
                             .iter()
                             .filter(|mailbox| mailbox.parent_id == parent_id)
@@ -66,6 +66,7 @@ impl MailboxQuery for Server {
                     let name = name.to_lowercase();
                     filters.push(query::Filter::is_in_set(
                         mailboxes
+                            .mailboxes
                             .items
                             .iter()
                             .filter(|mailbox| mailbox.name.to_lowercase().contains(&name))
@@ -77,6 +78,7 @@ impl MailboxQuery for Server {
                     if let Some(role) = role {
                         filters.push(query::Filter::is_in_set(
                             mailboxes
+                                .mailboxes
                                 .items
                                 .iter()
                                 .filter(|mailbox| mailbox.role.as_str().is_some_and(|r| r == role))
@@ -87,6 +89,7 @@ impl MailboxQuery for Server {
                         filters.push(query::Filter::Not);
                         filters.push(query::Filter::is_in_set(
                             mailboxes
+                                .mailboxes
                                 .items
                                 .iter()
                                 .filter(|mailbox| matches!(mailbox.role, SpecialUse::None))
@@ -102,6 +105,7 @@ impl MailboxQuery for Server {
                     }
                     filters.push(query::Filter::is_in_set(
                         mailboxes
+                            .mailboxes
                             .items
                             .iter()
                             .filter(|mailbox| !matches!(mailbox.role, SpecialUse::None))
@@ -118,6 +122,7 @@ impl MailboxQuery for Server {
                     }
                     filters.push(query::Filter::is_in_set(
                         mailboxes
+                            .mailboxes
                             .items
                             .iter()
                             .filter(|mailbox| {
@@ -148,7 +153,9 @@ impl MailboxQuery for Server {
         if access_token.is_shared(account_id) {
             result_set.apply_mask(mailboxes.shared_mailboxes(access_token, Acl::Read));
         }
-        let (mut response, mut paginate) = self.build_query_response(&result_set, &request).await?;
+        let (mut response, mut paginate) = self
+            .build_query_response(&result_set, mailboxes.get_state(true), &request)
+            .await?;
 
         // Filter as tree
         if filter_as_tree {
@@ -157,7 +164,7 @@ impl MailboxQuery for Server {
             for document_id in &result_set.results {
                 let mut check_id = document_id;
                 for _ in 0..self.core.jmap.mailbox_max_depth {
-                    if let Some(mailbox) = mailboxes.by_id(&check_id) {
+                    if let Some(mailbox) = mailboxes.mailbox_by_id(&check_id) {
                         if let Some(parent_id) = mailbox.parent_id() {
                             if result_set.results.contains(parent_id) {
                                 check_id = parent_id;
@@ -190,6 +197,7 @@ impl MailboxQuery for Server {
             // Sort as tree
             if sort_as_tree {
                 let sorted_list = mailboxes
+                    .mailboxes
                     .items
                     .iter()
                     .map(|mailbox| (mailbox.path.as_str(), mailbox.document_id))
@@ -209,6 +217,7 @@ impl MailboxQuery for Server {
                 comparators.push(match comparator.property {
                     SortProperty::Name => {
                         let sorted_list = mailboxes
+                            .mailboxes
                             .items
                             .iter()
                             .map(|mailbox| (mailbox.name.as_str(), mailbox.document_id))
@@ -221,6 +230,7 @@ impl MailboxQuery for Server {
                     }
                     SortProperty::SortOrder => {
                         let sorted_list = mailboxes
+                            .mailboxes
                             .items
                             .iter()
                             .map(|mailbox| (mailbox.sort_order, mailbox.document_id))
@@ -233,6 +243,7 @@ impl MailboxQuery for Server {
                     }
                     SortProperty::ParentId => {
                         let sorted_list = mailboxes
+                            .mailboxes
                             .items
                             .iter()
                             .map(|mailbox| {

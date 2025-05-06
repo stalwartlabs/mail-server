@@ -9,12 +9,15 @@ use jmap_proto::{
     method::query::{
         Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
     },
-    types::{collection::Collection, property::Property},
+    types::{
+        collection::{Collection, SyncCollection},
+        property::Property,
+    },
 };
 use std::future::Future;
 use store::query::{self};
 
-use crate::JmapMethods;
+use crate::{JmapMethods, changes::state::StateManager};
 
 pub trait SieveScriptQuery: Sync + Send {
     fn sieve_script_query(
@@ -52,7 +55,14 @@ impl SieveScriptQuery for Server {
             .filter(account_id, Collection::SieveScript, filters)
             .await?;
 
-        let (response, paginate) = self.build_query_response(&result_set, &request).await?;
+        let (response, paginate) = self
+            .build_query_response(
+                &result_set,
+                self.get_state(account_id, SyncCollection::SieveScript)
+                    .await?,
+                &request,
+            )
+            .await?;
 
         if let Some(paginate) = paginate {
             // Parse sort criteria

@@ -10,7 +10,10 @@ use jmap_proto::{
     method::query::{
         Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
     },
-    types::{collection::Collection, property::Property},
+    types::{
+        collection::{Collection, SyncCollection},
+        property::Property,
+    },
 };
 use std::future::Future;
 use store::{
@@ -18,7 +21,7 @@ use store::{
     query::{self},
 };
 
-use crate::JmapMethods;
+use crate::{JmapMethods, changes::state::StateManager};
 
 pub trait EmailSubmissionQuery: Sync + Send {
     fn email_submission_query(
@@ -94,7 +97,14 @@ impl EmailSubmissionQuery for Server {
             .filter(account_id, Collection::EmailSubmission, filters)
             .await?;
 
-        let (response, paginate) = self.build_query_response(&result_set, &request).await?;
+        let (response, paginate) = self
+            .build_query_response(
+                &result_set,
+                self.get_state(account_id, SyncCollection::EmailSubmission)
+                    .await?,
+                &request,
+            )
+            .await?;
 
         if let Some(paginate) = paginate {
             // Parse sort criteria

@@ -12,7 +12,7 @@ use jmap_proto::{
     method::set::{RequestArguments, SetRequest, SetResponse},
     response::references::EvalObjectReferences,
     types::{
-        collection::Collection,
+        collection::{Collection, SyncCollection},
         property::Property,
         state::State,
         value::{MaybePatchValue, Value},
@@ -161,7 +161,7 @@ impl IdentitySet for Server {
                     .with_collection(Collection::Identity)
                     .delete_document(document_id)
                     .clear(Property::Value)
-                    .log_delete(None)
+                    .log_item_delete(SyncCollection::Identity, None)
                     .commit_point();
                 response.destroyed.push(id);
             } else {

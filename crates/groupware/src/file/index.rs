@@ -8,7 +8,7 @@ use common::storage::{
     folder::FolderHierarchy,
     index::{IndexValue, IndexableAndSerializableObject, IndexableObject},
 };
-use jmap_proto::types::{property::Property, value::AclGrant};
+use jmap_proto::types::{collection::SyncCollection, property::Property, value::AclGrant};
 
 use super::{ArchivedFileNode, FileNode};
 
@@ -36,7 +36,9 @@ impl IndexableObject for FileNode {
             IndexValue::Acl {
                 value: (&self.acls).into(),
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogContainer {
+                sync_collection: SyncCollection::FileNode.into(),
+            },
         ]);
 
         if let Some(file) = &self.file {
@@ -80,7 +82,9 @@ impl IndexableObject for &ArchivedFileNode {
                     .collect::<Vec<_>>()
                     .into(),
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogContainer {
+                sync_collection: SyncCollection::FileNode.into(),
+            },
         ]);
 
         let size = self.size();

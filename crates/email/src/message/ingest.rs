@@ -4,12 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    borrow::Cow,
-    fmt::Write,
-    time::{Duration, Instant},
+use super::{
+    crypto::{EncryptMessage, EncryptMessageError},
+    index::{MAX_SORT_FIELD_LENGTH, TrimTextValue},
 };
-
+use crate::{
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
+    message::{
+        crypto::EncryptionParams,
+        index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
+        metadata::MessageData,
+    },
+};
 use common::{
     Server,
     auth::{AccessToken, ResourceToken},
@@ -18,7 +25,7 @@ use common::{
 use directory::Permission;
 use jmap_proto::types::{
     blob::BlobId,
-    collection::Collection,
+    collection::{Collection, SyncCollection},
     id::Id,
     keyword::Keyword,
     property::Property,
@@ -28,11 +35,15 @@ use mail_parser::{
     Header, HeaderName, HeaderValue, Message, MessageParser, PartType,
     parsers::fields::thread::thread_name,
 };
-
 use spam_filter::{
     SpamFilterInput, analysis::init::SpamFilterInit, modules::bayes::BayesClassifier,
 };
 use std::future::Future;
+use std::{
+    borrow::Cow,
+    fmt::Write,
+    time::{Duration, Instant},
+};
 use store::{
     BlobClass, IndexKey, IndexKeyPrefix, IterateParams, U32_LEN,
     ahash::AHashMap,
@@ -41,22 +52,6 @@ use store::{
 };
 use store::{SerializeInfallible, rand::Rng};
 use trc::{AddContext, MessageIngestEvent};
-
-use crate::{
-    mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
-    message::{
-        cache::MessageCacheFetch,
-        crypto::EncryptionParams,
-        index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
-        metadata::MessageData,
-    },
-};
-
-use super::{
-    cache::MessageCacheAccess,
-    crypto::{EncryptMessage, EncryptMessageError},
-    index::{MAX_SORT_FIELD_LENGTH, TrimTextValue},
-};
 
 #[derive(Default)]
 pub struct IngestedEmail {
@@ -504,7 +499,7 @@ impl EmailIngest for Server {
             batch
                 .with_collection(Collection::Thread)
                 .update_document(thread_id)
-                .log_insert(None);
+                .log_container_insert(SyncCollection::Thread);
         }
 
         let document_id = self
@@ -742,7 +737,7 @@ impl EmailIngest for Server {
             let mut thread_counts = AHashMap::<u32, u32>::with_capacity(16);
             let mut thread_id = u32::MAX;
             let mut thread_count = 0;
-            for item in &cache.items {
+            for item in &cache.emails.items {
                 if results.contains(item.document_id) {
                     let tc = thread_counts.entry(item.thread_id).or_default();
                     *tc += 1;
@@ -766,14 +761,16 @@ impl EmailIngest for Server {
                 .with_collection(Collection::Thread);
             for &delete_thread_id in thread_counts.keys() {
                 if delete_thread_id != thread_id {
-                    batch.update_document(delete_thread_id).log_delete(None);
+                    batch
+                        .update_document(delete_thread_id)
+                        .log_container_delete(SyncCollection::Thread);
                 }
             }
 
             // Move messages to the new threadId
             batch.with_collection(Collection::Email);
 
-            for item in &cache.items {
+            for item in &cache.emails.items {
                 if thread_id == item.thread_id || !thread_counts.contains_key(&item.thread_id) {
                     continue;
                 }

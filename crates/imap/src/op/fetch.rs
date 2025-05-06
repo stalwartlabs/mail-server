@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, sync::Arc, time::Instant};
-
+use super::{FromModSeq, ImapContext};
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
     spawn_op,
@@ -13,9 +12,9 @@ use crate::{
 use ahash::AHashMap;
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::message::{
-    cache::{MessageCacheAccess, MessageCacheFetch},
-    metadata::{
+use email::{
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    message::metadata::{
         ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
         ArchivedMessageMetadata, ArchivedMessageMetadataContents, ArchivedMetadataPartType,
         DecodedParts, MessageData, MessageMetadata,
@@ -35,15 +34,18 @@ use imap_proto::{
     receiver::Request,
 };
 use jmap_proto::types::{
-    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+    id::Id,
+    keyword::Keyword,
+    property::Property,
 };
+use std::{borrow::Cow, sync::Arc, time::Instant};
 use store::{
     query::log::{Change, Query},
     rkyv::rend::u16_le,
     write::BatchBuilder,
 };
-
-use super::{FromModSeq, ImapContext};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_fetch(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {
@@ -155,7 +157,7 @@ impl<T: SessionStream> SessionData<T> {
                 .store()
                 .changes(
                     account_id,
-                    Collection::Email,
+                    SyncCollection::Email,
                     Query::from_modseq(changed_since),
                 )
                 .await
@@ -167,18 +169,19 @@ impl<T: SessionStream> SessionData<T> {
 
             for change in changelog.changes {
                 match change {
-                    Change::Insert(id) | Change::Update(id) => {
+                    Change::InsertItem(id) | Change::UpdateItem(id) => {
                         let id = (id & u32::MAX as u64) as u32;
                         if let Some(uid) = ids.get(&id) {
                             changed_ids.insert(id, *uid);
                         }
                         if !has_vanished {
-                            has_vanished = matches!(change, Change::Update(_));
+                            has_vanished = matches!(change, Change::UpdateItem(_));
                         }
                     }
-                    Change::Delete(_) => {
+                    Change::DeleteItem(_) => {
                         has_vanished = true;
                     }
+                    _ => (),
                 }
             }
 
@@ -314,7 +317,7 @@ impl<T: SessionStream> SessionData<T> {
                     )
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
-                message_cache.by_id(&id),
+                message_cache.email_by_id(&id),
             ) {
                 (email, data)
             } else {

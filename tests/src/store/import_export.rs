@@ -6,7 +6,10 @@
 
 use ahash::AHashSet;
 use common::{Core, manager::backup::BackupParams};
-use jmap_proto::types::{collection::Collection, property::Property};
+use jmap_proto::types::{
+    collection::{Collection, SyncCollection},
+    property::Property,
+};
 use store::{
     rand,
     write::{
@@ -98,7 +101,7 @@ pub async fn test(db: Store) {
                     );
                 }
 
-                batch.log_insert(None);
+                batch.log_item_insert(SyncCollection::from(collection), None);
 
                 /*batch.any_op(Operation::ChangeId {
                     change_id: document_id as u64 + account_id as u64 + collection as u64,

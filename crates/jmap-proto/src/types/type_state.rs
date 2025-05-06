@@ -172,25 +172,21 @@ impl TryFrom<&str> for DataType {
     }
 }
 
-impl TryFrom<ShortId> for DataType {
-    type Error = ();
-
-    fn try_from(value: ShortId) -> Result<Self, Self::Error> {
-        const MAILBOX_CHANGE: u8 = u8::MAX - 1;
-        match value.0 {
-            0 => Ok(DataType::Email),
-            1 | MAILBOX_CHANGE => Ok(DataType::Mailbox),
-            2 => Ok(DataType::Thread),
-            3 => Ok(DataType::Identity),
-            4 => Ok(DataType::EmailSubmission),
-            5 => Ok(DataType::SieveScript),
-            6 => Ok(DataType::PushSubscription),
-            8 => Ok(DataType::Calendar),
-            9 => Ok(DataType::CalendarEvent),
-            10 => Ok(DataType::AddressBook),
-            11 => Ok(DataType::ContactCard),
-            12 => Ok(DataType::FileNode),
-            _ => Err(()),
+impl DataType {
+    pub fn try_from_id(value: ShortId, is_container: bool) -> Option<Self> {
+        match (value.0, is_container) {
+            (0, false) => DataType::Email.into(),
+            (0, true) => DataType::Mailbox.into(),
+            (1, _) => DataType::Thread.into(),
+            (2, true) => DataType::Calendar.into(),
+            (2, false) => DataType::CalendarEvent.into(),
+            (3, true) => DataType::AddressBook.into(),
+            (3, false) => DataType::ContactCard.into(),
+            (4, _) => DataType::FileNode.into(),
+            (5, _) => DataType::Identity.into(),
+            (6, _) => DataType::EmailSubmission.into(),
+            (7, _) => DataType::SieveScript.into(),
+            _ => None,
         }
     }
 }

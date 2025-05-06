@@ -20,13 +20,12 @@ pub mod search;
 pub mod store;
 pub mod thread;
 
-use std::{
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
+use crate::{
+    AssertConfig, add_test_certs, directory::internal::TestInternalDirectory, store::TempDir,
 };
-
 use ::managesieve::core::ManageSieveSessionManager;
+use ::store::Stores;
+use ahash::AHashSet;
 use common::{
     Caches, Core, Data, Inner, Server,
     config::{
@@ -37,14 +36,16 @@ use common::{
     manager::boot::build_ipc,
 };
 use http::HttpSessionManager;
-
-use ::store::Stores;
-use ahash::AHashSet;
 use imap::core::ImapSessionManager;
 use imap_proto::ResponseType;
 use pop3::Pop3SessionManager;
 use services::SpawnServices;
 use smtp::{SpawnQueueManager, core::SmtpSessionManager};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -52,250 +53,83 @@ use tokio::{
 };
 use utils::config::Config;
 
-use crate::{
-    AssertConfig, add_test_certs, directory::internal::TestInternalDirectory, store::TempDir,
-};
+#[tokio::test]
+pub async fn imap_tests() {
+    // Prepare settings
+    let start_time = Instant::now();
+    let delete = true;
+    let handle = init_imap_tests(
+        &std::env::var("STORE")
+            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+        delete,
+    )
+    .await;
 
-const SERVER: &str = r#"
-[server]
-hostname = "imap.example.org"
+    // Connect to IMAP server
+    let mut imap_check = ImapConnection::connect(b"_y ").await;
+    let mut imap = ImapConnection::connect(b"_x ").await;
+    for imap in [&mut imap, &mut imap_check] {
+        imap.assert_read(Type::Untagged, ResponseType::Ok).await;
+    }
 
-[server.listener.imap]
-bind = ["127.0.0.1:9991"]
-protocol = "imap"
-max-connections = 81920
+    // Unauthenticated tests
+    basic::test(&mut imap, &mut imap_check).await;
 
-[server.listener.imaptls]
-bind = ["127.0.0.1:9992"]
-protocol = "imap"
-max-connections = 81920
-tls.implicit = true
+    // Login
+    for imap in [&mut imap, &mut imap_check] {
+        imap.send("AUTHENTICATE PLAIN {32+}\r\nAGpkb2VAZXhhbXBsZS5jb20Ac2VjcmV0")
+            .await;
+        imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    }
 
-[server.listener.sieve]
-bind = ["127.0.0.1:4190"]
-protocol = "managesieve"
-max-connections = 81920
-tls.implicit = true
+    // Delete folders
+    for mailbox in ["Drafts", "Junk Mail", "Sent Items"] {
+        imap.send(&format!("DELETE \"{}\"", mailbox)).await;
+        imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    }
 
-[server.listener.pop3]
-bind = ["127.0.0.1:4110"]
-protocol = "pop3"
-max-connections = 81920
-tls.implicit = true
+    mailbox::test(&mut imap, &mut imap_check).await;
+    append::test(&mut imap, &mut imap_check, &handle).await;
+    search::test(&mut imap, &mut imap_check).await;
+    fetch::test(&mut imap, &mut imap_check).await;
+    store::test(&mut imap, &mut imap_check, &handle).await;
+    copy_move::test(&mut imap, &mut imap_check).await;
+    thread::test(&mut imap, &mut imap_check).await;
+    idle::test(&mut imap, &mut imap_check).await;
+    condstore::test(&mut imap, &mut imap_check).await;
+    acl::test(&mut imap, &mut imap_check).await;
 
-[server.listener.lmtp-debug]
-bind = ['127.0.0.1:11201']
-greeting = 'Test LMTP instance'
-protocol = 'lmtp'
-tls.implicit = false
+    // Logout
+    for imap in [&mut imap, &mut imap_check] {
+        imap.send("UNAUTHENTICATE").await;
+        imap.assert_read(Type::Tagged, ResponseType::Ok).await;
 
-[server.socket]
-reuse-addr = true
+        imap.send("LOGOUT").await;
+        imap.assert_read(Type::Untagged, ResponseType::Bye).await;
+    }
 
-[server.tls]
-enable = true
-implicit = false
-certificate = "default"
+    // Bayes training
+    bayes::test(&handle).await;
 
-[session.ehlo]
-reject-non-fqdn = false
+    // Run ManageSieve tests
+    managesieve::test().await;
 
-[session.rcpt]
-relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
-          { else = false } ]
-directory = "'{STORE}'"
+    // Run POP3 tests
+    pop::test().await;
 
-[session.rcpt.errors]
-total = 5
-wait = "1ms"
+    // Print elapsed time
+    let elapsed = start_time.elapsed();
+    println!(
+        "Elapsed: {}.{:03}s",
+        elapsed.as_secs(),
+        elapsed.subsec_millis()
+    );
 
-[spam-filter]
-enable = true
-
-[spam-filter.bayes.account]
-enable = true
-
-[spam-filter.bayes.classify]
-balance = "0.0"
-learns = 10
-
-[queue]
-path = "{TMP}"
-hash = 64
-
-[report]
-path = "{TMP}"
-hash = 64
-
-[resolver]
-type = "system"
-
-[queue.outbound]
-next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
-             { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
-             { else = false } ]
-
-[remote."mock-smtp"]
-address = "localhost"
-port = 9999
-protocol = "smtp"
-
-[remote."mock-smtp".tls]
-enable = false
-allow-invalid-certs = true
-
-[session.data]
-spam-filter = "recipients[0] != 'popper@example.com'"
-
-[session.data.add-headers]
-delivered-to = false
-
-[session.extensions]
-future-release = [ { if = "!is_empty(authenticated_as)", then = "99999999d"},
-                   { else = false } ]
-
-[store."sqlite"]
-type = "sqlite"
-path = "{TMP}/sqlite.db"
-
-[store."rocksdb"]
-type = "rocksdb"
-path = "{TMP}/rocks.db"
-
-[store."foundationdb"]
-type = "foundationdb"
-
-[store."postgresql"]
-type = "postgresql"
-host = "localhost"
-port = 5432
-database = "stalwart"
-user = "postgres"
-password = "mysecretpassword"
-
-[store."psql-replica"]
-type = "sql-read-replica"
-primary = "postgresql"
-replicas = "postgresql"
-
-[store."mysql"]
-type = "mysql"
-host = "localhost"
-port = 3307
-database = "stalwart"
-user = "root"
-password = "password"
-
-[store."elastic"]
-type = "elasticsearch"
-url = "https://localhost:9200"
-user = "elastic"
-password = "RtQ-Lu6+o4rxx=XJplVJ"
-disable = true
-
-[store."elastic".tls]
-allow-invalid-certs = true
-
-[certificate.default]
-cert = "%{file:{CERT}}%"
-private-key = "%{file:{PK}}%"
-
-[imap.protocol]
-uidplus = true
-
-[storage]
-data = "{STORE}"
-fts = "{STORE}"
-blob = "{STORE}"
-lookup = "{STORE}"
-directory = "{STORE}"
-
-[jmap.protocol]
-set.max-objects = 100000
-
-[jmap.protocol.request]
-max-concurrent = 8
-
-[jmap.protocol.upload]
-max-size = 5000000
-max-concurrent = 4
-ttl = "1m"
-
-[jmap.protocol.upload.quota]
-files = 3
-size = 50000
-
-[jmap.rate-limit]
-account = "1000/1m"
-authentication = "100/2s"
-anonymous = "100/1m"
-
-[jmap.event-source]
-throttle = "500ms"
-
-[jmap.web-sockets]
-throttle = "500ms"
-
-[jmap.push]
-throttle = "500ms"
-attempts.interval = "500ms"
-
-[jmap.folders.inbox]
-name = "Inbox"
-subscribe = false
-
-[jmap.folders.sent]
-name = "Sent Items"
-subscribe = false
-
-[jmap.folders.trash]
-name = "Deleted Items"
-subscribe = false
-
-[jmap.folders.junk]
-name = "Junk Mail"
-subscribe = false
-
-[jmap.folders.drafts]
-name = "Drafts"
-subscribe = false
-
-[store."auth"]
-type = "sqlite"
-path = "{TMP}/auth.db"
-
-[store."auth".query]
-name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
-members = "SELECT member_of FROM group_members WHERE name = ?"
-recipients = "SELECT name FROM emails WHERE address = ?"
-emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
-verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
-expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
-domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
-
-[directory."{STORE}"]
-type = "internal"
-store = "{STORE}"
-
-[oauth]
-key = "parerga_und_paralipomena"
-[oauth.auth]
-max-attempts = 1
-
-[oauth.expiry]
-user-code = "1s"
-token = "1s"
-refresh-token = "3s"
-refresh-token-renew = "2s"
-
-[tracer.console]
-type = "console"
-level = "{LEVEL}"
-multiline = false
-ansi = true
-disabled-events = ["network.*"]
-
-"#;
+    // Remove test data
+    if delete {
+        handle.temp_dir.delete();
+    }
+}
 
 #[allow(dead_code)]
 pub struct IMAPTest {
@@ -453,84 +287,6 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
         server: inner.build_server(),
         temp_dir,
         shutdown_tx,
-    }
-}
-
-#[tokio::test]
-pub async fn imap_tests() {
-    // Prepare settings
-    let start_time = Instant::now();
-    let delete = true;
-    let handle = init_imap_tests(
-        &std::env::var("STORE")
-            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
-        delete,
-    )
-    .await;
-
-    // Connect to IMAP server
-    let mut imap_check = ImapConnection::connect(b"_y ").await;
-    let mut imap = ImapConnection::connect(b"_x ").await;
-    for imap in [&mut imap, &mut imap_check] {
-        imap.assert_read(Type::Untagged, ResponseType::Ok).await;
-    }
-
-    // Unauthenticated tests
-    basic::test(&mut imap, &mut imap_check).await;
-
-    // Login
-    for imap in [&mut imap, &mut imap_check] {
-        imap.send("AUTHENTICATE PLAIN {32+}\r\nAGpkb2VAZXhhbXBsZS5jb20Ac2VjcmV0")
-            .await;
-        imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-    }
-
-    // Delete folders
-    for mailbox in ["Drafts", "Junk Mail", "Sent Items"] {
-        imap.send(&format!("DELETE \"{}\"", mailbox)).await;
-        imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-    }
-
-    mailbox::test(&mut imap, &mut imap_check).await;
-    append::test(&mut imap, &mut imap_check, &handle).await;
-    search::test(&mut imap, &mut imap_check).await;
-    fetch::test(&mut imap, &mut imap_check).await;
-    store::test(&mut imap, &mut imap_check, &handle).await;
-    copy_move::test(&mut imap, &mut imap_check).await;
-    thread::test(&mut imap, &mut imap_check).await;
-    idle::test(&mut imap, &mut imap_check).await;
-    condstore::test(&mut imap, &mut imap_check).await;
-    acl::test(&mut imap, &mut imap_check).await;
-
-    // Logout
-    for imap in [&mut imap, &mut imap_check] {
-        imap.send("UNAUTHENTICATE").await;
-        imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-
-        imap.send("LOGOUT").await;
-        imap.assert_read(Type::Untagged, ResponseType::Bye).await;
-    }
-
-    // Bayes training
-    bayes::test(&handle).await;
-
-    // Run ManageSieve tests
-    managesieve::test().await;
-
-    // Run POP3 tests
-    pop::test().await;
-
-    // Print elapsed time
-    let elapsed = start_time.elapsed();
-    println!(
-        "Elapsed: {}.{:03}s",
-        elapsed.as_secs(),
-        elapsed.subsec_millis()
-    );
-
-    // Remove test data
-    if delete {
-        handle.temp_dir.delete();
     }
 }
 
@@ -832,3 +588,244 @@ fn resources_dir() -> PathBuf {
     resources.push("imap");
     resources
 }
+
+const SERVER: &str = r#"
+[server]
+hostname = "imap.example.org"
+
+[server.listener.imap]
+bind = ["127.0.0.1:9991"]
+protocol = "imap"
+max-connections = 81920
+
+[server.listener.imaptls]
+bind = ["127.0.0.1:9992"]
+protocol = "imap"
+max-connections = 81920
+tls.implicit = true
+
+[server.listener.sieve]
+bind = ["127.0.0.1:4190"]
+protocol = "managesieve"
+max-connections = 81920
+tls.implicit = true
+
+[server.listener.pop3]
+bind = ["127.0.0.1:4110"]
+protocol = "pop3"
+max-connections = 81920
+tls.implicit = true
+
+[server.listener.lmtp-debug]
+bind = ['127.0.0.1:11201']
+greeting = 'Test LMTP instance'
+protocol = 'lmtp'
+tls.implicit = false
+
+[server.socket]
+reuse-addr = true
+
+[server.tls]
+enable = true
+implicit = false
+certificate = "default"
+
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
+          { else = false } ]
+directory = "'{STORE}'"
+
+[session.rcpt.errors]
+total = 5
+wait = "1ms"
+
+[spam-filter]
+enable = true
+
+[spam-filter.bayes.account]
+enable = true
+
+[spam-filter.bayes.classify]
+balance = "0.0"
+learns = 10
+
+[queue]
+path = "{TMP}"
+hash = 64
+
+[report]
+path = "{TMP}"
+hash = 64
+
+[resolver]
+type = "system"
+
+[queue.outbound]
+next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
+             { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
+             { else = false } ]
+
+[remote."mock-smtp"]
+address = "localhost"
+port = 9999
+protocol = "smtp"
+
+[remote."mock-smtp".tls]
+enable = false
+allow-invalid-certs = true
+
+[session.data]
+spam-filter = "recipients[0] != 'popper@example.com'"
+
+[session.data.add-headers]
+delivered-to = false
+
+[session.extensions]
+future-release = [ { if = "!is_empty(authenticated_as)", then = "99999999d"},
+                   { else = false } ]
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/sqlite.db"
+
+[store."rocksdb"]
+type = "rocksdb"
+path = "{TMP}/rocks.db"
+
+[store."foundationdb"]
+type = "foundationdb"
+
+[store."postgresql"]
+type = "postgresql"
+host = "localhost"
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+[store."psql-replica"]
+type = "sql-read-replica"
+primary = "postgresql"
+replicas = "postgresql"
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
+port = 3307
+database = "stalwart"
+user = "root"
+password = "password"
+
+[store."elastic"]
+type = "elasticsearch"
+url = "https://localhost:9200"
+user = "elastic"
+password = "RtQ-Lu6+o4rxx=XJplVJ"
+disable = true
+
+[store."elastic".tls]
+allow-invalid-certs = true
+
+[certificate.default]
+cert = "%{file:{CERT}}%"
+private-key = "%{file:{PK}}%"
+
+[imap.protocol]
+uidplus = true
+
+[storage]
+data = "{STORE}"
+fts = "{STORE}"
+blob = "{STORE}"
+lookup = "{STORE}"
+directory = "{STORE}"
+
+[jmap.protocol]
+set.max-objects = 100000
+
+[jmap.protocol.request]
+max-concurrent = 8
+
+[jmap.protocol.upload]
+max-size = 5000000
+max-concurrent = 4
+ttl = "1m"
+
+[jmap.protocol.upload.quota]
+files = 3
+size = 50000
+
+[jmap.rate-limit]
+account = "1000/1m"
+authentication = "100/2s"
+anonymous = "100/1m"
+
+[jmap.event-source]
+throttle = "500ms"
+
+[jmap.web-sockets]
+throttle = "500ms"
+
+[jmap.push]
+throttle = "500ms"
+attempts.interval = "500ms"
+
+[jmap.folders.inbox]
+name = "Inbox"
+subscribe = false
+
+[jmap.folders.sent]
+name = "Sent Items"
+subscribe = false
+
+[jmap.folders.trash]
+name = "Deleted Items"
+subscribe = false
+
+[jmap.folders.junk]
+name = "Junk Mail"
+subscribe = false
+
+[jmap.folders.drafts]
+name = "Drafts"
+subscribe = false
+
+[store."auth"]
+type = "sqlite"
+path = "{TMP}/auth.db"
+
+[store."auth".query]
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ?"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
+
+[directory."{STORE}"]
+type = "internal"
+store = "{STORE}"
+
+[oauth]
+key = "parerga_und_paralipomena"
+[oauth.auth]
+max-attempts = 1
+
+[oauth.expiry]
+user-code = "1s"
+token = "1s"
+refresh-token = "3s"
+refresh-token-renew = "2s"
+
+[tracer.console]
+type = "console"
+level = "{LEVEL}"
+multiline = false
+ansi = true
+disabled-events = ["network.*"]
+
+"#;

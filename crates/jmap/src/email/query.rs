@@ -4,11 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{JmapMethods, changes::state::MessageCacheState};
 use common::{MessageStoreCache, Server, auth::AccessToken};
-use email::{
-    mailbox::cache::MessageMailboxCache,
-    message::cache::{MessageCacheAccess, MessageCacheFetch},
-};
+use email::cache::{MessageCacheFetch, email::MessageCacheAccess};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
@@ -25,8 +23,6 @@ use store::{
     roaring::RoaringBitmap,
 };
 use trc::AddContext;
-
-use crate::JmapMethods;
 
 pub trait EmailQuery: Sync + Send {
     fn email_query(
@@ -305,17 +301,11 @@ impl EmailQuery for Server {
 
         let mut result_set = self.filter(account_id, Collection::Email, filters).await?;
         if access_token.is_shared(account_id) {
-            let cached_mailboxes = self
-                .get_cached_mailboxes(account_id)
-                .await
-                .caused_by(trc::location!())?;
-            result_set.apply_mask(cached_messages.shared_messages(
-                access_token,
-                &cached_mailboxes,
-                Acl::ReadItems,
-            ));
+            result_set.apply_mask(cached_messages.shared_messages(access_token, Acl::ReadItems));
         }
-        let (response, paginate) = self.build_query_response(&result_set, &request).await?;
+        let (response, paginate) = self
+            .build_query_response(&result_set, cached_messages.get_state(false), &request)
+            .await?;
 
         if let Some(paginate) = paginate {
             // Parse sort criteria
@@ -382,13 +372,13 @@ impl EmailQuery for Server {
             }
 
             // Sort results
-            let cache = self.get_cached_messages(account_id).await?;
             self.sort(
                 result_set,
                 comparators,
                 paginate
                     .with_prefix_map(
-                        &cache
+                        &cached_messages
+                            .emails
                             .items
                             .iter()
                             .map(|item| (item.document_id, item.thread_id))
@@ -415,14 +405,14 @@ fn thread_keywords(cache: &MessageStoreCache, keyword: Keyword, match_all: bool)
 
     let mut thread_map: AHashMap<u32, RoaringBitmap> = AHashMap::new();
 
-    for item in &cache.items {
+    for item in &cache.emails.items {
         thread_map
             .entry(item.thread_id)
             .or_default()
             .insert(item.document_id);
     }
 
-    for item in &cache.items {
+    for item in &cache.emails.items {
         let keyword_doc_id = item.document_id;
         if !keyword_doc_ids.contains(keyword_doc_id)
             || matched_ids.contains(keyword_doc_id)

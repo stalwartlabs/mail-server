@@ -6,14 +6,13 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
+use super::headers::{BuildHeader, ValueToHeader};
+use crate::{JmapMethods, blob::download::BlobDownload, changes::state::MessageCacheState};
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use email::{
-    mailbox::{
-        UidMailbox,
-        cache::{MailboxCacheAccess, MessageMailboxCache},
-    },
+    cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess},
+    mailbox::UidMailbox,
     message::{
-        cache::{MessageCacheAccess, MessageCacheFetch},
         delete::EmailDeletion,
         ingest::{EmailIngest, IngestEmail, IngestSource},
         metadata::MessageData,
@@ -26,7 +25,7 @@ use jmap_proto::{
     response::references::EvalObjectReferences,
     types::{
         acl::Acl,
-        collection::Collection,
+        collection::{Collection, SyncCollection},
         keyword::Keyword,
         property::Property,
         state::{State, StateChange},
@@ -43,13 +42,9 @@ use mail_builder::{
     mime::{BodyPart, MimePart},
 };
 use mail_parser::MessageParser;
+use std::future::Future;
 use store::{ahash::AHashSet, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
-
-use crate::{JmapMethods, blob::download::BlobDownload};
-use std::future::Future;
-
-use super::headers::{BuildHeader, ValueToHeader};
 
 pub trait EmailSet: Sync + Send {
     fn email_set(
@@ -69,26 +64,21 @@ impl EmailSet for Server {
     ) -> trc::Result<SetResponse> {
         // Prepare response
         let account_id = request.account_id.document_id();
+        let cache = self.get_cached_messages(account_id).await?;
         let mut response = self
-            .prepare_set_response(&request, Collection::Email)
+            .prepare_set_response(&request, cache.assert_state(false, &request.if_in_state)?)
             .await?;
         let can_train_spam = self.email_bayes_can_train(access_token);
 
         // Obtain mailboxIds
-        let cached_mailboxes = self.get_cached_mailboxes(account_id).await?;
-        let cached_messages = self.get_cached_messages(account_id).await?;
         let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_message_ids) =
             if access_token.is_shared(account_id) {
                 (
-                    cached_mailboxes
-                        .shared_mailboxes(access_token, Acl::AddItems)
-                        .into(),
-                    cached_mailboxes
+                    cache.shared_mailboxes(access_token, Acl::AddItems).into(),
+                    cache
                         .shared_mailboxes(access_token, Acl::RemoveItems)
                         .into(),
-                    cached_messages
-                        .shared_messages(access_token, &cached_mailboxes, Acl::ModifyItems)
-                        .into(),
+                    cache.shared_messages(access_token, Acl::ModifyItems).into(),
                 )
             } else {
                 (None, None, None)
@@ -662,7 +652,7 @@ impl EmailSet for Server {
 
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
-                if !cached_mailboxes.has_id(mailbox_id) {
+                if !cache.has_mailbox_id(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
@@ -878,7 +868,7 @@ impl EmailSet for Server {
 
                 // Make sure all new mailboxIds are valid
                 for mailbox_id in new_data.added_mailboxes(data.inner) {
-                    if cached_mailboxes.has_id(&mailbox_id.mailbox_id) {
+                    if cache.has_mailbox_id(&mailbox_id.mailbox_id) {
                         // Verify permissions on shared accounts
                         if !matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(mailbox_id.mailbox_id))
                         {
@@ -958,7 +948,7 @@ impl EmailSet for Server {
         if !batch.is_empty() {
             // Log mailbox changes
             for parent_id in changed_mailboxes {
-                batch.log_parent_update(Collection::Mailbox.as_child_update(), parent_id);
+                batch.log_container_property_change(SyncCollection::Email, parent_id);
             }
 
             match self.commit_batch(batch).await {
@@ -986,11 +976,9 @@ impl EmailSet for Server {
 
         // Process deletions
         if !will_destroy.is_empty() {
-            let email_ids = cached_messages.document_ids();
+            let email_ids = cache.email_document_ids();
             let can_destroy_message_ids = if access_token.is_shared(account_id) {
-                cached_messages
-                    .shared_messages(access_token, &cached_mailboxes, Acl::RemoveItems)
-                    .into()
+                cache.shared_messages(access_token, Acl::RemoveItems).into()
             } else {
                 None
             };

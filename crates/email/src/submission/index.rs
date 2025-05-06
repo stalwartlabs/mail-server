@@ -5,7 +5,7 @@
  */
 
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
-use jmap_proto::types::property::Property;
+use jmap_proto::types::{collection::SyncCollection, property::Property};
 
 use super::{ArchivedEmailSubmission, EmailSubmission};
 
@@ -32,7 +32,10 @@ impl IndexableObject for EmailSubmission {
                 field: Property::SendAt.into(),
                 value: self.send_at.into(),
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogItem {
+                sync_collection: SyncCollection::EmailSubmission.into(),
+                prefix: None,
+            },
         ]
         .into_iter()
     }
@@ -61,7 +64,10 @@ impl IndexableObject for &ArchivedEmailSubmission {
                 field: Property::SendAt.into(),
                 value: self.send_at.into(),
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogItem {
+                sync_collection: SyncCollection::EmailSubmission.into(),
+                prefix: None,
+            },
         ]
         .into_iter()
     }

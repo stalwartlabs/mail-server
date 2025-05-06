@@ -4,24 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{
+    Batch, BatchBuilder, BitmapClass, ChangedCollection, IntoOperations, Operation, TagValue,
+    ValueClass, ValueOp, assert::ToAssertValue,
+};
+use crate::{SerializeInfallible, U32_LEN};
 use std::sync::{
     LazyLock,
     atomic::{AtomicU64, Ordering},
 };
-
 use utils::{
-    map::{
-        bitmap::{Bitmap, ShortId},
-        vec_map::VecMap,
-    },
+    map::{bitmap::ShortId, vec_map::VecMap},
     snowflake::SnowflakeIdGenerator,
-};
-
-use crate::U32_LEN;
-
-use super::{
-    Batch, BatchBuilder, BitmapClass, IntoOperations, Operation, TagValue, ValueClass, ValueOp,
-    assert::ToAssertValue,
 };
 
 static CHANGE_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -250,15 +244,15 @@ impl BatchBuilder {
         self
     }
 
-    pub fn log_insert(&mut self, prefix: Option<u32>) -> &mut Self {
-        if let (Some(account_id), Some(collection), Some(document_id)) = (
-            self.current_account_id,
-            self.current_collection,
-            self.current_document_id,
-        ) {
-            self.changes
-                .get_mut_or_insert(account_id)
-                .log_insert(collection, prefix, document_id);
+    pub fn log_item_insert(&mut self, collection: impl Into<u8>, prefix: Option<u32>) -> &mut Self {
+        if let (Some(account_id), Some(document_id)) =
+            (self.current_account_id, self.current_document_id)
+        {
+            self.changes.get_mut_or_insert(account_id).log_item_insert(
+                collection.into(),
+                prefix,
+                document_id,
+            );
         }
         if self.current_change_id.is_none() {
             self.generate_change_id();
@@ -267,15 +261,15 @@ impl BatchBuilder {
         self
     }
 
-    pub fn log_update(&mut self, prefix: Option<u32>) -> &mut Self {
-        if let (Some(account_id), Some(collection), Some(document_id)) = (
-            self.current_account_id,
-            self.current_collection,
-            self.current_document_id,
-        ) {
-            self.changes
-                .get_mut_or_insert(account_id)
-                .log_update(collection, prefix, document_id);
+    pub fn log_item_update(&mut self, collection: impl Into<u8>, prefix: Option<u32>) -> &mut Self {
+        if let (Some(account_id), Some(document_id)) =
+            (self.current_account_id, self.current_document_id)
+        {
+            self.changes.get_mut_or_insert(account_id).log_item_update(
+                collection.into(),
+                prefix,
+                document_id,
+            );
         }
         if self.current_change_id.is_none() {
             self.generate_change_id();
@@ -284,15 +278,15 @@ impl BatchBuilder {
         self
     }
 
-    pub fn log_delete(&mut self, prefix: Option<u32>) -> &mut Self {
-        if let (Some(account_id), Some(collection), Some(document_id)) = (
-            self.current_account_id,
-            self.current_collection,
-            self.current_document_id,
-        ) {
-            self.changes
-                .get_mut_or_insert(account_id)
-                .log_delete(collection, prefix, document_id);
+    pub fn log_item_delete(&mut self, collection: impl Into<u8>, prefix: Option<u32>) -> &mut Self {
+        if let (Some(account_id), Some(document_id)) =
+            (self.current_account_id, self.current_document_id)
+        {
+            self.changes.get_mut_or_insert(account_id).log_item_delete(
+                collection.into(),
+                prefix,
+                document_id,
+            );
         }
         if self.current_change_id.is_none() {
             self.generate_change_id();
@@ -301,13 +295,60 @@ impl BatchBuilder {
         self
     }
 
-    pub fn log_parent_update(&mut self, collection: impl Into<u8>, parent_id: u32) -> &mut Self {
-        let collection = collection.into();
+    pub fn log_container_insert(&mut self, collection: impl Into<u8>) -> &mut Self {
+        if let (Some(account_id), Some(document_id)) =
+            (self.current_account_id, self.current_document_id)
+        {
+            self.changes
+                .get_mut_or_insert(account_id)
+                .log_container_insert(collection.into(), document_id);
+        }
+        if self.current_change_id.is_none() {
+            self.generate_change_id();
+            self.batch_ops += 1;
+        }
+        self
+    }
 
+    pub fn log_container_update(&mut self, collection: impl Into<u8>) -> &mut Self {
+        if let (Some(account_id), Some(document_id)) =
+            (self.current_account_id, self.current_document_id)
+        {
+            self.changes
+                .get_mut_or_insert(account_id)
+                .log_container_update(collection.into(), document_id);
+        }
+        if self.current_change_id.is_none() {
+            self.generate_change_id();
+            self.batch_ops += 1;
+        }
+        self
+    }
+
+    pub fn log_container_delete(&mut self, collection: impl Into<u8>) -> &mut Self {
+        if let (Some(account_id), Some(document_id)) =
+            (self.current_account_id, self.current_document_id)
+        {
+            self.changes
+                .get_mut_or_insert(account_id)
+                .log_container_delete(collection.into(), document_id);
+        }
+        if self.current_change_id.is_none() {
+            self.generate_change_id();
+            self.batch_ops += 1;
+        }
+        self
+    }
+
+    pub fn log_container_property_change(
+        &mut self,
+        collection: impl Into<u8>,
+        document_id: u32,
+    ) -> &mut Self {
         if let Some(account_id) = self.current_account_id {
             self.changes
                 .get_mut_or_insert(account_id)
-                .log_update(collection, None, parent_id);
+                .log_container_property_update(collection.into(), document_id);
         }
         if self.current_change_id.is_none() {
             self.generate_change_id();
@@ -322,19 +363,20 @@ impl BatchBuilder {
                 for (account_id, changelog) in std::mem::take(&mut self.changes) {
                     self.with_account_id(account_id);
 
-                    for (collection, set) in changelog.serialize() {
+                    for (collection, changes) in changelog.into_iterator() {
                         let cc = self.changed_collections.get_mut_or_insert(account_id);
-                        cc.0 = change_id;
-                        if collection < 64 {
-                            cc.1.insert(ShortId(collection));
-                        } else {
-                            cc.1.insert(ShortId(u8::MAX - collection));
+                        cc.change_id = change_id;
+                        if changes.has_container_changes() {
+                            cc.changed_containers.insert(ShortId(collection));
+                        }
+                        if changes.has_item_changes() {
+                            cc.changed_items.insert(ShortId(collection));
                         }
 
                         self.ops.push(Operation::Log {
                             change_id,
                             collection,
-                            set,
+                            set: changes.serialize(),
                         });
                     }
                 }
@@ -409,7 +451,7 @@ impl BatchBuilder {
         }
     }
 
-    pub fn changes(self) -> Option<VecMap<u32, (u64, Bitmap<ShortId>)>> {
+    pub fn changes(self) -> Option<VecMap<u32, ChangedCollection>> {
         if self.has_changes() {
             Some(self.changed_collections)
         } else {

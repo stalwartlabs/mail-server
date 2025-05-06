@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{Account, AccountState, MailboxId, MailboxSync, Session, SessionData};
+use super::{Account, MailboxId, MailboxSync, Session, SessionData};
 use crate::core::Mailbox;
 use ahash::AHashMap;
 use common::{
@@ -16,11 +16,8 @@ use common::{
 
 use directory::backend::internal::manage::ManageDirectory;
 use email::{
-    mailbox::{
-        INBOX_ID,
-        cache::{MailboxCacheAccess, MessageMailboxCache},
-    },
-    message::cache::{MessageCacheAccess, MessageCacheFetch},
+    cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess},
+    mailbox::INBOX_ID,
 };
 use imap_proto::protocol::list::Attribute;
 use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, keyword::Keyword};
@@ -90,21 +87,14 @@ impl<T: SessionStream> SessionData<T> {
         account_id: u32,
         mailbox_prefix: Option<String>,
         access_token: &AccessToken,
-        current_state: Option<AccountState>,
+        current_state: Option<u64>,
     ) -> trc::Result<Option<Account>> {
-        let cached_mailboxes = self
-            .server
-            .get_cached_mailboxes(account_id)
-            .await
-            .caused_by(trc::location!())?;
-        let cached_messages = self
+        let cache = self
             .server
             .get_cached_messages(account_id)
             .await
             .caused_by(trc::location!())?;
-        if current_state.is_some_and(|state| {
-            state.email == cached_messages.change_id && state.mailbox == cached_mailboxes.change_id
-        }) {
+        if current_state.is_some_and(|state| state == cache.last_change_id) {
             return Ok(None);
         }
 
@@ -113,14 +103,12 @@ impl<T: SessionStream> SessionData<T> {
         {
             None
         } else {
-            cached_mailboxes
-                .shared_mailboxes(access_token, Acl::Read)
-                .into()
+            cache.shared_mailboxes(access_token, Acl::Read).into()
         };
 
         // Build special uses
         let mut special_uses = AHashMap::new();
-        for mailbox in &cached_mailboxes.items {
+        for mailbox in &cache.mailboxes.items {
             if shared_mailbox_ids
                 .as_ref()
                 .is_none_or(|ids| ids.contains(mailbox.document_id))
@@ -135,14 +123,11 @@ impl<T: SessionStream> SessionData<T> {
             account_id,
             prefix: mailbox_prefix,
             mailbox_names: BTreeMap::new(),
-            mailbox_state: AHashMap::with_capacity(cached_mailboxes.items.len()),
-            state: AccountState {
-                email: cached_messages.change_id,
-                mailbox: cached_mailboxes.change_id,
-            },
+            mailbox_state: AHashMap::with_capacity(cache.mailboxes.items.len()),
+            last_change_id: cache.last_change_id,
         };
 
-        for mailbox in &cached_mailboxes.items {
+        for mailbox in &cache.mailboxes.items {
             if shared_mailbox_ids
                 .as_ref()
                 .is_some_and(|ids| !ids.contains(mailbox.document_id))
@@ -176,7 +161,8 @@ impl<T: SessionStream> SessionData<T> {
             account.mailbox_state.insert(
                 mailbox.document_id,
                 Mailbox {
-                    has_children: cached_mailboxes
+                    has_children: cache
+                        .mailboxes
                         .items
                         .iter()
                         .any(|child| child.parent_id == mailbox.document_id),
@@ -190,11 +176,11 @@ impl<T: SessionStream> SessionData<T> {
                         SpecialUse::Important => Some(Attribute::Important),
                         _ => None,
                     },
-                    total_messages: cached_messages.in_mailbox(mailbox.document_id).count() as u64,
-                    total_unseen: cached_messages
+                    total_messages: cache.in_mailbox(mailbox.document_id).count() as u64,
+                    total_unseen: cache
                         .in_mailbox_without_keyword(mailbox.document_id, &Keyword::Seen)
                         .count() as u64,
-                    total_deleted: cached_messages
+                    total_deleted: cache
                         .in_mailbox_with_keyword(mailbox.document_id, &Keyword::Deleted)
                         .count() as u64,
                     uid_validity: mailbox.uid_validity as u64,
@@ -301,7 +287,7 @@ impl<T: SessionStream> SessionData<T> {
             .mailboxes
             .lock()
             .iter()
-            .map(|m| (m.account_id, m.prefix.clone(), m.state))
+            .map(|m| (m.account_id, m.prefix.clone(), m.last_change_id))
             .collect::<Vec<_>>();
         for (account_id, prefix, last_state) in account_states {
             if let Some(changed_account) = self

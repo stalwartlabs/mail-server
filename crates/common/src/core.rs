@@ -8,7 +8,10 @@ use std::{sync::Arc, time::Duration};
 
 use directory::{Directory, QueryBy, Type, backend::internal::manage::ManageDirectory};
 use jmap_proto::types::{
-    blob::BlobId, collection::Collection, property::Property, state::StateChange,
+    blob::BlobId,
+    collection::{Collection, SyncCollection},
+    property::Property,
+    state::StateChange,
     type_state::DataType,
 };
 use sieve::Sieve;
@@ -506,10 +509,16 @@ impl Server {
         }
 
         if let Some(changes) = builder.changes() {
-            for (account_id, (change_id, changed_collections)) in changes {
+            for (account_id, changed_collections) in changes {
                 let mut state_change = StateChange::new(account_id);
-                for changed_collection in changed_collections {
-                    if let Ok(data_type) = DataType::try_from(changed_collection) {
+                let change_id = changed_collections.change_id;
+                for changed_collection in changed_collections.changed_containers {
+                    if let Some(data_type) = DataType::try_from_id(changed_collection, true) {
+                        state_change.set_change(data_type, change_id);
+                    }
+                }
+                for changed_collection in changed_collections.changed_items {
+                    if let Some(data_type) = DataType::try_from_id(changed_collection, false) {
                         state_change.set_change(data_type, change_id);
                     }
                 }
@@ -531,18 +540,14 @@ impl Server {
         })?;
 
         for collection in [
-            Collection::Email.into(),
-            Collection::Mailbox.into(),
-            Collection::Mailbox.as_child_update(),
-            Collection::Thread.into(),
-            Collection::Identity.into(),
-            Collection::EmailSubmission.into(),
-            Collection::SieveScript.into(),
-            Collection::FileNode.into(),
-            Collection::AddressBook.into(),
-            Collection::ContactCard.into(),
-            Collection::Calendar.into(),
-            Collection::CalendarEvent.into(),
+            SyncCollection::Email.into(),
+            SyncCollection::Thread.into(),
+            SyncCollection::Identity.into(),
+            SyncCollection::EmailSubmission.into(),
+            SyncCollection::SieveScript.into(),
+            SyncCollection::FileNode.into(),
+            SyncCollection::AddressBook.into(),
+            SyncCollection::Calendar.into(),
         ] {
             self.core
                 .storage

@@ -4,10 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
-
+use super::metadata::MessageData;
+use crate::{cache::MessageCacheFetch, mailbox::*, message::metadata::MessageMetadata};
 use common::{KV_LOCK_PURGE_ACCOUNT, Server, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::{collection::Collection, property::Property};
+use std::future::Future;
+use std::time::Duration;
+use store::rand::prelude::SliceRandom;
 use store::{
     BitmapKey, ValueKey,
     roaring::RoaringBitmap,
@@ -15,16 +18,6 @@ use store::{
 };
 use trc::AddContext;
 use utils::BlobHash;
-
-use std::future::Future;
-use store::rand::prelude::SliceRandom;
-
-use crate::{
-    mailbox::*,
-    message::{cache::MessageCacheFetch, metadata::MessageMetadata},
-};
-
-use super::metadata::MessageData;
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_tombstone(
@@ -184,6 +177,7 @@ impl EmailDeletion for Server {
             self.get_cached_messages(account_id)
                 .await
                 .caused_by(trc::location!())?
+                .emails
                 .items
                 .iter()
                 .filter(|item| {

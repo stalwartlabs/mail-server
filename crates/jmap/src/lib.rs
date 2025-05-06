@@ -6,18 +6,15 @@
 
 #![warn(clippy::large_futures)]
 
-use std::{fmt::Display, future::Future};
-
-use changes::state::StateManager;
 use common::Server;
 use jmap_proto::{
     method::{
         query::{QueryRequest, QueryResponse},
         set::{SetRequest, SetResponse},
     },
-    types::collection::Collection,
+    types::{collection::Collection, state::State},
 };
-
+use std::{fmt::Display, future::Future};
 use store::{
     fts::FtsFilter,
     query::{Comparator, Filter, ResultSet, SortedResultSet, sort::Pagination},
@@ -44,17 +41,11 @@ impl JmapMethods for Server {
     async fn prepare_set_response<T: Sync + Send>(
         &self,
         request: &SetRequest<T>,
-        collection: Collection,
+        asserted_state: State,
     ) -> trc::Result<SetResponse> {
         Ok(
-            SetResponse::from_request(request, self.core.jmap.set_max_objects)?.with_state(
-                self.assert_state(
-                    request.account_id.document_id(),
-                    collection,
-                    &request.if_in_state,
-                )
-                .await?,
-            ),
+            SetResponse::from_request(request, self.core.jmap.set_max_objects)?
+                .with_state(asserted_state),
         )
     }
 
@@ -97,6 +88,7 @@ impl JmapMethods for Server {
     async fn build_query_response<T: Sync + Send>(
         &self,
         result_set: &ResultSet,
+        query_state: State,
         request: &QueryRequest<T>,
     ) -> trc::Result<(QueryResponse, Option<Pagination>)> {
         let total = result_set.results.len() as usize;
@@ -116,9 +108,7 @@ impl JmapMethods for Server {
         Ok((
             QueryResponse {
                 account_id: request.account_id,
-                query_state: self
-                    .get_state(result_set.account_id, result_set.collection)
-                    .await?,
+                query_state,
                 can_calculate_changes: true,
                 position: 0,
                 ids: vec![],
@@ -174,7 +164,7 @@ pub trait JmapMethods: Sync + Send {
     fn prepare_set_response<T: Sync + Send>(
         &self,
         request: &SetRequest<T>,
-        collection: Collection,
+        asserted_state: State,
     ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
 
     fn filter(
@@ -194,6 +184,7 @@ pub trait JmapMethods: Sync + Send {
     fn build_query_response<T: Sync + Send>(
         &self,
         result_set: &ResultSet,
+        query_state: State,
         request: &QueryRequest<T>,
     ) -> impl Future<Output = trc::Result<(QueryResponse, Option<Pagination>)>> + Send;
 

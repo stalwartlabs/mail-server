@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Instant};
-
+use super::{FromModSeq, ImapContext};
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
     spawn_op,
@@ -23,14 +22,17 @@ use imap_proto::{
     },
     receiver::Request,
 };
-use jmap_proto::types::{acl::Acl, collection::Collection, keyword::Keyword};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+    keyword::Keyword,
+};
+use std::{sync::Arc, time::Instant};
 use store::{
     query::log::{Change, Query},
     write::{BatchBuilder, ValueClass},
 };
 use trc::AddContext;
-
-use super::{FromModSeq, ImapContext};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_store(
@@ -112,7 +114,7 @@ impl<T: SessionStream> SessionData<T> {
                 .store()
                 .changes(
                     account_id,
-                    Collection::Email,
+                    SyncCollection::Email,
                     Query::from_modseq(unchanged_since),
                 )
                 .await
@@ -123,15 +125,20 @@ impl<T: SessionStream> SessionData<T> {
                 .await;
 
             // Add all IDs that changed in this mailbox
-            for change in changelog.changes {
-                let (Change::Insert(id) | Change::Update(id) | Change::Delete(id)) = change;
-                let id = (id & u32::MAX as u64) as u32;
+            for (id, is_delete) in changelog.changes.into_iter().filter_map(|change| {
+                change.item_id().map(|id| {
+                    (
+                        (id & u32::MAX as u64) as u32,
+                        matches!(change, Change::DeleteItem(_)),
+                    )
+                })
+            }) {
                 if let Some(imap_id) = ids.remove(&id) {
                     if is_uid {
                         modified.push(imap_id.uid);
                     } else {
                         modified.push(imap_id.seqnum);
-                        if matches!(change, Change::Delete(_)) {
+                        if is_delete {
                             unchanged_failed = true;
                         }
                     }
@@ -345,7 +352,7 @@ impl<T: SessionStream> SessionData<T> {
         // Log mailbox changes
         if !changed_mailboxes.is_empty() {
             for parent_id in changed_mailboxes {
-                batch.log_parent_update(Collection::Mailbox.as_child_update(), parent_id);
+                batch.log_container_property_change(SyncCollection::Email, parent_id);
             }
         }
 

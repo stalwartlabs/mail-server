@@ -6,12 +6,12 @@
 
 use std::{collections::hash_map::Entry, time::Instant};
 
+use super::JMAPTest;
 use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index},
     store::{deflate_test_resource, query::FIELDS},
 };
-
-use ::email::{mailbox::Mailbox, message::cache::MessageCacheFetch};
+use ::email::{cache::MessageCacheFetch, mailbox::Mailbox};
 use ahash::AHashSet;
 use common::{config::jmap::settings::SpecialUse, storage::index::ObjectIndexBuilder};
 use jmap_client::{
@@ -21,13 +21,10 @@ use jmap_client::{
 };
 use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{DateTime, HeaderName};
-
 use store::{
     ahash::AHashMap,
     write::{BatchBuilder, now},
 };
-
-use super::JMAPTest;
 
 const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;
@@ -79,6 +76,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
                 .get_cached_messages(account_id)
                 .await
                 .unwrap()
+                .emails
                 .items
                 .iter()
                 .map(|m| m.thread_id)

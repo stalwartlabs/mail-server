@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Instant};
-
+use super::{FromModSeq, ToModSeq};
+use crate::{
+    core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
 use common::listener::SessionStream;
 use directory::Permission;
-use email::message::cache::{MessageCacheAccess, MessageCacheFetch};
+use email::cache::{MessageCacheFetch, email::MessageCacheAccess};
 use imap_proto::{
     Command, StatusResponse,
     protocol::{
@@ -17,9 +20,15 @@ use imap_proto::{
     },
     receiver::Request,
 };
-use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
+use jmap_proto::types::{
+    collection::{Collection, SyncCollection},
+    id::Id,
+    keyword::Keyword,
+    property::Property,
+};
 use mail_parser::HeaderName;
 use nlp::language::Language;
+use std::{sync::Arc, time::Instant};
 use store::{
     SerializeInfallible,
     fts::{Field, FilterGroup, FtsFilter, IntoFilterGroup},
@@ -29,13 +38,6 @@ use store::{
 };
 use tokio::sync::watch;
 use trc::AddContext;
-
-use crate::{
-    core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData},
-    spawn_op,
-};
-
-use super::{FromModSeq, ToModSeq};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_search(
@@ -626,18 +628,20 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     search::Filter::ModSeq((modseq, _)) => {
                         let mut set = RoaringBitmap::new();
-                        for change in self
+                        for id in self
                             .server
                             .store()
                             .changes(
                                 mailbox.id.account_id,
-                                Collection::Email,
+                                SyncCollection::Email,
                                 Query::from_modseq(modseq),
                             )
                             .await?
                             .changes
+                            .into_iter()
+                            .filter_map(|change| change.try_unwrap_item_id())
                         {
-                            let id = (change.unwrap_id() & u32::MAX as u64) as u32;
+                            let id = (id & u32::MAX as u64) as u32;
                             if message_ids.contains(id) {
                                 set.insert(id);
                             }

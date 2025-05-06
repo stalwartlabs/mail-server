@@ -10,7 +10,7 @@ use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
         blob::{BlobId, BlobSection},
-        collection::Collection,
+        collection::{Collection, SyncCollection},
         property::Property,
         value::{Object, Value},
     },
@@ -58,7 +58,7 @@ impl SieveScriptGet for Server {
         let mut response = GetResponse {
             account_id: request.account_id.into(),
             state: self
-                .get_state(account_id, Collection::SieveScript)
+                .get_state(account_id, SyncCollection::SieveScript)
                 .await?
                 .into(),
             list: Vec::with_capacity(ids.len()),

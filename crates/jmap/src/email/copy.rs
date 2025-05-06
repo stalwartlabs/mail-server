@@ -4,14 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::changes::state::MessageCacheState;
 use common::{Server, auth::AccessToken};
-
 use email::{
-    mailbox::cache::{MailboxCacheAccess, MessageMailboxCache},
-    message::{
-        cache::{MessageCacheAccess, MessageCacheFetch},
-        copy::EmailCopy,
-    },
+    cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess},
+    message::copy::EmailCopy,
 };
 use http_proto::HttpSessionData;
 use jmap_proto::{
@@ -28,15 +25,12 @@ use jmap_proto::{
     response::references::EvalObjectReferences,
     types::{
         acl::Acl,
-        collection::Collection,
         property::Property,
         value::{MaybePatchValue, Value},
     },
 };
-use trc::AddContext;
-
-use crate::changes::state::StateManager;
 use std::future::Future;
+use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
 pub trait JmapEmailCopy: Sync + Send {
@@ -65,9 +59,8 @@ impl JmapEmailCopy for Server {
                 .into_err()
                 .details("From accountId is equal to fromAccountId"));
         }
-        let old_state = self
-            .assert_state(account_id, Collection::Email, &request.if_in_state)
-            .await?;
+        let cache = self.get_cached_messages(account_id).await?;
+        let old_state = cache.assert_state(false, &request.if_in_state)?;
         let mut response = CopyResponse {
             from_account_id: request.from_account_id,
             account_id: request.account_id,
@@ -77,29 +70,18 @@ impl JmapEmailCopy for Server {
             not_created: VecMap::new(),
         };
 
-        let from_cached_messages = self
+        let from_cache = self
             .get_cached_messages(from_account_id)
             .await
             .caused_by(trc::location!())?;
         let from_message_ids = if access_token.is_member(from_account_id) {
-            from_cached_messages.document_ids()
+            from_cache.email_document_ids()
         } else {
-            let from_cached_mailboxes = self
-                .get_cached_mailboxes(from_account_id)
-                .await
-                .caused_by(trc::location!())?;
-            from_cached_messages.shared_messages(
-                access_token,
-                &from_cached_mailboxes,
-                Acl::ReadItems,
-            )
+            from_cache.shared_messages(access_token, Acl::ReadItems)
         };
 
-        let cached_mailboxes = self.get_cached_mailboxes(account_id).await?;
         let can_add_mailbox_ids = if access_token.is_shared(account_id) {
-            cached_mailboxes
-                .shared_mailboxes(access_token, Acl::AddItems)
-                .into()
+            cache.shared_mailboxes(access_token, Acl::AddItems).into()
         } else {
             None
         };
@@ -205,7 +187,7 @@ impl JmapEmailCopy for Server {
 
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
-                if !cached_mailboxes.has_id(mailbox_id) {
+                if !cache.has_mailbox_id(mailbox_id) {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
@@ -253,7 +235,7 @@ impl JmapEmailCopy for Server {
 
         // Update state
         if !response.created.is_empty() {
-            response.new_state = self.get_state(account_id, Collection::Email).await?;
+            response.new_state = self.get_cached_messages(account_id).await?.get_state(false);
         }
 
         // Destroy ids

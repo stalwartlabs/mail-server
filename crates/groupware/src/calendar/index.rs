@@ -7,7 +7,7 @@
 use common::storage::index::{
     IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
 };
-use jmap_proto::types::value::AclGrant;
+use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
 use store::{SerializeInfallible, write::key::KeySerializer};
 
 use crate::{IDX_NAME, IDX_TIME, IDX_UID};
@@ -44,7 +44,9 @@ impl IndexableObject for Calendar {
                     + self.default_alerts.iter().map(|a| a.size()).sum::<usize>() as u32
                     + self.name.len() as u32,
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogContainer {
+                sync_collection: SyncCollection::Calendar.into(),
+            },
         ]
         .into_iter()
     }
@@ -80,7 +82,9 @@ impl IndexableObject for &ArchivedCalendar {
                     + self.default_alerts.iter().map(|a| a.size()).sum::<usize>() as u32
                     + self.name.len() as u32,
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogContainer {
+                sync_collection: SyncCollection::Calendar.into(),
+            },
         ]
         .into_iter()
     }
@@ -122,7 +126,10 @@ impl IndexableObject for CalendarEvent {
                     + self.names.iter().map(|n| n.name.len() as u32).sum::<u32>()
                     + self.size,
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogItem {
+                sync_collection: SyncCollection::Calendar.into(),
+                prefix: None,
+            },
         ]
         .into_iter()
     }
@@ -162,7 +169,10 @@ impl IndexableObject for &ArchivedCalendarEvent {
                     + self.names.iter().map(|n| n.name.len() as u32).sum::<u32>()
                     + self.size,
             },
-            IndexValue::LogChild { prefix: None },
+            IndexValue::LogItem {
+                sync_collection: SyncCollection::Calendar.into(),
+                prefix: None,
+            },
         ]
         .into_iter()
     }

@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::*;
+use crate::{
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    message::{delete::EmailDeletion, metadata::MessageData},
+};
 use common::{
     Server, auth::AccessToken, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder,
 };
@@ -14,14 +19,6 @@ use jmap_proto::{
 };
 use store::{roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
-
-use crate::message::{
-    cache::{MessageCacheAccess, MessageCacheFetch},
-    delete::EmailDeletion,
-    metadata::MessageData,
-};
-
-use super::{cache::MessageMailboxCache, *};
 
 pub trait MailboxDestroy: Sync + Send {
     fn mailbox_destroy(
@@ -61,9 +58,12 @@ impl MailboxDestroy for Server {
         }
 
         // Verify that this mailbox does not have sub-mailboxes
-        if self
-            .get_cached_mailboxes(account_id)
-            .await?
+        let cache = self
+            .get_cached_messages(account_id)
+            .await
+            .caused_by(trc::location!())?;
+        if cache
+            .mailboxes
             .items
             .iter()
             .any(|item| item.parent_id == document_id)
@@ -77,13 +77,8 @@ impl MailboxDestroy for Server {
 
         batch.with_account_id(account_id);
 
-        let message_ids = RoaringBitmap::from_iter(
-            self.get_cached_messages(account_id)
-                .await
-                .caused_by(trc::location!())?
-                .in_mailbox(document_id)
-                .map(|m| m.document_id),
-        );
+        let message_ids =
+            RoaringBitmap::from_iter(cache.in_mailbox(document_id).map(|m| m.document_id));
 
         if !message_ids.is_empty() {
             if remove_emails {

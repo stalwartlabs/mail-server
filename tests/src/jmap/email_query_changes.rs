@@ -11,7 +11,11 @@ use jmap_client::{
     email,
     mailbox::Role,
 };
-use jmap_proto::types::{collection::Collection, id::Id, state::State};
+use jmap_proto::types::{
+    collection::{Collection, SyncCollection},
+    id::Id,
+    state::State,
+};
 
 use store::{
     ahash::{AHashMap, AHashSet},
@@ -123,7 +127,7 @@ pub async fn test(params: &mut JMAPTest) {
                 let mut batch = BatchBuilder::new();
                 batch
                     .update_document(id.document_id())
-                    .log_update(id.prefix_id().into());
+                    .log_item_update(SyncCollection::Email, id.prefix_id().into());
                 server.store().write(batch.build_all()).await.unwrap();
                 updated_ids.insert(id);
             }

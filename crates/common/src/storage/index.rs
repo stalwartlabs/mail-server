@@ -40,12 +40,16 @@ pub enum IndexValue<'x> {
     Quota {
         used: u32,
     },
-    LogChild {
-        prefix: Option<u32>,
+    LogContainer {
+        sync_collection: u8,
     },
-    LogParent {
-        collection: u8,
+    LogContainerProperty {
+        sync_collection: u8,
         ids: Vec<u32>,
+    },
+    LogItem {
+        sync_collection: u8,
+        prefix: Option<u32>,
     },
     Acl {
         value: Cow<'x, [AclGrant]>,
@@ -299,8 +303,19 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> IntoOperations
                 for (current, change) in current.inner.index_values().zip(changes.index_values()) {
                     if current != change {
                         merge_index(batch, current, change, self.tenant_id)?;
-                    } else if let IndexValue::LogChild { prefix } = current {
-                        batch.log_update(prefix);
+                    } else {
+                        match current {
+                            IndexValue::LogContainer { sync_collection } => {
+                                batch.log_container_update(sync_collection);
+                            }
+                            IndexValue::LogItem {
+                                sync_collection,
+                                prefix,
+                            } => {
+                                batch.log_item_update(sync_collection, prefix);
+                            }
+                            _ => (),
+                        }
                     }
                 }
                 batch.set(Property::Value, Archiver::new(changes).serialize()?);
@@ -377,16 +392,29 @@ fn build_index(batch: &mut BatchBuilder, item: IndexValue<'_>, tenant_id: Option
                 batch.add(DirectoryClass::UsedQuota(tenant_id), value);
             }
         }
-        IndexValue::LogChild { prefix } => {
+        IndexValue::LogItem {
+            sync_collection,
+            prefix,
+        } => {
             if set {
-                batch.log_insert(prefix);
+                batch.log_item_insert(sync_collection, prefix);
             } else {
-                batch.log_delete(prefix);
+                batch.log_item_delete(sync_collection, prefix);
             }
         }
-        IndexValue::LogParent { collection, ids } => {
+        IndexValue::LogContainer { sync_collection } => {
+            if set {
+                batch.log_container_insert(sync_collection);
+            } else {
+                batch.log_container_delete(sync_collection);
+            }
+        }
+        IndexValue::LogContainerProperty {
+            sync_collection,
+            ids,
+        } => {
             for parent_id in ids {
-                batch.log_parent_update(collection, parent_id);
+                batch.log_container_property_change(sync_collection, parent_id);
             }
         }
     }
@@ -517,27 +545,32 @@ fn merge_index(
             }
         }
         (
-            IndexValue::LogChild { prefix: old_prefix },
-            IndexValue::LogChild { prefix: new_prefix },
+            IndexValue::LogItem {
+                sync_collection,
+                prefix: old_prefix,
+            },
+            IndexValue::LogItem {
+                prefix: new_prefix, ..
+            },
         ) => {
-            batch.log_delete(old_prefix);
-            batch.log_insert(new_prefix);
+            batch.log_item_delete(sync_collection, old_prefix);
+            batch.log_item_insert(sync_collection, new_prefix);
         }
         (
-            IndexValue::LogParent {
-                collection,
+            IndexValue::LogContainerProperty {
+                sync_collection,
                 ids: old_ids,
             },
-            IndexValue::LogParent { ids: new_ids, .. },
+            IndexValue::LogContainerProperty { ids: new_ids, .. },
         ) => {
             for parent_id in &old_ids {
                 if !new_ids.contains(parent_id) {
-                    batch.log_parent_update(collection, *parent_id);
+                    batch.log_container_property_change(sync_collection, *parent_id);
                 }
             }
             for parent_id in new_ids {
                 if !old_ids.contains(&parent_id) {
-                    batch.log_parent_update(collection, parent_id);
+                    batch.log_container_property_change(sync_collection, parent_id);
                 }
             }
         }
