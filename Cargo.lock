@@ -2060,9 +2060,9 @@ dependencies = [
  "mail-parser",
  "nlp",
  "rand 0.8.5",
- "rasn",
+ "rasn 0.10.6",
  "rasn-cms",
- "rasn-pkix",
+ "rasn-pkix 0.10.6",
  "rsa",
  "sequoia-openpgp",
  "serde",
@@ -5349,18 +5349,40 @@ dependencies = [
  "num-integer",
  "num-traits",
  "once_cell",
- "rasn-derive",
- "snafu",
+ "rasn-derive 0.10.6",
+ "snafu 0.7.5",
+]
+
+[[package]]
+name = "rasn"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f966589c4f23d8d639c04c41eef8678be10f35b610f2ef6ceb8573a0d9e10a1d"
+dependencies = [
+ "bitvec",
+ "bitvec-nom2",
+ "bytes",
+ "chrono",
+ "either",
+ "nom",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "once_cell",
+ "rasn-derive 0.26.4",
+ "serde_json",
+ "snafu 0.8.5",
+ "xml-no-std",
 ]
 
 [[package]]
 name = "rasn-cms"
-version = "0.10.6"
+version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09d45b1b6c0bfb41d1023246a3853a82d158d7e6690698ad4acac009f2f09380"
+checksum = "c7f3a796c13de94a80b50ec4f8a8e9c5963e2f71bfaf64855583d4e7ec678e7c"
 dependencies = [
- "rasn",
- "rasn-pkix",
+ "rasn 0.26.4",
+ "rasn-pkix 0.26.4",
 ]
 
 [[package]]
@@ -5379,12 +5401,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasn-derive"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "861983a205f62f53d6a6386c8fa4dd3a4a957a9fd5b59b4c40c8e93a159c2e86"
+dependencies = [
+ "proc-macro2",
+ "rasn-derive-impl",
+ "syn 2.0.96",
+]
+
+[[package]]
+name = "rasn-derive-impl"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c821f79068b28fc600dde72cd5ba7d038da94aba5c535d277f68fc1dd9945276"
+dependencies = [
+ "either",
+ "itertools 0.13.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
+ "uuid",
+]
+
+[[package]]
 name = "rasn-pkix"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c825c4183e8f4db9bd772206d7d0fa10f3df35b6ed5bcb8f6cb50fd1166f8e9"
 dependencies = [
- "rasn",
+ "rasn 0.10.6",
+]
+
+[[package]]
+name = "rasn-pkix"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b940d3e81218a7d5b38f92d1f400ace6ca5f35f2d1478993e42f872fe5cb06ca"
+dependencies = [
+ "rasn 0.26.4",
 ]
 
 [[package]]
@@ -6582,7 +6638,16 @@ checksum = "e4de37ad025c587a29e8f3f5605c00f70b98715ef90b9061a815b9e59e9042d6"
 dependencies = [
  "backtrace",
  "doc-comment",
- "snafu-derive",
+ "snafu-derive 0.7.5",
+]
+
+[[package]]
+name = "snafu"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "223891c85e2a29c3fe8fb900c1fae5e69c2e42415e3177752e8718475efa5019"
+dependencies = [
+ "snafu-derive 0.8.5",
 ]
 
 [[package]]
@@ -6595,6 +6660,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "snafu-derive"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03c3c6b7927ffe7ecaa769ee0e3994da3b8cafc8f444578982c83ecb161af917"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
 ]
 
 [[package]]
@@ -8180,6 +8257,12 @@ dependencies = [
  "thiserror 1.0.69",
  "time",
 ]
+
+[[package]]
+name = "xml-no-std"
+version = "0.8.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac4f451c779ea0b57e28c106c0fdafe9290038c97d26364aeb87617d2b78f698"
 
 [[package]]
 name = "xml-rs"
