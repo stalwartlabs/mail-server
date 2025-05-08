@@ -8,11 +8,11 @@ use super::WebDavTest;
 
 pub async fn test(test: &WebDavTest) {
     println!("Running basic tests...");
-    let client = test.client("john");
+    let john = test.client("john");
+    let jane = test.client("jane");
 
     // Test OPTIONS request
-    client
-        .request("OPTIONS", "/dav/file", "")
+    john.request("OPTIONS", "/dav/file", "")
         .await
         .with_header(
             "dav",
@@ -27,18 +27,21 @@ pub async fn test(test: &WebDavTest) {
         );
 
     // Test Discovery
-    client
-        .request("PROPFIND", "/.well-known/carddav", "")
+    john.request("PROPFIND", "/.well-known/carddav", "")
         .await
         .with_values(
             "D:multistatus.D:response.D:href",
             ["/dav/card/", "/dav/card/john/"],
         );
-    test.client("jane")
-        .request("PROPFIND", "/.well-known/caldav", "")
+    jane.request("PROPFIND", "/.well-known/caldav", "")
         .await
         .with_values(
             "D:multistatus.D:response.D:href",
             ["/dav/cal/", "/dav/cal/jane/", "/dav/cal/support/"],
         );
+
+    john.delete_default_containers().await;
+    jane.delete_default_containers().await;
+    jane.delete_default_containers_by_account("support").await;
+    test.assert_is_empty().await;
 }

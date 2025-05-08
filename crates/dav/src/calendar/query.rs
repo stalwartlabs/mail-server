@@ -29,10 +29,10 @@ use dav_proto::{
         request::{CalendarQuery, Filter, FilterOp, PropFind, Timezone},
     },
 };
-use groupware::{calendar::ArchivedCalendarEvent, hierarchy::DavHierarchy};
+use groupware::{cache::GroupwareCache, calendar::ArchivedCalendarEvent};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{acl::Acl, collection::SyncCollection};
 use std::{fmt::Write, slice::Iter, str::FromStr};
 use store::{ahash::AHashMap, write::serialize::rkyv_deserialize};
 use trc::AddContext;
@@ -62,12 +62,11 @@ impl CalendarQueryRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource_.account_id;
         let resources = self
-            .fetch_dav_resources(access_token, account_id, Collection::Calendar)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::Calendar)
             .await
             .caused_by(trc::location!())?;
         let resource = resources
-            .paths
-            .by_name(
+            .by_path(
                 resource_
                     .resource
                     .ok_or(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))?,
@@ -79,16 +78,9 @@ impl CalendarQueryRequestHandler for Server {
 
         // Obtain shared ids
         let shared_ids = if !access_token.is_member(account_id) {
-            self.shared_containers(
-                access_token,
-                account_id,
-                Collection::Calendar,
-                [Acl::ReadItems],
-                false,
-            )
-            .await
-            .caused_by(trc::location!())?
-            .into()
+            resources
+                .shared_containers(access_token, [Acl::ReadItems], false)
+                .into()
         } else {
             None
         };
@@ -98,13 +90,13 @@ impl CalendarQueryRequestHandler for Server {
 
         // Obtain document ids in folder
         let mut items = Vec::with_capacity(16);
-        for resource in resources.children(resource.document_id) {
+        for resource in resources.children(resource.document_id()) {
             if shared_ids
                 .as_ref()
-                .is_none_or(|ids| ids.contains(resource.document_id))
+                .is_none_or(|ids| ids.contains(resource.document_id()))
                 && filter_range
                     .as_ref()
-                    .is_none_or(|range| is_resource_in_time_range(resource, range))
+                    .is_none_or(|range| is_resource_in_time_range(resource.resource, range))
             {
                 items.push(PropFindItem::new(
                     resources.format_resource(resource),
@@ -134,7 +126,7 @@ pub(crate) fn is_resource_in_time_range(resource: &DavResource, filter: &TimeRan
 
         let c = println!(
             "filter from {range_from} to {range_end}, resource is {} from {} to {}, result: {}",
-            resource.name,
+            resource.path(),
             DateTime::from_timestamp(start, 0).unwrap(),
             DateTime::from_timestamp(end, 0).unwrap(),
             result

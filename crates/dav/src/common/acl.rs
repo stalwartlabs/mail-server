@@ -8,7 +8,7 @@ use crate::{
     DavError, DavErrorCondition, DavResourceName, common::uri::DavUriResource,
     principal::propfind::PrincipalPropFind,
 };
-use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
+use common::{DavResources, Server, auth::AccessToken, sharing::EffectiveAcl};
 use dav_proto::{
     RequestHeaders,
     schema::{
@@ -18,9 +18,7 @@ use dav_proto::{
     },
 };
 use directory::{QueryBy, Type, backend::internal::manage::ManageDirectory};
-use groupware::{
-    calendar::Calendar, contact::AddressBook, file::FileNode, hierarchy::DavHierarchy,
-};
+use groupware::{cache::GroupwareCache, calendar::Calendar, contact::AddressBook, file::FileNode};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{
@@ -58,25 +56,6 @@ pub(crate) trait DavAclHandler: Sync + Send {
         collection: Collection,
     ) -> impl Future<Output = crate::Result<Vec<AclGrant>>> + Send;
 
-    fn validate_and_map_parent_acl(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-        collection: Collection,
-        parent_id: Option<u32>,
-        check_acls: impl Into<Bitmap<Acl>> + Send,
-    ) -> impl Future<Output = crate::Result<u32>> + Send;
-
-    #[allow(clippy::too_many_arguments)]
-    fn validate_acl(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-        collection: Collection,
-        document_id: u32,
-        acl: impl Into<Bitmap<Acl>> + Send,
-    ) -> impl Future<Output = crate::Result<()>> + Send;
-
     fn resolve_ace(
         &self,
         access_token: &AccessToken,
@@ -84,6 +63,16 @@ pub(crate) trait DavAclHandler: Sync + Send {
         grants: &ArchivedVec<ArchivedAclGrant>,
         expand: Option<&PropFind>,
     ) -> impl Future<Output = crate::Result<Vec<Ace>>> + Send;
+}
+
+pub(crate) trait ResourceAcl {
+    fn validate_and_map_parent_acl(
+        &self,
+        access_token: &AccessToken,
+        is_member: bool,
+        parent_id: Option<u32>,
+        check_acls: impl Into<Bitmap<Acl>> + Send,
+    ) -> crate::Result<u32>;
 }
 
 impl DavAclHandler for Server {
@@ -108,20 +97,20 @@ impl DavAclHandler for Server {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
         let resources = self
-            .fetch_dav_resources(access_token, account_id, collection)
+            .fetch_dav_resources(access_token, account_id, collection.into())
             .await
             .caused_by(trc::location!())?;
         let resource = resource_
             .resource
-            .and_then(|r| resources.paths.by_name(r))
+            .and_then(|r| resources.by_path(r))
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        if !resource.is_container() && !matches!(collection, Collection::FileNode) {
+        if !resource.resource.is_container() && !matches!(collection, Collection::FileNode) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
 
         // Fetch node
         let archive = self
-            .get_archive(account_id, collection, resource.document_id)
+            .get_archive(account_id, collection, resource.document_id())
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -158,7 +147,7 @@ impl DavAclHandler for Server {
                             access_token,
                             calendar,
                             account_id,
-                            resource.document_id,
+                            resource.document_id(),
                             &mut batch,
                         )
                         .caused_by(trc::location!())?;
@@ -173,7 +162,7 @@ impl DavAclHandler for Server {
                             access_token,
                             book,
                             account_id,
-                            resource.document_id,
+                            resource.document_id(),
                             &mut batch,
                         )
                         .caused_by(trc::location!())?;
@@ -187,7 +176,7 @@ impl DavAclHandler for Server {
                             access_token,
                             node,
                             account_id,
-                            resource.document_id,
+                            resource.document_id(),
                             &mut batch,
                         )
                         .caused_by(trc::location!())?;
@@ -412,63 +401,6 @@ impl DavAclHandler for Server {
         Ok(grants)
     }
 
-    async fn validate_and_map_parent_acl(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-        collection: Collection,
-        parent_id: Option<u32>,
-        check_acls: impl Into<Bitmap<Acl>> + Send,
-    ) -> crate::Result<u32> {
-        match parent_id {
-            Some(parent_id) => {
-                if access_token.is_member(account_id)
-                    || self
-                        .has_access_to_document(
-                            access_token,
-                            account_id,
-                            collection,
-                            parent_id,
-                            check_acls,
-                        )
-                        .await
-                        .caused_by(trc::location!())?
-                {
-                    Ok(parent_id + 1)
-                } else {
-                    Err(DavError::Code(StatusCode::FORBIDDEN))
-                }
-            }
-            None => {
-                if access_token.is_member(account_id) {
-                    Ok(0)
-                } else {
-                    Err(DavError::Code(StatusCode::FORBIDDEN))
-                }
-            }
-        }
-    }
-
-    async fn validate_acl(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-        collection: Collection,
-        document_id: u32,
-        acl: impl Into<Bitmap<Acl>> + Send,
-    ) -> crate::Result<()> {
-        if access_token.is_member(account_id)
-            || self
-                .has_access_to_document(access_token, account_id, collection, document_id, acl)
-                .await
-                .caused_by(trc::location!())?
-        {
-            Ok(())
-        } else {
-            Err(DavError::Code(StatusCode::FORBIDDEN))
-        }
-    }
-
     async fn resolve_ace(
         &self,
         access_token: &AccessToken,
@@ -520,6 +452,33 @@ impl DavAclHandler for Server {
         }
 
         Ok(aces)
+    }
+}
+
+impl ResourceAcl for DavResources {
+    fn validate_and_map_parent_acl(
+        &self,
+        access_token: &AccessToken,
+        is_member: bool,
+        parent_id: Option<u32>,
+        check_acls: impl Into<Bitmap<Acl>> + Send,
+    ) -> crate::Result<u32> {
+        match parent_id {
+            Some(parent_id) => {
+                if is_member || self.has_access_to_container(access_token, parent_id, check_acls) {
+                    Ok(parent_id + 1)
+                } else {
+                    Err(DavError::Code(StatusCode::FORBIDDEN))
+                }
+            }
+            None => {
+                if is_member {
+                    Ok(0)
+                } else {
+                    Err(DavError::Code(StatusCode::FORBIDDEN))
+                }
+            }
+        }
     }
 }
 

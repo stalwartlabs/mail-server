@@ -33,7 +33,7 @@ use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
 use std::{
-    hash::{BuildHasher, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{
         Arc,
@@ -46,7 +46,6 @@ use tinyvec::TinyVec;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
 use utils::{
-    bimap::{IdBimap, IdBimapItem},
     cache::{Cache, CacheItemWeight, CacheWithTtl},
     snowflake::SnowflakeIdGenerator,
 };
@@ -149,7 +148,9 @@ pub struct Caches {
     pub permissions: Cache<u32, Arc<RolePermissions>>,
 
     pub messages: Cache<u32, CacheSwap<MessageStoreCache>>,
-    pub dav: Cache<DavResourceId, Arc<DavResources>>,
+    pub files: Cache<u32, CacheSwap<DavResources>>,
+    pub contacts: Cache<u32, CacheSwap<DavResources>>,
+    pub events: Cache<u32, CacheSwap<DavResources>>,
 
     pub bayes: CacheWithTtl<TokenHash, Weights>,
 
@@ -242,44 +243,72 @@ pub struct TlsConnectors {
 
 pub struct NameWrapper(pub String);
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct DavResourceId {
-    pub account_id: u32,
-    pub collection: u8,
-}
-
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
 pub struct DavResources {
     pub base_path: String,
-    pub paths: IdBimap<DavResource>,
+    pub paths: AHashSet<DavPath>,
+    pub resources: Vec<DavResource>,
+    pub item_change_id: u64,
+    pub container_change_id: u64,
+    pub highest_change_id: u64,
     pub size: u64,
-    pub modseq: Option<u64>,
+    pub update_lock: Arc<Semaphore>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
+pub struct DavPath {
+    pub path: String,
+    pub parent_id: Option<u32>,
+    pub hierarchy_seq: u32,
+    pub resource_idx: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct DavResource {
     pub document_id: u32,
-    pub parent_id: Option<u32>,
-    pub name: String,
     pub data: DavResourceMetadata,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone, Copy)]
+pub struct DavResourcePath<'x> {
+    pub path: &'x DavPath,
+    pub resource: &'x DavResource,
+}
+
+#[derive(Debug, Clone)]
 pub enum DavResourceMetadata {
     File {
-        size: u32,
-        hierarchy_sequence: u32,
-        is_container: bool,
+        name: String,
+        size: Option<u32>,
+        parent_id: Option<u32>,
+        acls: TinyVec<[AclGrant; 2]>,
     },
     Calendar {
+        name: String,
+        acls: TinyVec<[AclGrant; 2]>,
         tz: Tz,
     },
     CalendarEvent {
+        names: TinyVec<[DavName; 2]>,
         start: i64,
         duration: u32,
     },
-    #[default]
-    None,
+    AddressBook {
+        name: String,
+        acls: TinyVec<[AclGrant; 2]>,
+    },
+    ContactCard {
+        names: TinyVec<[DavName; 2]>,
+    },
+}
+
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+#[rkyv(derive(Debug))]
+pub struct DavName {
+    pub name: String,
+    pub parent_id: u32,
 }
 
 #[derive(Clone, Default)]
@@ -297,12 +326,6 @@ pub struct Core {
     pub metrics: Metrics,
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
-}
-
-impl CacheItemWeight for DavResourceId {
-    fn weight(&self) -> u64 {
-        std::mem::size_of::<DavResourceId>() as u64
-    }
 }
 
 impl<T: CacheItemWeight> CacheItemWeight for CacheSwap<T> {
@@ -428,7 +451,9 @@ impl Default for Caches {
             http_auth: Cache::new(1024, 10 * 1024 * 1024),
             permissions: Cache::new(1024, 10 * 1024 * 1024),
             messages: Cache::new(1024, 25 * 1024 * 1024),
-            dav: Cache::new(1024, 10 * 1024 * 1024),
+            files: Cache::new(1024, 10 * 1024 * 1024),
+            contacts: Cache::new(1024, 10 * 1024 * 1024),
+            events: Cache::new(1024, 10 * 1024 * 1024),
             bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_rbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_txt: CacheWithTtl::new(1024, 10 * 1024 * 1024),
@@ -480,45 +505,117 @@ pub fn ip_to_bytes_prefix(prefix: u8, ip: &IpAddr) -> Vec<u8> {
     }
 }
 
+impl DavResourcePath<'_> {
+    #[inline(always)]
+    pub fn document_id(&self) -> u32 {
+        self.resource.document_id
+    }
+
+    #[inline(always)]
+    pub fn parent_id(&self) -> Option<u32> {
+        self.path.parent_id
+    }
+
+    #[inline(always)]
+    pub fn path(&self) -> &str {
+        self.path.path.as_str()
+    }
+
+    #[inline(always)]
+    pub fn is_container(&self) -> bool {
+        self.resource.is_container()
+    }
+
+    #[inline(always)]
+    pub fn hierarchy_seq(&self) -> u32 {
+        self.path.hierarchy_seq
+    }
+
+    #[inline(always)]
+    pub fn size(&self) -> u32 {
+        self.resource.size()
+    }
+}
+
 impl DavResources {
-    pub fn subtree(&self, search_path: &str) -> impl Iterator<Item = &DavResource> {
-        let prefix = format!("{search_path}/");
-        self.paths
+    pub fn by_path(&self, name: &str) -> Option<DavResourcePath<'_>> {
+        self.paths.get(name).map(|path| DavResourcePath {
+            path,
+            resource: &self.resources[path.resource_idx],
+        })
+    }
+
+    pub fn container_resource_by_id(&self, id: u32) -> Option<&DavResource> {
+        self.resources
             .iter()
-            .filter(move |item| item.name.starts_with(&prefix) || item.name == search_path)
+            .find(|res| res.document_id == id && res.is_container())
+    }
+
+    pub fn subtree(&self, search_path: &str) -> impl Iterator<Item = DavResourcePath<'_>> {
+        let prefix = format!("{search_path}/");
+        self.paths.iter().filter_map(move |path| {
+            if path.path.starts_with(&prefix) || path.path == search_path {
+                Some(DavResourcePath {
+                    path,
+                    resource: &self.resources[path.resource_idx],
+                })
+            } else {
+                None
+            }
+        })
     }
 
     pub fn subtree_with_depth(
         &self,
         search_path: &str,
         depth: usize,
-    ) -> impl Iterator<Item = &DavResource> {
+    ) -> impl Iterator<Item = DavResourcePath<'_>> {
         let prefix = format!("{search_path}/");
-        self.paths.iter().filter(move |item| {
-            item.name
+        self.paths.iter().filter_map(move |path| {
+            if path
+                .path
                 .strip_prefix(&prefix)
                 .is_some_and(|name| name.as_bytes().iter().filter(|&&c| c == b'/').count() < depth)
-                || item.name == search_path
+                || path.path.as_str() == search_path
+            {
+                Some(DavResourcePath {
+                    path,
+                    resource: &self.resources[path.resource_idx],
+                })
+            } else {
+                None
+            }
         })
     }
 
-    pub fn tree_with_depth(&self, depth: usize) -> impl Iterator<Item = &DavResource> {
-        self.paths.iter().filter(move |item| {
-            item.name.as_bytes().iter().filter(|&&c| c == b'/').count() <= depth
+    pub fn tree_with_depth(&self, depth: usize) -> impl Iterator<Item = DavResourcePath<'_>> {
+        self.paths.iter().filter_map(move |path| {
+            if path.path.as_bytes().iter().filter(|&&c| c == b'/').count() <= depth {
+                Some(DavResourcePath {
+                    path,
+                    resource: &self.resources[path.resource_idx],
+                })
+            } else {
+                None
+            }
         })
     }
 
-    pub fn children(&self, parent_id: u32) -> impl Iterator<Item = &DavResource> {
+    pub fn children(&self, parent_id: u32) -> impl Iterator<Item = DavResourcePath<'_>> {
         self.paths
             .iter()
             .filter(move |item| item.parent_id.is_some_and(|id| id == parent_id))
+            .map(|path| DavResourcePath {
+                path,
+                resource: &self.resources[path.resource_idx],
+            })
     }
 
-    pub fn format_resource(&self, resource: &DavResource) -> String {
-        if resource.is_container() {
-            format!("{}{}/", self.base_path, resource.name)
+    pub fn format_resource(&self, resource: DavResourcePath<'_>) -> String {
+        if resource.resource.is_container() {
+            format!("{}{}/", self.base_path, resource.path.path)
         } else {
-            format!("{}{}", self.base_path, resource.name)
+            format!("{}{}", self.base_path, resource.path.path)
         }
     }
 
@@ -532,59 +629,128 @@ impl DavResources {
 }
 
 impl DavResource {
+    pub fn is_child_of(&self, parent_id: u32) -> bool {
+        match &self.data {
+            DavResourceMetadata::File { parent_id: id, .. } => id.is_some_and(|id| id == parent_id),
+            DavResourceMetadata::CalendarEvent { names, .. } => {
+                names.iter().any(|name| name.parent_id == parent_id)
+            }
+            DavResourceMetadata::ContactCard { names } => {
+                names.iter().any(|name| name.parent_id == parent_id)
+            }
+            _ => false,
+        }
+    }
+
+    pub fn child_names(&self) -> Option<&[DavName]> {
+        match &self.data {
+            DavResourceMetadata::CalendarEvent { names, .. } => Some(names.as_slice()),
+            DavResourceMetadata::ContactCard { names } => Some(names.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn container_name(&self) -> Option<&str> {
+        match &self.data {
+            DavResourceMetadata::File { name, .. } => Some(name.as_str()),
+            DavResourceMetadata::Calendar { name, .. } => Some(name.as_str()),
+            DavResourceMetadata::AddressBook { name, .. } => Some(name.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn has_hierarchy_changes(&self, other: &DavResource) -> bool {
+        match (&self.data, &other.data) {
+            (
+                DavResourceMetadata::File {
+                    name: a,
+                    parent_id: c,
+                    ..
+                },
+                DavResourceMetadata::File {
+                    name: b,
+                    parent_id: d,
+                    ..
+                },
+            ) => a != b || c != d,
+            (
+                DavResourceMetadata::Calendar { name: a, .. },
+                DavResourceMetadata::Calendar { name: b, .. },
+            ) => a != b,
+            (
+                DavResourceMetadata::AddressBook { name: a, .. },
+                DavResourceMetadata::AddressBook { name: b, .. },
+            ) => a != b,
+            (
+                DavResourceMetadata::CalendarEvent { names: a, .. },
+                DavResourceMetadata::CalendarEvent { names: b, .. },
+            ) => a != b,
+            (
+                DavResourceMetadata::ContactCard { names: a, .. },
+                DavResourceMetadata::ContactCard { names: b, .. },
+            ) => a != b,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn event_time_range(&self) -> Option<(i64, i64)> {
         match &self.data {
-            DavResourceMetadata::CalendarEvent { start, duration } => {
-                Some((*start, *start + *duration as i64))
-            }
+            DavResourceMetadata::CalendarEvent {
+                start, duration, ..
+            } => Some((*start, *start + *duration as i64)),
             _ => None,
         }
     }
 
     pub fn timezone(&self) -> Option<Tz> {
         match &self.data {
-            DavResourceMetadata::Calendar { tz } => Some(*tz),
+            DavResourceMetadata::Calendar { tz, .. } => Some(*tz),
             _ => None,
         }
     }
 
     pub fn is_container(&self) -> bool {
         match &self.data {
-            DavResourceMetadata::File { is_container, .. } => *is_container,
-            _ => self.parent_id.is_none(),
+            DavResourceMetadata::File { size, .. } => size.is_none(),
+            DavResourceMetadata::Calendar { .. } | DavResourceMetadata::AddressBook { .. } => true,
+            _ => false,
         }
     }
 
     pub fn size(&self) -> u32 {
         match &self.data {
-            DavResourceMetadata::File { size, .. } => *size,
+            DavResourceMetadata::File { size, .. } => size.unwrap_or_default(),
             _ => 0,
         }
     }
 
-    pub fn hierarchy_sequence(&self) -> u32 {
+    pub fn acls(&self) -> Option<&[AclGrant]> {
         match &self.data {
-            DavResourceMetadata::File {
-                hierarchy_sequence, ..
-            } => *hierarchy_sequence,
-            _ => {
-                if self.parent_id.is_none() {
-                    0
-                } else {
-                    1
-                }
-            }
+            DavResourceMetadata::File { acls, .. } => Some(acls.as_slice()),
+            DavResourceMetadata::Calendar { acls, .. } => Some(acls.as_slice()),
+            DavResourceMetadata::AddressBook { acls, .. } => Some(acls.as_slice()),
+            _ => None,
         }
     }
 }
 
-impl IdBimapItem for DavResource {
-    fn id(&self) -> &u32 {
-        &self.document_id
+impl Hash for DavPath {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
     }
+}
 
-    fn name(&self) -> &str {
-        &self.name
+impl PartialEq for DavPath {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+    }
+}
+
+impl Eq for DavPath {}
+
+impl std::borrow::Borrow<str> for DavPath {
+    fn borrow(&self) -> &str {
+        &self.path
     }
 }
 
@@ -605,6 +771,12 @@ impl Eq for DavResource {}
 impl std::borrow::Borrow<u32> for DavResource {
     fn borrow(&self) -> &u32 {
         &self.document_id
+    }
+}
+
+impl DavName {
+    pub fn new(name: String, parent_id: u32) -> Self {
+        Self { name, parent_id }
     }
 }
 

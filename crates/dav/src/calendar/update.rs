@@ -11,19 +11,21 @@ use calcard::{
     common::timezone::Tz,
     icalendar::{ICalendar, ICalendarComponentType},
 };
-use common::{Server, auth::AccessToken};
+use common::{DavName, Server, auth::AccessToken};
 use dav_proto::{
     RequestHeaders, Return,
     schema::{property::Rfc1123DateTime, response::CalCondition},
 };
 use groupware::{
-    DavName,
+    cache::GroupwareCache,
     calendar::{CalendarEvent, CalendarEventData},
-    hierarchy::DavHierarchy,
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use store::write::BatchBuilder;
 use trc::AddContext;
 
@@ -64,7 +66,7 @@ impl CalendarUpdateRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource.account_id;
         let resources = self
-            .fetch_dav_resources(access_token, account_id, Collection::Calendar)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::Calendar)
             .await
             .caused_by(trc::location!())?;
         let resource_name = resource
@@ -94,25 +96,16 @@ impl CalendarUpdateRequestHandler for Server {
             }
         };
 
-        if let Some(resource) = resources.paths.by_name(resource_name) {
+        if let Some(resource) = resources.by_path(resource_name) {
             if resource.is_container() {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 
             // Validate ACL
-            let parent_id = resource.parent_id.unwrap();
-            let document_id = resource.document_id;
+            let parent_id = resource.parent_id().unwrap();
+            let document_id = resource.document_id();
             if !access_token.is_member(account_id)
-                && !self
-                    .has_access_to_document(
-                        access_token,
-                        account_id,
-                        Collection::Calendar,
-                        parent_id,
-                        Acl::ModifyItems,
-                    )
-                    .await
-                    .caused_by(trc::location!())?
+                && !resources.has_access_to_container(access_token, parent_id, Acl::ModifyItems)
             {
                 return Err(DavError::Code(StatusCode::FORBIDDEN));
             }
@@ -204,16 +197,11 @@ impl CalendarUpdateRequestHandler for Server {
 
             // Validate ACL
             if !access_token.is_member(account_id)
-                && !self
-                    .has_access_to_document(
-                        access_token,
-                        account_id,
-                        Collection::Calendar,
-                        parent.document_id,
-                        Acl::AddItems,
-                    )
-                    .await
-                    .caused_by(trc::location!())?
+                && !resources.has_access_to_container(
+                    access_token,
+                    parent.document_id(),
+                    Acl::AddItems,
+                )
             {
                 return Err(DavError::Code(StatusCode::FORBIDDEN));
             }
@@ -248,7 +236,7 @@ impl CalendarUpdateRequestHandler for Server {
                 self,
                 &resources,
                 account_id,
-                parent.document_id,
+                parent.document_id(),
                 validate_ical(&ical)?.into(),
             )
             .await?;
@@ -257,7 +245,7 @@ impl CalendarUpdateRequestHandler for Server {
             let event = CalendarEvent {
                 names: vec![DavName {
                     name: name.to_string(),
-                    parent_id: parent.document_id,
+                    parent_id: parent.document_id(),
                 }],
                 data: CalendarEventData::new(
                     ical,

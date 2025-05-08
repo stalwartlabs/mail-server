@@ -4,25 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::storage::index::{
-    IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
-};
-use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
-use store::SerializeInfallible;
-
-use crate::{IDX_NAME, IDX_UID};
-
 use super::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard};
+use crate::IDX_UID;
+use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
 
 impl IndexableObject for AddressBook {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
-        // Note: When adding a new value with index id above 0u8, tune `build_hierarchy`` to skip
-        // this value during iteration.
         [
-            IndexValue::Index {
-                field: IDX_NAME,
-                value: self.name.as_str().into(),
-            },
             IndexValue::Acl {
                 value: (&self.acls).into(),
             },
@@ -43,10 +32,6 @@ impl IndexableObject for AddressBook {
 impl IndexableObject for &ArchivedAddressBook {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Index {
-                field: IDX_NAME,
-                value: self.name.as_str().into(),
-            },
             IndexValue::Acl {
                 value: self
                     .acls
@@ -74,14 +59,6 @@ impl IndexableAndSerializableObject for AddressBook {}
 impl IndexableObject for ContactCard {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::IndexList {
-                field: IDX_NAME,
-                value: self
-                    .names
-                    .iter()
-                    .map(|v| IndexItem::Vec(v.serialize()))
-                    .collect::<Vec<_>>(),
-            },
             IndexValue::Index {
                 field: IDX_UID,
                 value: self.card.uid().into(),
@@ -104,14 +81,6 @@ impl IndexableObject for ContactCard {
 impl IndexableObject for &ArchivedContactCard {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::IndexList {
-                field: IDX_NAME,
-                value: self
-                    .names
-                    .iter()
-                    .map(|v| IndexItem::Vec(v.serialize()))
-                    .collect::<Vec<_>>(),
-            },
             IndexValue::Index {
                 field: IDX_UID,
                 value: self.card.uid().into(),

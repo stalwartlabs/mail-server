@@ -7,17 +7,13 @@
 use calcard::common::timezone::Tz;
 use common::DavResources;
 use jmap_proto::types::collection::Collection;
-use store::{Deserialize, SerializeInfallible, write::key::KeySerializer};
-use utils::codec::leb128::Leb128Reader;
 
+pub mod cache;
 pub mod calendar;
 pub mod contact;
 pub mod file;
-pub mod hierarchy;
 
-pub const IDX_NAME: u8 = 0;
-pub const IDX_TIME: u8 = 1;
-pub const IDX_UID: u8 = 2;
+pub const IDX_UID: u8 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DavResourceName {
@@ -28,61 +24,6 @@ pub enum DavResourceName {
 }
 
 pub struct DestroyArchive<T>(pub T);
-
-#[derive(
-    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
-)]
-#[rkyv(derive(Debug))]
-pub struct DavName {
-    pub name: String,
-    pub parent_id: u32,
-}
-
-impl SerializeInfallible for DavName {
-    fn serialize(&self) -> Vec<u8> {
-        KeySerializer::new(self.name.len() + std::mem::size_of::<u32>())
-            .write_leb128(self.parent_id)
-            .write(self.name.as_bytes())
-            .finalize()
-    }
-}
-
-impl SerializeInfallible for ArchivedDavName {
-    fn serialize(&self) -> Vec<u8> {
-        KeySerializer::new(self.name.len() + std::mem::size_of::<u32>())
-            .write_leb128(self.parent_id.to_native())
-            .write(self.name.as_bytes())
-            .finalize()
-    }
-}
-
-impl DavName {
-    pub fn new(name: String, parent_id: u32) -> Self {
-        Self { name, parent_id }
-    }
-}
-
-impl Deserialize for DavName {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let (parent_id, bytes_read) = bytes.read_leb128::<u32>().ok_or_else(|| {
-            trc::StoreEvent::DataCorruption
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, bytes)
-        })?;
-
-        let name = bytes
-            .get(bytes_read..)
-            .and_then(|bytes| std::str::from_utf8(bytes).ok())
-            .ok_or_else(|| {
-                trc::StoreEvent::DataCorruption
-                    .caused_by(trc::location!())
-                    .ctx(trc::Key::Value, bytes)
-            })?
-            .into();
-
-        Ok(DavName { name, parent_id })
-    }
-}
 
 impl DavResourceName {
     pub fn parse(service: &str) -> Option<Self> {
@@ -138,22 +79,11 @@ impl From<Collection> for DavResourceName {
 
 pub trait DavCalendarResource {
     fn calendar_default_tz(&self, calendar_id: u32) -> Option<Tz>;
-    fn event_default_tz(&self, event_id: u32) -> Option<Tz>;
 }
 
 impl DavCalendarResource for DavResources {
     fn calendar_default_tz(&self, calendar_id: u32) -> Option<Tz> {
-        self.paths
-            .iter()
-            .find(|c| c.is_container() && c.document_id == calendar_id)
+        self.container_resource_by_id(calendar_id)
             .and_then(|c| c.timezone())
-    }
-
-    fn event_default_tz(&self, event_id: u32) -> Option<Tz> {
-        self.paths
-            .iter()
-            .find(|c| !c.is_container() && c.document_id == event_id)
-            .and_then(|c| c.parent_id)
-            .and_then(|parent_id| self.calendar_default_tz(parent_id))
     }
 }

@@ -19,7 +19,6 @@ use calcard::{
 };
 use chrono::{DateTime, TimeZone};
 use dav_proto::schema::property::TimeRange;
-use rkyv::time;
 use std::str::FromStr;
 use store::{
     ahash::AHashMap,

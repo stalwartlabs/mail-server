@@ -16,6 +16,7 @@ use dav_proto::schema::{
     response::{Href, MultiStatus, PropStat, Response},
 };
 use directory::{QueryBy, backend::internal::manage::ManageDirectory};
+use groupware::cache::GroupwareCache;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
 use percent_encoding::NON_ALPHANUMERIC;
@@ -23,7 +24,7 @@ use trc::AddContext;
 
 use crate::{
     DavResourceName,
-    common::{propfind::PropFindRequestHandler, uri::Urn},
+    common::propfind::{PropFindRequestHandler, SyncTokenUrn},
 };
 
 use super::CurrentUserPrincipal;
@@ -184,17 +185,13 @@ impl PrincipalPropFind for Server {
                             fields.push(DavPropertyValue::new(property.clone(), quota.used));
                         }
                         WebDavProperty::SyncToken if !is_principal => {
-                            let todo = "fix";
-                            let id = self
-                                .store()
-                                .get_last_change_id(account_id, collection)
+                            let sync_token = self
+                                .fetch_dav_resources(access_token, account_id, collection.into())
                                 .await
                                 .caused_by(trc::location!())?
-                                .unwrap_or_default();
-                            fields.push(DavPropertyValue::new(
-                                property.clone(),
-                                Urn::Sync { id, seq: 0 }.to_string(),
-                            ));
+                                .sync_token();
+
+                            fields.push(DavPropertyValue::new(property.clone(), sync_token));
                         }
                         WebDavProperty::Owner => {
                             fields.push(DavPropertyValue::new(

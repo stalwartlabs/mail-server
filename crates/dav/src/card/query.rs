@@ -23,10 +23,10 @@ use dav_proto::{
         request::{AddressbookQuery, Filter, FilterOp, VCardPropertyWithGroup},
     },
 };
-use groupware::hierarchy::DavHierarchy;
+use groupware::cache::GroupwareCache;
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{acl::Acl, collection::SyncCollection};
 use std::fmt::Write;
 use trc::AddContext;
 
@@ -53,12 +53,11 @@ impl CardQueryRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource_.account_id;
         let resources = self
-            .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::AddressBook)
             .await
             .caused_by(trc::location!())?;
         let resource = resources
-            .paths
-            .by_name(
+            .by_path(
                 resource_
                     .resource
                     .ok_or(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))?,
@@ -70,26 +69,19 @@ impl CardQueryRequestHandler for Server {
 
         // Obtain shared ids
         let shared_ids = if !access_token.is_member(account_id) {
-            self.shared_containers(
-                access_token,
-                account_id,
-                Collection::AddressBook,
-                [Acl::ReadItems],
-                false,
-            )
-            .await
-            .caused_by(trc::location!())?
-            .into()
+            resources
+                .shared_containers(access_token, [Acl::ReadItems], false)
+                .into()
         } else {
             None
         };
 
         // Obtain document ids in folder
         let mut items = Vec::with_capacity(16);
-        for resource in resources.children(resource.document_id) {
+        for resource in resources.children(resource.document_id()) {
             if shared_ids
                 .as_ref()
-                .is_none_or(|ids| ids.contains(resource.document_id))
+                .is_none_or(|ids| ids.contains(resource.document_id()))
             {
                 items.push(PropFindItem::new(
                     resources.format_resource(resource),

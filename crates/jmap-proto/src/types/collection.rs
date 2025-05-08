@@ -90,6 +90,61 @@ impl Collection {
     }
 }
 
+impl SyncCollection {
+    pub fn collection(&self, is_container: bool) -> Collection {
+        match self {
+            SyncCollection::Email => {
+                if is_container {
+                    Collection::Mailbox
+                } else {
+                    Collection::Email
+                }
+            }
+            SyncCollection::Thread => Collection::Thread,
+            SyncCollection::Calendar => {
+                if is_container {
+                    Collection::Calendar
+                } else {
+                    Collection::CalendarEvent
+                }
+            }
+            SyncCollection::AddressBook => {
+                if is_container {
+                    Collection::AddressBook
+                } else {
+                    Collection::ContactCard
+                }
+            }
+            SyncCollection::FileNode => Collection::FileNode,
+            SyncCollection::Identity => Collection::Identity,
+            SyncCollection::EmailSubmission => Collection::EmailSubmission,
+            SyncCollection::SieveScript => Collection::SieveScript,
+            SyncCollection::None => Collection::None,
+        }
+    }
+}
+
+impl From<Collection> for SyncCollection {
+    fn from(v: Collection) -> Self {
+        match v {
+            Collection::Email => SyncCollection::Email,
+            Collection::Mailbox => SyncCollection::Email,
+            Collection::Thread => SyncCollection::Thread,
+            Collection::Identity => SyncCollection::Identity,
+            Collection::EmailSubmission => SyncCollection::EmailSubmission,
+            Collection::SieveScript => SyncCollection::SieveScript,
+            Collection::PushSubscription => SyncCollection::None,
+            Collection::Principal => SyncCollection::None,
+            Collection::Calendar => SyncCollection::Calendar,
+            Collection::CalendarEvent => SyncCollection::Calendar,
+            Collection::AddressBook => SyncCollection::AddressBook,
+            Collection::ContactCard => SyncCollection::AddressBook,
+            Collection::FileNode => SyncCollection::FileNode,
+            _ => SyncCollection::None,
+        }
+    }
+}
+
 impl From<u8> for Collection {
     fn from(v: u8) -> Self {
         match v {

@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{DavResource, DavResources};
-use dav_proto::schema::property::{DavProperty, WebDavProperty};
-use hyper::StatusCode;
-
 use crate::{
     DavError,
     common::uri::{OwnedUri, UriResource},
 };
+use common::{DavResourcePath, DavResources};
+use dav_proto::schema::property::{DavProperty, WebDavProperty};
+use hyper::StatusCode;
 
 pub mod copy_move;
 pub mod delete;
@@ -65,7 +64,7 @@ pub(crate) static FILE_ITEM_PROPS: [DavProperty; 19] = [
 ];
 
 pub(crate) trait FromDavResource {
-    fn from_dav_resource(item: &DavResource) -> Self;
+    fn from_dav_resource(item: DavResourcePath<'_>) -> Self;
 }
 
 pub(crate) struct FileItemId {
@@ -80,7 +79,7 @@ pub(crate) trait DavFileResource {
         resource: &OwnedUri<'_>,
     ) -> crate::Result<UriResource<u32, T>>;
 
-    fn map_parent<'x>(&self, resource: &'x str) -> Option<(Option<&DavResource>, &'x str)>;
+    fn map_parent<'x>(&self, resource: &'x str) -> Option<(Option<DavResourcePath<'_>>, &'x str)>;
 
     #[allow(clippy::type_complexity)]
     fn map_parent_resource<'x, T: FromDavResource>(
@@ -96,7 +95,7 @@ impl DavFileResource for DavResources {
     ) -> crate::Result<UriResource<u32, T>> {
         resource
             .resource
-            .and_then(|r| self.paths.by_name(r))
+            .and_then(|r| self.by_path(r))
             .map(|r| UriResource {
                 collection: resource.collection,
                 account_id: resource.account_id,
@@ -105,9 +104,9 @@ impl DavFileResource for DavResources {
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))
     }
 
-    fn map_parent<'x>(&self, resource: &'x str) -> Option<(Option<&DavResource>, &'x str)> {
+    fn map_parent<'x>(&self, resource: &'x str) -> Option<(Option<DavResourcePath<'_>>, &'x str)> {
         let (parent, child) = if let Some((parent, child)) = resource.rsplit_once('/') {
-            (Some(self.paths.by_name(parent)?), child)
+            (Some(self.by_path(parent)?), child)
         } else {
             (None, resource)
         };
@@ -120,7 +119,7 @@ impl DavFileResource for DavResources {
         resource: &OwnedUri<'x>,
     ) -> crate::Result<UriResource<u32, (Option<T>, &'x str)>> {
         if let Some(r) = resource.resource {
-            if self.paths.by_name(r).is_none() {
+            if self.by_path(r).is_none() {
                 self.map_parent(r)
                     .map(|(parent, child)| UriResource {
                         collection: resource.collection,
@@ -138,16 +137,16 @@ impl DavFileResource for DavResources {
 }
 
 impl FromDavResource for u32 {
-    fn from_dav_resource(item: &DavResource) -> Self {
-        item.document_id
+    fn from_dav_resource(item: DavResourcePath) -> Self {
+        item.document_id()
     }
 }
 
 impl FromDavResource for FileItemId {
-    fn from_dav_resource(item: &DavResource) -> Self {
+    fn from_dav_resource(item: DavResourcePath) -> Self {
         FileItemId {
-            document_id: item.document_id,
-            parent_id: item.parent_id,
+            document_id: item.document_id(),
+            parent_id: item.parent_id(),
             is_container: item.is_container(),
         }
     }

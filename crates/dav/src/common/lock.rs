@@ -11,7 +11,8 @@ use dav_proto::schema::request::{DavPropertyValue, DeadProperty};
 use dav_proto::schema::response::{BaseCondition, List, PropResponse};
 use dav_proto::{Condition, Depth, Timeout};
 use dav_proto::{RequestHeaders, schema::request::LockInfo};
-use groupware::hierarchy::DavHierarchy;
+
+use groupware::cache::GroupwareCache;
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
@@ -553,22 +554,16 @@ impl LockRequestHandler for Server {
 
                 // Fetch sync token
                 if needs_sync_token && resource_state.sync_token.is_none() {
-                    let change_id = self
+                    let id = self
                         .fetch_dav_resources(
                             access_token,
                             resource_state.account_id,
-                            resource_state.collection.main_collection(),
+                            resource_state.collection.into(),
                         )
                         .await
                         .caused_by(trc::location!())?
-                        .modseq;
-                    resource_state.sync_token = Some(
-                        Urn::Sync {
-                            id: change_id.unwrap_or_default(),
-                            seq: 0,
-                        }
-                        .to_string(),
-                    );
+                        .highest_change_id;
+                    resource_state.sync_token = Some(Urn::Sync { id, seq: 0 }.to_string());
                 }
             }
 

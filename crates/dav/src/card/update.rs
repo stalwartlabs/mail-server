@@ -5,15 +5,18 @@
  */
 
 use calcard::{Entry, Parser};
-use common::{Server, auth::AccessToken};
+use common::{DavName, Server, auth::AccessToken};
 use dav_proto::{
     RequestHeaders, Return,
     schema::{property::Rfc1123DateTime, response::CardCondition},
 };
-use groupware::{DavName, contact::ContactCard, hierarchy::DavHierarchy};
+use groupware::{cache::GroupwareCache, contact::ContactCard};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use store::write::BatchBuilder;
 use trc::AddContext;
 
@@ -54,7 +57,7 @@ impl CardUpdateRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource.account_id;
         let resources = self
-            .fetch_dav_resources(access_token, account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::AddressBook)
             .await
             .caused_by(trc::location!())?;
         let resource_name = resource
@@ -84,25 +87,16 @@ impl CardUpdateRequestHandler for Server {
             }
         };
 
-        if let Some(resource) = resources.paths.by_name(resource_name) {
+        if let Some(resource) = resources.by_path(resource_name) {
             if resource.is_container() {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 
             // Validate ACL
-            let parent_id = resource.parent_id.unwrap();
-            let document_id = resource.document_id;
+            let parent_id = resource.parent_id().unwrap();
+            let document_id = resource.document_id();
             if !access_token.is_member(account_id)
-                && !self
-                    .has_access_to_document(
-                        access_token,
-                        account_id,
-                        Collection::AddressBook,
-                        parent_id,
-                        Acl::ModifyItems,
-                    )
-                    .await
-                    .caused_by(trc::location!())?
+                && !resources.has_access_to_container(access_token, parent_id, Acl::ModifyItems)
             {
                 return Err(DavError::Code(StatusCode::FORBIDDEN));
             }
@@ -197,16 +191,11 @@ impl CardUpdateRequestHandler for Server {
 
             // Validate ACL
             if !access_token.is_member(account_id)
-                && !self
-                    .has_access_to_document(
-                        access_token,
-                        account_id,
-                        Collection::AddressBook,
-                        parent.document_id,
-                        Acl::AddItems,
-                    )
-                    .await
-                    .caused_by(trc::location!())?
+                && !resources.has_access_to_container(
+                    access_token,
+                    parent.document_id(),
+                    Acl::AddItems,
+                )
             {
                 return Err(DavError::Code(StatusCode::FORBIDDEN));
             }
@@ -241,7 +230,7 @@ impl CardUpdateRequestHandler for Server {
                 self,
                 &resources,
                 account_id,
-                parent.document_id,
+                parent.document_id(),
                 vcard.uid(),
             )
             .await?;
@@ -250,7 +239,7 @@ impl CardUpdateRequestHandler for Server {
             let card = ContactCard {
                 names: vec![DavName {
                     name: name.to_string(),
-                    parent_id: parent.document_id,
+                    parent_id: parent.document_id(),
                 }],
                 card: vcard,
                 size: bytes.len() as u32,

@@ -6,10 +6,13 @@
 
 use common::{Server, auth::AccessToken};
 use dav_proto::{RequestHeaders, schema::property::Rfc1123DateTime};
-use groupware::{calendar::CalendarEvent, hierarchy::DavHierarchy};
+use groupware::{cache::GroupwareCache, calendar::CalendarEvent};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use trc::AddContext;
 
 use crate::{
@@ -44,12 +47,11 @@ impl CalendarGetRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource_.account_id;
         let resources = self
-            .fetch_dav_resources(access_token, account_id, Collection::Calendar)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::Calendar)
             .await
             .caused_by(trc::location!())?;
         let resource = resources
-            .paths
-            .by_name(
+            .by_path(
                 resource_
                     .resource
                     .ok_or(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))?,
@@ -61,23 +63,22 @@ impl CalendarGetRequestHandler for Server {
 
         // Validate ACL
         if !access_token.is_member(account_id)
-            && !self
-                .has_access_to_document(
-                    access_token,
-                    account_id,
-                    Collection::Calendar,
-                    resource.parent_id.unwrap(),
-                    Acl::ReadItems,
-                )
-                .await
-                .caused_by(trc::location!())?
+            && !resources.has_access_to_container(
+                access_token,
+                resource.parent_id().unwrap(),
+                Acl::ReadItems,
+            )
         {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
 
         // Fetch event
         let event_ = self
-            .get_archive(account_id, Collection::CalendarEvent, resource.document_id)
+            .get_archive(
+                account_id,
+                Collection::CalendarEvent,
+                resource.document_id(),
+            )
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -93,7 +94,7 @@ impl CalendarGetRequestHandler for Server {
             vec![ResourceState {
                 account_id,
                 collection: Collection::CalendarEvent,
-                document_id: resource.document_id.into(),
+                document_id: resource.document_id().into(),
                 etag: etag.clone().into(),
                 path: resource_.resource.unwrap(),
                 ..Default::default()

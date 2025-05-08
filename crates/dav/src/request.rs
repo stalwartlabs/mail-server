@@ -4,27 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
-use common::{Server, auth::AccessToken};
-use dav_proto::{
-    RequestHeaders,
-    parser::{DavParser, tokenizer::Tokenizer},
-    schema::{
-        Namespace,
-        property::WebDavProperty,
-        request::{Acl, LockInfo, MkCol, PropFind, PropertyUpdate, Report},
-        response::{
-            BaseCondition, ErrorResponse, PrincipalSearchProperty, PrincipalSearchPropertySet,
-        },
-    },
-    xml_pretty_print,
-};
-use directory::Permission;
-use http_proto::{HttpRequest, HttpResponse, HttpSessionData, request::fetch_body};
-use hyper::{StatusCode, header};
-use jmap_proto::types::collection::Collection;
-
 use crate::{
     DavError, DavMethod, DavResourceName,
     calendar::{
@@ -53,6 +32,25 @@ use crate::{
     },
     principal::{matching::PrincipalMatching, propsearch::PrincipalPropSearch},
 };
+use common::{Server, auth::AccessToken};
+use dav_proto::{
+    RequestHeaders,
+    parser::{DavParser, tokenizer::Tokenizer},
+    schema::{
+        Namespace,
+        property::WebDavProperty,
+        request::{Acl, LockInfo, MkCol, PropFind, PropertyUpdate, Report},
+        response::{
+            BaseCondition, ErrorResponse, PrincipalSearchProperty, PrincipalSearchPropertySet,
+        },
+    },
+    xml_pretty_print,
+};
+use directory::Permission;
+use http_proto::{HttpRequest, HttpResponse, HttpSessionData, request::fetch_body};
+use hyper::{StatusCode, header};
+use jmap_proto::types::collection::Collection;
+use std::sync::Arc;
 
 pub trait DavRequestHandler: Sync + Send {
     fn handle_dav_request(
@@ -452,7 +450,7 @@ impl DavRequestHandler for Server {
             Vec::new()
         };
 
-        let c = println!("------------------------------------------");
+        //let c = println!("------------------------------------------");
 
         let std_body = std::str::from_utf8(&body).unwrap_or("[binary]").to_string();
 
@@ -513,7 +511,7 @@ impl DavRequestHandler for Server {
             Err(DavError::Code(code)) => HttpResponse::new(code),
         };
 
-        let c = println!(
+        /*let c = println!(
             "{:?} {} -> {:?}\nHeaders: {:?}\nBody: {}\nResponse headers: {:?}\nResponse: {}",
             method,
             request.uri().path(),
@@ -526,7 +524,7 @@ impl DavRequestHandler for Server {
                 http_proto::HttpResponseBody::Empty => "[empty]".to_string(),
                 _ => "[binary]".to_string(),
             }
-        );
+        );*/
 
         result
     }

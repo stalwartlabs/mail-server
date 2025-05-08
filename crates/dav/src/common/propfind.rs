@@ -26,7 +26,7 @@ use crate::{
 };
 use calcard::common::timezone::Tz;
 use common::{
-    DavResource, DavResources, Server,
+    DavResourcePath, DavResources, Server,
     auth::{AccessToken, AsTenantId},
 };
 use dav_proto::{
@@ -48,11 +48,14 @@ use dav_proto::{
 };
 use directory::{Type, backend::internal::manage::ManageDirectory};
 use groupware::{
-    DavCalendarResource, DavResourceName, calendar::ArchivedTimezone, hierarchy::DavHierarchy,
+    DavCalendarResource, DavResourceName, cache::GroupwareCache, calendar::ArchivedTimezone,
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use percent_encoding::NON_ALPHANUMERIC;
 use std::sync::Arc;
 use store::{
@@ -90,7 +93,7 @@ pub(crate) struct PropFindData {
 
 #[derive(Default)]
 pub(crate) struct PropFindAccountData {
-    pub sync_token: Option<String>,
+    pub resources: Option<Arc<DavResources>>,
     pub quota: Option<PropFindAccountQuota>,
     pub owner: Option<Href>,
     pub locks: Option<Archive<AlignedBytes>>,
@@ -350,7 +353,7 @@ impl PropFindRequestHandler for Server {
         let mut data = PropFindData::new();
         let collection_container;
         let collection_children;
-        let mut ctag = None;
+        let sync_collection;
         let mut paths;
         let mut query_filter = None;
         let mut limit = std::cmp::min(
@@ -366,30 +369,27 @@ impl PropFindRequestHandler for Server {
                 let account_id = resource.account_id;
                 collection_container = resource.collection;
                 collection_children = collection_container.child_collection().unwrap();
+                sync_collection = SyncCollection::from(collection_container);
                 let container_has_children = collection_children != collection_container;
-                let resources = self
-                    .fetch_dav_resources(access_token, account_id, collection_container)
+                let resources = data
+                    .resources(self, access_token, account_id, sync_collection)
                     .await
                     .caused_by(trc::location!())?;
                 response.set_namespace(collection_container.namespace());
-                ctag = Some(resources.modseq.unwrap_or_default());
 
                 // Obtain document ids
                 let mut display_containers = if !access_token.is_member(account_id) {
-                    self.shared_containers(
-                        access_token,
-                        account_id,
-                        collection_container,
-                        [if container_has_children {
-                            Acl::ReadItems
-                        } else {
-                            Acl::Read
-                        }],
-                        true,
-                    )
-                    .await
-                    .caused_by(trc::location!())?
-                    .into()
+                    resources
+                        .shared_containers(
+                            access_token,
+                            [if container_has_children {
+                                Acl::ReadItems
+                            } else {
+                                Acl::Read
+                            }],
+                            true,
+                        )
+                        .into()
                 } else {
                     None
                 };
@@ -397,9 +397,9 @@ impl PropFindRequestHandler for Server {
                     .as_ref()
                     .filter(|_| container_has_children)
                     .map(|containers| {
-                        RoaringBitmap::from_iter(resources.paths.iter().filter_map(|r| {
-                            if r.parent_id
-                                .is_some_and(|parent_id| containers.contains(parent_id))
+                        RoaringBitmap::from_iter(resources.resources.iter().filter_map(|r| {
+                            if r.child_names()
+                                .is_some_and(|n| n.iter().any(|n| containers.contains(n.parent_id)))
                             {
                                 Some(r.document_id)
                             } else {
@@ -411,47 +411,58 @@ impl PropFindRequestHandler for Server {
                 // Filter by changelog
                 match query.sync_type {
                     SyncType::From { id, seq } => {
-                        let todo = "fix";
-                        let container_changes = self
+                        let changes = self
                             .store()
-                            .changes(account_id, collection_container, Query::Since(id))
+                            .changes(account_id, sync_collection, Query::Since(id))
                             .await
                             .caused_by(trc::location!())?;
-                        let children_changes = if container_has_children {
-                            self.store()
-                                .changes(account_id, collection_children, Query::Since(id))
-                                .await
-                                .caused_by(trc::location!())?
-                                .into()
-                        } else {
-                            None
-                        };
 
                         // Merge changes
                         let mut total_changes = 0;
-                        for (changes, document_ids) in [
-                            Some((&container_changes, &mut display_containers)),
-                            children_changes
-                                .as_ref()
-                                .map(|changes| (changes, &mut display_children)),
-                        ]
-                        .into_iter()
-                        .flatten()
-                        {
+                        if container_has_children {
+                            let mut container_changes = RoaringBitmap::new();
+                            let mut item_changes = RoaringBitmap::new();
+
+                            for change in changes.changes {
+                                match change {
+                                    Change::InsertItem(id) | Change::UpdateItem(id) => {
+                                        item_changes.insert(id as u32);
+                                    }
+                                    Change::InsertContainer(id) | Change::UpdateContainer(id) => {
+                                        container_changes.insert(id as u32);
+                                    }
+                                    _ => (),
+                                }
+                            }
+
+                            for (document_ids, changes) in [
+                                (&mut display_containers, container_changes),
+                                (&mut display_children, item_changes),
+                            ] {
+                                if let Some(document_ids) = document_ids {
+                                    *document_ids &= changes;
+                                    total_changes += document_ids.len() as usize;
+                                } else {
+                                    total_changes += changes.len() as usize;
+                                    *document_ids = Some(changes);
+                                }
+                            }
+                        } else {
                             let changes = RoaringBitmap::from_iter(
                                 changes.changes.iter().filter_map(|change| match change {
-                                    Change::InsertItem(id) | Change::UpdateItem(id) => {
-                                        Some(*id as u32)
-                                    }
+                                    Change::InsertItem(id)
+                                    | Change::UpdateItem(id)
+                                    | Change::InsertContainer(id)
+                                    | Change::UpdateContainer(id) => Some(*id as u32),
                                     _ => None,
                                 }),
                             );
-                            if let Some(document_ids) = document_ids {
+                            if let Some(document_ids) = &mut display_containers {
                                 *document_ids &= changes;
                                 total_changes += document_ids.len() as usize;
                             } else {
                                 total_changes += changes.len() as usize;
-                                *document_ids = Some(changes);
+                                display_containers = Some(changes);
                             }
                         }
 
@@ -483,35 +494,11 @@ impl PropFindRequestHandler for Server {
                         }
 
                         if !is_sync_limited {
-                            // Set sync token
-                            let change_id = std::cmp::max(
-                                container_changes.to_change_id,
-                                children_changes.as_ref().map_or(0, |c| c.to_change_id),
-                            );
-                            let sync_token = if change_id != 0 {
-                                let sync_token = Urn::Sync {
-                                    id: change_id,
-                                    seq: 0,
-                                }
-                                .to_string();
-                                data.accounts.entry(account_id).or_default().sync_token =
-                                    sync_token.clone().into();
-                                sync_token
-                            } else {
-                                data.sync_token(self, account_id, collection_container)
-                                    .await
-                                    .caused_by(trc::location!())?
-                            };
-
-                            response.set_sync_token(sync_token);
+                            response.set_sync_token(resources.sync_token());
                         }
                     }
                     SyncType::Initial => {
-                        response.set_sync_token(
-                            data.sync_token(self, account_id, collection_container)
-                                .await
-                                .caused_by(trc::location!())?,
-                        );
+                        response.set_sync_token(resources.sync_token());
                     }
                     SyncType::None => (),
                 }
@@ -523,16 +510,16 @@ impl PropFindRequestHandler for Server {
                             display_containers.as_ref().is_none_or(|containers| {
                                 if container_has_children {
                                     if item.is_container() {
-                                        containers.contains(item.document_id)
+                                        containers.contains(item.document_id())
                                     } else {
                                         display_children.as_ref().is_some_and(|children| {
-                                            children.contains(item.document_id)
+                                            children.contains(item.document_id())
                                         })
                                     }
                                 } else {
-                                    containers.contains(item.document_id)
+                                    containers.contains(item.document_id())
                                 }
-                            }) && (!query.depth_no_root || item.name != resource)
+                            }) && (!query.depth_no_root || item.path() != resource)
                         })
                         .map(|item| {
                             PropFindItem::new(resources.format_resource(item), account_id, item)
@@ -561,14 +548,14 @@ impl PropFindRequestHandler for Server {
                             display_containers.as_ref().is_none_or(|containers| {
                                 if container_has_children {
                                     if item.is_container() {
-                                        containers.contains(item.document_id)
+                                        containers.contains(item.document_id())
                                     } else {
                                         display_children.as_ref().is_some_and(|children| {
-                                            children.contains(item.document_id)
+                                            children.contains(item.document_id())
                                         })
                                     }
                                 } else {
-                                    containers.contains(item.document_id)
+                                    containers.contains(item.document_id())
                                 }
                             })
                         })
@@ -593,12 +580,11 @@ impl PropFindRequestHandler for Server {
                 parent_collection,
             } => {
                 paths = Vec::with_capacity(hrefs.len());
-                let mut resources_by_account: AHashMap<
-                    u32,
-                    (Arc<DavResources>, Arc<Option<RoaringBitmap>>),
-                > = AHashMap::with_capacity(3);
+                let mut shared_folders_by_account: AHashMap<u32, Arc<RoaringBitmap>> =
+                    AHashMap::with_capacity(3);
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
+                sync_collection = SyncCollection::from(collection_container);
                 response.set_namespace(collection_container.namespace());
 
                 for item in hrefs {
@@ -618,51 +604,38 @@ impl PropFindRequestHandler for Server {
                     };
 
                     let account_id = resource.account_id;
-                    let (resources, document_ids) =
-                        if let Some(resources) = resources_by_account.get(&account_id) {
-                            resources.clone()
+                    let resources = data
+                        .resources(self, access_token, account_id, sync_collection)
+                        .await
+                        .caused_by(trc::location!())?;
+
+                    let document_ids = if !access_token.is_member(account_id) {
+                        if let Some(document_ids) = shared_folders_by_account.get(&account_id) {
+                            document_ids.clone().into()
                         } else {
-                            let resources = self
-                                .fetch_dav_resources(access_token, account_id, collection_container)
-                                .await
-                                .caused_by(trc::location!())?;
-                            let document_ids = Arc::new(if !access_token.is_member(account_id) {
-                                self.shared_containers(
-                                    access_token,
-                                    account_id,
-                                    collection_container,
-                                    [Acl::ReadItems],
-                                    false,
-                                )
-                                .await
-                                .caused_by(trc::location!())?
-                                .into()
-                            } else {
-                                None
-                            });
-                            resources_by_account
-                                .insert(account_id, (resources.clone(), document_ids.clone()));
-                            (resources, document_ids)
-                        };
+                            let document_ids = Arc::new(resources.shared_containers(
+                                access_token,
+                                [if collection_children == collection_container {
+                                    Acl::ReadItems
+                                } else {
+                                    Acl::Read
+                                }],
+                                true,
+                            ));
+                            shared_folders_by_account.insert(account_id, document_ids.clone());
+                            document_ids.into()
+                        }
+                    } else {
+                        None
+                    };
 
-                    /*let c = println!(
-                        "resources: {:?} resource: {resource:?}",
-                        resources
-                            .paths
-                            .iter()
-                            .map(|r| r.name.to_string())
-                            .collect::<Vec<_>>()
-                    );*/
-
-                    if let Some(resource) = resource
-                        .resource
-                        .and_then(|name| resources.paths.by_name(name))
+                    if let Some(resource) =
+                        resource.resource.and_then(|name| resources.by_path(name))
                     {
                         if !resource.is_container() {
                             if document_ids
                                 .as_ref()
-                                .as_ref()
-                                .is_none_or(|docs| docs.contains(resource.document_id))
+                                .is_none_or(|docs| docs.contains(resource.document_id()))
                             {
                                 paths.push(PropFindItem::new(
                                     resources.format_resource(resource),
@@ -699,6 +672,7 @@ impl PropFindRequestHandler for Server {
                 query_filter = Some(filter);
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
+                sync_collection = SyncCollection::from(collection_container);
                 response.set_namespace(collection_container.namespace());
             }
             DavQueryResource::None => unreachable!(),
@@ -795,18 +769,19 @@ impl PropFindRequestHandler for Server {
                         },
                         ArchivedResource::CalendarEvent(event),
                     ) => {
-                        let mut query_handler = CalendarQueryHandler::new(
-                            event.inner,
-                            *max_time_range,
-                            try_parse_tz(timezone)
-                                .or_else(|| {
-                                    item.parent_id.and_then(|calendar_id| {
-                                        self.cached_dav_resources(account_id, Collection::Calendar)
-                                            .and_then(|r| r.calendar_default_tz(calendar_id))
-                                    })
-                                })
-                                .unwrap_or(Tz::UTC),
-                        );
+                        let default_tz = if let Some(tz) = try_parse_tz(timezone) {
+                            tz
+                        } else if let Some(calendar_id) = item.parent_id {
+                            data.resources(self, access_token, account_id, SyncCollection::Calendar)
+                                .await
+                                .caused_by(trc::location!())?
+                                .calendar_default_tz(calendar_id)
+                                .unwrap_or(Tz::UTC)
+                        } else {
+                            Tz::UTC
+                        };
+                        let mut query_handler =
+                            CalendarQueryHandler::new(event.inner, *max_time_range, default_tz);
                         if !query_handler.filter(event.inner, filter) {
                             continue;
                         }
@@ -872,15 +847,12 @@ impl PropFindRequestHandler for Server {
                         }
                         WebDavProperty::GetCTag => {
                             if item.is_container {
-                                let ctag = if let Some(ctag) = ctag {
-                                    ctag
-                                } else {
-                                    let todo = "fix";
-                                    self.store()
-                                        .get_last_change_id(account_id, collection)
-                                        .await?
-                                        .unwrap_or_default()
-                                };
+                                let ctag = data
+                                    .resources(self, access_token, account_id, sync_collection)
+                                    .await
+                                    .caused_by(trc::location!())?
+                                    .highest_change_id;
+
                                 fields.push(DavPropertyValue::new(
                                     property.clone(),
                                     DavValue::String(format!("\"{ctag}\"")),
@@ -928,12 +900,13 @@ impl PropFindRequestHandler for Server {
                             }
                         }
                         WebDavProperty::SyncToken => {
-                            fields.push(DavPropertyValue::new(
-                                property.clone(),
-                                data.sync_token(self, account_id, collection_children)
-                                    .await
-                                    .caused_by(trc::location!())?,
-                            ));
+                            let sync_token = data
+                                .resources(self, access_token, account_id, sync_collection)
+                                .await
+                                .caused_by(trc::location!())?
+                                .sync_token();
+
+                            fields.push(DavPropertyValue::new(property.clone(), sync_token));
                         }
                         WebDavProperty::CurrentUserPrincipal => {
                             if !query.expand {
@@ -1085,14 +1058,10 @@ impl PropFindRequestHandler for Server {
                                 )
                             } else if let Some(parent_id) = item.parent_id {
                                 current_user_privilege_set(
-                                    self.document_acl(
-                                        access_token.primary_id(),
-                                        account_id,
-                                        collection_container,
-                                        parent_id,
-                                    )
-                                    .await
-                                    .caused_by(trc::location!())?,
+                                    data.resources(self, access_token, account_id, sync_collection)
+                                        .await
+                                        .caused_by(trc::location!())?
+                                        .container_acl(access_token, parent_id),
                                 )
                             } else {
                                 vec![]
@@ -1427,12 +1396,12 @@ impl PropFindRequestHandler for Server {
 }
 
 impl PropFindItem {
-    pub fn new(name: String, account_id: u32, resource: &DavResource) -> Self {
+    pub fn new(name: String, account_id: u32, resource: DavResourcePath<'_>) -> Self {
         Self {
             name,
             account_id,
-            document_id: resource.document_id,
-            parent_id: resource.parent_id,
+            document_id: resource.document_id(),
+            parent_id: resource.parent_id(),
             is_container: resource.is_container(),
         }
     }
@@ -1479,26 +1448,24 @@ impl PropFindData {
         Ok(data.owner.clone().unwrap())
     }
 
-    pub async fn sync_token(
+    pub async fn resources(
         &mut self,
         server: &Server,
+        access_token: &AccessToken,
         account_id: u32,
-        collection_children: Collection,
-    ) -> trc::Result<String> {
+        sync_collection: SyncCollection,
+    ) -> trc::Result<Arc<DavResources>> {
         let data = self.accounts.entry(account_id).or_default();
 
-        if data.sync_token.is_none() {
-            let todo = "fix";
-            let id = server
-                .store()
-                .get_last_change_id(account_id, collection_children)
+        if data.resources.is_none() {
+            let resources = server
+                .fetch_dav_resources(access_token, account_id, sync_collection)
                 .await
-                .caused_by(trc::location!())?
-                .unwrap_or_default();
-            data.sync_token = Urn::Sync { id, seq: 0 }.to_string().into();
+                .caused_by(trc::location!())?;
+            data.resources = resources.into();
         }
 
-        Ok(data.sync_token.clone().unwrap())
+        Ok(data.resources.clone().unwrap())
     }
 
     pub async fn locks(
@@ -1536,5 +1503,19 @@ impl PropFindData {
         } else {
             Ok(None)
         }
+    }
+}
+
+pub(crate) trait SyncTokenUrn {
+    fn sync_token(&self) -> String;
+}
+
+impl SyncTokenUrn for DavResources {
+    fn sync_token(&self) -> String {
+        Urn::Sync {
+            id: self.highest_change_id,
+            seq: 0,
+        }
+        .to_string()
     }
 }
