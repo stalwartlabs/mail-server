@@ -43,7 +43,7 @@ elasticsearch = { version = "8.5.0-alpha.1", default-features = false, features 
 serde_json = {version = "1.0.64", optional = true }
 regex = "1.7.0"
 flate2 = "1.0"
-async-trait = "0.1.68"
+async-trait = "0.1.88"
 redis = { version = "0.27", features = [ "tokio-comp", "tokio-rustls-comp", "tls-rustls-insecure", "tls-rustls-webpki-roots", "cluster-async"], optional = true }
 deadpool = { version = "0.12", features = ["managed"], optional = true }
 bincode = "1.3.3"
