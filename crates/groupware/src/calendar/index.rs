@@ -4,37 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::storage::index::{
-    IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
-};
-use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
-use store::{SerializeInfallible, write::key::KeySerializer};
-
-use crate::{IDX_NAME, IDX_TIME, IDX_UID};
-
 use super::{
     ArchivedCalendar, ArchivedCalendarEvent, ArchivedCalendarPreferences, ArchivedDefaultAlert,
     ArchivedTimezone, Calendar, CalendarEvent, CalendarPreferences, DefaultAlert, Timezone,
 };
+use crate::IDX_UID;
+use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
 
 impl IndexableObject for Calendar {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
-        // Note: When adding a new value with index id above 0u8, tune `build_hierarchy`` to skip
-        // this value during iteration.
         [
-            IndexValue::Index {
-                field: IDX_NAME,
-                value: self.name.as_str().into(),
-            },
-            IndexValue::Index {
-                field: IDX_TIME,
-                value: self
-                    .preferences
-                    .first()
-                    .and_then(|p| p.time_zone.tz())
-                    .map(|tz| tz.as_id().serialize())
-                    .into(),
-            },
             IndexValue::Acl {
                 value: (&self.acls).into(),
             },
@@ -55,19 +35,6 @@ impl IndexableObject for Calendar {
 impl IndexableObject for &ArchivedCalendar {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Index {
-                field: IDX_NAME,
-                value: self.name.as_str().into(),
-            },
-            IndexValue::Index {
-                field: IDX_TIME,
-                value: self
-                    .preferences
-                    .first()
-                    .and_then(|p| p.time_zone.tz())
-                    .map(|tz| tz.as_id().serialize())
-                    .into(),
-            },
             IndexValue::Acl {
                 value: self
                     .acls
@@ -95,30 +62,9 @@ impl IndexableAndSerializableObject for Calendar {}
 impl IndexableObject for CalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::IndexList {
-                field: IDX_NAME,
-                value: self
-                    .names
-                    .iter()
-                    .map(|v| IndexItem::Vec(v.serialize()))
-                    .collect::<Vec<_>>(),
-            },
             IndexValue::Index {
                 field: IDX_UID,
                 value: self.data.event.uids().next().into(),
-            },
-            IndexValue::Index {
-                field: IDX_TIME,
-                value: self
-                    .data
-                    .event_range()
-                    .map(|(start, duration)| {
-                        KeySerializer::new(std::mem::size_of::<i64>() + std::mem::size_of::<u32>())
-                            .write(start as u64)
-                            .write(duration)
-                            .finalize()
-                    })
-                    .into(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -138,30 +84,9 @@ impl IndexableObject for CalendarEvent {
 impl IndexableObject for &ArchivedCalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::IndexList {
-                field: IDX_NAME,
-                value: self
-                    .names
-                    .iter()
-                    .map(|v| IndexItem::Vec(v.serialize()))
-                    .collect::<Vec<_>>(),
-            },
             IndexValue::Index {
                 field: IDX_UID,
                 value: self.data.event.uids().next().into(),
-            },
-            IndexValue::Index {
-                field: IDX_TIME,
-                value: self
-                    .data
-                    .event_range()
-                    .map(|(start, duration)| {
-                        KeySerializer::new(std::mem::size_of::<i64>() + std::mem::size_of::<u32>())
-                            .write(start as u64)
-                            .write(duration)
-                            .finalize()
-                    })
-                    .into(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32

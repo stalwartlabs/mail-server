@@ -4,16 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken};
+use common::{DavName, Server, auth::AccessToken};
 use dav_proto::{Depth, RequestHeaders};
 use groupware::{
-    DavName, DestroyArchive,
+    DestroyArchive,
+    cache::GroupwareCache,
     contact::{AddressBook, ContactCard},
-    hierarchy::DavHierarchy,
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use store::write::BatchBuilder;
 use trc::AddContext;
 
@@ -51,33 +54,27 @@ impl CardCopyMoveRequestHandler for Server {
             .into_owned_uri()?;
         let from_account_id = from_resource_.account_id;
         let from_resources = self
-            .fetch_dav_resources(access_token, from_account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, from_account_id, SyncCollection::AddressBook)
             .await
             .caused_by(trc::location!())?;
         let from_resource_name = from_resource_
             .resource
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
         let from_resource = from_resources
-            .paths
-            .by_name(from_resource_name)
+            .by_path(from_resource_name)
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
 
         // Validate ACL
         if !access_token.is_member(from_account_id)
-            && !self
-                .has_access_to_document(
-                    access_token,
-                    from_account_id,
-                    Collection::AddressBook,
-                    if from_resource.is_container() {
-                        from_resource.document_id
-                    } else {
-                        from_resource.parent_id.unwrap()
-                    },
-                    Acl::ReadItems,
-                )
-                .await
-                .caused_by(trc::location!())?
+            && !from_resources.has_access_to_container(
+                access_token,
+                if from_resource.is_container() {
+                    from_resource.document_id()
+                } else {
+                    from_resource.parent_id().unwrap()
+                },
+                Acl::ReadItems,
+            )
         {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
@@ -101,7 +98,7 @@ impl CardCopyMoveRequestHandler for Server {
         let to_resources = if to_account_id == from_account_id {
             from_resources.clone()
         } else {
-            self.fetch_dav_resources(access_token, to_account_id, Collection::AddressBook)
+            self.fetch_dav_resources(access_token, to_account_id, SyncCollection::AddressBook)
                 .await
                 .caused_by(trc::location!())?
         };
@@ -110,7 +107,7 @@ impl CardCopyMoveRequestHandler for Server {
         let destination_resource_name = destination
             .resource
             .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?;
-        let to_resource = to_resources.paths.by_name(destination_resource_name);
+        let to_resource = to_resources.by_path(destination_resource_name);
         self.validate_headers(
             access_token,
             &headers,
@@ -122,7 +119,7 @@ impl CardCopyMoveRequestHandler for Server {
                     } else {
                         Collection::ContactCard
                     },
-                    document_id: Some(from_resource.document_id),
+                    document_id: Some(from_resource.document_id()),
                     path: from_resource_name,
                     ..Default::default()
                 },
@@ -137,7 +134,7 @@ impl CardCopyMoveRequestHandler for Server {
                             }
                         })
                         .unwrap_or(Collection::AddressBook),
-                    document_id: Some(to_resource.map(|r| r.document_id).unwrap_or(u32::MAX)),
+                    document_id: Some(to_resource.map(|r| r.document_id()).unwrap_or(u32::MAX)),
                     path: destination_resource_name,
                     ..Default::default()
                 },
@@ -153,7 +150,7 @@ impl CardCopyMoveRequestHandler for Server {
 
         // Map destination
         if let Some(to_resource) = to_resource {
-            if from_resource.name == to_resource.name {
+            if from_resource.path() == to_resource.path() {
                 // Same resource
                 return Err(DavError::Code(StatusCode::BAD_GATEWAY));
             }
@@ -167,31 +164,26 @@ impl CardCopyMoveRequestHandler for Server {
                     let from_children_ids = from_resources
                         .subtree(from_resource_name)
                         .filter(|r| !r.is_container())
-                        .map(|r| r.document_id)
+                        .map(|r| r.document_id())
                         .collect::<Vec<_>>();
                     let to_document_ids = to_resources
                         .subtree(destination_resource_name)
                         .filter(|r| !r.is_container())
-                        .map(|r| r.document_id)
+                        .map(|r| r.document_id())
                         .collect::<Vec<_>>();
 
                     // Validate ACLs
                     if !access_token.is_member(to_account_id)
                         || (!access_token.is_member(from_account_id)
-                            && !self
-                                .has_access_to_document(
-                                    access_token,
-                                    from_account_id,
-                                    Collection::AddressBook,
-                                    from_resource.document_id,
-                                    if is_move {
-                                        Acl::RemoveItems
-                                    } else {
-                                        Acl::ReadItems
-                                    },
-                                )
-                                .await
-                                .caused_by(trc::location!())?)
+                            && !from_resources.has_access_to_container(
+                                access_token,
+                                from_resource.document_id(),
+                                if is_move {
+                                    Acl::RemoveItems
+                                } else {
+                                    Acl::ReadItems
+                                },
+                            ))
                     {
                         return Err(DavError::Code(StatusCode::FORBIDDEN));
                     }
@@ -201,10 +193,10 @@ impl CardCopyMoveRequestHandler for Server {
                         self,
                         access_token,
                         from_account_id,
-                        from_resource.document_id,
+                        from_resource.document_id(),
                         from_children_ids,
                         to_account_id,
-                        to_resource.document_id.into(),
+                        to_resource.document_id().into(),
                         to_document_ids,
                         new_name,
                         is_move,
@@ -213,36 +205,26 @@ impl CardCopyMoveRequestHandler for Server {
                 }
                 (false, false) => {
                     // Overwrite card
-                    let from_addressbook_id = from_resource.parent_id.unwrap();
-                    let to_addressbook_id = to_resource.parent_id.unwrap();
+                    let from_addressbook_id = from_resource.parent_id().unwrap();
+                    let to_addressbook_id = to_resource.parent_id().unwrap();
 
                     // Validate ACL
                     if (!access_token.is_member(from_account_id)
-                        && !self
-                            .has_access_to_document(
-                                access_token,
-                                from_account_id,
-                                Collection::AddressBook,
-                                from_addressbook_id,
-                                if is_move {
-                                    Acl::RemoveItems
-                                } else {
-                                    Acl::ReadItems
-                                },
-                            )
-                            .await
-                            .caused_by(trc::location!())?)
+                        && !from_resources.has_access_to_container(
+                            access_token,
+                            from_addressbook_id,
+                            if is_move {
+                                Acl::RemoveItems
+                            } else {
+                                Acl::ReadItems
+                            },
+                        ))
                         || (!access_token.is_member(to_account_id)
-                            && !self
-                                .has_access_to_document(
-                                    access_token,
-                                    to_account_id,
-                                    Collection::AddressBook,
-                                    to_addressbook_id,
-                                    Acl::RemoveItems,
-                                )
-                                .await
-                                .caused_by(trc::location!())?)
+                            && !to_resources.has_access_to_container(
+                                access_token,
+                                to_addressbook_id,
+                                Acl::RemoveItems,
+                            ))
                     {
                         return Err(DavError::Code(StatusCode::FORBIDDEN));
                     }
@@ -252,10 +234,10 @@ impl CardCopyMoveRequestHandler for Server {
                             self,
                             access_token,
                             from_account_id,
-                            from_resource.document_id,
+                            from_resource.document_id(),
                             from_addressbook_id,
                             to_account_id,
-                            to_resource.document_id.into(),
+                            to_resource.document_id().into(),
                             to_addressbook_id,
                             new_name,
                         )
@@ -265,9 +247,9 @@ impl CardCopyMoveRequestHandler for Server {
                             self,
                             access_token,
                             from_account_id,
-                            from_resource.document_id,
+                            from_resource.document_id(),
                             to_account_id,
-                            to_resource.document_id.into(),
+                            to_resource.document_id().into(),
                             to_addressbook_id,
                             new_name,
                         )
@@ -287,34 +269,24 @@ impl CardCopyMoveRequestHandler for Server {
                 }
 
                 // Validate ACL
-                let from_addressbook_id = from_resource.parent_id.unwrap();
-                let to_addressbook_id = parent_resource.document_id;
+                let from_addressbook_id = from_resource.parent_id().unwrap();
+                let to_addressbook_id = parent_resource.document_id();
                 if (!access_token.is_member(from_account_id)
-                    && !self
-                        .has_access_to_document(
-                            access_token,
-                            from_account_id,
-                            Collection::AddressBook,
-                            from_addressbook_id,
-                            if is_move {
-                                Acl::RemoveItems
-                            } else {
-                                Acl::ReadItems
-                            },
-                        )
-                        .await
-                        .caused_by(trc::location!())?)
+                    && !from_resources.has_access_to_container(
+                        access_token,
+                        from_addressbook_id,
+                        if is_move {
+                            Acl::RemoveItems
+                        } else {
+                            Acl::ReadItems
+                        },
+                    ))
                     || (!access_token.is_member(to_account_id)
-                        && !self
-                            .has_access_to_document(
-                                access_token,
-                                to_account_id,
-                                Collection::AddressBook,
-                                to_addressbook_id,
-                                Acl::AddItems,
-                            )
-                            .await
-                            .caused_by(trc::location!())?)
+                        && !to_resources.has_access_to_container(
+                            access_token,
+                            to_addressbook_id,
+                            Acl::AddItems,
+                        ))
                 {
                     return Err(DavError::Code(StatusCode::FORBIDDEN));
                 }
@@ -322,13 +294,13 @@ impl CardCopyMoveRequestHandler for Server {
                 // Copy/move card
                 if is_move {
                     if from_account_id != to_account_id
-                        || parent_resource.document_id != from_addressbook_id
+                        || parent_resource.document_id() != from_addressbook_id
                     {
                         move_card(
                             self,
                             access_token,
                             from_account_id,
-                            from_resource.document_id,
+                            from_resource.document_id(),
                             from_addressbook_id,
                             to_account_id,
                             None,
@@ -341,7 +313,7 @@ impl CardCopyMoveRequestHandler for Server {
                             self,
                             access_token,
                             from_account_id,
-                            from_resource.document_id,
+                            from_resource.document_id(),
                             from_addressbook_id,
                             new_name,
                         )
@@ -352,7 +324,7 @@ impl CardCopyMoveRequestHandler for Server {
                         self,
                         access_token,
                         from_account_id,
-                        from_resource.document_id,
+                        from_resource.document_id(),
                         to_account_id,
                         None,
                         to_addressbook_id,
@@ -373,20 +345,15 @@ impl CardCopyMoveRequestHandler for Server {
 
                 // Validate ACLs
                 if !access_token.is_member(from_account_id)
-                    && !self
-                        .has_access_to_document(
-                            access_token,
-                            from_account_id,
-                            Collection::AddressBook,
-                            from_resource.document_id,
-                            if is_move {
-                                Acl::RemoveItems
-                            } else {
-                                Acl::ReadItems
-                            },
-                        )
-                        .await
-                        .caused_by(trc::location!())?
+                    && !from_resources.has_access_to_container(
+                        access_token,
+                        from_resource.document_id(),
+                        if is_move {
+                            Acl::RemoveItems
+                        } else {
+                            Acl::ReadItems
+                        },
+                    )
                 {
                     return Err(DavError::Code(StatusCode::FORBIDDEN));
                 }
@@ -395,7 +362,7 @@ impl CardCopyMoveRequestHandler for Server {
                 let from_children_ids = from_resources
                     .subtree(from_resource_name)
                     .filter(|r| !r.is_container())
-                    .map(|r| r.document_id)
+                    .map(|r| r.document_id())
                     .collect::<Vec<_>>();
                 if is_move {
                     if from_account_id != to_account_id {
@@ -403,7 +370,7 @@ impl CardCopyMoveRequestHandler for Server {
                             self,
                             access_token,
                             from_account_id,
-                            from_resource.document_id,
+                            from_resource.document_id(),
                             if headers.depth != Depth::Zero {
                                 from_children_ids
                             } else {
@@ -421,7 +388,7 @@ impl CardCopyMoveRequestHandler for Server {
                             self,
                             access_token,
                             from_account_id,
-                            from_resource.document_id,
+                            from_resource.document_id(),
                             new_name,
                         )
                         .await
@@ -431,7 +398,7 @@ impl CardCopyMoveRequestHandler for Server {
                         self,
                         access_token,
                         from_account_id,
-                        from_resource.document_id,
+                        from_resource.document_id(),
                         if headers.depth != Depth::Zero {
                             from_children_ids
                         } else {
@@ -478,7 +445,7 @@ async fn copy_card(
     assert_is_unique_uid(
         server,
         server
-            .fetch_dav_resources(access_token, to_account_id, Collection::AddressBook)
+            .fetch_dav_resources(access_token, to_account_id, SyncCollection::AddressBook)
             .await
             .caused_by(trc::location!())?
             .as_ref(),
@@ -588,7 +555,7 @@ async fn move_card(
         assert_is_unique_uid(
             server,
             server
-                .fetch_dav_resources(access_token, to_account_id, Collection::AddressBook)
+                .fetch_dav_resources(access_token, to_account_id, SyncCollection::AddressBook)
                 .await
                 .caused_by(trc::location!())?
                 .as_ref(),

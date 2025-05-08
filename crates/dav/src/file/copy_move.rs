@@ -9,18 +9,22 @@ use crate::{
     DavError, DavMethod,
     common::{
         ExtractETag,
-        acl::DavAclHandler,
         lock::{LockRequestHandler, ResourceState},
         uri::{DavUriResource, UriResource},
     },
     file::{DavFileResource, FileItemId},
 };
-use common::{DavResources, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{
+    DavResourcePath, DavResources, Server, auth::AccessToken, storage::index::ObjectIndexBuilder,
+};
 use dav_proto::{Depth, RequestHeaders};
-use groupware::{DestroyArchive, file::FileNode, hierarchy::DavHierarchy};
+use groupware::{DestroyArchive, cache::GroupwareCache, file::FileNode};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use std::sync::Arc;
 use store::{
     ahash::AHashMap,
@@ -50,32 +54,27 @@ impl FileCopyMoveRequestHandler for Server {
             .await?
             .into_owned_uri()?;
         let from_account_id = from_resource_.account_id;
-        let from_files = self
-            .fetch_dav_resources(access_token, from_account_id, Collection::FileNode)
+        let from_resources = self
+            .fetch_dav_resources(access_token, from_account_id, SyncCollection::FileNode)
             .await
             .caused_by(trc::location!())?;
-        let from_resource = from_files.map_resource::<FileItemId>(&from_resource_)?;
+        let from_resource = from_resources.map_resource::<FileItemId>(&from_resource_)?;
         let from_resource_name = from_resource_.resource.unwrap();
 
         // Validate source ACLs
         if !access_token.is_member(from_account_id) {
-            let shared = self
-                .shared_containers(
-                    access_token,
-                    from_account_id,
-                    Collection::FileNode,
-                    if is_move {
-                        [Acl::Read, Acl::Delete].as_slice().iter().copied()
-                    } else {
-                        [Acl::Read].as_slice().iter().copied()
-                    },
-                    false,
-                )
-                .await
-                .caused_by(trc::location!())?;
+            let shared = from_resources.shared_containers(
+                access_token,
+                if is_move {
+                    [Acl::Read, Acl::Delete].as_slice().iter().copied()
+                } else {
+                    [Acl::Read].as_slice().iter().copied()
+                },
+                false,
+            );
 
-            for resource in from_files.subtree(from_resource_.resource.unwrap()) {
-                if !shared.contains(resource.document_id) {
+            for resource in from_resources.subtree(from_resource_.resource.unwrap()) {
+                if !shared.contains(resource.document_id()) {
                     return Err(DavError::Code(StatusCode::FORBIDDEN));
                 }
             }
@@ -97,10 +96,10 @@ impl FileCopyMoveRequestHandler for Server {
         let to_account_id = destination
             .account_id
             .ok_or(DavError::Code(StatusCode::BAD_GATEWAY))?;
-        let to_files = if to_account_id == from_account_id {
-            from_files.clone()
+        let to_resources = if to_account_id == from_account_id {
+            from_resources.clone()
         } else {
-            self.fetch_dav_resources(access_token, to_account_id, Collection::FileNode)
+            self.fetch_dav_resources(access_token, to_account_id, SyncCollection::FileNode)
                 .await
                 .caused_by(trc::location!())?
         };
@@ -120,29 +119,29 @@ impl FileCopyMoveRequestHandler for Server {
 
         let mut delete_destination = None;
         // Check if the resource exists
-        let mut destination =
-            if let Some((destination, new_name)) = to_files.map_parent(destination_resource_name) {
-                if let Some(mut existing_destination) = to_files
-                    .paths
-                    .by_name(destination_resource_name)
-                    .map(Destination::from_dav_resource)
-                {
-                    if !headers.overwrite_fail {
-                        existing_destination.account_id = to_account_id;
-                        delete_destination = Some(existing_destination);
-                    } else {
-                        return Ok(HttpResponse::new(StatusCode::PRECONDITION_FAILED));
-                    }
+        let mut destination = if let Some((destination, new_name)) =
+            to_resources.map_parent(destination_resource_name)
+        {
+            if let Some(mut existing_destination) = to_resources
+                .by_path(destination_resource_name)
+                .map(Destination::from_dav_resource)
+            {
+                if !headers.overwrite_fail {
+                    existing_destination.account_id = to_account_id;
+                    delete_destination = Some(existing_destination);
+                } else {
+                    return Ok(HttpResponse::new(StatusCode::PRECONDITION_FAILED));
                 }
+            }
 
-                let mut destination = destination
-                    .map(Destination::from_dav_resource)
-                    .unwrap_or_default();
-                destination.new_name = Some(new_name.to_string());
-                destination
-            } else {
-                return Err(DavError::Code(StatusCode::CONFLICT));
-            };
+            let mut destination = destination
+                .map(Destination::from_dav_resource)
+                .unwrap_or_default();
+            destination.new_name = Some(new_name.to_string());
+            destination
+        } else {
+            return Err(DavError::Code(StatusCode::CONFLICT));
+        };
         destination.account_id = to_account_id;
 
         if delete_destination.is_none()
@@ -158,24 +157,22 @@ impl FileCopyMoveRequestHandler for Server {
         // Validate destination ACLs
         if let Some(document_id) = destination.document_id {
             if let Some(delete_destination) = &delete_destination {
-                self.validate_acl(
-                    access_token,
-                    to_account_id,
-                    Collection::FileNode,
-                    delete_destination.document_id.unwrap(),
-                    Acl::Delete,
-                )
-                .await?;
+                if !access_token.is_member(to_account_id)
+                    && !from_resources.has_access_to_container(
+                        access_token,
+                        delete_destination.document_id.unwrap(),
+                        Acl::Delete,
+                    )
+                {
+                    return Err(DavError::Code(StatusCode::FORBIDDEN));
+                }
             }
 
-            self.validate_acl(
-                access_token,
-                to_account_id,
-                Collection::FileNode,
-                document_id,
-                Acl::Modify,
-            )
-            .await?;
+            if !access_token.is_member(to_account_id)
+                && !from_resources.has_access_to_container(access_token, document_id, Acl::Modify)
+            {
+                return Err(DavError::Code(StatusCode::FORBIDDEN));
+            }
         } else if !access_token.is_member(to_account_id) {
             return Err(DavError::Code(StatusCode::FORBIDDEN));
         }
@@ -217,12 +214,8 @@ impl FileCopyMoveRequestHandler for Server {
 
         // Validate quota
         if !is_move || from_account_id != to_account_id {
-            let res = from_files
-                .paths
-                .by_id(from_resource.resource.document_id)
-                .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-            let space_needed = from_files
-                .subtree(&res.name)
+            let space_needed = from_resources
+                .subtree(from_resource_name)
                 .map(|a| a.size() as u64)
                 .sum::<u64>();
             self.has_available_quota(
@@ -239,13 +232,13 @@ impl FileCopyMoveRequestHandler for Server {
         if is_overwrite {
             delete_destination = None;
             // Find ids to delete
-            let mut ids = to_files
+            let mut ids = to_resources
                 .subtree(destination_resource_name)
                 .collect::<Vec<_>>();
             if !ids.is_empty() {
-                ids.sort_unstable_by_key(|b| std::cmp::Reverse(b.hierarchy_sequence()));
+                ids.sort_unstable_by_key(|b| std::cmp::Reverse(b.hierarchy_seq()));
                 let mut sorted_ids = Vec::with_capacity(ids.len());
-                sorted_ids.extend(ids.into_iter().map(|a| a.document_id));
+                sorted_ids.extend(ids.into_iter().map(|a| a.document_id()));
                 DestroyArchive(sorted_ids)
                     .delete(self, access_token, destination.account_id)
                     .await
@@ -258,8 +251,9 @@ impl FileCopyMoveRequestHandler for Server {
                 move_container(
                     self,
                     access_token,
-                    from_files,
+                    from_resources,
                     from_resource,
+                    from_resource_name,
                     destination,
                     headers.depth,
                 )
@@ -269,8 +263,9 @@ impl FileCopyMoveRequestHandler for Server {
                 copy_container(
                     self,
                     access_token,
-                    from_files,
+                    from_resources,
                     from_resource,
+                    from_resource_name,
                     destination,
                     headers.depth,
                     false,
@@ -309,7 +304,6 @@ pub(crate) struct Destination {
     pub account_id: u32,
     pub new_name: Option<String>,
     pub document_id: Option<u32>,
-    //pub parent_id: Option<u32>,
     pub is_container: bool,
 }
 
@@ -328,8 +322,9 @@ impl Default for Destination {
 async fn move_container(
     server: &Server,
     access_token: &AccessToken,
-    from_files: Arc<DavResources>,
+    from_resources: Arc<DavResources>,
     from_resource: UriResource<u32, FileItemId>,
+    from_resource_name: &str,
     destination: Destination,
     depth: Depth,
 ) -> crate::Result<HttpResponse> {
@@ -373,8 +368,9 @@ async fn move_container(
         copy_container(
             server,
             access_token,
-            from_files,
+            from_resources,
             from_resource,
+            from_resource_name,
             destination,
             depth,
             true,
@@ -383,11 +379,13 @@ async fn move_container(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn copy_container(
     server: &Server,
     access_token: &AccessToken,
-    from_files: Arc<DavResources>,
+    from_resources: Arc<DavResources>,
     from_resource: UriResource<u32, FileItemId>,
+    from_resource_name: &str,
     mut destination: Destination,
     depth: Depth,
     delete_source: bool,
@@ -402,23 +400,18 @@ async fn copy_container(
 
     let from_account_id = from_resource.account_id;
     let to_account_id = destination.account_id;
-    let from_document_id = from_resource.resource.document_id;
     let parent_id = destination.document_id.map(|id| id + 1).unwrap_or(0);
 
     // Obtain files to copy
-    let res = from_files
-        .paths
-        .by_id(from_document_id)
-        .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
     let mut copy_files = if infinity_copy {
-        from_files
-            .subtree(&res.name)
-            .map(|r| (r.document_id, r.hierarchy_sequence()))
+        from_resources
+            .subtree(from_resource_name)
+            .map(|r| (r.document_id(), r.hierarchy_seq()))
             .collect::<Vec<_>>()
     } else {
-        from_files
-            .subtree_with_depth(&res.name, 1)
-            .map(|r| (r.document_id, r.hierarchy_sequence()))
+        from_resources
+            .subtree_with_depth(from_resource_name, 1)
+            .map(|r| (r.document_id(), r.hierarchy_seq()))
             .collect::<Vec<_>>()
     };
 
@@ -777,10 +770,10 @@ async fn rename_item(
 }
 
 impl FromDavResource for Destination {
-    fn from_dav_resource(item: &common::DavResource) -> Self {
+    fn from_dav_resource(item: DavResourcePath<'_>) -> Self {
         Destination {
             account_id: u32::MAX,
-            document_id: Some(item.document_id),
+            document_id: Some(item.document_id()),
             is_container: item.is_container(),
             new_name: None,
         }

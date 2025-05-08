@@ -5,6 +5,5 @@
  */
 
 pub mod blob;
-pub mod folder;
 pub mod index;
 pub mod state;

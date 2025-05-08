@@ -8,12 +8,15 @@ use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use dav_proto::RequestHeaders;
 use groupware::{
     DestroyArchive,
+    cache::GroupwareCache,
     calendar::{Calendar, CalendarEvent},
-    hierarchy::DavHierarchy,
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use store::write::BatchBuilder;
 use trc::AddContext;
 
@@ -51,16 +54,15 @@ impl CalendarDeleteRequestHandler for Server {
             .filter(|r| !r.is_empty())
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
         let resources = self
-            .fetch_dav_resources(access_token, account_id, Collection::Calendar)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::Calendar)
             .await
             .caused_by(trc::location!())?;
 
         // Check resource type
         let delete_resource = resources
-            .paths
-            .by_name(delete_path)
+            .by_path(delete_path)
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        let document_id = delete_resource.document_id;
+        let document_id = delete_resource.document_id();
 
         // Fetch entry
         let mut batch = BatchBuilder::new();
@@ -113,7 +115,7 @@ impl CalendarDeleteRequestHandler for Server {
                     resources
                         .subtree(delete_path)
                         .filter(|r| !r.is_container())
-                        .map(|r| r.document_id)
+                        .map(|r| r.document_id())
                         .collect::<Vec<_>>(),
                     &mut batch,
                 )
@@ -121,18 +123,9 @@ impl CalendarDeleteRequestHandler for Server {
                 .caused_by(trc::location!())?;
         } else {
             // Validate ACL
-            let addresscalendar_id = delete_resource.parent_id.unwrap();
+            let calendar_id = delete_resource.parent_id().unwrap();
             if !access_token.is_member(account_id)
-                && !self
-                    .has_access_to_document(
-                        access_token,
-                        account_id,
-                        Collection::Calendar,
-                        addresscalendar_id,
-                        Acl::RemoveItems,
-                    )
-                    .await
-                    .caused_by(trc::location!())?
+                && !resources.has_access_to_container(access_token, calendar_id, Acl::RemoveItems)
             {
                 return Err(DavError::Code(StatusCode::FORBIDDEN));
             }
@@ -170,7 +163,7 @@ impl CalendarDeleteRequestHandler for Server {
                 access_token,
                 account_id,
                 document_id,
-                addresscalendar_id,
+                calendar_id,
                 &mut batch,
             )
             .caused_by(trc::location!())?;

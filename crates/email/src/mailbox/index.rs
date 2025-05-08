@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::storage::{
-    folder::FolderHierarchy,
-    index::{IndexValue, IndexableAndSerializableObject, IndexableObject},
-};
+use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
 use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
 
 use super::{ArchivedMailbox, Mailbox};
@@ -46,21 +43,3 @@ impl IndexableObject for &ArchivedMailbox {
 }
 
 impl IndexableAndSerializableObject for Mailbox {}
-
-impl FolderHierarchy for ArchivedMailbox {
-    fn name(&self) -> String {
-        self.name.to_string()
-    }
-
-    fn parent_id(&self) -> u32 {
-        u32::from(self.parent_id)
-    }
-
-    fn is_container(&self) -> bool {
-        true
-    }
-
-    fn size(&self) -> u32 {
-        0
-    }
-}

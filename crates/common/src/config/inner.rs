@@ -116,9 +116,23 @@ impl Caches {
                     + (1024 * std::mem::size_of::<MessageUidCache>())
                     + (15 * (std::mem::size_of::<MailboxCache>() + 60))) as u64,
             ),
-            dav: Cache::from_config(
+            files: Cache::from_config(
                 config,
-                "dav",
+                "files",
+                MB_10,
+                (std::mem::size_of::<DavResources>() + (500 * std::mem::size_of::<DavResource>()))
+                    as u64,
+            ),
+            events: Cache::from_config(
+                config,
+                "events",
+                MB_10,
+                (std::mem::size_of::<DavResources>() + (500 * std::mem::size_of::<DavResource>()))
+                    as u64,
+            ),
+            contacts: Cache::from_config(
+                config,
+                "contacts",
                 MB_10,
                 (std::mem::size_of::<DavResources>() + (500 * std::mem::size_of::<DavResource>()))
                     as u64,

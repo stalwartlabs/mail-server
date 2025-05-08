@@ -197,9 +197,15 @@ pub async fn test(test: &WebDavTest) {
 
     // PUT precondition enforcement
     let modseq = [
-        test.resources("john", Collection::FileNode).await.modseq,
-        test.resources("john", Collection::Calendar).await.modseq,
-        test.resources("john", Collection::AddressBook).await.modseq,
+        test.resources("john", Collection::FileNode)
+            .await
+            .highest_change_id,
+        test.resources("john", Collection::Calendar)
+            .await
+            .highest_change_id,
+        test.resources("john", Collection::AddressBook)
+            .await
+            .highest_change_id,
     ];
     for (path, ct, content) in [
         ("/dav/file/john/file1.txt", "text/plain", TEST_FILE_1),
@@ -263,9 +269,15 @@ pub async fn test(test: &WebDavTest) {
     }
     assert_eq!(
         [
-            test.resources("john", Collection::FileNode).await.modseq,
-            test.resources("john", Collection::Calendar).await.modseq,
-            test.resources("john", Collection::AddressBook).await.modseq,
+            test.resources("john", Collection::FileNode)
+                .await
+                .highest_change_id,
+            test.resources("john", Collection::Calendar)
+                .await
+                .highest_change_id,
+            test.resources("john", Collection::AddressBook)
+                .await
+                .highest_change_id,
         ],
         modseq
     );

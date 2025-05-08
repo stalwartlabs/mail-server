@@ -23,10 +23,13 @@ use dav_proto::{
     RequestHeaders,
     schema::{property::TimeRange, request::FreeBusyQuery},
 };
-use groupware::{calendar::CalendarEvent, hierarchy::DavHierarchy};
+use groupware::{cache::GroupwareCache, calendar::CalendarEvent};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use store::{
     ahash::AHashMap,
     write::{now, serialize::rkyv_deserialize},
@@ -56,12 +59,11 @@ impl CalendarFreebusyRequestHandler for Server {
             .into_owned_uri()?;
         let account_id = resource_.account_id;
         let resources = self
-            .fetch_dav_resources(access_token, account_id, Collection::Calendar)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::Calendar)
             .await
             .caused_by(trc::location!())?;
         let resource = resources
-            .paths
-            .by_name(
+            .by_path(
                 resource_
                     .resource
                     .ok_or(DavError::Code(StatusCode::METHOD_NOT_ALLOWED))?,
@@ -70,20 +72,13 @@ impl CalendarFreebusyRequestHandler for Server {
         if !resource.is_container() {
             return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
         }
-        let default_tz = resource.timezone().unwrap_or(Tz::UTC);
+        let default_tz = resource.resource.timezone().unwrap_or(Tz::UTC);
 
         // Obtain shared ids
         let shared_ids = if !access_token.is_member(account_id) {
-            self.shared_containers(
-                access_token,
-                account_id,
-                Collection::Calendar,
-                [Acl::ReadItems, Acl::ReadFreeBusy],
-                false,
-            )
-            .await
-            .caused_by(trc::location!())?
-            .into()
+            resources
+                .shared_containers(access_token, [Acl::ReadItems, Acl::ReadFreeBusy], false)
+                .into()
         } else {
             None
         };
@@ -114,14 +109,14 @@ impl CalendarFreebusyRequestHandler for Server {
             });
 
             let document_ids = resources
-                .children(resource.document_id)
+                .children(resource.document_id())
                 .filter(|resource| {
                     shared_ids
                         .as_ref()
-                        .is_none_or(|ids| ids.contains(resource.document_id))
-                        && is_resource_in_time_range(resource, &range)
+                        .is_none_or(|ids| ids.contains(resource.document_id()))
+                        && is_resource_in_time_range(resource.resource, &range)
                 })
-                .map(|resource| resource.document_id)
+                .map(|resource| resource.document_id())
                 .collect::<Vec<_>>();
 
             let mut fb_entries: AHashMap<ICalendarFreeBusyType, Vec<(i64, i64)>> =

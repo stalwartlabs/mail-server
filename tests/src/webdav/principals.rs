@@ -328,6 +328,7 @@ pub async fn test(test: &WebDavTest) {
         .with_hrefs([format!("{}/support/", DavResourceName::Principal.base_path()).as_str()]);
 
     client.delete_default_containers().await;
+    client.delete_default_containers_by_account("support").await;
     test.assert_is_empty().await;
 }
 

@@ -22,7 +22,7 @@ use common::{
     manager::boot::build_ipc,
 };
 use dav_proto::schema::property::{DavProperty, WebDavProperty};
-use groupware::{DavResourceName, hierarchy::DavHierarchy};
+use groupware::{DavResourceName, cache::GroupwareCache};
 use http::HttpSessionManager;
 use hyper::{HeaderMap, Method, StatusCode, header::AUTHORIZATION};
 use imap::core::ImapSessionManager;
@@ -227,17 +227,25 @@ impl WebDavTest {
         let account_id = self.client(name).account_id;
         let access_token = self.server.get_access_token(account_id).await.unwrap();
         self.server
-            .fetch_dav_resources(&access_token, account_id, collection)
+            .fetch_dav_resources(&access_token, account_id, collection.into())
             .await
             .unwrap()
     }
 
     pub async fn assert_is_empty(&self) {
         assert_is_empty(self.server.clone()).await;
+        for cache in [
+            &self.server.inner.cache.events,
+            &self.server.inner.cache.contacts,
+            &self.server.inner.cache.files,
+        ] {
+            cache.clear();
+        }
     }
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct DummyWebDavClient {
     account_id: u32,
     name: &'static str,
@@ -653,7 +661,7 @@ pub trait DavResourcesTest {
 
 impl DavResourcesTest for DavResources {
     fn items(&self) -> Vec<DavResource> {
-        self.paths.iter().cloned().collect()
+        self.resources.clone()
     }
 }
 

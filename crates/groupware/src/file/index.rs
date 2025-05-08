@@ -4,57 +4,30 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::storage::{
-    folder::FolderHierarchy,
-    index::{IndexValue, IndexableAndSerializableObject, IndexableObject},
-};
-use jmap_proto::types::{collection::SyncCollection, property::Property, value::AclGrant};
+use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
 
 use super::{ArchivedFileNode, FileNode};
 
 impl IndexableObject for FileNode {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
-        let size = self.dead_properties.size() as u32
-            + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
-            + self.name.len() as u32;
-
         let mut values = Vec::with_capacity(6);
 
         values.extend([
-            IndexValue::Index {
-                field: Property::Name.into(),
-                value: percent_encoding::percent_decode_str(&self.name)
-                    .decode_utf8()
-                    .unwrap_or_else(|_| self.name.as_str().into())
-                    .to_lowercase()
-                    .into(),
-            },
-            IndexValue::Index {
-                field: Property::ParentId.into(),
-                value: self.parent_id.into(),
-            },
             IndexValue::Acl {
                 value: (&self.acls).into(),
             },
-            IndexValue::LogContainer {
+            IndexValue::LogItem {
+                prefix: None,
                 sync_collection: SyncCollection::FileNode.into(),
             },
+            IndexValue::Quota { used: self.size() },
         ]);
 
         if let Some(file) = &self.file {
-            let size = size + file.size;
-            values.extend([
-                IndexValue::Blob {
-                    value: file.blob_hash.clone(),
-                },
-                IndexValue::Index {
-                    field: Property::Size.into(),
-                    value: size.into(),
-                },
-                IndexValue::Quota { used: size },
-            ]);
-        } else {
-            values.push(IndexValue::Quota { used: size });
+            values.extend([IndexValue::Blob {
+                value: file.blob_hash.clone(),
+            }]);
         }
 
         values.into_iter()
@@ -66,14 +39,6 @@ impl IndexableObject for &ArchivedFileNode {
         let mut values = Vec::with_capacity(6);
 
         values.extend([
-            IndexValue::Index {
-                field: Property::Name.into(),
-                value: self.name.to_lowercase().into(),
-            },
-            IndexValue::Index {
-                field: Property::ParentId.into(),
-                value: u32::from(self.parent_id).into(),
-            },
             IndexValue::Acl {
                 value: self
                     .acls
@@ -82,25 +47,17 @@ impl IndexableObject for &ArchivedFileNode {
                     .collect::<Vec<_>>()
                     .into(),
             },
-            IndexValue::LogContainer {
+            IndexValue::LogItem {
+                prefix: None,
                 sync_collection: SyncCollection::FileNode.into(),
             },
+            IndexValue::Quota { used: self.size() },
         ]);
 
-        let size = self.size();
         if let Some(file) = self.file.as_ref() {
-            values.extend([
-                IndexValue::Blob {
-                    value: (&file.blob_hash).into(),
-                },
-                IndexValue::Index {
-                    field: Property::Size.into(),
-                    value: size.into(),
-                },
-                IndexValue::Quota { used: size },
-            ]);
-        } else {
-            values.push(IndexValue::Quota { used: size });
+            values.extend([IndexValue::Blob {
+                value: (&file.blob_hash).into(),
+            }]);
         }
 
         values.into_iter()
@@ -109,23 +66,24 @@ impl IndexableObject for &ArchivedFileNode {
 
 impl IndexableAndSerializableObject for FileNode {}
 
-impl FolderHierarchy for ArchivedFileNode {
-    fn name(&self) -> String {
-        self.name.to_string()
-    }
+pub trait NodeSize {
+    fn size(&self) -> u32;
+}
 
-    fn parent_id(&self) -> u32 {
-        u32::from(self.parent_id)
-    }
-
-    fn is_container(&self) -> bool {
-        self.file.is_none()
-    }
-
+impl NodeSize for ArchivedFileNode {
     fn size(&self) -> u32 {
         self.dead_properties.size() as u32
             + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
             + self.name.len() as u32
             + self.file.as_ref().map_or(0, |f| u32::from(f.size))
+    }
+}
+
+impl NodeSize for FileNode {
+    fn size(&self) -> u32 {
+        self.dead_properties.size() as u32
+            + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
+            + self.name.len() as u32
+            + self.file.as_ref().map_or(0, |f| f.size)
     }
 }

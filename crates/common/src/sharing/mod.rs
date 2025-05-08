@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::auth::AccessToken;
 use jmap_proto::types::{
     acl::Acl,
     value::{AclGrant, ArchivedAclGrant},
@@ -11,10 +12,9 @@ use jmap_proto::types::{
 use rkyv::vec::ArchivedVec;
 use utils::map::bitmap::Bitmap;
 
-use crate::auth::AccessToken;
-
 pub mod acl;
 pub mod document;
+pub mod resources;
 
 pub trait EffectiveAcl {
     fn effective_acl(&self, access_token: &AccessToken) -> Bitmap<Acl>;

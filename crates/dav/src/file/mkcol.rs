@@ -4,30 +4,31 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
-use dav_proto::{
-    RequestHeaders, Return,
-    schema::{Namespace, request::MkCol, response::MkColResponse},
-};
-use groupware::{file::FileNode, hierarchy::DavHierarchy};
-use http_proto::HttpResponse;
-use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
-use store::write::{BatchBuilder, now};
-use trc::AddContext;
-
+use super::proppatch::FilePropPatchRequestHandler;
 use crate::{
     DavMethod, PropStatBuilder,
     common::{
         ExtractETag,
-        acl::DavAclHandler,
+        acl::ResourceAcl,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
     file::DavFileResource,
 };
-
-use super::proppatch::FilePropPatchRequestHandler;
+use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use dav_proto::{
+    RequestHeaders, Return,
+    schema::{Namespace, request::MkCol, response::MkColResponse},
+};
+use groupware::{cache::GroupwareCache, file::FileNode};
+use http_proto::HttpResponse;
+use hyper::StatusCode;
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
+use store::write::{BatchBuilder, now};
+use trc::AddContext;
 
 pub(crate) trait FileMkColRequestHandler: Sync + Send {
     fn handle_file_mkcol_request(
@@ -51,22 +52,19 @@ impl FileMkColRequestHandler for Server {
             .await?
             .into_owned_uri()?;
         let account_id = resource_.account_id;
-        let files = self
-            .fetch_dav_resources(access_token, account_id, Collection::FileNode)
+        let resources = self
+            .fetch_dav_resources(access_token, account_id, SyncCollection::FileNode)
             .await
             .caused_by(trc::location!())?;
-        let resource = files.map_parent_resource(&resource_)?;
+        let resource = resources.map_parent_resource(&resource_)?;
 
         // Validate and map parent ACL
-        let parent_id = self
-            .validate_and_map_parent_acl(
-                access_token,
-                account_id,
-                Collection::FileNode,
-                resource.resource.0,
-                Acl::AddItems,
-            )
-            .await?;
+        let parent_id = resources.validate_and_map_parent_acl(
+            access_token,
+            access_token.is_member(account_id),
+            resource.resource.0,
+            Acl::AddItems,
+        )?;
 
         // Validate headers
         self.validate_headers(

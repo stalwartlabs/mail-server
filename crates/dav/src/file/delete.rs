@@ -4,14 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken};
-use dav_proto::RequestHeaders;
-use groupware::{DestroyArchive, hierarchy::DavHierarchy};
-use http_proto::HttpResponse;
-use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
-use trc::AddContext;
-
 use crate::{
     DavError, DavMethod,
     common::{
@@ -19,6 +11,13 @@ use crate::{
         uri::DavUriResource,
     },
 };
+use common::{Server, auth::AccessToken};
+use dav_proto::RequestHeaders;
+use groupware::{DestroyArchive, cache::GroupwareCache};
+use http_proto::HttpResponse;
+use hyper::StatusCode;
+use jmap_proto::types::{acl::Acl, collection::SyncCollection};
+use trc::AddContext;
 
 pub(crate) trait FileDeleteRequestHandler: Sync + Send {
     fn handle_file_delete_request(
@@ -44,35 +43,26 @@ impl FileDeleteRequestHandler for Server {
             .resource
             .filter(|r| !r.is_empty())
             .ok_or(DavError::Code(StatusCode::FORBIDDEN))?;
-        let files = self
-            .fetch_dav_resources(access_token, account_id, Collection::FileNode)
+        let resources = self
+            .fetch_dav_resources(access_token, account_id, SyncCollection::FileNode)
             .await
             .caused_by(trc::location!())?;
 
         // Find ids to delete
-        let mut ids = files.subtree(delete_path).collect::<Vec<_>>();
+        let mut ids = resources.subtree(delete_path).collect::<Vec<_>>();
         if ids.is_empty() {
             return Err(DavError::Code(StatusCode::NOT_FOUND));
         }
 
         // Sort ids descending from the deepest to the root
-        ids.sort_unstable_by_key(|b| std::cmp::Reverse(b.hierarchy_sequence()));
-        let document_id = ids.last().map(|a| a.document_id).unwrap();
+        ids.sort_unstable_by_key(|b| std::cmp::Reverse(b.hierarchy_seq()));
+        let document_id = ids.last().map(|a| a.document_id()).unwrap();
         let mut sorted_ids = Vec::with_capacity(ids.len());
-        sorted_ids.extend(ids.into_iter().map(|a| a.document_id));
+        sorted_ids.extend(ids.into_iter().map(|a| a.document_id()));
 
         // Validate ACLs
         if !access_token.is_member(account_id) {
-            let permissions = self
-                .shared_containers(
-                    access_token,
-                    account_id,
-                    Collection::FileNode,
-                    [Acl::Delete],
-                    false,
-                )
-                .await
-                .caused_by(trc::location!())?;
+            let permissions = resources.shared_containers(access_token, [Acl::Delete], false);
             if permissions.len() != sorted_ids.len() as u64
                 || !sorted_ids.iter().all(|id| permissions.contains(*id))
             {

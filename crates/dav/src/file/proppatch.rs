@@ -13,10 +13,13 @@ use dav_proto::{
         response::{BaseCondition, MultiStatus, Response},
     },
 };
-use groupware::{file::FileNode, hierarchy::DavHierarchy};
+use groupware::{cache::GroupwareCache, file::FileNode};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use store::write::BatchBuilder;
 use trc::AddContext;
 
@@ -62,7 +65,7 @@ impl FilePropPatchRequestHandler for Server {
         let uri = headers.uri;
         let account_id = resource_.account_id;
         let files = self
-            .fetch_dav_resources(access_token, account_id, Collection::FileNode)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource = files.map_resource(&resource_)?;

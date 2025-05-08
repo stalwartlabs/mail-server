@@ -9,7 +9,8 @@ use std::fmt::Display;
 use common::{Server, auth::AccessToken};
 
 use directory::backend::internal::manage::ManageDirectory;
-use groupware::hierarchy::DavHierarchy;
+
+use groupware::cache::GroupwareCache;
 use http_proto::request::decode_path_element;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
@@ -128,11 +129,10 @@ impl DavUriResource for Server {
     ) -> trc::Result<Option<DocumentUri>> {
         if let Some(resource) = uri.resource {
             if let Some(resource) = self
-                .fetch_dav_resources(access_token, uri.account_id, uri.collection)
+                .fetch_dav_resources(access_token, uri.account_id, uri.collection.into())
                 .await
                 .caused_by(trc::location!())?
-                .paths
-                .by_name(resource)
+                .by_path(resource)
             {
                 Ok(Some(DocumentUri {
                     collection: if resource.is_container() || uri.collection == Collection::FileNode
@@ -144,7 +144,7 @@ impl DavUriResource for Server {
                         Collection::ContactCard
                     },
                     account_id: uri.account_id,
-                    resource: resource.document_id,
+                    resource: resource.document_id(),
                 }))
             } else {
                 Ok(None)

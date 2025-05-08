@@ -8,8 +8,8 @@ pub mod dates;
 pub mod index;
 pub mod storage;
 
-use crate::DavName;
 use calcard::icalendar::ICalendar;
+use common::DavName;
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
 use store::{SERIALIZE_CALENDAR_V1, SERIALIZE_CALENDAREVENT_V1, SerializedVersion};

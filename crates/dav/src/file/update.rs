@@ -4,31 +4,33 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{
-    Server, auth::AccessToken, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder,
-};
-use dav_proto::{RequestHeaders, Return, schema::property::Rfc1123DateTime};
-use groupware::{
-    file::{FileNode, FileProperties},
-    hierarchy::DavHierarchy,
-};
-use http_proto::HttpResponse;
-use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
-use store::write::{BatchBuilder, now};
-use trc::AddContext;
-use utils::BlobHash;
-
 use crate::{
     DavError, DavMethod,
     common::{
         ETag, ExtractETag,
-        acl::DavAclHandler,
+        acl::ResourceAcl,
         lock::{LockRequestHandler, ResourceState},
         uri::DavUriResource,
     },
     file::DavFileResource,
 };
+use common::{
+    Server, auth::AccessToken, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder,
+};
+use dav_proto::{RequestHeaders, Return, schema::property::Rfc1123DateTime};
+use groupware::{
+    cache::GroupwareCache,
+    file::{FileNode, FileProperties},
+};
+use http_proto::HttpResponse;
+use hyper::StatusCode;
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
+use store::write::{BatchBuilder, now};
+use trc::AddContext;
+use utils::BlobHash;
 
 pub(crate) trait FileUpdateRequestHandler: Sync + Send {
     fn handle_file_update_request(
@@ -54,8 +56,8 @@ impl FileUpdateRequestHandler for Server {
             .await?
             .into_owned_uri()?;
         let account_id = resource.account_id;
-        let files = self
-            .fetch_dav_resources(access_token, account_id, Collection::FileNode)
+        let resources = self
+            .fetch_dav_resources(access_token, account_id, SyncCollection::FileNode)
             .await
             .caused_by(trc::location!())?;
         let resource_name = resource
@@ -66,7 +68,7 @@ impl FileUpdateRequestHandler for Server {
             return Err(DavError::Code(StatusCode::PAYLOAD_TOO_LARGE));
         }
 
-        if let Some(document_id) = files.paths.by_name(resource_name).map(|r| r.document_id) {
+        if let Some(document_id) = resources.by_path(resource_name).map(|r| r.document_id()) {
             // Update
             let node_ = self
                 .get_archive(account_id, Collection::FileNode, document_id)
@@ -193,28 +195,20 @@ impl FileUpdateRequestHandler for Server {
         } else {
             // Insert
             let orig_resource_name = resource_name;
-            let (parent, resource_name) = files
+            let (parent, resource_name) = resources
                 .map_parent(resource_name)
                 .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
             // Validate ACL
-            let parent_id = self
-                .validate_and_map_parent_acl(
-                    access_token,
-                    account_id,
-                    Collection::FileNode,
-                    parent.map(|r| r.document_id),
-                    Acl::AddItems,
-                )
-                .await?;
+            let parent_id = resources.validate_and_map_parent_acl(
+                access_token,
+                access_token.is_member(account_id),
+                parent.map(|r| r.document_id()),
+                Acl::AddItems,
+            )?;
 
             // Verify that parent is a collection
-            if parent_id > 0
-                && files
-                    .paths
-                    .by_id(parent_id - 1)
-                    .is_some_and(|r| !r.is_container())
-            {
+            if parent.as_ref().is_some_and(|r| !r.is_container()) {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
 

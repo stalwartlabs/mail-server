@@ -26,12 +26,15 @@ use dav_proto::{
     },
 };
 use groupware::{
+    cache::GroupwareCache,
     calendar::{Calendar, CalendarEvent, Timezone},
-    hierarchy::DavHierarchy,
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::Collection};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use store::write::BatchBuilder;
 use trc::AddContext;
 
@@ -76,14 +79,14 @@ impl CalendarPropPatchRequestHandler for Server {
         let uri = headers.uri;
         let account_id = resource_.account_id;
         let resources = self
-            .fetch_dav_resources(access_token, account_id, Collection::Calendar)
+            .fetch_dav_resources(access_token, account_id, SyncCollection::Calendar)
             .await
             .caused_by(trc::location!())?;
         let resource = resource_
             .resource
-            .and_then(|r| resources.paths.by_name(r))
+            .and_then(|r| resources.by_path(r))
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        let document_id = resource.document_id;
+        let document_id = resource.document_id();
         let collection = if resource.is_container() {
             Collection::Calendar
         } else {
@@ -97,22 +100,12 @@ impl CalendarPropPatchRequestHandler for Server {
         // Verify ACL
         if !access_token.is_member(account_id) {
             let (acl, document_id) = if resource.is_container() {
-                (Acl::Modify, resource.document_id)
+                (Acl::Modify, resource.document_id())
             } else {
-                (Acl::ModifyItems, resource.parent_id.unwrap())
+                (Acl::ModifyItems, resource.parent_id().unwrap())
             };
 
-            if !self
-                .has_access_to_document(
-                    access_token,
-                    account_id,
-                    Collection::Calendar,
-                    document_id,
-                    acl,
-                )
-                .await
-                .caused_by(trc::location!())?
-            {
+            if !resources.has_access_to_container(access_token, document_id, acl) {
                 return Err(DavError::Code(StatusCode::FORBIDDEN));
             }
         }
