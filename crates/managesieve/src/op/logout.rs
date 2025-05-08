@@ -16,11 +16,8 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             Elapsed = trc::Value::Duration(0)
         );
 
-        Ok(StatusResponse::ok(concat!(
-            "Stalwart ManageSieve v",
-            env!("CARGO_PKG_VERSION"),
-            " bids you farewell."
-        ))
+        Ok(StatusResponse::ok("Stalwart ManageSieve bids you farewell.")
+
         .into_bytes())
     }
 }
