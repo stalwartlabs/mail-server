@@ -60,13 +60,29 @@ RUN \
         echo "Setting up ${BUILD_ENV}"; \
     fi && \
     if [[ "${TARGET}" == *gnu ]]; then \
-        echo "export FDB_ARCH=${TARGET%%-*}" >> /env-cargo; \
+        base_arch="${TARGET%%-*}"; \
+        case "$base_arch" in \
+            x86_64) \
+                echo "export FDB_ARCH=amd64" >> /env-cargo; \
+                ;; \
+            aarch64) \
+                echo "export FDB_ARCH=aarch64" >> /env-cargo; \
+                ;; \
+            *) \
+                exit 1; \
+                ;; \
+        esac; \
     fi
 # Install FoundationDB
 RUN \
     source /env-cargo && \
     if [ ! -z "${FDB_ARCH}" ]; then \
-        curl --retry 5 -Lso /usr/lib/libfdb_c.so "$(curl --retry 5 -Ls 'https://api.github.com/repos/apple/foundationdb/releases' | jq --arg FDB_ARCH "$FDB_ARCH" -r '.[] | select(.prerelease == false) | .assets[] | select(.name | test("libfdb_c." + $FDB_ARCH + ".so")) | .browser_download_url' | head -n1)"; \
+        curl --retry 5 -Lso fdb-client.deb "$(curl --retry 5 -Ls 'https://api.github.com/repos/apple/foundationdb/releases' | jq --arg FDB_ARCH "$FDB_ARCH" -r '.[] | select(.prerelease == false) | .assets[] | select(.name | test("foundationdb-clients.*" + $FDB_ARCH + ".deb$")) | .browser_download_url' | head -n1)" && \
+        mkdir -p /fdb && \
+        dpkg -x fdb-client.deb /fdb && \
+        mv /fdb/usr/include/foundationdb /usr/include && \
+        mv /fdb/usr/lib/libfdb_c.so /usr/lib && \
+        rm -rf fdb-client.deb /fdb; \
     fi
 # Cargo-chef Cache layer
 RUN \
@@ -98,7 +114,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
     if [ ! -z "${FDB_ARCH}" ]; then \
-        RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise"; \
+        RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise" && \
         mv /app/target/${TARGET}/release/stalwart-mail /app/artifact/stalwart-mail-foundationdb; \
     fi
 # Build generic version
