@@ -16,7 +16,10 @@ pub async fn test(test: &WebDavTest) {
         .await
         .with_header(
             "dav",
-            "1, 2, 3, access-control, extended-mkcol, calendar-access, addressbook",
+            concat!(
+                "1, 2, 3, access-control, extended-mkcol, ",
+                "calendar-access, calendar-no-timezone, addressbook"
+            ),
         )
         .with_header(
             "allow",

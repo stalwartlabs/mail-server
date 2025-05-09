@@ -18,6 +18,7 @@ use calcard::{
     },
 };
 use chrono::{DateTime, TimeZone};
+use compact_str::ToCompactString;
 use dav_proto::schema::property::TimeRange;
 use std::str::FromStr;
 use store::{
@@ -123,8 +124,17 @@ impl CalendarEventData {
             });
         }
 
-        for error in expanded.errors {
-            let todo = "log me";
+        if !expanded.errors.is_empty() {
+            trc::event!(
+                Calendar(trc::CalendarEvent::RuleExpansionError),
+                Reason = expanded
+                    .errors
+                    .into_iter()
+                    .map(|e| e.error.to_compact_string())
+                    .collect::<Vec<_>>(),
+                Details = ical.to_string(),
+                Limit = max_expansions,
+            );
         }
 
         CalendarEventData {

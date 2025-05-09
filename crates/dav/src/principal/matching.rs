@@ -33,7 +33,7 @@ pub(crate) trait PrincipalMatching: Sync + Send {
     fn handle_principal_match(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: PrincipalMatch,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -42,7 +42,7 @@ impl PrincipalMatching for Server {
     async fn handle_principal_match(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         mut request: PrincipalMatch,
     ) -> crate::Result<HttpResponse> {
         let resource = self.validate_uri(access_token, headers.uri).await?;

@@ -45,7 +45,7 @@ pub(crate) trait CalendarUpdateRequestHandler: Sync + Send {
     fn handle_calendar_update_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         bytes: Vec<u8>,
         is_patch: bool,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
@@ -55,7 +55,7 @@ impl CalendarUpdateRequestHandler for Server {
     async fn handle_calendar_update_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         bytes: Vec<u8>,
         _is_patch: bool,
     ) -> crate::Result<HttpResponse> {
@@ -124,7 +124,7 @@ impl CalendarUpdateRequestHandler for Server {
             match self
                 .validate_headers(
                     access_token,
-                    &headers,
+                    headers,
                     vec![ResourceState {
                         account_id,
                         collection: Collection::CalendarEvent,
@@ -209,7 +209,7 @@ impl CalendarUpdateRequestHandler for Server {
             // Validate headers
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 vec![ResourceState {
                     account_id,
                     collection: resource.collection,

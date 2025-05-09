@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    fmt::{Display, Formatter},
+};
 
 use quick_xml::events::BytesStart;
 use tokenizer::Tokenizer;
@@ -150,5 +153,20 @@ impl NamedElement {
 impl Default for RawElement<'_> {
     fn default() -> Self {
         RawElement(BytesStart::new(""))
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Xml(err) => write!(f, "XML error: {}", err),
+            Error::UnexpectedToken { expected, found } => {
+                write!(f, "Unexpected token: {found:?}")?;
+                if let Some(expected) = expected {
+                    write!(f, ", expected: {expected:?}")?;
+                }
+                Ok(())
+            }
+        }
     }
 }

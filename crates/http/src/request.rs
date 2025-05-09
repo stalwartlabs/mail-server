@@ -213,7 +213,10 @@ impl ParseHttp for Server {
                     (Some(_), Some(DavMethod::OPTIONS)) => HttpResponse::new(StatusCode::OK)
                         .with_header(
                             "DAV",
-                            "1, 2, 3, access-control, extended-mkcol, calendar-access, addressbook",
+                            concat!(
+                                "1, 2, 3, access-control, extended-mkcol, calendar-access, ",
+                                "calendar-no-timezone, addressbook"
+                            ),
                         )
                         .with_header(
                             "Allow",

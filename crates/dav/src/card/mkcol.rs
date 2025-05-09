@@ -29,7 +29,7 @@ pub(crate) trait CardMkColRequestHandler: Sync + Send {
     fn handle_card_mkcol_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: Option<MkCol>,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -38,7 +38,7 @@ impl CardMkColRequestHandler for Server {
     async fn handle_card_mkcol_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: Option<MkCol>,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -57,7 +57,6 @@ impl CardMkColRequestHandler for Server {
                 .fetch_dav_resources(access_token, account_id, SyncCollection::AddressBook)
                 .await
                 .caused_by(trc::location!())?
-               
                 .by_path(name)
                 .is_some()
         {
@@ -67,7 +66,7 @@ impl CardMkColRequestHandler for Server {
         // Validate headers
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection: resource.collection,

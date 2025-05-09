@@ -9,7 +9,10 @@ use dav_proto::{
     RequestHeaders, Return,
     schema::{Namespace, request::MkCol, response::MkColResponse},
 };
-use groupware::{cache::GroupwareCache, calendar::{Calendar, CalendarPreferences}};
+use groupware::{
+    cache::GroupwareCache,
+    calendar::{Calendar, CalendarPreferences},
+};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::collection::{Collection, SyncCollection};
@@ -31,7 +34,7 @@ pub(crate) trait CalendarMkColRequestHandler: Sync + Send {
     fn handle_calendar_mkcol_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: Option<MkCol>,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -40,7 +43,7 @@ impl CalendarMkColRequestHandler for Server {
     async fn handle_calendar_mkcol_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: Option<MkCol>,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -59,7 +62,6 @@ impl CalendarMkColRequestHandler for Server {
                 .fetch_dav_resources(access_token, account_id, SyncCollection::Calendar)
                 .await
                 .caused_by(trc::location!())?
-                
                 .by_path(name)
                 .is_some()
         {
@@ -69,7 +71,7 @@ impl CalendarMkColRequestHandler for Server {
         // Validate headers
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection: resource.collection,

@@ -42,6 +42,30 @@ pub enum DavMethod {
     ACL,
 }
 
+impl From<DavMethod> for trc::WebDavEvent {
+    fn from(value: DavMethod) -> Self {
+        match value {
+            DavMethod::GET => trc::WebDavEvent::Get,
+            DavMethod::PUT => trc::WebDavEvent::Put,
+            DavMethod::POST => trc::WebDavEvent::Post,
+            DavMethod::DELETE => trc::WebDavEvent::Delete,
+            DavMethod::HEAD => trc::WebDavEvent::Head,
+            DavMethod::PATCH => trc::WebDavEvent::Patch,
+            DavMethod::PROPFIND => trc::WebDavEvent::Propfind,
+            DavMethod::PROPPATCH => trc::WebDavEvent::Proppatch,
+            DavMethod::REPORT => trc::WebDavEvent::Report,
+            DavMethod::MKCOL => trc::WebDavEvent::Mkcol,
+            DavMethod::MKCALENDAR => trc::WebDavEvent::Mkcalendar,
+            DavMethod::COPY => trc::WebDavEvent::Copy,
+            DavMethod::MOVE => trc::WebDavEvent::Move,
+            DavMethod::LOCK => trc::WebDavEvent::Lock,
+            DavMethod::UNLOCK => trc::WebDavEvent::Unlock,
+            DavMethod::OPTIONS => trc::WebDavEvent::Options,
+            DavMethod::ACL => trc::WebDavEvent::Acl,
+        }
+    }
+}
+
 pub(crate) enum DavError {
     Parse(dav_proto::parser::Error),
     Internal(trc::Error),

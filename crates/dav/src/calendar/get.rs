@@ -28,7 +28,7 @@ pub(crate) trait CalendarGetRequestHandler: Sync + Send {
     fn handle_calendar_get_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_head: bool,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -37,7 +37,7 @@ impl CalendarGetRequestHandler for Server {
     async fn handle_calendar_get_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_head: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -90,7 +90,7 @@ impl CalendarGetRequestHandler for Server {
         let etag = event_.etag();
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection: Collection::CalendarEvent,

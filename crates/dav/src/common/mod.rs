@@ -145,7 +145,7 @@ impl<'x> DavQuery<'x> {
     pub fn propfind(
         resource: OwnedUri<'x>,
         propfind: PropFind,
-        headers: RequestHeaders<'x>,
+        headers: &RequestHeaders<'x>,
     ) -> Self {
         Self {
             resource: DavQueryResource::Uri(resource),
@@ -164,7 +164,7 @@ impl<'x> DavQuery<'x> {
     pub fn multiget(
         multiget: MultiGet,
         collection: Collection,
-        headers: RequestHeaders<'x>,
+        headers: &RequestHeaders<'x>,
     ) -> Self {
         Self {
             resource: DavQueryResource::Multiget {
@@ -182,7 +182,7 @@ impl<'x> DavQuery<'x> {
     pub fn addressbook_query(
         query: AddressbookQuery,
         items: Vec<PropFindItem>,
-        headers: RequestHeaders<'x>,
+        headers: &RequestHeaders<'x>,
     ) -> Self {
         Self {
             resource: DavQueryResource::Query {
@@ -203,7 +203,7 @@ impl<'x> DavQuery<'x> {
         query: CalendarQuery,
         max_time_range: Option<TimeRange>,
         items: Vec<PropFindItem>,
-        headers: RequestHeaders<'x>,
+        headers: &RequestHeaders<'x>,
     ) -> Self {
         Self {
             resource: DavQueryResource::Query {
@@ -226,7 +226,7 @@ impl<'x> DavQuery<'x> {
     pub fn changes(
         resource: OwnedUri<'x>,
         changes: SyncCollection,
-        headers: RequestHeaders<'x>,
+        headers: &RequestHeaders<'x>,
     ) -> Self {
         Self {
             resource: DavQueryResource::Uri(resource),
@@ -254,7 +254,7 @@ impl<'x> DavQuery<'x> {
     pub fn expand(
         resource: OwnedUri<'x>,
         expand: ExpandProperty,
-        headers: RequestHeaders<'x>,
+        headers: &RequestHeaders<'x>,
     ) -> Self {
         let mut props = Vec::with_capacity(expand.properties.len());
         for item in expand.properties {

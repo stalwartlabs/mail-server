@@ -532,6 +532,8 @@ impl EventType {
                 AiEvent::LlmResponse => Level::Trace,
                 AiEvent::ApiError => Level::Warn,
             },
+            EventType::WebDav(_) => Level::Debug,
+            EventType::Calendar(CalendarEvent::RuleExpansionError) => Level::Debug,
         }
     }
 }

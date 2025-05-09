@@ -288,6 +288,85 @@ impl MultiStatus {
     }
 }
 
+impl BaseCondition {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            BaseCondition::NoConflictingLock(_) => "NoConflictingLock",
+            BaseCondition::CannotModifyProtectedProperty => "CannotModifyProtectedProperty",
+            BaseCondition::LockTokenSubmitted(_) => "LockTokenSubmitted",
+            BaseCondition::LockTokenMatchesRequestUri => "LockTokenMatchesRequestUri",
+            BaseCondition::NoExternalEntities => "NoExternalEntities",
+            BaseCondition::PreservedLiveProperties => "PreservedLiveProperties",
+            BaseCondition::PropFindFiniteDepth => "PropFindFiniteDepth",
+            BaseCondition::ResourceMustBeNull => "ResourceMustBeNull",
+            BaseCondition::NeedPrivileges(_) => "NeedPrivileges",
+            BaseCondition::NoAceConflict => "NoAceConflict",
+            BaseCondition::NoProtectedAceConflict => "NoProtectedAceConflict",
+            BaseCondition::NoInheritedAceConflict => "NoInheritedAceConflict",
+            BaseCondition::LimitedNumberOfAces => "LimitedNumberOfAces",
+            BaseCondition::DenyBeforeGrant => "DenyBeforeGrant",
+            BaseCondition::GrantOnly => "GrantOnly",
+            BaseCondition::NoInvert => "NoInvert",
+            BaseCondition::NoAbstract => "NoAbstract",
+            BaseCondition::NotSupportedPrivilege => "NotSupportedPrivilege",
+            BaseCondition::MissingRequiredPrincipal => "MissingRequiredPrincipal",
+            BaseCondition::RecognizedPrincipal => "RecognizedPrincipal",
+            BaseCondition::AllowedPrincipal => "AllowedPrincipal",
+            BaseCondition::NumberOfMatchesWithinLimit => "NumberOfMatchesWithinLimit",
+            BaseCondition::QuotaNotExceeded => "QuotaNotExceeded",
+            BaseCondition::ValidResourceType => "ValidResourceType",
+            BaseCondition::ValidSyncToken => "ValidSyncToken",
+        }
+    }
+}
+
+impl CalCondition {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            CalCondition::CalendarCollectionLocationOk => "CalendarCollectionLocationOk",
+            CalCondition::ValidCalendarData => "ValidCalendarData",
+            CalCondition::ValidFilter => "ValidFilter",
+            CalCondition::ValidCalendarObjectResource => "ValidCalendarObjectResource",
+            CalCondition::ValidTimezone => "ValidTimezone",
+            CalCondition::NoUidConflict(_) => "NoUidConflict",
+            CalCondition::InitializeCalendarCollection => "InitializeCalendarCollection",
+            CalCondition::SupportedCalendarData => "SupportedCalendarData",
+            CalCondition::SupportedFilter(_) => "SupportedFilter",
+            CalCondition::SupportedCollation(_) => "SupportedCollation",
+            CalCondition::MinDateTime => "MinDateTime",
+            CalCondition::MaxDateTime => "MaxDateTime",
+            CalCondition::MaxResourceSize(_) => "MaxResourceSize",
+            CalCondition::MaxInstances => "MaxInstances",
+            CalCondition::MaxAttendeesPerInstance => "MaxAttendeesPerInstance",
+        }
+    }
+}
+
+impl CardCondition {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            CardCondition::SupportedAddressData => "SupportedAddressData",
+            CardCondition::SupportedAddressDataConversion => "SupportedAddressDataConversion",
+            CardCondition::SupportedFilter(_) => "SupportedFilter",
+            CardCondition::SupportedCollation(_) => "SupportedCollation",
+            CardCondition::ValidAddressData => "ValidAddressData",
+            CardCondition::NoUidConflict(_) => "NoUidConflict",
+            CardCondition::MaxResourceSize(_) => "MaxResourceSize",
+            CardCondition::AddressBookCollectionLocationOk => "AddressBookCollectionLocationOk",
+        }
+    }
+}
+
+impl Condition {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Condition::Base(base) => base.display_name(),
+            Condition::Cal(cal) => cal.display_name(),
+            Condition::Card(card) => card.display_name(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod serde_impl {
     use super::Status;

@@ -34,7 +34,7 @@ pub(crate) trait CardQueryRequestHandler: Sync + Send {
     fn handle_card_query_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: AddressbookQuery,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -43,7 +43,7 @@ impl CardQueryRequestHandler for Server {
     async fn handle_card_query_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: AddressbookQuery,
     ) -> crate::Result<HttpResponse> {
         // Validate URI

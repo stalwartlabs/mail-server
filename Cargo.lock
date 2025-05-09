@@ -1759,6 +1759,7 @@ version = "0.11.7"
 dependencies = [
  "calcard",
  "chrono",
+ "compact_str",
  "hashify",
  "hyper 1.6.0",
  "mail-parser",
@@ -1766,6 +1767,7 @@ dependencies = [
  "rkyv 0.8.10",
  "serde",
  "serde_json",
+ "trc",
 ]
 
 [[package]]

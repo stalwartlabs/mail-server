@@ -22,6 +22,7 @@ use common::{
     manager::boot::build_ipc,
 };
 use dav_proto::schema::property::{DavProperty, WebDavProperty};
+use directory::Permission;
 use groupware::{DavResourceName, cache::GroupwareCache};
 use http::HttpSessionManager;
 use hyper::{HeaderMap, Method, StatusCode, header::AUTHORIZATION};
@@ -201,6 +202,12 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
             *account,
             DummyWebDavClient::new(account_id, account, secret, email),
         );
+        store
+            .add_permissions(
+                account,
+                [Permission::DavPrincipalList, Permission::DavPrincipalSearch],
+            )
+            .await;
         if *account == "mike" {
             store.set_test_quota(account, 1024).await;
         }
@@ -232,8 +239,7 @@ impl WebDavTest {
             .unwrap()
     }
 
-    pub async fn assert_is_empty(&self) {
-        assert_is_empty(self.server.clone()).await;
+    pub fn clear_cache(&self) {
         for cache in [
             &self.server.inner.cache.events,
             &self.server.inner.cache.contacts,
@@ -241,6 +247,11 @@ impl WebDavTest {
         ] {
             cache.clear();
         }
+    }
+
+    pub async fn assert_is_empty(&self) {
+        assert_is_empty(self.server.clone()).await;
+        self.clear_cache();
     }
 }
 
