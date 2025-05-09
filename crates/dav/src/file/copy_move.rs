@@ -36,7 +36,7 @@ pub(crate) trait FileCopyMoveRequestHandler: Sync + Send {
     fn handle_file_copy_move_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_move: bool,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -45,7 +45,7 @@ impl FileCopyMoveRequestHandler for Server {
     async fn handle_file_copy_move_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_move: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate source
@@ -117,8 +117,8 @@ impl FileCopyMoveRequestHandler for Server {
             return Ok(HttpResponse::new(StatusCode::BAD_GATEWAY));
         }
 
-        let mut delete_destination = None;
         // Check if the resource exists
+        let mut delete_destination = None;
         let mut destination = if let Some((destination, new_name)) =
             to_resources.map_parent(destination_resource_name)
         {
@@ -143,16 +143,6 @@ impl FileCopyMoveRequestHandler for Server {
             return Err(DavError::Code(StatusCode::CONFLICT));
         };
         destination.account_id = to_account_id;
-
-        if delete_destination.is_none()
-            && from_account_id == destination.account_id
-            && from_resource.resource.parent_id == destination.document_id
-            && destination.new_name.is_some()
-            && is_move
-        {
-            // Rename
-            return rename_item(self, access_token, from_resource, destination).await;
-        }
 
         // Validate destination ACLs
         if let Some(document_id) = destination.document_id {
@@ -180,13 +170,13 @@ impl FileCopyMoveRequestHandler for Server {
         // Validate headers
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![
                 ResourceState {
                     account_id: from_account_id,
                     collection: Collection::FileNode,
                     document_id: Some(from_resource.resource.document_id),
-                    path: from_resource_.resource.unwrap(),
+                    path: from_resource_name,
                     ..Default::default()
                 },
                 ResourceState {
@@ -195,8 +185,7 @@ impl FileCopyMoveRequestHandler for Server {
                     document_id: Some(
                         delete_destination
                             .as_ref()
-                            .unwrap_or(&destination)
-                            .document_id
+                            .and_then(|d| d.document_id)
                             .unwrap_or(u32::MAX),
                     ),
                     path: destination_resource_name,
@@ -211,6 +200,16 @@ impl FileCopyMoveRequestHandler for Server {
             },
         )
         .await?;
+
+        if delete_destination.is_none()
+            && from_account_id == destination.account_id
+            && from_resource.resource.parent_id == destination.document_id
+            && destination.new_name.is_some()
+            && is_move
+        {
+            // Rename
+            return rename_item(self, access_token, from_resource, destination).await;
+        }
 
         // Validate quota
         if !is_move || from_account_id != to_account_id {

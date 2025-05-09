@@ -33,7 +33,7 @@ pub(crate) trait CardDeleteRequestHandler: Sync + Send {
     fn handle_card_delete_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
 
@@ -41,7 +41,7 @@ impl CardDeleteRequestHandler for Server {
     async fn handle_card_delete_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
         let resource = self
@@ -91,7 +91,7 @@ impl CardDeleteRequestHandler for Server {
             // Validate headers
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 vec![ResourceState {
                     account_id,
                     collection: Collection::AddressBook,
@@ -143,7 +143,7 @@ impl CardDeleteRequestHandler for Server {
             // Validate headers
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 vec![ResourceState {
                     account_id,
                     collection: Collection::ContactCard,

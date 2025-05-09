@@ -70,6 +70,28 @@ pub async fn test(test: &WebDavTest) {
         );
         client.validate_values(&hierarchy).await;
 
+        // Delete cache an resync
+        test.clear_cache();
+        let response = client
+            .sync_collection(
+                &user_base_path,
+                prev_sync_token,
+                Depth::Infinity,
+                None,
+                ["D:getetag"],
+            )
+            .await;
+        let sync_token = response.sync_token();
+        let changed_hrefs = response.hrefs();
+        assert_ne!(sync_token, prev_sync_token);
+        assert_eq!(
+            changed_hrefs,
+            hierarchy.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
+            "lengths {} & {}",
+            changed_hrefs.len(),
+            hierarchy.len()
+        );
+
         // Copying and moving to the same or root containers is invalid
         for method in ["COPY", "MOVE"] {
             for destination in [

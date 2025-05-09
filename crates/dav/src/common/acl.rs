@@ -38,14 +38,14 @@ pub(crate) trait DavAclHandler: Sync + Send {
     fn handle_acl_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: dav_proto::schema::request::Acl,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 
     fn handle_acl_prop_set(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: AclPrincipalPropSet,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 
@@ -79,7 +79,7 @@ impl DavAclHandler for Server {
     async fn handle_acl_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: dav_proto::schema::request::Acl,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -193,7 +193,7 @@ impl DavAclHandler for Server {
     async fn handle_acl_prop_set(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         mut request: AclPrincipalPropSet,
     ) -> crate::Result<HttpResponse> {
         let uri = self

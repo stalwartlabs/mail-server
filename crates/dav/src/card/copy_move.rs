@@ -35,7 +35,7 @@ pub(crate) trait CardCopyMoveRequestHandler: Sync + Send {
     fn handle_card_copy_move_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_move: bool,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -44,7 +44,7 @@ impl CardCopyMoveRequestHandler for Server {
     async fn handle_card_copy_move_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_move: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate source
@@ -110,7 +110,7 @@ impl CardCopyMoveRequestHandler for Server {
         let to_resource = to_resources.by_path(destination_resource_name);
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![
                 ResourceState {
                     account_id: from_account_id,

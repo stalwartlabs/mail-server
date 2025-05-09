@@ -462,9 +462,9 @@ impl AccessToken {
         self.permissions.get(permission.id())
     }
 
-    pub fn assert_has_permission(&self, permission: Permission) -> trc::Result<()> {
+    pub fn assert_has_permission(&self, permission: Permission) -> trc::Result<bool> {
         if self.has_permission(permission) {
-            Ok(())
+            Ok(true)
         } else {
             Err(trc::SecurityEvent::Unauthorized
                 .into_err()
@@ -516,6 +516,10 @@ impl AccessToken {
             || self.access_to.iter().any(|(id, collections)| {
                 *id == to_account_id && collections.contains(to_collection)
             })
+    }
+
+    pub fn has_account_access(&self, to_account_id: u32) -> bool {
+        self.is_member(to_account_id) || self.access_to.iter().any(|(id, _)| *id == to_account_id)
     }
 
     pub fn assert_has_access(

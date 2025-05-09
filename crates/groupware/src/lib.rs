@@ -52,6 +52,15 @@ impl DavResourceName {
             DavResourceName::Principal => "/dav/pal/",
         }
     }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            DavResourceName::Card => "CardDAV",
+            DavResourceName::Cal => "CalDAV",
+            DavResourceName::File => "WebDAV",
+            DavResourceName::Principal => "Principal",
+        }
+    }
 }
 
 impl From<DavResourceName> for Collection {

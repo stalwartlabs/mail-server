@@ -43,7 +43,7 @@ pub(crate) trait CalendarQueryRequestHandler: Sync + Send {
     fn handle_calendar_query_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: CalendarQuery,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -52,7 +52,7 @@ impl CalendarQueryRequestHandler for Server {
     async fn handle_calendar_query_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: CalendarQuery,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -232,7 +232,11 @@ impl CalendarQueryHandler {
                         .data
                         .expand(default_tz, max_time_range)
                         .unwrap_or_else(|| {
-                            let todo = "log error";
+                            trc::event!(
+                                Calendar(trc::CalendarEvent::RuleExpansionError),
+                                Reason = "chrono error",
+                                Details = event.data.event.to_string(),
+                            );
                             vec![]
                         })
                 })

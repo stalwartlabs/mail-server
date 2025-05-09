@@ -9,7 +9,10 @@ use dav_proto::{RequestHeaders, schema::property::Rfc1123DateTime};
 use groupware::{cache::GroupwareCache, file::FileNode};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use jmap_proto::types::{acl::Acl, collection::{Collection, SyncCollection}};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 use trc::AddContext;
 
 use crate::{
@@ -26,7 +29,7 @@ pub(crate) trait FileGetRequestHandler: Sync + Send {
     fn handle_file_get_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_head: bool,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -35,7 +38,7 @@ impl FileGetRequestHandler for Server {
     async fn handle_file_get_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_head: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -79,7 +82,7 @@ impl FileGetRequestHandler for Server {
         let etag = node_.etag();
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection: resource.collection,

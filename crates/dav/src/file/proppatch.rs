@@ -37,7 +37,7 @@ pub(crate) trait FilePropPatchRequestHandler: Sync + Send {
     fn handle_file_proppatch_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: PropertyUpdate,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 
@@ -54,7 +54,7 @@ impl FilePropPatchRequestHandler for Server {
     async fn handle_file_proppatch_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         mut request: PropertyUpdate,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -98,7 +98,7 @@ impl FilePropPatchRequestHandler for Server {
         // Validate headers
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection: resource.collection,

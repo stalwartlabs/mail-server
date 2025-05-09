@@ -34,7 +34,7 @@ pub(crate) trait FileMkColRequestHandler: Sync + Send {
     fn handle_file_mkcol_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: Option<MkCol>,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -43,7 +43,7 @@ impl FileMkColRequestHandler for Server {
     async fn handle_file_mkcol_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: Option<MkCol>,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -69,7 +69,7 @@ impl FileMkColRequestHandler for Server {
         // Validate headers
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection: resource.collection,

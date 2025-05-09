@@ -406,12 +406,12 @@ impl<T: SessionStream> Session<T> {
         .await
     }
 
-    pub fn assert_has_permission(&self, permission: Permission) -> trc::Result<()> {
+    pub fn assert_has_permission(&self, permission: Permission) -> trc::Result<bool> {
         match &self.state {
             State::Authenticated { data } | State::Selected { data, .. } => {
                 data.access_token.assert_has_permission(permission)
             }
-            State::NotAuthenticated { .. } => Ok(()),
+            State::NotAuthenticated { .. } => Ok(false),
         }
     }
 }

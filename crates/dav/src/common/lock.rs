@@ -77,7 +77,7 @@ pub(crate) trait LockRequestHandler: Sync + Send {
     fn handle_lock_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         lock_info: LockRequest,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 
@@ -101,7 +101,7 @@ impl LockRequestHandler for Server {
     async fn handle_lock_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         lock_info: LockRequest,
     ) -> crate::Result<HttpResponse> {
         let resource = self
@@ -150,7 +150,7 @@ impl LockRequestHandler for Server {
 
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 resources,
                 LockCaches::new_shared(account_id, resource.collection, lock_data),
                 if is_lock_request {
@@ -215,7 +215,7 @@ impl LockRequestHandler for Server {
         } else if is_lock_request {
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 resources,
                 Default::default(),
                 DavMethod::LOCK,

@@ -40,7 +40,7 @@ pub(crate) trait CardPropPatchRequestHandler: Sync + Send {
     fn handle_card_proppatch_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: PropertyUpdate,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 
@@ -65,7 +65,7 @@ impl CardPropPatchRequestHandler for Server {
     async fn handle_card_proppatch_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         mut request: PropertyUpdate,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -117,7 +117,7 @@ impl CardPropPatchRequestHandler for Server {
         // Validate headers
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection,

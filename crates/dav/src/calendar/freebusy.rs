@@ -40,7 +40,7 @@ pub(crate) trait CalendarFreebusyRequestHandler: Sync + Send {
     fn handle_calendar_freebusy_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: FreeBusyQuery,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -49,7 +49,7 @@ impl CalendarFreebusyRequestHandler for Server {
     async fn handle_calendar_freebusy_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: FreeBusyQuery,
     ) -> crate::Result<HttpResponse> {
         // Validate URI

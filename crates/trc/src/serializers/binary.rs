@@ -867,6 +867,25 @@ impl EventType {
             EventType::Spam(SpamEvent::Pyzor) => 564,
             EventType::Queue(QueueEvent::BackPressure) => 48,
             EventType::Imap(ImapEvent::GetQuota) => 57,
+            EventType::WebDav(WebDavEvent::Propfind) => 147,
+            EventType::WebDav(WebDavEvent::Proppatch) => 148,
+            EventType::WebDav(WebDavEvent::Get) => 335,
+            EventType::WebDav(WebDavEvent::Report) => 336,
+            EventType::WebDav(WebDavEvent::Mkcol) => 376,
+            EventType::WebDav(WebDavEvent::Delete) => 458,
+            EventType::WebDav(WebDavEvent::Put) => 459,
+            EventType::WebDav(WebDavEvent::Post) => 565,
+            EventType::WebDav(WebDavEvent::Patch) => 566,
+            EventType::WebDav(WebDavEvent::Copy) => 567,
+            EventType::WebDav(WebDavEvent::Move) => 568,
+            EventType::WebDav(WebDavEvent::Lock) => 569,
+            EventType::WebDav(WebDavEvent::Unlock) => 570,
+            EventType::WebDav(WebDavEvent::Acl) => 571,
+            EventType::WebDav(WebDavEvent::Error) => 572,
+            EventType::WebDav(WebDavEvent::Options) => 573,
+            EventType::WebDav(WebDavEvent::Head) => 574,
+            EventType::WebDav(WebDavEvent::Mkcalendar) => 575,
+            EventType::Calendar(CalendarEvent::RuleExpansionError) => 576,
         }
     }
 
@@ -1470,12 +1489,29 @@ impl EventType {
             564 => Some(EventType::Spam(SpamEvent::Pyzor)),
             48 => Some(EventType::Queue(QueueEvent::BackPressure)),
             57 => Some(EventType::Imap(ImapEvent::GetQuota)),
+            147 => Some(EventType::WebDav(WebDavEvent::Propfind)),
+            148 => Some(EventType::WebDav(WebDavEvent::Proppatch)),
+            335 => Some(EventType::WebDav(WebDavEvent::Get)),
+            336 => Some(EventType::WebDav(WebDavEvent::Report)),
+            376 => Some(EventType::WebDav(WebDavEvent::Mkcol)),
+            458 => Some(EventType::WebDav(WebDavEvent::Delete)),
+            459 => Some(EventType::WebDav(WebDavEvent::Put)),
+            565 => Some(EventType::WebDav(WebDavEvent::Post)),
+            566 => Some(EventType::WebDav(WebDavEvent::Patch)),
+            567 => Some(EventType::WebDav(WebDavEvent::Copy)),
+            568 => Some(EventType::WebDav(WebDavEvent::Move)),
+            569 => Some(EventType::WebDav(WebDavEvent::Lock)),
+            570 => Some(EventType::WebDav(WebDavEvent::Unlock)),
+            571 => Some(EventType::WebDav(WebDavEvent::Acl)),
+            572 => Some(EventType::WebDav(WebDavEvent::Error)),
+            573 => Some(EventType::WebDav(WebDavEvent::Options)),
+            574 => Some(EventType::WebDav(WebDavEvent::Head)),
+            575 => Some(EventType::WebDav(WebDavEvent::Mkcalendar)),
+            576 => Some(EventType::Calendar(CalendarEvent::RuleExpansionError)),
             _ => None,
         }
     }
 }
-
-// 147 148 335 336 376 458 459
 
 impl Key {
     fn code(&self) -> u64 {

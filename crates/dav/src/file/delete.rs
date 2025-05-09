@@ -23,7 +23,7 @@ pub(crate) trait FileDeleteRequestHandler: Sync + Send {
     fn handle_file_delete_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
 
@@ -31,7 +31,7 @@ impl FileDeleteRequestHandler for Server {
     async fn handle_file_delete_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
         let resource = self
@@ -73,7 +73,7 @@ impl FileDeleteRequestHandler for Server {
         // Validate headers
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection: resource.collection,

@@ -52,6 +52,8 @@ impl EventType {
             EventType::MessageIngest(event) => event.description(),
             EventType::Security(event) => event.description(),
             EventType::Ai(event) => event.description(),
+            EventType::WebDav(event) => event.description(),
+            EventType::Calendar(event) => event.description(),
         }
     }
 
@@ -100,6 +102,8 @@ impl EventType {
             EventType::MessageIngest(event) => event.explain(),
             EventType::Security(event) => event.explain(),
             EventType::Ai(event) => event.explain(),
+            EventType::WebDav(event) => event.explain(),
+            EventType::Calendar(event) => event.explain(),
         }
     }
 }
@@ -1822,6 +1826,73 @@ impl AiEvent {
         match self {
             AiEvent::LlmResponse => "An LLM response has been received",
             AiEvent::ApiError => "An AI API error occurred",
+        }
+    }
+}
+
+impl WebDavEvent {
+    pub fn description(&self) -> &'static str {
+        match self {
+            WebDavEvent::Propfind => "WebDAV PROPFIND request",
+            WebDavEvent::Proppatch => "WebDAV PROPPATCH request",
+            WebDavEvent::Get => "WebDAV GET request",
+            WebDavEvent::Report => "WebDAV REPORT request",
+            WebDavEvent::Mkcol => "WebDAV MKCOL request",
+            WebDavEvent::Delete => "WebDAV DELETE request",
+            WebDavEvent::Put => "WebDAV PUT request",
+            WebDavEvent::Post => "WebDAV POST request",
+            WebDavEvent::Patch => "WebDAV PATCH request",
+            WebDavEvent::Copy => "WebDAV COPY request",
+            WebDavEvent::Move => "WebDAV MOVE request",
+            WebDavEvent::Lock => "WebDAV LOCK request",
+            WebDavEvent::Unlock => "WebDAV UNLOCK request",
+            WebDavEvent::Acl => "WebDAV ACL request",
+            WebDavEvent::Error => "WebDAV error",
+            WebDavEvent::Head => "WebDAV HEAD request",
+            WebDavEvent::Mkcalendar => "WebDAV MKCALENDAR request",
+            WebDavEvent::Options => "WebDAV OPTIONS request",
+        }
+    }
+
+    pub fn explain(&self) -> &'static str {
+        match self {
+            WebDavEvent::Propfind => "A PROPFIND request has been made to the server",
+            WebDavEvent::Proppatch => "A PROPPATCH request has been made to the server",
+            WebDavEvent::Get => "A GET request has been made to the server",
+            WebDavEvent::Report => "A REPORT request has been made to the server",
+            WebDavEvent::Mkcol => "A MKCOL request has been made to the server",
+            WebDavEvent::Delete => "A DELETE request has been made to the server",
+            WebDavEvent::Put => "A PUT request has been made to the server",
+            WebDavEvent::Post => "A POST request has been made to the server",
+            WebDavEvent::Patch => "A PATCH request has been made to the server",
+            WebDavEvent::Copy => "A COPY request has been made to the server",
+            WebDavEvent::Move => "A MOVE request has been made to the server",
+            WebDavEvent::Lock => "A LOCK request has been made to the server",
+            WebDavEvent::Unlock => "An UNLOCK request has been made to the server",
+            WebDavEvent::Acl => {
+                "An ACL request has been made to the
+                server"
+            }
+            WebDavEvent::Error => "An error occurred with the WebDAV request",
+            WebDavEvent::Head => "A HEAD request has been made to the server",
+            WebDavEvent::Mkcalendar => "A MKCALENDAR request has been made to the server",
+            WebDavEvent::Options => "An OPTIONS request has been made to the server",
+        }
+    }
+}
+
+impl CalendarEvent {
+    pub fn description(&self) -> &'static str {
+        match self {
+            CalendarEvent::RuleExpansionError => "Calendar rule expansion error",
+        }
+    }
+
+    pub fn explain(&self) -> &'static str {
+        match self {
+            CalendarEvent::RuleExpansionError => {
+                "An error occurred while expanding calendar recurrences"
+            }
         }
     }
 }

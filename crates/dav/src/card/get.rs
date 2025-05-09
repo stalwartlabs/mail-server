@@ -28,7 +28,7 @@ pub(crate) trait CardGetRequestHandler: Sync + Send {
     fn handle_card_get_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_head: bool,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
@@ -37,7 +37,7 @@ impl CardGetRequestHandler for Server {
     async fn handle_card_get_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         is_head: bool,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -86,7 +86,7 @@ impl CardGetRequestHandler for Server {
         let etag = card_.etag();
         self.validate_headers(
             access_token,
-            &headers,
+            headers,
             vec![ResourceState {
                 account_id,
                 collection: Collection::ContactCard,

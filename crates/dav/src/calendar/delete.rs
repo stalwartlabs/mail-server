@@ -4,6 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{
+    DavError, DavMethod,
+    common::{
+        ETag,
+        lock::{LockRequestHandler, ResourceState},
+        uri::DavUriResource,
+    },
+};
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use dav_proto::RequestHeaders;
 use groupware::{
@@ -20,20 +28,11 @@ use jmap_proto::types::{
 use store::write::BatchBuilder;
 use trc::AddContext;
 
-use crate::{
-    DavError, DavMethod,
-    common::{
-        ETag,
-        lock::{LockRequestHandler, ResourceState},
-        uri::DavUriResource,
-    },
-};
-
 pub(crate) trait CalendarDeleteRequestHandler: Sync + Send {
     fn handle_calendar_delete_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 }
 
@@ -41,7 +40,7 @@ impl CalendarDeleteRequestHandler for Server {
     async fn handle_calendar_delete_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
         let resource = self
@@ -91,7 +90,7 @@ impl CalendarDeleteRequestHandler for Server {
             // Validate headers
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 vec![ResourceState {
                     account_id,
                     collection: Collection::Calendar,
@@ -139,7 +138,7 @@ impl CalendarDeleteRequestHandler for Server {
             // Validate headers
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 vec![ResourceState {
                     account_id,
                     collection: Collection::CalendarEvent,

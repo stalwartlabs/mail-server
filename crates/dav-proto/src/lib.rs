@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use compact_str::{CompactString, ToCompactString};
+use trc::Value;
+
 pub mod parser;
 pub mod requests;
 pub mod responses;
@@ -50,7 +53,7 @@ pub struct ResourceState<T: AsRef<str>> {
     pub state_token: T,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub enum Return {
     Minimal,
     Representation,
@@ -91,15 +94,86 @@ pub enum Depth {
     None,
 }
 
+impl From<&RequestHeaders<'_>> for Value {
+    fn from(headers: &RequestHeaders<'_>) -> Self {
+        let mut values = Vec::with_capacity(4);
+        if headers.depth != Depth::None {
+            values.push(Value::String(CompactString::const_new("Depth")));
+            values.push(match headers.depth {
+                Depth::Zero => Value::Int(0),
+                Depth::One => Value::Int(1),
+                Depth::Infinity => Value::String(CompactString::const_new("infinity")),
+                Depth::None => Value::None,
+            });
+        }
+        if headers.timeout != Timeout::None {
+            values.push(Value::String(CompactString::const_new("Timeout")));
+            values.push(match headers.timeout {
+                Timeout::Infinite => Value::String(CompactString::const_new("infinite")),
+                Timeout::Second(n) => Value::Int(n as i64),
+                Timeout::None => Value::None,
+            });
+        }
+        for (name, header_value) in [
+            ("Content-Type", headers.content_type),
+            ("Destination", headers.destination),
+            ("Lock-Token", headers.lock_token),
+        ] {
+            if let Some(value) = header_value {
+                values.push(CompactString::const_new(name).into());
+                values.push(value.to_compact_string().into());
+            }
+        }
+        for (name, is_set) in [
+            ("Overwrite", headers.overwrite_fail),
+            ("No-Timezones", headers.no_timezones),
+            ("Depth-No-Root", headers.depth_no_root),
+        ] {
+            if is_set {
+                values.push(CompactString::const_new(name).into());
+            }
+        }
+        for if_ in &headers.if_ {
+            values.push(CompactString::const_new("If").into());
+            let mut if_values = Vec::with_capacity(if_.list.len() * 2 + 1);
+            if let Some(resource) = if_.resource {
+                if_values.push(Value::String(resource.to_compact_string()));
+            }
+            for condition in &if_.list {
+                match condition {
+                    Condition::StateToken { is_not, token } => {
+                        if *is_not {
+                            if_values.push(Value::String(CompactString::const_new("!State-Token")));
+                        } else {
+                            if_values.push(Value::String(CompactString::const_new("State-Token")));
+                        }
+                        if_values.push(Value::String(token.to_compact_string()));
+                    }
+                    Condition::ETag { is_not, tag } => {
+                        if *is_not {
+                            if_values.push(Value::String(CompactString::const_new("!ETag")));
+                        } else {
+                            if_values.push(Value::String(CompactString::const_new("ETag")));
+                        }
+                        if_values.push(Value::String(tag.to_compact_string()));
+                    }
+                    Condition::Exists { is_not } => {
+                        if *is_not {
+                            if_values.push(Value::String(CompactString::const_new("!Exists")));
+                        } else {
+                            if_values.push(Value::String(CompactString::const_new("Exists")));
+                        }
+                    }
+                }
+            }
+            values.push(Value::Array(if_values));
+        }
+
+        Value::Array(values)
+    }
+}
+
 /*
-
-   Allow: OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, COPY, MOVE
-   Allow: MKCOL, PROPFIND, PROPPATCH, LOCK, UNLOCK, REPORT, ACL
-   DAV: 1, 2, 3, access-control, extended-mkcol
-calendar-no-timezone
-
-
-TODO:
 
 
 Implemented:

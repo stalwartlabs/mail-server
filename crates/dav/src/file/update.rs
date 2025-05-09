@@ -36,7 +36,7 @@ pub(crate) trait FileUpdateRequestHandler: Sync + Send {
     fn handle_file_update_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         bytes: Vec<u8>,
         is_patch: bool,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
@@ -46,7 +46,7 @@ impl FileUpdateRequestHandler for Server {
     async fn handle_file_update_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         bytes: Vec<u8>,
         _is_patch: bool,
     ) -> crate::Result<HttpResponse> {
@@ -94,7 +94,7 @@ impl FileUpdateRequestHandler for Server {
             match self
                 .validate_headers(
                     access_token,
-                    &headers,
+                    headers,
                     vec![ResourceState {
                         account_id,
                         collection: resource.collection,
@@ -215,7 +215,7 @@ impl FileUpdateRequestHandler for Server {
             // Validate headers
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 vec![ResourceState {
                     account_id,
                     collection: resource.collection,

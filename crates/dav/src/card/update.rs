@@ -36,7 +36,7 @@ pub(crate) trait CardUpdateRequestHandler: Sync + Send {
     fn handle_card_update_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         bytes: Vec<u8>,
         is_patch: bool,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
@@ -46,7 +46,7 @@ impl CardUpdateRequestHandler for Server {
     async fn handle_card_update_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         bytes: Vec<u8>,
         _is_patch: bool,
     ) -> crate::Result<HttpResponse> {
@@ -115,7 +115,7 @@ impl CardUpdateRequestHandler for Server {
             match self
                 .validate_headers(
                     access_token,
-                    &headers,
+                    headers,
                     vec![ResourceState {
                         account_id,
                         collection: Collection::ContactCard,
@@ -203,7 +203,7 @@ impl CardUpdateRequestHandler for Server {
             // Validate headers
             self.validate_headers(
                 access_token,
-                &headers,
+                headers,
                 vec![ResourceState {
                     account_id,
                     collection: resource.collection,

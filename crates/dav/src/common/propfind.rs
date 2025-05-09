@@ -46,7 +46,7 @@ use dav_proto::{
         },
     },
 };
-use directory::{Type, backend::internal::manage::ManageDirectory};
+use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
 use groupware::{
     DavCalendarResource, DavResourceName, cache::GroupwareCache, calendar::ArchivedTimezone,
 };
@@ -70,7 +70,7 @@ pub(crate) trait PropFindRequestHandler: Sync + Send {
     fn handle_propfind_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: PropFind,
     ) -> impl Future<Output = crate::Result<HttpResponse>> + Send;
 
@@ -119,7 +119,7 @@ impl PropFindRequestHandler for Server {
     async fn handle_propfind_request(
         &self,
         access_token: &AccessToken,
-        headers: RequestHeaders<'_>,
+        headers: &RequestHeaders<'_>,
         request: PropFind,
     ) -> crate::Result<HttpResponse> {
         // Validate URI
@@ -148,6 +148,18 @@ impl PropFindRequestHandler for Server {
         if let Some(account_id) = resource.account_id {
             match resource.collection {
                 Collection::FileNode | Collection::Calendar | Collection::AddressBook => {
+                    // Validate permissions
+                    access_token.assert_has_permission(match resource.collection {
+                        Collection::FileNode => Permission::DavFilePropFind,
+                        Collection::Calendar | Collection::CalendarEvent => {
+                            Permission::DavCalPropFind
+                        }
+                        Collection::AddressBook | Collection::ContactCard => {
+                            Permission::DavCardPropFind
+                        }
+                        _ => unreachable!(),
+                    })?;
+
                     self.handle_dav_query(
                         access_token,
                         DavQuery::propfind(
@@ -165,16 +177,14 @@ impl PropFindRequestHandler for Server {
                 Collection::Principal => {
                     let mut response = MultiStatus::new(Vec::with_capacity(16));
 
-                    if let Some(resource) = resource.resource {
+                    if resource.resource.is_some() {
                         response.add_response(Response::new_status(
-                            [format!(
-                                "{}/{}",
-                                headers.base_uri().unwrap_or_default(),
-                                resource
-                            )],
+                            [headers.uri.to_string()],
                             StatusCode::NOT_FOUND,
                         ));
-                    } else {
+                    } else if access_token.has_account_access(account_id)
+                        || access_token.has_permission(Permission::DavPrincipalList)
+                    {
                         self.prepare_principal_propfind_response(
                             access_token,
                             Collection::Principal,
@@ -183,6 +193,11 @@ impl PropFindRequestHandler for Server {
                             &mut response,
                         )
                         .await?;
+                    } else {
+                        response.add_response(Response::new_status(
+                            [headers.uri.to_string()],
+                            StatusCode::FORBIDDEN,
+                        ));
                     }
 
                     Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
@@ -309,10 +324,21 @@ impl PropFindRequestHandler for Server {
 
             if return_children {
                 let ids = if !matches!(resource.collection, Collection::Principal) {
+                    // Validate permissions
+                    access_token.assert_has_permission(match resource.collection {
+                        Collection::FileNode => Permission::DavFilePropFind,
+                        Collection::Calendar | Collection::CalendarEvent => {
+                            Permission::DavCalPropFind
+                        }
+                        Collection::AddressBook | Collection::ContactCard => {
+                            Permission::DavCardPropFind
+                        }
+                        _ => unreachable!(),
+                    })?;
                     RoaringBitmap::from_iter(
                         access_token.all_ids_by_collection(resource.collection),
                     )
-                } else {
+                } else if access_token.has_permission(Permission::DavPrincipalList) {
                     // Return all principals
                     let principals = self
                         .store()
@@ -328,6 +354,8 @@ impl PropFindRequestHandler for Server {
                         .caused_by(trc::location!())?;
 
                     RoaringBitmap::from_iter(principals.items.into_iter().map(|p| p.id()))
+                } else {
+                    RoaringBitmap::from_iter(access_token.all_ids())
                 };
 
                 self.prepare_principal_propfind_response(

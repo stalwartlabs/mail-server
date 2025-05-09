@@ -1367,6 +1367,46 @@ impl Permission {
                 | Permission::SieveHaveSpace
                 | Permission::SpamFilterClassify
                 | Permission::SpamFilterTrain
+                | Permission::DavSyncCollection
+                | Permission::DavExpandProperty
+                | Permission::DavPrincipalAcl
+                | Permission::DavPrincipalMatch
+                | Permission::DavPrincipalSearchPropSet
+                | Permission::DavFilePropFind
+                | Permission::DavFilePropPatch
+                | Permission::DavFileGet
+                | Permission::DavFileMkCol
+                | Permission::DavFileDelete
+                | Permission::DavFilePut
+                | Permission::DavFileCopy
+                | Permission::DavFileMove
+                | Permission::DavFileLock
+                | Permission::DavFileAcl
+                | Permission::DavCardPropFind
+                | Permission::DavCardPropPatch
+                | Permission::DavCardGet
+                | Permission::DavCardMkCol
+                | Permission::DavCardDelete
+                | Permission::DavCardPut
+                | Permission::DavCardCopy
+                | Permission::DavCardMove
+                | Permission::DavCardLock
+                | Permission::DavCardAcl
+                | Permission::DavCardQuery
+                | Permission::DavCardMultiGet
+                | Permission::DavCalPropFind
+                | Permission::DavCalPropPatch
+                | Permission::DavCalGet
+                | Permission::DavCalMkCol
+                | Permission::DavCalDelete
+                | Permission::DavCalPut
+                | Permission::DavCalCopy
+                | Permission::DavCalMove
+                | Permission::DavCalLock
+                | Permission::DavCalAcl
+                | Permission::DavCalQuery
+                | Permission::DavCalMultiGet
+                | Permission::DavCalFreeBusyQuery
         )
     }
 

@@ -187,6 +187,8 @@ pub enum EventType {
     Telemetry(TelemetryEvent),
     Security(SecurityEvent),
     Ai(AiEvent),
+    WebDav(WebDavEvent),
+    Calendar(CalendarEvent),
 }
 
 #[event_type]
@@ -948,6 +950,36 @@ pub enum ResourceEvent {
 pub enum AiEvent {
     LlmResponse,
     ApiError,
+}
+
+#[event_type]
+pub enum WebDavEvent {
+    // Requests
+    Propfind,
+    Proppatch,
+    Get,
+    Head,
+    Report,
+    Mkcol,
+    Mkcalendar,
+    Delete,
+    Put,
+    Post,
+    Patch,
+    Copy,
+    Move,
+    Lock,
+    Unlock,
+    Acl,
+    Options,
+
+    // Errors
+    Error,
+}
+
+#[event_type]
+pub enum CalendarEvent {
+    RuleExpansionError,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
