@@ -140,10 +140,12 @@ impl EncryptMessage for Message<'_> {
             } else {
                 &mut outer_message
             })
-            .extend_from_slice(&raw_message[header.offset_field()..header.offset_end()]);
+            .extend_from_slice(
+                &raw_message[header.offset_field() as usize..header.offset_end() as usize],
+            );
         }
         inner_message.extend_from_slice(b"\r\n");
-        inner_message.extend_from_slice(&raw_message[root.raw_body_offset()..]);
+        inner_message.extend_from_slice(&raw_message[root.raw_body_offset() as usize..]);
 
         // Encrypt inner message
         match params.method {
@@ -226,7 +228,7 @@ impl EncryptMessage for Message<'_> {
                         .map_err(|err| {
                             EncryptMessageError::Error(format!("Failed to create armorer: {}", err))
                         })?;
-                    let message = stream::Encryptor2::for_recipients(message, keys)
+                    let message = stream::Encryptor::for_recipients(message, keys)
                         .symmetric_algo(match algo {
                             ArchivedAlgorithm::Aes128 => SymmetricAlgorithm::AES128,
                             ArchivedAlgorithm::Aes256 => SymmetricAlgorithm::AES256,

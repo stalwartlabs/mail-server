@@ -75,7 +75,7 @@ pub fn fn_is_header_utf8_valid<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Va
                 for header in &p.headers {
                     if header.name == header_name
                         && raw
-                            .get(header.offset_start()..header.offset_end())
+                            .get(header.offset_start() as usize..header.offset_end() as usize)
                             .and_then(|raw| std::str::from_utf8(raw).ok())
                             .is_none()
                     {
@@ -85,7 +85,7 @@ pub fn fn_is_header_utf8_valid<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Va
                 }
             } else {
                 is_valid = raw
-                    .get(p.raw_header_offset()..p.raw_body_offset())
+                    .get(p.raw_header_offset() as usize..p.raw_body_offset() as usize)
                     .and_then(|raw| std::str::from_utf8(raw).ok())
                     .is_some();
             }

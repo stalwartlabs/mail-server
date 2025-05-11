@@ -127,7 +127,12 @@ impl Request<Command> {
                                     }
                                 }
                             },
-                            _ => return Err(bad(self.tag.to_compact_string(), "Invalid arguments.")),
+                            _ => {
+                                return Err(bad(
+                                    self.tag.to_compact_string(),
+                                    "Invalid arguments.",
+                                ));
+                            }
                         }
                     }
 

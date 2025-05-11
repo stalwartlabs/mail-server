@@ -146,8 +146,8 @@ lookup = "{STORE}"
 type = "rocksdb"
 path = "{TMP}/queue.db"
 
-[store."foundationdb"]
-type = "foundationdb"
+#[store."foundationdb"]
+#type = "foundationdb"
 
 [store."postgresql"]
 type = "postgresql"

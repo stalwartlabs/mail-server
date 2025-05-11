@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-
-
 use crate::{ResponseCode, StatusResponse};
 
 use super::{ImapResponse, Sequence, list::ListItem};

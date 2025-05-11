@@ -14,9 +14,7 @@ use crate::{
 use common::{Server, auth::AccessToken};
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
-    message::metadata::{
-        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, MessageMetadata,
-    },
+    message::metadata::{ArchivedMetadataPartType, MessageMetadata},
 };
 use jmap_proto::{
     method::get::{GetRequest, GetResponse},
@@ -31,6 +29,7 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
+use mail_parser::{ArchivedHeaderName, HeaderValue, core::rkyv::ArchivedGetHeader};
 use std::{borrow::Cow, future::Future};
 use store::BlobClass;
 use trc::{AddContext, StoreEvent};
@@ -262,8 +261,8 @@ impl EmailGet for Server {
                             Property::Subject,
                             root_part
                                 .headers
-                                .convert_header(&ArchivedHeaderName::Subject)
-                                .map(|value| value.into_form(&HeaderForm::Text))
+                                .header_value(&ArchivedHeaderName::Subject)
+                                .map(|value| HeaderValue::from(value).into_form(&HeaderForm::Text))
                                 .unwrap_or_default(),
                         );
                     }
@@ -272,8 +271,8 @@ impl EmailGet for Server {
                             Property::SentAt,
                             root_part
                                 .headers
-                                .convert_header(&ArchivedHeaderName::Date)
-                                .map(|value| value.into_form(&HeaderForm::Date))
+                                .header_value(&ArchivedHeaderName::Date)
+                                .map(|value| HeaderValue::from(value).into_form(&HeaderForm::Date))
                                 .unwrap_or_default(),
                         );
                     }
@@ -282,13 +281,15 @@ impl EmailGet for Server {
                             property.clone(),
                             root_part
                                 .headers
-                                .convert_header(&match property {
+                                .header_value(&match property {
                                     Property::MessageId => ArchivedHeaderName::MessageId,
                                     Property::InReplyTo => ArchivedHeaderName::InReplyTo,
                                     Property::References => ArchivedHeaderName::References,
                                     _ => unreachable!(),
                                 })
-                                .map(|value| value.into_form(&HeaderForm::MessageIds))
+                                .map(|value| {
+                                    HeaderValue::from(value).into_form(&HeaderForm::MessageIds)
+                                })
                                 .unwrap_or_default(),
                         );
                     }
@@ -303,7 +304,7 @@ impl EmailGet for Server {
                             property.clone(),
                             root_part
                                 .headers
-                                .convert_header(&match property {
+                                .header_value(&match property {
                                     Property::Sender => ArchivedHeaderName::Sender,
                                     Property::From => ArchivedHeaderName::From,
                                     Property::To => ArchivedHeaderName::To,
@@ -312,7 +313,9 @@ impl EmailGet for Server {
                                     Property::ReplyTo => ArchivedHeaderName::ReplyTo,
                                     _ => unreachable!(),
                                 })
-                                .map(|value| value.into_form(&HeaderForm::Addresses))
+                                .map(|value| {
+                                    HeaderValue::from(value).into_form(&HeaderForm::Addresses)
+                                })
                                 .unwrap_or_default(),
                         );
                     }
@@ -340,7 +343,7 @@ impl EmailGet for Server {
                             property.clone(),
                             list.map(|part_id| {
                                 contents.to_body_part(
-                                    u16::from(part_id) as usize,
+                                    u16::from(part_id) as u32,
                                     &body_properties,
                                     &raw_message,
                                     &blob_id,

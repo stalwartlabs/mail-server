@@ -20,11 +20,7 @@ use smtp_proto::*;
 use trc::SmtpEvent;
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_ehlo(
-        &mut self,
-        domain: String,
-        is_extended: bool,
-    ) -> Result<(), ()> {
+    pub async fn handle_ehlo(&mut self, domain: String, is_extended: bool) -> Result<(), ()> {
         // Set EHLO domain
 
         if domain != self.data.helo_domain {

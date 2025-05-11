@@ -30,7 +30,7 @@ impl SpamFilterAnalyzeReceived for Server {
                     .input
                     .message
                     .raw_message()
-                    .get(header.offset_start..header.offset_end)
+                    .get(header.offset_start as usize..header.offset_end as usize)
                     .unwrap_or_default()
                     .is_ascii()
                 {

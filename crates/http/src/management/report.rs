@@ -15,10 +15,12 @@ use mail_auth::report::{
     tlsrpt::{FailureDetails, Policy, TlsReport},
 };
 use serde_json::json;
-use smtp::reporting::analysis::IncomingReport;
+use smtp::reporting::{ReportSerializer, analysis::IncomingReport};
 use store::{
-    Deserialize, IterateParams, U64_LEN, ValueKey,
-    write::{BatchBuilder, LegacyBincode, ReportClass, ValueClass, key::DeserializeBigEndian},
+    Deserialize, IterateParams, Key, U64_LEN, ValueKey,
+    write::{
+        AlignedBytes, Archive, BatchBuilder, ReportClass, ValueClass, key::DeserializeBigEndian,
+    },
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
@@ -106,64 +108,57 @@ impl ManageReports for Server {
 
                 if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     match &report_id {
-                        ReportClass::Tls { .. } => match self
-                            .core
-                            .storage
-                            .data
-                            .get_value::<LegacyBincode<IncomingReport<TlsReport>>>(ValueKey::from(
-                                ValueClass::Report(report_id),
-                            ))
-                            .await?
+                        ReportClass::Tls { .. } => match fetch_report::<IncomingReport<TlsReport>>(
+                            self,
+                            ValueKey::from(ValueClass::Report(report_id)),
+                        )
+                        .await?
                         {
                             Some(report)
                                 if tenant_domains
                                     .as_ref()
-                                    .is_none_or(|domains| report.inner.has_domain(domains)) =>
+                                    .is_none_or(|domains| report.has_domain(domains)) =>
                             {
                                 Ok(JsonResponse::new(json!({
-                                        "data": report.inner,
+                                        "data": report,
                                 }))
                                 .into_http_response())
                             }
                             _ => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
-                        ReportClass::Dmarc { .. } => match self
-                            .core
-                            .storage
-                            .data
-                            .get_value::<LegacyBincode<IncomingReport<mail_auth::report::Report>>>(
+                        ReportClass::Dmarc { .. } => {
+                            match fetch_report::<IncomingReport<mail_auth::report::Report>>(
+                                self,
                                 ValueKey::from(ValueClass::Report(report_id)),
                             )
                             .await?
-                        {
-                            Some(report)
-                                if tenant_domains
-                                    .as_ref()
-                                    .is_none_or(|domains| report.inner.has_domain(domains)) =>
                             {
-                                Ok(JsonResponse::new(json!({
-                                        "data": report.inner,
-                                }))
-                                .into_http_response())
+                                Some(report)
+                                    if tenant_domains
+                                        .as_ref()
+                                        .is_none_or(|domains| report.has_domain(domains)) =>
+                                {
+                                    Ok(JsonResponse::new(json!({
+                                            "data": report,
+                                    }))
+                                    .into_http_response())
+                                }
+                                _ => Err(trc::ResourceEvent::NotFound.into_err()),
                             }
-                            _ => Err(trc::ResourceEvent::NotFound.into_err()),
-                        },
-                        ReportClass::Arf { .. } => match self
-                            .core
-                            .storage
-                            .data
-                            .get_value::<LegacyBincode<IncomingReport<Feedback>>>(ValueKey::from(
-                                ValueClass::Report(report_id),
-                            ))
-                            .await?
+                        }
+                        ReportClass::Arf { .. } => match fetch_report::<IncomingReport<Feedback>>(
+                            self,
+                            ValueKey::from(ValueClass::Report(report_id)),
+                        )
+                        .await?
                         {
                             Some(report)
                                 if tenant_domains
                                     .as_ref()
-                                    .is_none_or(|domains| report.inner.has_domain(domains)) =>
+                                    .is_none_or(|domains| report.has_domain(domains)) =>
                             {
                                 Ok(JsonResponse::new(json!({
-                                        "data": report.inner,
+                                        "data": report,
                                 }))
                                 .into_http_response())
                             }
@@ -236,34 +231,27 @@ impl ManageReports for Server {
                 if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     if let Some(domains) = &tenant_domains {
                         let is_tenant_report = match &report_id {
-                            ReportClass::Tls { .. } => self
-                                .core
-                                .storage
-                                .data
-                                .get_value::<LegacyBincode<IncomingReport<TlsReport>>>(ValueKey::from(
-                                    ValueClass::Report(report_id.clone()),
-                                ))
-                                .await?
-                                .is_none_or( |report| report.inner.has_domain(domains)),
-                            ReportClass::Dmarc { .. } => self
-                                .core
-                                .storage
-                                .data
-                                .get_value::<LegacyBincode<IncomingReport<mail_auth::report::Report>>>(
+                            ReportClass::Tls { .. } => fetch_report::<IncomingReport<TlsReport>>(
+                                self,
+                                ValueKey::from(ValueClass::Report(report_id.clone())),
+                            )
+                            .await?
+                            .is_none_or(|report| report.has_domain(domains)),
+                            ReportClass::Dmarc { .. } => {
+                                fetch_report::<IncomingReport<mail_auth::report::Report>>(
+                                    self,
                                     ValueKey::from(ValueClass::Report(report_id.clone())),
                                 )
                                 .await?
-                                .is_none_or( |report| report.inner.has_domain(domains)),
+                                .is_none_or(|report| report.has_domain(domains))
+                            }
 
-                            ReportClass::Arf { .. } => self
-                                .core
-                                .storage
-                                .data
-                                .get_value::<LegacyBincode<IncomingReport<Feedback>>>(ValueKey::from(
-                                    ValueClass::Report(report_id.clone()),
-                                ))
-                                .await?
-                                .is_none_or( |report| report.inner.has_domain(domains)),
+                            ReportClass::Arf { .. } => fetch_report::<IncomingReport<Feedback>>(
+                                self,
+                                ValueKey::from(ValueClass::Report(report_id.clone())),
+                            )
+                            .await?
+                            .is_none_or(|report| report.has_domain(domains)),
                         };
 
                         if !is_tenant_report {
@@ -285,6 +273,30 @@ impl ManageReports for Server {
             }
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
+    }
+}
+
+async fn fetch_report<T>(server: &Server, key: impl Key) -> trc::Result<Option<T>>
+where
+    T: rkyv::Archive
+        + for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::util::AlignedVec,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >,
+    T::Archived: for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
+        + rkyv::Deserialize<T, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
+{
+    if let Some(tls) = server
+        .store()
+        .get_value::<Archive<AlignedBytes>>(key)
+        .await?
+    {
+        tls.deserialize::<ReportSerializer<T>>().map(|v| Some(v.0))
+    } else {
+        Ok(None)
     }
 }
 
@@ -369,15 +381,15 @@ async fn fetch_incoming_reports(
                 last_id = id;
 
                 // TODO: Support filtering chunked records (over 10MB) on FDB
+                let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?;
                 let matches = if has_filters {
                     match typ {
                         ReportType::Dmarc => {
                             let report =
-                                LegacyBincode::<IncomingReport<mail_auth::report::Report>>::deserialize(
-                                    value,
-                                )
+                                archive
+                                .deserialize::<ReportSerializer<IncomingReport<mail_auth::report::Report>>>()
                                 .caused_by(trc::location!())?
-                                .inner;
+                                .0;
 
                             filter.is_none_or( |f| report.contains(f))
                                 && tenant_domains
@@ -385,9 +397,11 @@ async fn fetch_incoming_reports(
                                     .is_none_or( |domains| report.has_domain(domains))
                         }
                         ReportType::Tls => {
-                            let report = LegacyBincode::<IncomingReport<TlsReport>>::deserialize(value)
+                            let report =
+                                archive
+                                .deserialize::<ReportSerializer<IncomingReport<TlsReport>>>()
                                 .caused_by(trc::location!())?
-                                .inner;
+                                .0;
 
                             filter.is_none_or( |f| report.contains(f))
                                 && tenant_domains
@@ -395,9 +409,12 @@ async fn fetch_incoming_reports(
                                     .is_none_or( |domains| report.has_domain(domains))
                         }
                         ReportType::Arf => {
-                            let report = LegacyBincode::<IncomingReport<Feedback>>::deserialize(value)
+                            let report =
+                                archive
+                                .deserialize::<ReportSerializer<IncomingReport<Feedback>>>()
                                 .caused_by(trc::location!())?
-                                .inner;
+                                .0;
+
 
                             filter.is_none_or( |f| report.contains(f))
                                 && tenant_domains

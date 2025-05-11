@@ -12,11 +12,7 @@ use mail_auth::{
     common::resolver::IntoFqdn,
     hickory_resolver::{
         Name,
-        error::ResolveErrorKind,
-        proto::{
-            error::ProtoErrorKind,
-            rr::rdata::tlsa::{CertUsage, Matching, Selector},
-        },
+        proto::rr::rdata::tlsa::{CertUsage, Matching, Selector},
     },
 };
 use std::{future::Future, sync::Arc};
@@ -44,72 +40,68 @@ impl TlsaLookup for Server {
         }
 
         let mut entries = Vec::new();
-        let tlsa_lookup = match self
+        let tlsa_lookup = self
             .core
             .smtp
             .resolvers
             .dnssec
             .resolver
             .tlsa_lookup(Name::from_str_relaxed(key.as_ref())?)
-            .await
-        {
-            Ok(tlsa_lookup) => tlsa_lookup,
-            Err(err) => {
-                return match &err.kind() {
-                    ResolveErrorKind::Proto(proto_err)
-                        if matches!(proto_err.kind(), ProtoErrorKind::RrsigsNotPresent { .. }) =>
-                    {
-                        Ok(None)
-                    }
-                    _ => Err(err.into()),
-                };
-            }
-        };
+            .await?;
 
         let mut has_end_entities = false;
         let mut has_intermediates = false;
+        let mut found_insecure = false;
 
         for record in tlsa_lookup.as_lookup().record_iter() {
-            if let Some(tlsa) = record.data().and_then(|r| r.as_tlsa()) {
-                let is_end_entity = match tlsa.cert_usage() {
-                    CertUsage::DomainIssued => true,
-                    CertUsage::TrustAnchor => false,
-                    _ => continue,
-                };
-                if is_end_entity {
-                    has_end_entities = true;
+            if let Some(tlsa) = record.data().as_tlsa() {
+                if record.proof().is_secure() {
+                    let is_end_entity = match tlsa.cert_usage() {
+                        CertUsage::DaneEe => true,
+                        CertUsage::DaneTa => false,
+                        _ => continue,
+                    };
+                    if is_end_entity {
+                        has_end_entities = true;
+                    } else {
+                        has_intermediates = true;
+                    }
+                    entries.push(TlsaEntry {
+                        is_end_entity,
+                        is_sha256: match tlsa.matching() {
+                            Matching::Sha256 => true,
+                            Matching::Sha512 => false,
+                            _ => continue,
+                        },
+                        is_spki: match tlsa.selector() {
+                            Selector::Spki => true,
+                            Selector::Full => false,
+                            _ => continue,
+                        },
+                        data: tlsa.cert_data().to_vec(),
+                    });
                 } else {
-                    has_intermediates = true;
+                    found_insecure = true;
                 }
-                entries.push(TlsaEntry {
-                    is_end_entity,
-                    is_sha256: match tlsa.matching() {
-                        Matching::Sha256 => true,
-                        Matching::Sha512 => false,
-                        _ => continue,
-                    },
-                    is_spki: match tlsa.selector() {
-                        Selector::Spki => true,
-                        Selector::Full => false,
-                        _ => continue,
-                    },
-                    data: tlsa.cert_data().to_vec(),
-                });
             }
         }
 
-        let tlsa = Arc::new(Tlsa {
-            entries,
-            has_end_entities,
-            has_intermediates,
-        });
+        if !entries.is_empty() || !found_insecure {
+            let tlsa = Arc::new(Tlsa {
+                entries,
+                has_end_entities,
+                has_intermediates,
+            });
 
-        self.inner.cache.dns_tlsa.insert_with_expiry(
-            key.into_owned(),
-            tlsa.clone(),
-            tlsa_lookup.valid_until(),
-        );
+            self.inner.cache.dns_tlsa.insert_with_expiry(
+                key.into_owned(),
+                tlsa.clone(),
+                tlsa_lookup.valid_until(),
+            );
 
-        Ok(Some(tlsa))
+            Ok(Some(tlsa))
+        } else {
+            Ok(None)
+        }
     }
 }

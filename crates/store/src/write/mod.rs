@@ -60,14 +60,6 @@ where
             >,
         >;
 
-#[derive(Debug)]
-pub struct LegacyBincode<T: serde::Serialize + serde::de::DeserializeOwned> {
-    pub inner: T,
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub struct DynamicDocumentId(pub usize);
-
 #[derive(Debug, Default)]
 pub struct AssignedIds {
     pub counter_ids: Vec<i64>,

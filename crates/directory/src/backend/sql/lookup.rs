@@ -296,9 +296,7 @@ impl SqlMappings {
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_email) {
                     if let Value::Text(text) = value {
-                        principal
-                            .emails
-                            .push(text.to_lowercase());
+                        principal.emails.push(text.to_lowercase());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_quota) {
                     if let Value::Integer(quota) = value {

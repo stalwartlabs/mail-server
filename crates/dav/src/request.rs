@@ -550,7 +550,7 @@ impl DavRequestHandler for Server {
 
         //let c = println!("------------------------------------------");
 
-        let std_body = std::str::from_utf8(&body).unwrap_or("[binary]").to_string();
+        //let std_body = std::str::from_utf8(&body).unwrap_or("[binary]").to_string();
 
         // Parse headers
         let mut headers = RequestHeaders::new(request.uri().path());

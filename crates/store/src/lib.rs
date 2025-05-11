@@ -88,6 +88,7 @@ pub const SERIALIZE_CALENDAR_V1: u8 = 13;
 pub const SERIALIZE_ADDRESSBOOK_V1: u8 = 14;
 pub const SERIALIZE_CALENDAREVENT_V1: u8 = 15;
 pub const SERIALIZE_PRINCIPAL_V1: u8 = 16;
+pub const SERIALIZE_REPORT_V1: u8 = 17;
 
 pub trait SerializedVersion {
     fn serialize_version() -> u8;

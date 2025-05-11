@@ -11,7 +11,6 @@ use common::{
     expr::{tokenizer::TokenMap, *},
 };
 
-
 use directory::{
     QueryBy, Type,
     backend::internal::{PrincipalField, PrincipalSet, PrincipalValue, manage::ManageDirectory},

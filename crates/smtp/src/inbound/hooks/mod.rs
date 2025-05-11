@@ -176,10 +176,7 @@ pub enum Modification {
     #[serde(rename = "replaceContents")]
     ReplaceContents { value: String },
     #[serde(rename = "addHeader")]
-    AddHeader {
-        name: String,
-        value: String,
-    },
+    AddHeader { name: String, value: String },
     #[serde(rename = "insertHeader")]
     InsertHeader {
         index: u32,

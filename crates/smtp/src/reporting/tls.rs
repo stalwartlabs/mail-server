@@ -29,13 +29,13 @@ use reqwest::header::CONTENT_TYPE;
 use std::fmt::Write;
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{BatchBuilder, LegacyBincode, QueueClass, ReportEvent, ValueClass},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, QueueClass, ReportEvent, ValueClass},
 };
 use trc::{AddContext, OutgoingReportEvent};
 
 use crate::{queue::RecipientDomain, reporting::SmtpReporting};
 
-use super::{AggregateTimestamp, SerializedSize};
+use super::{AggregateTimestamp, ReportSerializer, SerializedSize};
 
 #[derive(Debug, Clone)]
 pub struct TlsRptOptions {
@@ -43,7 +43,7 @@ pub struct TlsRptOptions {
     pub interval: AggregateFrequency,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, serde::Serialize)]
 pub struct TlsFormat {
     pub rua: Vec<ReportUri>,
     pub policy: PolicyDetails,
@@ -297,15 +297,13 @@ impl TlsReporting for Server {
 
         for event in events {
             let tls = if let Some(tls) = self
-                .core
-                .storage
-                .data
-                .get_value::<LegacyBincode<TlsFormat>>(ValueKey::from(ValueClass::Queue(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
                     QueueClass::TlsReportHeader(event.clone()),
                 )))
                 .await?
             {
-                tls.inner
+                tls.deserialize::<ReportSerializer<TlsFormat>>()?.0
             } else {
                 continue;
             };
@@ -338,8 +336,10 @@ impl TlsReporting for Server {
                 .storage
                 .data
                 .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
-                    if let Some(failure_details) =
-                        LegacyBincode::<Option<FailureDetails>>::deserialize(v)?.inner
+                    let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(v)?;
+                    if let Some(failure_details) = archive
+                        .deserialize::<ReportSerializer<Option<FailureDetails>>>()?
+                        .0
                     {
                         match record_map.entry(failure_details) {
                             Entry::Occupied(mut e) => {
@@ -492,8 +492,8 @@ impl TlsReporting for Server {
             // Write report
             builder.set(
                 ValueClass::Queue(QueueClass::TlsReportHeader(report_event.clone())),
-                match LegacyBincode::new(entry).serialize() {
-                    Ok(data) => data,
+                match Archiver::new(ReportSerializer(entry)).serialize() {
+                    Ok(data) => data.to_vec(),
                     Err(err) => {
                         trc::error!(
                             err.caused_by(trc::location!())
@@ -509,8 +509,8 @@ impl TlsReporting for Server {
         report_event.seq_id = self.inner.data.queue_id_gen.generate();
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
-            match LegacyBincode::new(event.failure).serialize() {
-                Ok(data) => data,
+            match Archiver::new(ReportSerializer(event.failure)).serialize() {
+                Ok(data) => data.to_vec(),
                 Err(err) => {
                     trc::error!(
                         err.caused_by(trc::location!())

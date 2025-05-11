@@ -4,15 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::borrow::Cow;
+
 use super::metadata::{
-    Addr, Address, ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
     ArchivedMessageData, ArchivedMessageMetadata, ArchivedMessageMetadataContents,
-    ArchivedMessageMetadataPart, ArchivedMetadataPartType, DecodedPartContent, Group, HeaderName,
-    HeaderValue, MessageData, MessageMetadata, MessageMetadataPart,
+    ArchivedMessageMetadataPart, ArchivedMetadataPartType, DecodedPartContent, MessageData,
+    MessageMetadata, MessageMetadataPart,
 };
 use common::storage::index::{IndexValue, IndexableObject, ObjectIndexBuilder};
 use jmap_proto::types::{collection::SyncCollection, property::Property};
 use mail_parser::{
+    Addr, Address, ArchivedAddress, ArchivedHeaderName, ArchivedHeaderValue, Group, HeaderName,
+    HeaderValue,
+    core::rkyv::ArchivedGetHeader,
     decoders::html::html_to_text,
     parsers::{fields::thread::thread_name, preview::preview_text},
 };
@@ -167,9 +171,7 @@ impl MessageMetadata {
                 HeaderName::Date => {
                     if !seen_headers[header.name.id() as usize] {
                         if let HeaderValue::DateTime(datetime) = &header.value {
-                            let value = (mail_parser::DateTime::from(datetime).to_timestamp()
-                                as u64)
-                                .serialize();
+                            let value = (datetime.to_timestamp() as u64).serialize();
                             if set {
                                 batch.index(Property::SentAt, value);
                             } else {
@@ -487,9 +489,10 @@ impl IndexMessage for BatchBuilder {
             .first()
             .or_else(|| message.html_body.first())
             .copied()
-            .unwrap_or(usize::MAX);
+            .unwrap_or(u32::MAX);
 
         for (part_id, part) in message.parts.iter().take(MAX_MESSAGE_PARTS).enumerate() {
+            let part_id = part_id as u32;
             match &part.body {
                 mail_parser::PartType::Text(text) => {
                     if part_id == preview_part_id {
@@ -533,7 +536,7 @@ impl IndexMessage for BatchBuilder {
             raw_headers: message
                 .raw_message
                 .as_ref()
-                .get(root_part.offset_header..root_part.offset_body)
+                .get(root_part.offset_header as usize..root_part.offset_body as usize)
                 .unwrap_or_default()
                 .to_vec(),
             contents: vec![],
@@ -833,8 +836,14 @@ pub enum AddressElement {
     GroupName,
 }
 
-impl HeaderValue {
-    pub fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
+pub trait VisitText {
+    fn visit_addresses(&self, visitor: impl FnMut(AddressElement, &str));
+    fn visit_text<'x>(&'x self, visitor: impl FnMut(&'x str));
+    fn into_visit_text(self, visitor: impl FnMut(String));
+}
+
+impl VisitText for HeaderValue<'_> {
+    fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
         match self {
             HeaderValue::Address(Address::List(addr_list)) => {
                 for addr in addr_list {
@@ -866,7 +875,7 @@ impl HeaderValue {
         }
     }
 
-    pub fn visit_text<'x>(&'x self, mut visitor: impl FnMut(&'x str)) {
+    fn visit_text<'x>(&'x self, mut visitor: impl FnMut(&'x str)) {
         match &self {
             HeaderValue::Text(text) => {
                 visitor(text.as_ref());
@@ -880,14 +889,14 @@ impl HeaderValue {
         }
     }
 
-    pub fn into_visit_text(self, mut visitor: impl FnMut(String)) {
+    fn into_visit_text(self, mut visitor: impl FnMut(String)) {
         match self {
             HeaderValue::Text(text) => {
-                visitor(text);
+                visitor(text.into_owned());
             }
             HeaderValue::TextList(texts) => {
                 for text in texts {
-                    visitor(text);
+                    visitor(text.into_owned());
                 }
             }
             _ => (),
@@ -895,7 +904,12 @@ impl HeaderValue {
     }
 }
 
-impl ArchivedHeaderValue {
+pub trait VisitTextArchived {
+    fn visit_addresses(&self, visitor: impl FnMut(AddressElement, &str));
+    fn visit_text(&self, visitor: impl FnMut(&str));
+}
+
+impl VisitTextArchived for ArchivedHeaderValue<'static> {
     fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
         match self {
             ArchivedHeaderValue::Address(ArchivedAddress::List(addr_list)) => {
@@ -947,7 +961,7 @@ pub trait TrimTextValue {
     fn trim_text(self, length: usize) -> Self;
 }
 
-impl TrimTextValue for HeaderValue {
+impl TrimTextValue for HeaderValue<'_> {
     fn trim_text(self, length: usize) -> Self {
         match self {
             HeaderValue::Address(Address::List(v)) => {
@@ -963,7 +977,7 @@ impl TrimTextValue for HeaderValue {
     }
 }
 
-impl TrimTextValue for Addr {
+impl TrimTextValue for Addr<'_> {
     fn trim_text(self, length: usize) -> Self {
         Self {
             name: self.name.map(|v| v.trim_text(length)),
@@ -972,7 +986,7 @@ impl TrimTextValue for Addr {
     }
 }
 
-impl TrimTextValue for Group {
+impl TrimTextValue for Group<'_> {
     fn trim_text(self, length: usize) -> Self {
         Self {
             name: self.name.map(|v| v.trim_text(length)),
@@ -1000,7 +1014,7 @@ impl TrimTextValue for &str {
     }
 }
 
-impl TrimTextValue for String {
+impl TrimTextValue for Cow<'_, str> {
     fn trim_text(self, length: usize) -> Self {
         if self.len() < length {
             self
@@ -1012,7 +1026,7 @@ impl TrimTextValue for String {
                 }
                 result.push(c);
             }
-            result
+            result.into()
         }
     }
 }
@@ -1056,73 +1070,5 @@ pub fn property_from_archived_header(header: &ArchivedHeaderName) -> Property {
         ArchivedHeaderName::References => Property::References,
         ArchivedHeaderName::ResentMessageId => Property::EmailIds,
         _ => unreachable!(),
-    }
-}
-
-pub trait VisitValues<'x> {
-    fn visit_addresses<'y: 'x>(&'y self, visitor: impl FnMut(AddressElement, &'x str));
-    fn visit_text<'y: 'x>(&'y self, visitor: impl FnMut(&'x str));
-    fn into_visit_text(self, visitor: impl FnMut(String));
-}
-
-impl<'x> VisitValues<'x> for mail_parser::HeaderValue<'x> {
-    fn visit_addresses<'y: 'x>(&'y self, mut visitor: impl FnMut(AddressElement, &'x str)) {
-        match self {
-            mail_parser::HeaderValue::Address(mail_parser::Address::List(addr_list)) => {
-                for addr in addr_list {
-                    if let Some(name) = &addr.name {
-                        visitor(AddressElement::Name, name);
-                    }
-                    if let Some(addr) = &addr.address {
-                        visitor(AddressElement::Address, addr);
-                    }
-                }
-            }
-            mail_parser::HeaderValue::Address(mail_parser::Address::Group(groups)) => {
-                for group in groups {
-                    if let Some(name) = &group.name {
-                        visitor(AddressElement::GroupName, name);
-                    }
-
-                    for addr in &group.addresses {
-                        if let Some(name) = &addr.name {
-                            visitor(AddressElement::Name, name);
-                        }
-                        if let Some(addr) = &addr.address {
-                            visitor(AddressElement::Address, addr);
-                        }
-                    }
-                }
-            }
-            _ => (),
-        }
-    }
-
-    fn visit_text<'y: 'x>(&'y self, mut visitor: impl FnMut(&'x str)) {
-        match &self {
-            mail_parser::HeaderValue::Text(text) => {
-                visitor(text.as_ref());
-            }
-            mail_parser::HeaderValue::TextList(texts) => {
-                for text in texts {
-                    visitor(text.as_ref());
-                }
-            }
-            _ => (),
-        }
-    }
-
-    fn into_visit_text(self, mut visitor: impl FnMut(String)) {
-        match self {
-            mail_parser::HeaderValue::Text(text) => {
-                visitor(text.into_owned());
-            }
-            mail_parser::HeaderValue::TextList(texts) => {
-                for text in texts {
-                    visitor(text.into_owned());
-                }
-            }
-            _ => (),
-        }
     }
 }

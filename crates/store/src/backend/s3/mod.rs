@@ -13,7 +13,7 @@ use utils::{
 };
 
 pub struct S3Store {
-    bucket: Bucket,
+    bucket: Box<Bucket>,
     prefix: Option<String>,
     max_retries: u32,
 }

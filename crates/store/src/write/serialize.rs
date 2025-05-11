@@ -4,12 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{ARCHIVE_ALIGNMENT, AlignedBytes, Archive, Archiver};
+use crate::{Deserialize, Serialize, SerializeInfallible, SerializedVersion, U32_LEN, Value};
 use compact_str::format_compact;
 use rkyv::util::AlignedVec;
-
-use crate::{Deserialize, Serialize, SerializeInfallible, SerializedVersion, U32_LEN, Value};
-
-use super::{ARCHIVE_ALIGNMENT, AlignedBytes, Archive, Archiver, LegacyBincode};
 
 const MAGIC_MARKER: u8 = 1 << 7;
 const LZ4_COMPRESSED: u8 = 1 << 6;
@@ -483,54 +481,7 @@ impl Deserialize for () {
     }
 }
 
-impl<T: serde::Serialize + serde::de::DeserializeOwned> LegacyBincode<T> {
-    pub fn new(inner: T) -> Self {
-        Self { inner }
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for LegacyBincode<T> {
-    fn serialize(&self) -> trc::Result<Vec<u8>> {
-        bincode::serialize(&self.inner)
-            .map(|bytes| lz4_flex::compress_prepend_size(&bytes))
-            .map_err(|err| {
-                trc::StoreEvent::DeserializeError
-                    .caused_by(trc::location!())
-                    .reason(err)
-            })
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> Deserialize
-    for LegacyBincode<T>
-{
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        lz4_flex::decompress_size_prepended(bytes)
-            .map_err(|err| {
-                trc::StoreEvent::DecompressError
-                    .ctx(trc::Key::Value, bytes)
-                    .caused_by(trc::location!())
-                    .reason(err)
-            })
-            .and_then(|result| {
-                bincode::deserialize(&result).map_err(|err| {
-                    trc::StoreEvent::DataCorruption
-                        .ctx(trc::Key::Value, bytes)
-                        .caused_by(trc::location!())
-                        .reason(err)
-                })
-            })
-            .map(|inner| Self { inner })
-    }
-}
-
 impl<T> From<Value<'static>> for Archive<T> {
-    fn from(_: Value<'static>) -> Self {
-        unimplemented!()
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> From<Value<'static>> for LegacyBincode<T> {
     fn from(_: Value<'static>) -> Self {
         unimplemented!()
     }

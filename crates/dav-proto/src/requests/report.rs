@@ -172,7 +172,7 @@ impl DavParser for CalendarQuery {
                     } => {
                         stream.expect_element_end()?;
                         if let Some(filter) = Filter::from_parts(
-                            components.iter().map(|(c, _)| *c).collect(),
+                            components.iter().map(|(c, _)| c.clone()).collect(),
                             property.clone(),
                             parameter.clone(),
                             FilterOp::Undefined,
@@ -187,7 +187,7 @@ impl DavParser for CalendarQuery {
                         let mut tm = TextMatch::parse(raw)?;
                         tm.value = stream.collect_string_value()?.unwrap_or_default();
                         if let Some(filter) = Filter::from_parts(
-                            components.iter().map(|(c, _)| *c).collect(),
+                            components.iter().map(|(c, _)| c.clone()).collect(),
                             property.clone(),
                             parameter.clone(),
                             FilterOp::TextMatch(tm),
@@ -203,7 +203,7 @@ impl DavParser for CalendarQuery {
                         stream.expect_element_end()?;
                         if let Some(filter) = range.and_then(|range| {
                             Filter::from_parts(
-                                components.iter().map(|(c, _)| *c).collect(),
+                                components.iter().map(|(c, _)| c.clone()).collect(),
                                 property.clone(),
                                 parameter.clone(),
                                 FilterOp::TimeRange(range),
@@ -228,7 +228,7 @@ impl DavParser for CalendarQuery {
                                 .is_none_or(|c| c.len() < components.len())
                         {
                             cq.filters.push(Filter::Component {
-                                comp: components.iter().map(|(c, _)| *c).collect(),
+                                comp: components.iter().map(|(c, _)| c.clone()).collect(),
                                 op: FilterOp::Exists,
                             });
                         }

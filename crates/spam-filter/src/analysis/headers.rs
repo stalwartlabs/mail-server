@@ -59,7 +59,7 @@ impl SpamFilterAnalyzeHeaders for Server {
                         ctx.result.add_tag("MULTIPLE_UNIQUE_HEADERS");
                     }
 
-                    if !matches!(raw_message.get(header.offset_start), Some(b' ')) {
+                    if !matches!(raw_message.get(header.offset_start as usize), Some(b' ')) {
                         ctx.result.add_tag("HEADER_EMPTY_DELIMITER");
                     }
                 }

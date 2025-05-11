@@ -4,22 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use email::message::metadata::{
-    ArchivedHeaderValue, ArchivedMessageMetadataContents, ArchivedMetadataPartType,
-};
+use email::message::metadata::{ArchivedMessageMetadataContents, ArchivedMetadataPartType};
 use jmap_proto::types::{
     blob::BlobId,
     property::Property,
     value::{Object, Value},
 };
-use mail_parser::{HeaderValue, MessagePart, MimeHeaders, PartType};
+use mail_parser::{ArchivedHeaderValue, HeaderValue, MessagePart, MimeHeaders, PartType};
 
 use super::headers::HeaderToValue;
 
 pub trait ToBodyPart {
     fn to_body_part(
         &self,
-        part_id: usize,
+        part_id: u32,
         properties: &[Property],
         raw_message: &[u8],
         blob_id: &BlobId,
@@ -29,7 +27,7 @@ pub trait ToBodyPart {
 impl ToBodyPart for Vec<MessagePart<'_>> {
     fn to_body_part(
         &self,
-        part_id: usize,
+        part_id: u32,
         properties: &[Property],
         raw_message: &[u8],
         blob_id: &BlobId,
@@ -39,7 +37,10 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
         let mut subparts = Vec::with_capacity(1);
 
         loop {
-            if let Some((part_id, part)) = parts.next().map(|part_id| (part_id, &self[part_id])) {
+            if let Some((part_id, part)) = parts
+                .next()
+                .map(|part_id| (part_id, &self[part_id as usize]))
+            {
                 let mut values = Object::with_capacity(properties.len());
                 let multipart = if let PartType::Multipart(parts) = &part.body {
                     parts.into()
@@ -55,8 +56,8 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
                             BlobId::new_section(
                                 blob_id.hash.clone(),
                                 blob_id.class.clone(),
-                                part.offset_body + base_offset,
-                                part.offset_end + base_offset,
+                                part.offset_body as usize + base_offset,
+                                part.offset_end as usize + base_offset,
                                 part.encoding as u8,
                             )
                             .into()
@@ -64,7 +65,7 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
                         Property::Size if multipart.is_none() => match &part.body {
                             PartType::Text(text) | PartType::Html(text) => text.len(),
                             PartType::Binary(bin) | PartType::InlineBinary(bin) => bin.len(),
-                            PartType::Message(message) => message.root_part().raw_len(),
+                            PartType::Message(message) => message.root_part().raw_len() as usize,
                             PartType::Multipart(_) => 0,
                         }
                         .into(),
@@ -140,7 +141,7 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
 impl ToBodyPart for ArchivedMessageMetadataContents {
     fn to_body_part(
         &self,
-        part_id: usize,
+        part_id: u32,
         properties: &[Property],
         raw_message: &[u8],
         blob_id: &BlobId,
@@ -150,8 +151,9 @@ impl ToBodyPart for ArchivedMessageMetadataContents {
         let mut subparts = Vec::with_capacity(1);
 
         loop {
-            if let Some((part_id, part)) =
-                parts.next().map(|part_id| (part_id, &self.parts[part_id]))
+            if let Some((part_id, part)) = parts
+                .next()
+                .map(|part_id| (part_id, &self.parts[part_id as usize]))
             {
                 let mut values = Object::with_capacity(properties.len());
                 let multipart = if let ArchivedMetadataPartType::Multipart(parts) = &part.body {
@@ -229,7 +231,7 @@ impl ToBodyPart for ArchivedMessageMetadataContents {
                 if let Some(multipart) = multipart {
                     let multipart = multipart
                         .iter()
-                        .map(|id| u16::from(id) as usize)
+                        .map(|id| u16::from(id) as u32)
                         .collect::<Vec<_>>();
                     parts_stack.push((
                         parts,

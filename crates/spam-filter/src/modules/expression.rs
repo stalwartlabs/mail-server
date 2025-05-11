@@ -211,7 +211,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .message
                 .html_body
                 .first()
-                .and_then(|idx| self.ctx.output.text_parts.get(*idx))
+                .and_then(|idx| self.ctx.output.text_parts.get(*idx as usize))
                 .map(|part| {
                     if let TextPart::Html { text_body, .. } = part {
                         text_body.as_str()
@@ -247,7 +247,7 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .message
                 .html_body
                 .first()
-                .and_then(|idx| self.ctx.output.text_parts.get(*idx))
+                .and_then(|idx| self.ctx.output.text_parts.get(*idx as usize))
                 .map(|part| match part {
                     TextPart::Plain { tokens, .. } | TextPart::Html { tokens, .. } => tokens
                         .iter()
@@ -343,7 +343,11 @@ impl ResolveVariable for EmailHeader<'_> {
                             ct.attributes()
                                 .map(|attr| {
                                     attr.iter()
-                                        .map(|(k, v)| Variable::from(format_compact!("{k}={v}")))
+                                        .map(|attr| {
+                                            Variable::from(format_compact!(
+                                                "{}={}", attr.name, attr.value
+                                            ))
+                                        })
                                         .collect::<Vec<_>>()
                                 })
                                 .unwrap_or_default(),

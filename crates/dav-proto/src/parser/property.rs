@@ -105,7 +105,7 @@ impl Tokenizer<'_> {
                         },
                     ..
                 } => {
-                    if let Some(component) = components.last().copied() {
+                    if let Some(component) = components.last().cloned() {
                         data.properties.push(CalDavPropertyName {
                             component: Some(component),
                             name: None,
@@ -155,7 +155,7 @@ impl Tokenizer<'_> {
 
                     if let Some(name) = name {
                         data.properties.push(CalDavPropertyName {
-                            component: components.last().copied(),
+                            component: components.last().cloned(),
                             name: Some(name),
                             no_value,
                         });

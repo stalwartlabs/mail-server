@@ -19,7 +19,10 @@ use mail_auth::{
 };
 use mail_parser::DateTime;
 
-use store::write::{ReportEvent, key::KeySerializer};
+use store::{
+    SERIALIZE_REPORT_V1, SerializedVersion,
+    write::{ReportEvent, key::KeySerializer},
+};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
@@ -351,5 +354,34 @@ impl ReportLock for ReportEvent {
             .write(self.policy_hash)
             .write(self.domain.as_bytes())
             .finalize()
+    }
+}
+
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+#[repr(transparent)]
+pub struct ReportSerializer<T>(pub T)
+where
+    T: rkyv::Archive
+        + for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::util::AlignedVec,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >;
+
+impl<T> SerializedVersion for ReportSerializer<T>
+where
+    T: rkyv::Archive
+        + for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::util::AlignedVec,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >,
+{
+    fn serialize_version() -> u8 {
+        SERIALIZE_REPORT_V1
     }
 }

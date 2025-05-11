@@ -16,7 +16,7 @@ use jmap_proto::{
         property::Property,
     },
 };
-use mail_parser::parsers::fields::thread::thread_name;
+use mail_parser::{HeaderName, HeaderValue, parsers::fields::thread::thread_name};
 use store::{
     BlobClass,
     write::{BatchBuilder, TaskQueueClass, ValueClass},
@@ -26,9 +26,9 @@ use trc::AddContext;
 use crate::{cache::MessageCacheFetch, mailbox::UidMailbox};
 
 use super::{
-    index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue},
+    index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue, VisitText},
     ingest::{EmailIngest, IngestedEmail, ThreadResult},
-    metadata::{HeaderName, HeaderValue, MessageData, MessageMetadata},
+    metadata::{MessageData, MessageMetadata},
 };
 
 pub trait EmailCopy: Sync + Send {

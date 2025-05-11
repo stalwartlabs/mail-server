@@ -15,7 +15,6 @@ use directory::Permission;
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
     message::metadata::{
-        ArchivedAddress, ArchivedGetHeader, ArchivedHeaderName, ArchivedHeaderValue,
         ArchivedMessageMetadata, ArchivedMessageMetadataContents, ArchivedMetadataPartType,
         DecodedParts, MessageData, MessageMetadata,
     },
@@ -39,6 +38,9 @@ use jmap_proto::types::{
     id::Id,
     keyword::Keyword,
     property::Property,
+};
+use mail_parser::{
+    ArchivedAddress, ArchivedHeaderName, ArchivedHeaderValue, core::rkyv::ArchivedGetHeader,
 };
 use std::{borrow::Cow, sync::Arc, time::Instant};
 use store::{
@@ -663,7 +665,7 @@ impl AsImapDataItemPart for ArchivedMessageMetadataContents {
             fields.body_parameters = content_type.as_ref().and_then(|ct| {
                 ct.attributes.as_ref().map(|at| {
                     at.iter()
-                        .map(|k| (k.0.as_ref().into(), k.1.as_ref().into()))
+                        .map(|k| (k.name.as_ref().into(), k.value.as_ref().into()))
                         .collect::<Vec<_>>()
                 })
             })
@@ -722,7 +724,7 @@ impl AsImapDataItemPart for ArchivedMessageMetadataContents {
                             .as_ref()
                             .map(|at| {
                                 at.iter()
-                                    .map(|k| (k.0.as_ref().into(), k.1.as_ref().into()))
+                                    .map(|k| (k.name.as_ref().into(), k.value.as_ref().into()))
                                     .collect::<Vec<_>>()
                             })
                             .unwrap_or_default(),
@@ -1197,7 +1199,7 @@ trait AsImapAddress {
     fn as_imap_address(&self) -> Vec<fetch::Address>;
 }
 
-impl AsImapAddress for ArchivedHeaderValue {
+impl AsImapAddress for ArchivedHeaderValue<'_> {
     fn as_imap_address(&self) -> Vec<fetch::Address> {
         let mut addresses = Vec::new();
 

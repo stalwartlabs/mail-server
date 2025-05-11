@@ -14,7 +14,7 @@ use common::{
 
 use email::{
     identity::Identity,
-    message::metadata::{ArchivedHeaderName, ArchivedHeaderValue, MessageMetadata},
+    message::metadata::MessageMetadata,
     submission::{Address, Delivered, DeliveryStatus, EmailSubmission, UndoStatus},
 };
 use jmap_proto::{
@@ -35,6 +35,7 @@ use jmap_proto::{
         value::{MaybePatchValue, Object, SetValue, Value},
     },
 };
+use mail_parser::{ArchivedHeaderName, ArchivedHeaderValue};
 use smtp::{
     core::{Session, SessionData},
     queue::spool::SmtpSpool,

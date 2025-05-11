@@ -20,9 +20,9 @@ jmap_proto = { path = "../jmap-proto" }
 directory = { path =  "../directory" }
 services = { path =  "../services" }
 smtp-proto = { version = "0.1" }
-mail-parser = { version = "0.10", features = ["full_encoding", "serde_support"] } 
+mail-parser = { version = "0.11", features = ["full_encoding", "rkyv"] } 
 mail-builder = { version = "0.4" }
-mail-auth = { version = "0.6", features = ["generate"] }
+mail-auth = { version = "0.7", features = ["generate"] }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 tokio = { version = "1.23", features = ["rt"] }
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
@@ -32,7 +32,7 @@ async-stream = "0.3.5"
 quick-xml = "0.37"
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
-x509-parser = "0.16.0"
+x509-parser = "0.17.0"
 chrono = "0.4"
 base64 = "0.22"
 pkcs8 = { version = "0.10.2", features = ["alloc", "std"] }

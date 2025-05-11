@@ -604,7 +604,7 @@ async fn milter_client_test() {
     let r = client.headers(message.headers_raw()).await.unwrap();
     println!("HEADERS: {:?}", r);
     let r = client
-        .body(&message.raw_message()[message.root_part().raw_body_offset()..])
+        .body(&message.raw_message()[message.root_part().raw_body_offset() as usize..])
         .await
         .unwrap();
     println!("BODY: {:?}", r);

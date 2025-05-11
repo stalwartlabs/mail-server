@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-
-
 use crate::utf7::utf7_encode;
 
 use super::quoted_string;

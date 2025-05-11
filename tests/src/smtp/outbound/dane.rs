@@ -4,16 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    collections::BTreeSet,
-    fs::{self, File},
-    io::{BufRead, BufReader},
-    num::ParseIntError,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
+use crate::smtp::{
+    DnsCache, TestSMTP,
+    inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
+    session::{TestSession, VerifyResponse},
 };
-
 use common::{
     Core,
     config::{
@@ -26,21 +21,25 @@ use mail_auth::{
     MX, MessageAuthenticator,
     common::parse::TxtRecordParser,
     hickory_resolver::{
-        AsyncResolver,
+        TokioResolver,
         config::{ResolverConfig, ResolverOpts},
+        name_server::TokioConnectionProvider,
     },
     mta_sts::{ReportUri, TlsRpt},
     report::tlsrpt::ResultType,
 };
 use rustls_pki_types::CertificateDer;
-
-use crate::smtp::{
-    DnsCache, TestSMTP,
-    inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
-    session::{TestSession, VerifyResponse},
-};
 use smtp::outbound::dane::{dnssec::TlsaLookup, verify::TlsaVerify};
 use smtp::queue::{Error, ErrorDetails, Status};
+use std::{
+    collections::BTreeSet,
+    fs::{self, File},
+    io::{BufRead, BufReader},
+    num::ParseIntError,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 const LOCAL: &str = r#"
 [session.rcpt]
@@ -246,7 +245,9 @@ async fn dane_test() {
     core.smtp.resolvers = Resolvers {
         dns: MessageAuthenticator::new_cloudflare().unwrap(),
         dnssec: DnssecResolver {
-            resolver: AsyncResolver::tokio(conf, opts),
+            resolver: TokioResolver::builder_with_config(conf, TokioConnectionProvider::default())
+                .with_options(opts)
+                .build(),
         },
     };
     let r = TestSMTP::from_core(core).build_smtp();

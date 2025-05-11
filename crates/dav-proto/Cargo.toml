@@ -8,7 +8,7 @@ trc = { path = "../trc" }
 hashify = "0.2.6"
 quick-xml = "0.37.2"
 calcard = { path = "/Users/me/code/calcard", features = ["rkyv"] }
-mail-parser = "0.10.2"
+mail-parser = { version = "0.11", features = ["full_encoding", "rkyv"] }
 hyper = "1.6.0"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
 chrono = { version = "0.4.40", features = ["serde"], optional = true }

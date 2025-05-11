@@ -27,7 +27,8 @@ impl SpamFilterAnalyzeMid for Server {
             if let (HeaderName::MessageId, value) = (&header.name, &header.value) {
                 mid = value.as_text().unwrap_or_default();
                 mid_raw = std::str::from_utf8(
-                    &ctx.input.message.raw_message()[header.offset_start..header.offset_end],
+                    &ctx.input.message.raw_message()
+                        [header.offset_start as usize..header.offset_end as usize],
                 )
                 .unwrap_or_default()
                 .trim();

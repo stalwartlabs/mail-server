@@ -6,8 +6,6 @@
 
 use std::net::IpAddr;
 
-
-
 use crate::inbound::milter::Action;
 
 use super::{Command, Error, Modification, Options, Response};
@@ -462,10 +460,7 @@ impl Response {
     }
 }
 
-fn read_nul_terminated(
-    bytes: &mut std::slice::Iter<u8>,
-    expected_len: usize,
-) -> Option<String> {
+fn read_nul_terminated(bytes: &mut std::slice::Iter<u8>, expected_len: usize) -> Option<String> {
     let mut buf = Vec::with_capacity(expected_len);
     loop {
         match bytes.next()? {

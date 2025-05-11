@@ -618,15 +618,12 @@ fn find_components<'x>(
     comp: &[ICalendarComponentType],
 ) -> impl Iterator<Item = (usize, &'x ArchivedICalendarComponent)> {
     // TODO: Properly expand the component type path
-    let comp = comp
-        .last()
-        .copied()
-        .unwrap_or(ICalendarComponentType::VCalendar);
+    let comp = comp.last().unwrap_or(&ICalendarComponentType::VCalendar);
     ical.components
         .iter()
         .enumerate()
         .filter(move |(_, entry)| {
-            comp == ICalendarComponentType::VCalendar || entry.component_type == comp
+            comp == &ICalendarComponentType::VCalendar || &entry.component_type == comp
         })
 }
 

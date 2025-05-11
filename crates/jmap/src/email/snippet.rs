@@ -8,10 +8,7 @@ use crate::blob::download::BlobDownload;
 use common::{Server, auth::AccessToken};
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
-    message::metadata::{
-        ArchivedGetHeader, ArchivedHeaderName, ArchivedMetadataPartType, DecodedPartContent,
-        MessageMetadata,
-    },
+    message::metadata::{ArchivedMetadataPartType, DecodedPartContent, MessageMetadata},
 };
 use jmap_proto::{
     method::{
@@ -20,7 +17,9 @@ use jmap_proto::{
     },
     types::{acl::Acl, collection::Collection, property::Property},
 };
-use mail_parser::decoders::html::html_to_text;
+use mail_parser::{
+    ArchivedHeaderName, core::rkyv::ArchivedGetHeader, decoders::html::html_to_text,
+};
 use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer};
 use std::future::Future;
 use store::backend::MAX_TOKEN_LENGTH;

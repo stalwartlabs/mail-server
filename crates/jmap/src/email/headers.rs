@@ -6,7 +6,6 @@
 
 use std::borrow::Cow;
 
-use email::message::metadata::{ArchivedHeader, ArchivedHeaderValue};
 use jmap_proto::types::{
     property::{HeaderForm, HeaderProperty, Property},
     value::{Object, Value},
@@ -22,7 +21,10 @@ use mail_builder::{
         url::URL,
     },
 };
-use mail_parser::{Addr, Header, HeaderName, HeaderValue, parsers::MessageStream};
+use mail_parser::{
+    Addr, ArchivedHeader, ArchivedHeaderValue, Header, HeaderName, HeaderValue,
+    parsers::MessageStream,
+};
 use store::rkyv::vec::ArchivedVec;
 
 pub trait IntoForm {
@@ -74,7 +76,7 @@ impl HeaderToValue for Vec<Header<'_>> {
             if header.name.as_str().eq_ignore_ascii_case(header_name) {
                 let header_value = if is_raw || matches!(header.value, HeaderValue::Empty) {
                     raw_message
-                        .get(header.offset_start..header.offset_end)
+                        .get(header.offset_start as usize..header.offset_end as usize)
                         .map_or(HeaderValue::Empty, |bytes| match form {
                             HeaderForm::Raw => {
                                 HeaderValue::Text(String::from_utf8_lossy(bytes.trim_end()))
@@ -116,7 +118,7 @@ impl HeaderToValue for Vec<Header<'_>> {
                         Property::Value,
                         String::from_utf8_lossy(
                             raw_message
-                                .get(header.offset_start..header.offset_end)
+                                .get(header.offset_start as usize..header.offset_end as usize)
                                 .unwrap_or_default()
                                 .trim_end(),
                         )
@@ -339,7 +341,7 @@ impl BuildHeader for MessageBuilder<'_> {
     }
 }
 
-impl HeaderToValue for ArchivedVec<ArchivedHeader> {
+impl HeaderToValue for ArchivedVec<ArchivedHeader<'_>> {
     fn header_to_value(&self, property: &Property, raw_message: &[u8]) -> Value {
         let (header_name, form, all) = match property {
             Property::Header(header) => (

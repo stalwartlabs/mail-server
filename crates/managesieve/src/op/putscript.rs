@@ -4,22 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Instant;
-
+use crate::core::{Command, ResponseCode, Session, StatusResponse};
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
 use jmap_proto::types::{collection::Collection, property::Property};
 use sieve::compiler::ErrorType;
-use store::{
-    Serialize,
-    query::Filter,
-    write::{BatchBuilder, LegacyBincode},
-};
+use std::time::Instant;
+use store::{query::Filter, write::BatchBuilder};
 use trc::AddContext;
-
-use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_putscript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
@@ -81,9 +75,10 @@ impl<T: SessionStream> Session<T> {
         {
             Ok(compiled_script) => {
                 script_bytes.extend(
-                    LegacyBincode::new(compiled_script)
-                        .serialize()
-                        .unwrap_or_default(),
+                    rkyv::to_bytes::<rkyv::rancor::Error>(&compiled_script)
+                        .map_err(Into::into)
+                        .caused_by(trc::location!())?
+                        .iter(),
                 );
             }
             Err(err) => {

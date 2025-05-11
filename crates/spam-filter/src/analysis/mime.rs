@@ -40,7 +40,7 @@ impl SpamFilterAnalyzeMime for Server {
                         .input
                         .message
                         .raw_message()
-                        .get(header.offset_field..header.offset_start - 1)
+                        .get(header.offset_field as usize..header.offset_start as usize - 1)
                         != Some(b"MIME-Version")
                     {
                         ctx.result.add_tag("MV_CASE");
@@ -99,6 +99,7 @@ impl SpamFilterAnalyzeMime for Server {
         let mut num_parts_size = 0;
 
         for (part_id, part) in ctx.input.message.parts.iter().enumerate() {
+            let part_id = part_id as u32;
             let mut ct = None;
             let mut cd = None;
             let mut ct_type = String::new();
@@ -127,7 +128,7 @@ impl SpamFilterAnalyzeMime for Server {
                         }
 
                         if raw_message
-                            .get(header.offset_start..header.offset_end)
+                            .get(header.offset_start as usize..header.offset_end as usize)
                             .and_then(|s| s.trim_ascii_end().last())
                             == Some(&b';')
                         {
@@ -171,7 +172,10 @@ impl SpamFilterAnalyzeMime for Server {
                             let mut html_part_words = vec![];
                             let mut html_part_uris = 0;
 
-                            for text_part in part_ids.iter().map(|id| &ctx.output.text_parts[*id]) {
+                            for text_part in part_ids
+                                .iter()
+                                .map(|id| &ctx.output.text_parts[*id as usize])
+                            {
                                 let (tokens, words, uri_count) = match text_part {
                                     TextPart::Plain { tokens, .. } if !has_plain_part => {
                                         has_plain_part = true;
@@ -233,7 +237,7 @@ impl SpamFilterAnalyzeMime for Server {
 
                             for (sub_part_id, sub_part) in part_ids
                                 .iter()
-                                .map(|id| (*id, &ctx.input.message.parts[*id]))
+                                .map(|id| (*id, &ctx.input.message.parts[*id as usize]))
                             {
                                 let ctype = sub_part
                                     .content_type()
@@ -267,7 +271,9 @@ impl SpamFilterAnalyzeMime for Server {
                     match cte.as_str() {
                         "" | "7bit" => {
                             if raw_message
-                                .get(part.raw_body_offset()..part.raw_end_offset())
+                                .get(
+                                    part.raw_body_offset() as usize..part.raw_end_offset() as usize,
+                                )
                                 .is_some_and(|bytes| !bytes.is_ascii())
                             {
                                 // MIME text part claims to be ASCII but isn't
@@ -300,7 +306,7 @@ impl SpamFilterAnalyzeMime for Server {
                     if ctx
                         .output
                         .text_parts
-                        .get(part_id)
+                        .get(part_id as usize)
                         .filter(|_| {
                             ctx.input.message.text_body.contains(&part_id)
                                 || ctx.input.message.html_body.contains(&part_id)

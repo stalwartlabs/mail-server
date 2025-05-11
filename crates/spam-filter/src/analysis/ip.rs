@@ -58,6 +58,7 @@ impl SpamFilterAnalyzeIp for Server {
 
         // Obtain IP addresses from the message body
         for (part_id, part) in ctx.output.text_parts.iter().enumerate() {
+            let part_id = part_id as u32;
             let is_body = ctx.input.message.text_body.contains(&part_id)
                 || ctx.input.message.html_body.contains(&part_id);
             match part {

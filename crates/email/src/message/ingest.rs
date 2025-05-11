@@ -13,7 +13,7 @@ use crate::{
     mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
     message::{
         crypto::EncryptionParams,
-        index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
+        index::{IndexMessage, MAX_ID_LENGTH, VisitText},
         metadata::MessageData,
     },
 };
@@ -145,7 +145,7 @@ impl EmailIngest for Server {
                         value: HeaderValue::Text(deliver_to.into()),
                         offset_field: 0,
                         offset_start: 13,
-                        offset_end: extra_headers.len(),
+                        offset_end: extra_headers.len() as u32,
                     });
                 }
 
@@ -238,9 +238,9 @@ impl EmailIngest for Server {
                                                 [offset_start + 1..extra_headers.len() - 2]
                                                 .into(),
                                         ),
-                                        offset_field,
-                                        offset_start,
-                                        offset_end: extra_headers.len(),
+                                        offset_field: offset_field as u32,
+                                        offset_start: offset_start as u32,
+                                        offset_end: extra_headers.len() as u32,
                                     });
                                 }
                             }
@@ -376,15 +376,15 @@ impl EmailIngest for Server {
                 if let Some(part) = part_iter.next() {
                     // Increment header offsets
                     for header in part.headers.iter_mut() {
-                        header.offset_field += offset_start;
-                        header.offset_start += offset_start;
-                        header.offset_end += offset_start;
+                        header.offset_field += offset_start as u32;
+                        header.offset_start += offset_start as u32;
+                        header.offset_end += offset_start as u32;
                     }
 
                     // Adjust part offsets
-                    part.offset_body += offset_start;
-                    part.offset_end += offset_start;
-                    part.offset_header += offset_start;
+                    part.offset_body += offset_start as u32;
+                    part.offset_end += offset_start as u32;
+                    part.offset_header += offset_start as u32;
 
                     if let PartType::Message(sub_message) = &mut part.body {
                         if sub_message.root_part().offset_header != 0 {

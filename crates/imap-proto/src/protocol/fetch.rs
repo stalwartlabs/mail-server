@@ -6,7 +6,6 @@
 
 use std::borrow::Cow;
 
-
 use mail_parser::DateTime;
 
 use super::{
@@ -917,7 +916,6 @@ impl ImapResponse for Response<'_> {
 #[cfg(test)]
 mod tests {
 
-    
     use mail_parser::DateTime;
 
     use crate::protocol::{Flag, ImapResponse};

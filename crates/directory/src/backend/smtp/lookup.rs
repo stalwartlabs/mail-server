@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-
 use mail_send::{Credentials, smtp::AssertReply};
 use smtp_proto::Severity;
 

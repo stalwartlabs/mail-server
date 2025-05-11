@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-
 use store::Store;
 use utils::config::{Config, utils::AsKey};
 
@@ -117,9 +116,7 @@ impl MemoryDirectory {
                     directory.domains.insert(domain.to_lowercase());
                 }
 
-                principal
-                    .emails
-                    .push(email.to_lowercase());
+                principal.emails.push(email.to_lowercase());
             }
 
             // Parse mailing lists

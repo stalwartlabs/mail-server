@@ -6,7 +6,6 @@
 
 use std::time::SystemTime;
 
-
 use directory::QueryBy;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;

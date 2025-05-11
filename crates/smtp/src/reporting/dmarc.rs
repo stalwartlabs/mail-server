@@ -24,7 +24,7 @@ use mail_auth::{
 };
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{BatchBuilder, LegacyBincode, QueueClass, ReportEvent, ValueClass},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, QueueClass, ReportEvent, ValueClass},
 };
 use trc::{AddContext, OutgoingReportEvent};
 use utils::config::Rate;
@@ -35,9 +35,18 @@ use crate::{
     reporting::SmtpReporting,
 };
 
-use super::{AggregateTimestamp, SerializedSize};
+use super::{AggregateTimestamp, ReportSerializer, SerializedSize};
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct DmarcFormat {
     pub rua: Vec<URI>,
     pub policy: PolicyPublished,
@@ -466,15 +475,13 @@ impl DmarcReporting for Server {
     ) -> trc::Result<Option<Report>> {
         // Deserialize report
         let dmarc = match self
-            .core
-            .storage
-            .data
-            .get_value::<LegacyBincode<DmarcFormat>>(ValueKey::from(ValueClass::Queue(
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
                 QueueClass::DmarcReportHeader(event.clone()),
             )))
             .await?
         {
-            Some(dmarc) => dmarc.inner,
+            Some(dmarc) => dmarc.deserialize::<ReportSerializer<DmarcFormat>>()?.0,
             None => {
                 return Ok(None);
             }
@@ -543,9 +550,10 @@ impl DmarcReporting for Server {
         self.core
             .storage
             .data
-            .iterate(
-                IterateParams::new(from_key, to_key).ascending(),
-                |_, v| match record_map.entry(LegacyBincode::<Record>::deserialize(v)?.inner) {
+            .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
+                let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(v)?;
+
+                match record_map.entry(archive.deserialize::<ReportSerializer<Record>>()?.0) {
                     Entry::Occupied(mut e) => {
                         *e.get_mut() += 1;
                         Ok(true)
@@ -563,8 +571,8 @@ impl DmarcReporting for Server {
                             Ok(false)
                         }
                     }
-                },
-            )
+                }
+            })
             .await
             .caused_by(trc::location!())?;
 
@@ -652,8 +660,8 @@ impl DmarcReporting for Server {
             // Write report
             builder.set(
                 ValueClass::Queue(QueueClass::DmarcReportHeader(report_event.clone())),
-                match LegacyBincode::new(entry).serialize() {
-                    Ok(data) => data,
+                match Archiver::new(ReportSerializer(entry)).serialize() {
+                    Ok(data) => data.to_vec(),
                     Err(err) => {
                         trc::error!(
                             err.caused_by(trc::location!())
@@ -669,8 +677,8 @@ impl DmarcReporting for Server {
         report_event.seq_id = self.inner.data.queue_id_gen.generate();
         builder.set(
             ValueClass::Queue(QueueClass::DmarcReportEvent(report_event)),
-            match LegacyBincode::new(event.report_record).serialize() {
-                Ok(data) => data,
+            match Archiver::new(ReportSerializer(event.report_record)).serialize() {
+                Ok(data) => data.to_vec(),
                 Err(err) => {
                     trc::error!(
                         err.caused_by(trc::location!())

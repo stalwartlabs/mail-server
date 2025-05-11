@@ -39,7 +39,10 @@ fn imap_test_body_structure() {
             raw_headers: message_
                 .raw_message
                 .as_ref()
-                .get(message_.root_part().offset_header..message_.root_part().offset_body)
+                .get(
+                    message_.root_part().offset_header as usize
+                        ..message_.root_part().offset_body as usize,
+                )
                 .unwrap_or_default()
                 .to_vec(),
             contents: vec![],

@@ -102,7 +102,7 @@ async fn jmap_tests_() {
     .await;
 
     webhooks::test(&mut params).await;
-    /*email_query::test(&mut params, delete).await;
+    email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -125,7 +125,7 @@ async fn jmap_tests_() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;*/
+    blob::test(&mut params).await;
     permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;

@@ -4,27 +4,26 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    borrow::Cow,
-    collections::hash_map::Entry,
-    io::{Cursor, Read},
-};
-
 use ahash::AHashMap;
 use common::Server;
-
 use mail_auth::{
     flate2::read::GzDecoder,
     report::{ActionDisposition, DmarcResult, Feedback, Report, tlsrpt::TlsReport},
     zip,
 };
 use mail_parser::{Message, MimeHeaders, PartType};
-
+use std::{
+    borrow::Cow,
+    collections::hash_map::Entry,
+    io::{Cursor, Read},
+};
 use store::{
     Serialize,
-    write::{BatchBuilder, LegacyBincode, ReportClass, ValueClass, now},
+    write::{Archiver, BatchBuilder, ReportClass, ValueClass, now},
 };
 use trc::IncomingReportEvent;
+
+use super::ReportSerializer;
 
 enum Compression {
     None,
@@ -44,7 +43,7 @@ struct ReportData<'x> {
     data: &'x [u8],
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, serde::Serialize)]
 pub struct IncomingReport<T> {
     pub from: String,
     pub to: Vec<String>,
@@ -282,12 +281,12 @@ impl AnalyzeReport for Server {
                         Format::Dmarc(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Dmarc { id, expires }),
-                                LegacyBincode::new(IncomingReport {
+                                Archiver::new(ReportSerializer(IncomingReport {
                                     from,
                                     to,
                                     subject,
                                     report,
-                                })
+                                }))
                                 .serialize()
                                 .unwrap_or_default(),
                             );
@@ -295,12 +294,12 @@ impl AnalyzeReport for Server {
                         Format::Tls(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Tls { id, expires }),
-                                LegacyBincode::new(IncomingReport {
+                                Archiver::new(ReportSerializer(IncomingReport {
                                     from,
                                     to,
                                     subject,
                                     report,
-                                })
+                                }))
                                 .serialize()
                                 .unwrap_or_default(),
                             );
@@ -308,12 +307,12 @@ impl AnalyzeReport for Server {
                         Format::Arf(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Arf { id, expires }),
-                                LegacyBincode::new(IncomingReport {
+                                Archiver::new(ReportSerializer(IncomingReport {
                                     from,
                                     to,
                                     subject,
                                     report,
-                                })
+                                }))
                                 .serialize()
                                 .unwrap_or_default(),
                             );

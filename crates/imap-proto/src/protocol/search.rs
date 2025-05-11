@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-
 use store::fts::{FilterItem, FilterType};
 
 use super::{Flag, Sequence, quoted_string, serialize_sequence};

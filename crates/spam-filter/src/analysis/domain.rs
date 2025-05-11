@@ -86,7 +86,7 @@ impl SpamFilterAnalyzeDomain for Server {
                         ctx.input
                             .message
                             .raw_message
-                            .get(header.offset_start..header.offset_end)
+                            .get(header.offset_start as usize..header.offset_end as usize)
                             .unwrap_or_default(),
                     )
                     .parse_address()
@@ -143,6 +143,7 @@ impl SpamFilterAnalyzeDomain for Server {
 
         // Add emails found in the message
         for (part_id, part) in ctx.output.text_parts.iter().enumerate() {
+            let part_id = part_id as u32;
             let is_body = ctx.input.message.text_body.contains(&part_id)
                 || ctx.input.message.html_body.contains(&part_id);
             let tokens = match part {

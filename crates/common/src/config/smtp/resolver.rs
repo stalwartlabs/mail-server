@@ -14,8 +14,10 @@ use std::{
 use mail_auth::{
     MessageAuthenticator,
     hickory_resolver::{
-        AsyncResolver, TokioAsyncResolver,
-        config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts},
+        TokioResolver,
+        config::{NameServerConfig, ResolverConfig, ResolverOpts},
+        name_server::TokioConnectionProvider,
+        proto::xfer::Protocol,
         system_conf::read_system_conf,
     },
 };
@@ -34,7 +36,7 @@ pub struct Resolvers {
 
 #[derive(Clone)]
 pub struct DnssecResolver {
-    pub resolver: TokioAsyncResolver,
+    pub resolver: TokioResolver,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -230,7 +232,12 @@ impl Resolvers {
         Resolvers {
             dns: MessageAuthenticator::new(resolver_config, opts).unwrap(),
             dnssec: DnssecResolver {
-                resolver: AsyncResolver::tokio(config_dnssec, opts_dnssec),
+                resolver: TokioResolver::builder_with_config(
+                    config_dnssec,
+                    TokioConnectionProvider::default(),
+                )
+                .with_options(opts_dnssec)
+                .build(),
             },
         }
     }
@@ -355,7 +362,12 @@ impl Default for Resolvers {
         Self {
             dns: MessageAuthenticator::new(config, opts).expect("Failed to build DNS resolver"),
             dnssec: DnssecResolver {
-                resolver: AsyncResolver::tokio(config_dnssec, opts_dnssec),
+                resolver: TokioResolver::builder_with_config(
+                    config_dnssec,
+                    TokioConnectionProvider::default(),
+                )
+                .with_options(opts_dnssec)
+                .build(),
             },
         }
     }

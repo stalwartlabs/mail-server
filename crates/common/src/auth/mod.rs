@@ -6,7 +6,6 @@
 
 use std::{net::IpAddr, sync::Arc};
 
-
 use directory::{
     Directory, Permission, Permissions, Principal, QueryBy, core::secret::verify_secret_hash,
 };

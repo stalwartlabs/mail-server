@@ -6,7 +6,6 @@
 
 pub mod index;
 
-
 use store::{SERIALIZE_IDENTITY_V1, SerializedVersion};
 
 #[derive(

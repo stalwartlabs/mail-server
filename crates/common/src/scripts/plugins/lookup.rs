@@ -4,12 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::PluginContext;
+use crate::scripts::into_sieve_value;
 use sieve::{FunctionMap, runtime::Variable};
 use store::{Deserialize, Value, dispatch::lookup::KeyValue};
-
-use crate::scripts::into_sieve_value;
-
-use super::PluginContext;
 
 pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("key_exists", plugin_id, 2);
@@ -88,7 +86,8 @@ pub async fn exec_set(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         KeyValue::new(
             ctx.arguments[1].to_string().into_owned().into_bytes(),
             if !ctx.arguments[2].is_empty() {
-                bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
+                bincode::serde::encode_to_vec(&ctx.arguments[2], bincode::config::standard())
+                    .unwrap_or_default()
             } else {
                 vec![]
             },
@@ -128,9 +127,11 @@ pub struct VariableWrapper(Variable);
 impl Deserialize for VariableWrapper {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(VariableWrapper(
-            bincode::deserialize::<Variable>(bytes).unwrap_or_else(|_| {
-                Variable::String(String::from_utf8_lossy(bytes).into_owned().into())
-            }),
+            bincode::serde::decode_from_slice::<Variable, _>(bytes, bincode::config::standard())
+                .map(|v| v.0)
+                .unwrap_or_else(|_| {
+                    Variable::String(String::from_utf8_lossy(bytes).into_owned().into())
+                }),
         ))
     }
 }

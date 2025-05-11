@@ -205,10 +205,6 @@ impl EventType {
             .reason(err)
     }
 
-    pub fn from_bincode_error(self, err: bincode::Error) -> Error {
-        self.reason(err).details("Bincode deserialization failed")
-    }
-
     pub fn from_http_str_error(self, err: reqwest::header::ToStrError) -> Error {
         self.reason(err)
             .details("Failed to convert header to string")

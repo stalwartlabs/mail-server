@@ -125,7 +125,7 @@ impl SpamFilterAnalyzeRules for Server {
                     ctx.input
                         .message
                         .raw_message()
-                        .get(header.offset_start..header.offset_end)
+                        .get(header.offset_start as usize..header.offset_end as usize)
                         .unwrap_or_default(),
                 );
                 let header_resolver = EmailHeader {
@@ -155,6 +155,7 @@ impl SpamFilterAnalyzeRules for Server {
                     TextPart::Html { text_body, .. } => text_body.as_str(),
                     TextPart::None => continue,
                 };
+                let idx = idx as u32;
                 let location = if ctx.input.message.text_body.contains(&idx) {
                     Location::BodyText
                 } else if ctx.input.message.html_body.contains(&idx) {

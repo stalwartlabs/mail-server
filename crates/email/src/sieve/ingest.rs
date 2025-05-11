@@ -19,15 +19,16 @@ use common::{
 use directory::{Permission, QueryBy};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
+use rkyv::util::AlignedVec;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
 use std::future::Future;
 use std::{borrow::Cow, sync::Arc};
 use store::{
-    Deserialize, Serialize, SerializeInfallible,
+    Serialize, SerializeInfallible,
     ahash::AHashMap,
     dispatch::lookup::KeyValue,
     query::Filter,
-    write::{Archiver, BatchBuilder, BlobOp, LegacyBincode},
+    write::{Archiver, BatchBuilder, BlobOp},
 };
 use trc::{AddContext, SieveEvent};
 use utils::config::utils::ParseValue;
@@ -634,12 +635,13 @@ impl SieveScriptIngest for Server {
             })?;
 
         // Obtain the precompiled script
-        if let Some(sieve) = script_bytes
-            .get(script_offset..)
-            .and_then(|bytes| LegacyBincode::<Sieve>::deserialize(bytes).ok())
-        {
+        if let Some(script) = script_bytes.get(script_offset..).and_then(|bytes| {
+            let mut abytes = AlignedVec::<16>::with_capacity(bytes.len());
+            abytes.extend_from_slice(bytes);
+            rkyv::from_bytes::<Sieve, rkyv::rancor::Error>(&abytes).ok()
+        }) {
             Ok(CompiledScript {
-                script: sieve.inner,
+                script,
                 name: unarchived_script.name.as_str().into(),
                 hash,
             })
@@ -655,8 +657,9 @@ impl SieveScriptIngest for Server {
             ) {
                 Ok(sieve) => {
                     // Store updated compiled sieve script
-                    let sieve = LegacyBincode::new(sieve);
-                    let compiled_bytes = sieve.serialize().caused_by(trc::location!())?;
+                    let compiled_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&sieve)
+                        .map_err(Into::into)
+                        .caused_by(trc::location!())?;
                     let mut updated_sieve_bytes =
                         Vec::with_capacity(script_offset + compiled_bytes.len());
                     updated_sieve_bytes.extend_from_slice(&script_bytes[0..script_offset]);
@@ -697,7 +700,7 @@ impl SieveScriptIngest for Server {
                         .caused_by(trc::location!())?;
 
                     Ok(CompiledScript {
-                        script: sieve.inner,
+                        script: sieve,
                         name: new_archive.into_inner().name,
                         hash,
                     })

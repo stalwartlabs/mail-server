@@ -90,7 +90,7 @@ impl BayesClassifier for Server {
             .html_body
             .first()
             .or_else(|| ctx.input.message.text_body.first())
-            .and_then(|idx| ctx.output.text_parts.get(*idx))
+            .and_then(|idx| ctx.output.text_parts.get(*idx as usize))
         {
             Some(TextPart::Html {
                 text_body, tokens, ..
@@ -249,7 +249,7 @@ impl BayesClassifier for Server {
             .html_body
             .first()
             .or_else(|| ctx.input.message.text_body.first())
-            .and_then(|idx| ctx.output.text_parts.get(*idx))
+            .and_then(|idx| ctx.output.text_parts.get(*idx as usize))
         {
             Some(TextPart::Html {
                 text_body, tokens, ..

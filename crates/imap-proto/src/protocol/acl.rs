@@ -35,7 +35,6 @@
 
 use std::fmt::Display;
 
-
 use jmap_proto::types::acl::Acl;
 
 use crate::utf7::utf7_encode;
@@ -249,7 +248,6 @@ impl From<Rights> for Acl {
 
 #[cfg(test)]
 mod tests {
-    
 
     use crate::protocol::acl::{GetAclResponse, ListRightsResponse, MyRightsResponse, Rights};
 

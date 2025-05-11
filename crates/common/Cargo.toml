@@ -12,10 +12,10 @@ trc = { path = "../trc" }
 directory = { path = "../directory" }
 jmap_proto = { path = "../jmap-proto" }
 imap_proto = { path = "../imap-proto" }
-sieve-rs = { version = "0.6" }
-mail-parser = { version = "0.10", features = ["full_encoding"] } 
+sieve-rs = { version = "0.7", features = ["rkyv", "serde"] }
+mail-parser = { version = "0.11", features = ["full_encoding"] } 
 mail-builder = { version = "0.4" }
-mail-auth = { version = "0.6" }
+mail-auth = { version = "0.7" }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 smtp-proto = { version = "0.1", features = ["rkyv"] }
 dns-update = { version = "0.1" }
@@ -37,7 +37,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 base64 = "0.22"
-x509-parser = "0.16.0"
+x509-parser = "0.17.0"
 pem = "3.0"
 chrono = { version = "0.4", features = ["serde"] }
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
@@ -46,7 +46,7 @@ opentelemetry_sdk = { version = "0.25" }
 opentelemetry-otlp = { version = "0.25", features = ["http-proto", "reqwest-client"] }
 opentelemetry-semantic-conventions = { version = "0.25.0" }
 prometheus = { version = "0.13.4", default-features = false }
-imagesize = "0.13"
+imagesize = "0.14"
 sha1 = "0.10"
 sha2 = "0.10.6"
 md5 = "0.7.0"
@@ -54,8 +54,8 @@ whatlang = "0.16"
 idna = "1.0"
 decancer = "3.0.1"
 unicode-security = "0.1.0"
-infer = "0.16"
-bincode = "1.3.1"
+infer = "0.19"
+bincode = { version = "2.0", features = ["serde"] }
 hostname = "0.4.0"
 zip = "2.1"
 pwhash = "1.0.0"

@@ -46,7 +46,7 @@ impl SpamFilterInput<'_> {
     pub fn header_as_address(&self, header: &Header<'_>) -> Option<Cow<'_, str>> {
         self.message
             .raw_message()
-            .get(header.offset_start..header.offset_end)
+            .get(header.offset_start as usize..header.offset_end as usize)
             .map(|bytes| MessageStream::new(bytes).parse_address())
             .and_then(|addr| addr.into_address())
             .and_then(|addr| addr.into_list().into_iter().next())
@@ -70,7 +70,7 @@ impl SpamFilterContext<'_> {
             .text_body
             .first()
             .or_else(|| self.input.message.html_body.first())
-            .and_then(|idx| self.output.text_parts.get(*idx))
+            .and_then(|idx| self.output.text_parts.get(*idx as usize))
             .and_then(|part| match part {
                 TextPart::Plain { text_body, .. } => Some(*text_body),
                 TextPart::Html { text_body, .. } => Some(text_body.as_str()),
