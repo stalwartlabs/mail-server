@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 Stalwart Labs Ltd <hello@stalw.art>
+#
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+
 openapi: 3.0.0
 info:
   title: Stalwart Mail Server API
