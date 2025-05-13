@@ -1,40 +1,23 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use crate::{
+    Command,
     protocol::{
+        ProtocolVersion,
         list::{self, ReturnOption, SelectionOption},
         status::Status,
-        ProtocolVersion,
     },
-    receiver::{Request, Token},
+    receiver::{Request, Token, bad},
     utf7::utf7_maybe_decode,
-    Command,
 };
 
 impl Request<Command> {
     #[allow(clippy::while_let_on_iterator)]
-    pub fn parse_list(self, version: ProtocolVersion) -> crate::Result<list::Arguments> {
+    pub fn parse_list(self, version: ProtocolVersion) -> trc::Result<list::Arguments> {
         match self.tokens.len() {
             0 | 1 => Err(self.into_error("Missing arguments.")),
             2 => {
@@ -44,13 +27,13 @@ impl Request<Command> {
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                     mailbox_name: utf7_maybe_decode(
                         tokens
                             .next()
                             .unwrap()
                             .unwrap_string()
-                            .map_err(|v| (self.tag.as_str(), v))?,
+                            .map_err(|v| bad(self.tag.to_string(), v))?,
                         version,
                     ),
                     tag: self.tag,
@@ -70,30 +53,31 @@ impl Request<Command> {
                                 Token::Argument(value) => {
                                     selection_options.push(
                                         SelectionOption::parse(&value)
-                                            .map_err(|v| (self.tag.as_str(), v))?,
+                                            .map_err(|v| bad(self.tag.to_string(), v))?,
                                     );
                                 }
                                 _ => {
-                                    return Err((
-                                        self.tag.as_str(),
+                                    return Err(bad(
+                                        self.tag.to_string(),
                                         "Invalid selection option argument.",
-                                    )
-                                        .into())
+                                    ));
                                 }
                             }
                         }
                         tokens
                             .next()
-                            .ok_or((self.tag.as_str(), "Missing reference name."))?
+                            .ok_or_else(|| bad(self.tag.to_string(), "Missing reference name."))?
                             .unwrap_string()
-                            .map_err(|v| (self.tag.as_str(), v))?
+                            .map_err(|v| bad(self.tag.to_string(), v))?
                     }
-                    token => token.unwrap_string().map_err(|v| (self.tag.as_str(), v))?,
+                    token => token
+                        .unwrap_string()
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                 };
 
                 match tokens
                     .next()
-                    .ok_or((self.tag.as_str(), "Missing mailbox name."))?
+                    .ok_or_else(|| bad(self.tag.to_string(), "Missing mailbox name."))?
                 {
                     Token::ParenthesisOpen => {
                         while let Some(token) = tokens.next() {
@@ -103,7 +87,7 @@ impl Request<Command> {
                                     mailbox_name.push(
                                         token
                                             .unwrap_string()
-                                            .map_err(|v| (self.tag.as_str(), v))?,
+                                            .map_err(|v| bad(self.tag.to_string(), v))?,
                                     );
                                 }
                             }
@@ -111,7 +95,9 @@ impl Request<Command> {
                     }
                     token => {
                         mailbox_name.push(utf7_maybe_decode(
-                            token.unwrap_string().map_err(|v| (self.tag.as_str(), v))?,
+                            token
+                                .unwrap_string()
+                                .map_err(|v| bad(self.tag.to_string(), v))?,
                             version,
                         ));
                     }
@@ -119,17 +105,16 @@ impl Request<Command> {
 
                 if tokens
                     .next()
-                    .map_or(false, |token| token.eq_ignore_ascii_case(b"return"))
+                    .is_some_and(|token| token.eq_ignore_ascii_case(b"return"))
                 {
                     if tokens
                         .next()
-                        .map_or(true, |token| !token.is_parenthesis_open())
+                        .is_none_or(|token| !token.is_parenthesis_open())
                     {
-                        return Err((
-                            self.tag.as_str(),
+                        return Err(bad(
+                            self.tag.to_string(),
                             "Invalid return option, expected parenthesis.",
-                        )
-                            .into());
+                        ));
                     }
 
                     while let Some(token) = tokens.next() {
@@ -137,33 +122,32 @@ impl Request<Command> {
                             Token::ParenthesisClose => break,
                             Token::Argument(value) => {
                                 let mut return_option = ReturnOption::parse(&value)
-                                    .map_err(|v| (self.tag.as_str(), v))?;
+                                    .map_err(|v| bad(self.tag.to_string(), v))?;
                                 if let ReturnOption::Status(status) = &mut return_option {
                                     if tokens
                                         .next()
-                                        .map_or(true, |token| !token.is_parenthesis_open())
+                                        .is_none_or(|token| !token.is_parenthesis_open())
                                     {
-                                        return Err((
-                                        self.tag,
-                                        "Invalid return option, expected parenthesis after STATUS.",
-                                    )
-                                        .into());
+                                        return Err(bad(
+                                            self.tag,
+                                            "Invalid return option, expected parenthesis after STATUS.",
+                                        ));
                                     }
                                     while let Some(token) = tokens.next() {
                                         match token {
                                             Token::ParenthesisClose => break,
                                             Token::Argument(value) => {
                                                 status.push(
-                                                    Status::parse(&value)
-                                                        .map_err(|v| (self.tag.as_str(), v))?,
+                                                    Status::parse(&value).map_err(|v| {
+                                                        bad(self.tag.to_string(), v)
+                                                    })?,
                                                 );
                                             }
                                             _ => {
-                                                return Err((
+                                                return Err(bad(
                                                     self.tag,
                                                     "Invalid status return option argument.",
-                                                )
-                                                    .into())
+                                                ));
                                             }
                                         }
                                     }
@@ -171,9 +155,10 @@ impl Request<Command> {
                                 return_options.push(return_option);
                             }
                             _ => {
-                                return Err(
-                                    (self.tag.as_str(), "Invalid return option argument.").into()
-                                )
+                                return Err(bad(
+                                    self.tag.to_string(),
+                                    "Invalid return option argument.",
+                                ));
                             }
                         }
                     }
@@ -193,37 +178,31 @@ impl Request<Command> {
 
 impl SelectionOption {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"subscribed") {
-            Ok(Self::Subscribed)
-        } else if value.eq_ignore_ascii_case(b"remote") {
-            Ok(Self::Remote)
-        } else if value.eq_ignore_ascii_case(b"recursivematch") {
-            Ok(Self::RecursiveMatch)
-        } else if value.eq_ignore_ascii_case(b"special-use") {
-            Ok(Self::SpecialUse)
-        } else {
-            Err(format!(
-                "Invalid selection option {:?}.",
+        hashify::tiny_map_ignore_case!(value,
+            "SUBSCRIBED" => Self::Subscribed,
+            "REMOTE" => Self::Remote,
+            "RECURSIVEMATCH" => Self::RecursiveMatch,
+            "SPECIAL-USE" => Self::SpecialUse,
+        )
+        .ok_or_else(|| {
+            format!(
+                "Unsupported selection option '{}'.",
                 String::from_utf8_lossy(value)
             )
-            .into())
-        }
+            .into()
+        })
     }
 }
 
 impl ReturnOption {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"subscribed") {
-            Ok(Self::Subscribed)
-        } else if value.eq_ignore_ascii_case(b"children") {
-            Ok(Self::Children)
-        } else if value.eq_ignore_ascii_case(b"status") {
-            Ok(Self::Status(Vec::with_capacity(2)))
-        } else if value.eq_ignore_ascii_case(b"special-use") {
-            Ok(Self::SpecialUse)
-        } else {
-            Err(format!("Invalid return option {:?}", String::from_utf8_lossy(value)).into())
-        }
+        hashify::tiny_map_ignore_case!(value,
+            "SUBSCRIBED" => Self::Subscribed,
+            "CHILDREN" => Self::Children,
+            "STATUS" => Self::Status(Vec::with_capacity(2)),
+            "SPECIAL-USE" => Self::SpecialUse,
+        )
+        .ok_or_else(|| format!("Invalid return option {:?}", String::from_utf8_lossy(value)).into())
     }
 }
 
@@ -231,9 +210,9 @@ impl ReturnOption {
 mod tests {
     use crate::{
         protocol::{
+            ProtocolVersion,
             list::{self, ReturnOption, SelectionOption},
             status::Status,
-            ProtocolVersion,
         },
         receiver::Receiver,
     };

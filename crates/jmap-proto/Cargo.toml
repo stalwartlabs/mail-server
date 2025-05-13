@@ -1,18 +1,19 @@
 [package]
 name = "jmap_proto"
-version = "0.1.0"
-edition = "2021"
+version = "0.11.8"
+edition = "2024"
 resolver = "2"
 
 [dependencies]
 store = { path = "../store" }
 utils = { path = "../utils" }
-mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
+trc = { path = "../trc" }
+mail-parser = { version = "0.10", features = ["full_encoding", "serde_support"] } 
 fast-float = "0.2.0"
 serde = { version = "1.0", features = ["derive"]}
-ahash = { version = "0.8.1", features = ["serde"] }
+ahash = { version = "0.8.2", features = ["serde"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
-tracing = "0.1"
+
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

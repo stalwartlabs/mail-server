@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::collections::{HashMap, HashSet};
 
@@ -97,6 +80,32 @@ pub fn fn_cosine_similarity<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variabl
         0.0
     }
     .into()
+}
+
+pub fn cosine_similarity(a: &[&str], b: &[&str]) -> f64 {
+    let mut word_freq: HashMap<&str, [u32; 2]> = HashMap::new();
+
+    for (idx, items) in [a, b].into_iter().enumerate() {
+        for item in items {
+            word_freq.entry(item).or_insert([0, 0])[idx] += 1;
+        }
+    }
+
+    let mut dot_product = 0;
+    let mut magnitude_a = 0;
+    let mut magnitude_b = 0;
+
+    for (_word, count) in word_freq.iter() {
+        dot_product += count[0] * count[1];
+        magnitude_a += count[0] * count[0];
+        magnitude_b += count[1] * count[1];
+    }
+
+    if magnitude_a != 0 && magnitude_b != 0 {
+        dot_product as f64 / (magnitude_a as f64).sqrt() / (magnitude_b as f64).sqrt()
+    } else {
+        0.0
+    }
 }
 
 pub fn fn_jaccard_similarity<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {

@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use super::{authenticate::Mechanism, ImapResponse};
 
@@ -51,6 +34,7 @@ pub enum Capability {
     Sort,
     Thread,       //THREAD=REFERENCES
     ListExtended, //LIST-EXTENDED
+    ListStatus,   //LIST-STATUS
     ESort,
     SortDisplay,      //SORT=DISPLAY
     SpecialUse,       //SPECIAL-USE
@@ -65,6 +49,26 @@ pub enum Capability {
     Preview,
     Utf8Accept,
     Auth(Mechanism),
+    Quota,
+    QuotaResource(QuotaResourceName),
+    QuotaSet,
+}
+
+/*
+
+STORAGE 	The physical space estimate, in units of 1024 octets, of the mailboxes governed by the quota root. 	DELETED-STORAGE STATUS request data item and response data item 	N/A 	[Alexey_Melnikov] 	[IESG] 	[RFC9208, Section 5.1]
+MESSAGE 	The number of messages stored within the mailboxes governed by the quota root. 	DELETED STATUS request data item and response data item 	N/A 	[Alexey_Melnikov] 	[IESG] 	[RFC9208, Section 5.2]
+MAILBOX 	The number of mailboxes governed by the quota root. 	N/A 	N/A 	[Alexey_Melnikov] 	[IESG] 	[RFC9208, Section 5.3]
+ANNOTATION-STORAGE
+
+*/
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuotaResourceName {
+    Storage,
+    Message,
+    Mailbox,
+    AnnotationStorage,
 }
 
 impl Capability {
@@ -103,17 +107,30 @@ impl Capability {
             Capability::Sort => b"SORT",
             Capability::Thread => b"THREAD=REFERENCES",
             Capability::ListExtended => b"LIST-EXTENDED",
+            Capability::ListStatus => b"LIST-STATUS",
             Capability::ESort => b"ESORT",
             Capability::SortDisplay => b"SORT=DISPLAY",
             Capability::SpecialUse => b"SPECIAL-USE",
             Capability::CreateSpecialUse => b"CREATE-SPECIAL-USE",
             Capability::Move => b"MOVE",
             Capability::Utf8Accept => b"UTF8=ACCEPT",
+            Capability::Quota => b"QUOTA",
+            Capability::QuotaResource(quota_resource) => {
+                buf.extend_from_slice(b"QUOTA=RES-");
+                buf.extend_from_slice(match quota_resource {
+                    QuotaResourceName::Storage => b"STORAGE",
+                    QuotaResourceName::Message => b"MESSAGE",
+                    QuotaResourceName::Mailbox => b"MAILBOX",
+                    QuotaResourceName::AnnotationStorage => b"ANNOTATION-STORAGE",
+                });
+                return;
+            }
+            Capability::QuotaSet => b"QUOTA=SET",
         });
     }
 
-    pub fn all_capabilities(is_authenticated: bool, is_tls: bool) -> Vec<Capability> {
-        let mut capabilties = vec![
+    pub fn all_capabilities(is_authenticated: bool, offer_tls: bool) -> Vec<Capability> {
+        let mut capabilities = vec![
             Capability::IMAP4rev2,
             Capability::IMAP4rev1,
             Capability::Enable,
@@ -124,7 +141,7 @@ impl Capability {
         ];
 
         if is_authenticated {
-            capabilties.extend([
+            capabilities.extend([
                 Capability::Idle,
                 Capability::Namespace,
                 Capability::Children,
@@ -139,6 +156,7 @@ impl Capability {
                 Capability::Sort,
                 Capability::Thread,
                 Capability::ListExtended,
+                Capability::ListStatus,
                 Capability::ESort,
                 Capability::SortDisplay,
                 Capability::SpecialUse,
@@ -150,18 +168,20 @@ impl Capability {
                 Capability::StatusSize,
                 Capability::ObjectId,
                 Capability::Preview,
+                Capability::Quota,
+                Capability::QuotaResource(QuotaResourceName::Storage),
             ]);
         } else {
-            capabilties.extend([
+            capabilities.extend([
                 Capability::Auth(Mechanism::OAuthBearer),
                 Capability::Auth(Mechanism::Plain),
             ]);
         }
-        if !is_tls {
-            capabilties.push(Capability::StartTLS);
+        if offer_tls {
+            capabilities.push(Capability::StartTLS);
         }
 
-        capabilties
+        capabilities
     }
 }
 

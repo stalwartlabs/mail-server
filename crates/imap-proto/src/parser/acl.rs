@@ -1,32 +1,15 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use crate::{
     protocol::{
         acl::{self, ModRights, ModRightsOp, Rights},
         ProtocolVersion,
     },
-    receiver::Request,
+    receiver::{bad, Request},
     utf7::utf7_maybe_decode,
     Command,
 };
@@ -49,7 +32,7 @@ use super::PushUnique;
 */
 
 impl Request<Command> {
-    pub fn parse_acl(self, version: ProtocolVersion) -> crate::Result<acl::Arguments> {
+    pub fn parse_acl(self, version: ProtocolVersion) -> trc::Result<acl::Arguments> {
         let (has_identifier, has_mod_rights) = match self.command {
             Command::SetAcl => (true, true),
             Command::DeleteAcl | Command::ListRights => (true, false),
@@ -60,17 +43,17 @@ impl Request<Command> {
         let mailbox_name = utf7_maybe_decode(
             tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing mailbox name."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing mailbox name."))?
                 .unwrap_string()
-                .map_err(|v| (self.tag.as_str(), v))?,
+                .map_err(|v| bad(self.tag.to_string(), v))?,
             version,
         );
         let identifier = if has_identifier {
             tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing identifier."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing identifier."))?
                 .unwrap_string()
-                .map_err(|v| (self.tag.as_str(), v))?
+                .map_err(|v| bad(self.tag.to_string(), v))?
                 .into()
         } else {
             None
@@ -79,10 +62,10 @@ impl Request<Command> {
             ModRights::parse(
                 &tokens
                     .next()
-                    .ok_or((self.tag.as_str(), "Missing rights."))?
+                    .ok_or_else(|| bad(self.tag.to_string(), "Missing rights."))?
                     .unwrap_bytes(),
             )
-            .map_err(|v| (self.tag.as_str(), v))?
+            .map_err(|v| bad(self.tag.to_string(), v))?
             .into()
         } else {
             None

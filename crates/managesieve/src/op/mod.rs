@@ -1,29 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use jmap_proto::error::method::MethodError;
+use common::listener::SessionStream;
+use directory::Permission;
 
-use crate::core::StatusResponse;
+use crate::core::{Session, State, StatusResponse};
 
 pub mod authenticate;
 pub mod capability;
@@ -38,10 +22,23 @@ pub mod putscript;
 pub mod renamescript;
 pub mod setactive;
 
-impl From<MethodError> for StatusResponse {
-    fn from(_: MethodError) -> Self {
-        StatusResponse::database_failure()
+impl<T: SessionStream> Session<T> {
+    pub async fn handle_start_tls(&self) -> trc::Result<Vec<u8>> {
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::StartTls),
+            SpanId = self.session_id,
+            Elapsed = trc::Value::Duration(0)
+        );
+
+        Ok(StatusResponse::ok("Begin TLS negotiation now").into_bytes())
+    }
+
+    pub fn assert_has_permission(&self, permission: Permission) -> trc::Result<()> {
+        match &self.state {
+            State::Authenticated { access_token, .. } => {
+                access_token.assert_has_permission(permission)
+            }
+            State::NotAuthenticated { .. } => Ok(()),
+        }
     }
 }
-
-pub type OpResult = std::result::Result<Vec<u8>, StatusResponse>;

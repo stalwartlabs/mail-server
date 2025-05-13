@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     collections::BTreeSet,
@@ -34,37 +17,30 @@ use std::{
 use common::{
     config::{
         server::ServerProtocol,
-        smtp::resolver::{DnsRecordCache, DnssecResolver, Resolvers, Tlsa, TlsaEntry},
+        smtp::resolver::{DnssecResolver, Resolvers, Tlsa, TlsaEntry},
     },
+    ipc::PolicyType,
     Core,
 };
 use mail_auth::{
-    common::{
-        lru::{DnsCache, LruCache},
-        parse::TxtRecordParser,
-    },
+    common::parse::TxtRecordParser,
     hickory_resolver::{
         config::{ResolverConfig, ResolverOpts},
         AsyncResolver,
     },
     mta_sts::{ReportUri, TlsRpt},
     report::tlsrpt::ResultType,
-    Resolver, MX,
+    MessageAuthenticator, MX,
 };
 use rustls_pki_types::CertificateDer;
-use utils::suffixlist::PublicSuffix;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
-    outbound::TestServer,
     session::{TestSession, VerifyResponse},
+    DnsCache, TestSMTP,
 };
-use smtp::outbound::dane::verify::TlsaVerify;
-use smtp::{
-    core::SMTP,
-    queue::{Error, ErrorDetails, Status},
-    reporting::PolicyType,
-};
+use smtp::outbound::dane::{dnssec::TlsaLookup, verify::TlsaVerify};
+use smtp::queue::{Error, ErrorDetails, Status};
 
 const LOCAL: &str = r#"
 [session.rcpt]
@@ -99,24 +75,19 @@ return-path = false
 #[tokio::test]
 #[serial_test::serial]
 async fn dane_verify() {
-    /*let disable = 1;
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Start test server
-    let mut remote = TestServer::new("smtp_dane_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("smtp_dane_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
 
     // Fail on missing TLSA record
-    let mut local = TestServer::new("smtp_dane_local", LOCAL, true).await;
+    let mut local = TestSMTP::new("smtp_dane_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -124,12 +95,12 @@ async fn dane_verify() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.txt_add(
         "_smtp._tls.foobar.org",
         TlsRpt::parse(b"v=TLSRPTv1; rua=mailto:reports@foobar.org").unwrap(),
         Instant::now() + Duration::from_secs(10),
@@ -143,24 +114,23 @@ async fn dane_verify() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No TLSA records found");
-    local.qr.read_event().await.assert_reload();
-    local.qr.assert_no_events();
+    local.queue_receiver.read_event().await.assert_done();
+    local.queue_receiver.assert_no_events();
 
     // Expect TLS failure report
-    let report = local.rr.read_report().await.unwrap_tls();
+    let report = local.report_receiver.read_report().await.unwrap_tls();
     assert_eq!(report.domain, "foobar.org");
     assert_eq!(report.policy, PolicyType::Tlsa(None));
     assert_eq!(
@@ -196,30 +166,29 @@ async fn dane_verify() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No matching certificates found");
-    local.qr.read_event().await.assert_reload();
-    local.qr.assert_no_events();
+    local.queue_receiver.read_event().await.assert_done();
+    local.queue_receiver.assert_no_events();
 
     // Expect TLS failure report
-    let report = local.rr.read_report().await.unwrap_tls();
+    let report = local.report_receiver.read_report().await.unwrap_tls();
     assert_eq!(report.policy, PolicyType::Tlsa(tlsa.into()));
     assert_eq!(
         report.failure.as_ref().unwrap().result_type,
         ResultType::ValidationFailure
     );
-    remote.qr.assert_no_events();
+    remote.queue_receiver.assert_no_events();
 
     // DANE successful delivery
     let tlsa = Arc::new(Tlsa {
@@ -244,23 +213,22 @@ async fn dane_verify() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
-    local.qr.read_event().await.assert_reload();
-    local.qr.assert_no_events();
+        .try_deliver(core.clone());
+    local.queue_receiver.read_event().await.assert_done();
+    local.queue_receiver.assert_no_events();
     remote
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&remote.qr)
+        .read_lines(&remote.queue_receiver)
         .await
         .assert_contains("using TLSv1.3 with cipher");
 
     // Expect TLS success report
-    let report = local.rr.read_report().await.unwrap_tls();
+    let report = local.report_receiver.read_report().await.unwrap_tls();
     assert_eq!(report.policy, PolicyType::Tlsa(tlsa.into()));
     assert!(report.failure.is_none());
 }
@@ -274,20 +242,12 @@ async fn dane_test() {
 
     let mut core = Core::default();
     core.smtp.resolvers = Resolvers {
-        dns: Resolver::new_cloudflare().unwrap(),
+        dns: MessageAuthenticator::new_cloudflare().unwrap(),
         dnssec: DnssecResolver {
             resolver: AsyncResolver::tokio(conf, opts),
         },
-        cache: DnsRecordCache {
-            tlsa: LruCache::with_capacity(10),
-            mta_sts: LruCache::with_capacity(10),
-        },
-        psl: PublicSuffix::default(),
     };
-    let r = SMTP {
-        core: core.into(),
-        inner: Default::default(),
-    };
+    let r = TestSMTP::from_core(core).build_smtp();
 
     // Add dns entries
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -312,7 +272,11 @@ async fn dane_test() {
             match pos {
                 0 => {
                     if hostname != item && !hostname.is_empty() {
-                        r.tlsa_add(hostname, tlsa, Instant::now() + Duration::from_secs(30));
+                        r.tlsa_add(
+                            hostname,
+                            tlsa.into(),
+                            Instant::now() + Duration::from_secs(30),
+                        );
                         tlsa = Tlsa {
                             entries: Vec::new(),
                             has_end_entities: false,
@@ -342,7 +306,11 @@ async fn dane_test() {
             }
         }
     }
-    r.tlsa_add(hostname, tlsa, Instant::now() + Duration::from_secs(30));
+    r.tlsa_add(
+        hostname,
+        tlsa.into(),
+        Instant::now() + Duration::from_secs(30),
+    );
 
     // Add certificates
     assert!(!hosts.is_empty());
@@ -366,15 +334,12 @@ async fn dane_test() {
             .unwrap()
             .unwrap();
 
-        assert_eq!(
-            tlsa.verify(&tracing::info_span!("test_span"), &host, Some(&certs)),
-            Ok(())
-        );
+        assert_eq!(tlsa.verify(0, &host, Some(&certs)), Ok(()));
 
         // Failed DANE verification
         certs.remove(0);
         assert_eq!(
-            tlsa.verify(&tracing::info_span!("test_span"), &host, Some(&certs)),
+            tlsa.verify(0, &host, Some(&certs)),
             Err(Status::PermanentFailure(Error::DaneError(ErrorDetails {
                 entity: host.to_string(),
                 details: "No matching certificates found in TLSA records".to_string()

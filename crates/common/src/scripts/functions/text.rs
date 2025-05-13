@@ -1,26 +1,10 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+use mail_parser::decoders::html::html_to_text;
 use sieve::{runtime::Variable, Context};
 
 use super::ApplyString;
@@ -208,6 +192,25 @@ pub fn fn_rsplit<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
         .into()
 }
 
+pub fn fn_split_n<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
+    let value = v[0].to_string();
+    let arg = v[1].to_string();
+    let num = v[2].to_integer() as usize;
+    let mut result = Vec::new();
+
+    let mut s = value.as_ref();
+    for _ in 0..num {
+        if let Some((a, b)) = s.split_once(arg.as_ref()) {
+            result.push(Variable::from(a.to_string()));
+            s = b;
+        } else {
+            break;
+        }
+    }
+    result.push(Variable::from(s.to_string()));
+    result.into()
+}
+
 pub fn fn_split_once<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .split_once(v[1].to_string().as_ref())
@@ -241,20 +244,24 @@ pub fn fn_levenshtein_distance<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Vari
     let a = v[0].to_string();
     let b = v[1].to_string();
 
+    levenshtein_distance(a.as_ref(), b.as_ref()).into()
+}
+
+pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let mut result = 0;
 
     /* Shortcut optimizations / degenerate cases. */
     if a == b {
-        return result.into();
+        return result;
     }
 
     let length_a = a.chars().count();
     let length_b = b.chars().count();
 
     if length_a == 0 {
-        return length_b.into();
+        return length_b;
     } else if length_b == 0 {
-        return length_a.into();
+        return length_a;
     }
 
     /* Initialize the vector.
@@ -295,7 +302,7 @@ pub fn fn_levenshtein_distance<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Vari
         }
     }
 
-    result.into()
+    result
 }
 
 pub fn fn_detect_language<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
@@ -303,4 +310,8 @@ pub fn fn_detect_language<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable 
         .map(|l| l.code())
         .unwrap_or("unknown")
         .into()
+}
+
+pub fn fn_html_to_text<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
+    html_to_text(v[0].to_string().as_ref()).into()
 }

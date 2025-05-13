@@ -1,37 +1,20 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::{Duration, Instant};
 
 use common::Core;
 use tokio::sync::watch;
 
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 use utils::config::Config;
 
 use crate::smtp::{
-    build_smtp,
     session::{TestSession, VerifyResponse},
+    TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -46,13 +29,16 @@ duration = [{if = "remote_ip = '10.0.0.3'", then = '500ms'},
 
 #[tokio::test]
 async fn limits() {
+    // Enable logging
+    crate::enable_logging();
+
     let mut config = Config::new(CONFIG).unwrap();
     let core = Core::parse(&mut config, Default::default(), Default::default()).await;
 
     let (_tx, rx) = watch::channel(true);
 
     // Exceed max line length
-    let mut session = Session::test_with_shutdown(build_smtp(core, Inner::default()), rx);
+    let mut session = Session::test_with_shutdown(TestSMTP::from_core(core).server, rx);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     let mut buf = vec![b'A'; 2049];
     session.ingest(&buf).await.unwrap();
@@ -68,7 +54,7 @@ async fn limits() {
     session.eval_session_params().await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");
     session.handle_conn().await;
-    session.response().assert_code("451 4.7.28");
+    session.response().assert_code("452 4.7.28");
 
     // Loitering
     session.data.remote_ip_str = "10.0.0.3".to_string();
@@ -77,7 +63,7 @@ async fn limits() {
     tokio::time::sleep(Duration::from_millis(600)).await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");
     session.handle_conn().await;
-    session.response().assert_code("453 4.3.2");
+    session.response().assert_code("421 4.3.2");
 
     // Timeout
     session.data.remote_ip_str = "10.0.0.2".to_string();

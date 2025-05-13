@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -27,32 +10,29 @@ use std::{
     time::Duration,
 };
 
-use arc_swap::ArcSwap;
 use proxy_header::io::ProxiedStream;
 use rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256;
-use tokio::{
-    net::{TcpListener, TcpStream},
-    sync::watch,
-};
+use tokio::{net::TcpStream, sync::watch};
 use tokio_rustls::server::TlsStream;
-use tracing::Span;
+use trc::{EventType, HttpEvent, ImapEvent, ManageSieveEvent, Pop3Event, SmtpEvent};
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
-    config::server::{Listener, Server, ServerProtocol, Servers},
-    Core,
+    config::server::{Listener, Listeners, ServerProtocol, TcpListener},
+    core::BuildServer,
+    Inner, Server,
 };
 
 use super::{
-    limiter::ConcurrencyLimiter, ServerInstance, SessionData, SessionManager, SessionStream,
-    TcpAcceptor,
+    limiter::{ConcurrencyLimiter, LimiterResult},
+    ServerInstance, SessionData, SessionManager, SessionStream, TcpAcceptor,
 };
 
-impl Server {
+impl Listener {
     pub fn spawn(
         self,
         manager: impl SessionManager,
-        core: Arc<ArcSwap<Core>>,
+        inner: Arc<Inner>,
         acceptor: TcpAcceptor,
         shutdown_rx: watch::Receiver<bool>,
     ) {
@@ -64,6 +44,7 @@ impl Server {
             limiter: ConcurrencyLimiter::new(self.max_connections),
             acceptor,
             shutdown_rx,
+            span_id_gen: self.span_id_gen,
         });
         let is_tls = matches!(instance.acceptor, TcpAcceptor::Tls { implicit, .. } if implicit);
         let is_https = is_tls && self.protocol == ServerProtocol::Http;
@@ -71,14 +52,6 @@ impl Server {
 
         // Spawn listeners
         for listener in self.listeners {
-            tracing::info!(
-                id = instance.id,
-                protocol = ?instance.protocol,
-                bind.ip = listener.addr.ip().to_string(),
-                bind.port = listener.addr.port(),
-                tls = is_tls,
-                "Starting listener"
-            );
             let local_addr = listener.addr;
 
             // Obtain TCP options
@@ -90,15 +63,27 @@ impl Server {
 
             // Bind socket
             let listener = match listener.listen() {
-                Ok(listener) => listener,
-                Err(err) => {
-                    tracing::error!(
-                        event = "error",
-                        instance = instance.id,
-                        protocol = ?instance.protocol,
-                        reason = %err,
-                        "Failed to bind listener"
+                Ok(listener) => {
+                    trc::event!(
+                        Network(trc::NetworkEvent::ListenStart),
+                        ListenerId = instance.id.clone(),
+                        LocalIp = local_addr.ip(),
+                        LocalPort = local_addr.port(),
+                        Tls = is_tls,
                     );
+
+                    listener
+                }
+                Err(err) => {
+                    trc::event!(
+                        Network(trc::NetworkEvent::ListenError),
+                        ListenerId = instance.id.clone(),
+                        LocalIp = local_addr.ip(),
+                        LocalPort = local_addr.port(),
+                        Tls = is_tls,
+                        Reason = err,
+                    );
+
                     continue;
                 }
             };
@@ -107,15 +92,38 @@ impl Server {
             let mut shutdown_rx = instance.shutdown_rx.clone();
             let manager = manager.clone();
             let instance = instance.clone();
-            let core = core.clone();
+            let inner = inner.clone();
             tokio::spawn(async move {
+                let (span_start, span_end) = match self.protocol {
+                    ServerProtocol::Smtp | ServerProtocol::Lmtp => (
+                        EventType::Smtp(SmtpEvent::ConnectionStart),
+                        EventType::Smtp(SmtpEvent::ConnectionEnd),
+                    ),
+                    ServerProtocol::Imap => (
+                        EventType::Imap(ImapEvent::ConnectionStart),
+                        EventType::Imap(ImapEvent::ConnectionEnd),
+                    ),
+                    ServerProtocol::Pop3 => (
+                        EventType::Pop3(Pop3Event::ConnectionStart),
+                        EventType::Pop3(Pop3Event::ConnectionEnd),
+                    ),
+                    ServerProtocol::Http => (
+                        EventType::Http(HttpEvent::ConnectionStart),
+                        EventType::Http(HttpEvent::ConnectionEnd),
+                    ),
+                    ServerProtocol::ManageSieve => (
+                        EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
+                        EventType::ManageSieve(ManageSieveEvent::ConnectionEnd),
+                    ),
+                };
+
                 loop {
                     tokio::select! {
                         stream = listener.accept() => {
                             match stream {
                                 Ok((stream, remote_addr)) => {
-                                    let core = core.as_ref().load();
-                                    let enable_acme = (is_https && core.has_acme_tls_providers()).then_some(core.clone());
+                                    let server = inner.build_server();
+                                    let enable_acme = (is_https && server.has_acme_tls_providers()).then(|| server.clone());
 
                                     if has_proxies && instance.proxy_networks.iter().any(|network| network.matches(&remote_addr.ip())) {
                                         let instance = instance.clone();
@@ -131,44 +139,53 @@ impl Server {
                                                                             .proxied_address()
                                                                             .map(|addr| addr.source)
                                                                             .unwrap_or(remote_addr);
-                                                    if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &core) {
+                                                    if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &server) {
                                                         // Spawn session
-                                                        manager.spawn(session, is_tls, enable_acme);
+                                                        manager.spawn(session, is_tls, enable_acme, span_start, span_end);
                                                     }
                                                 }
                                                 Err(err) => {
-                                                    tracing::trace!(context = "io",
-                                                                    event = "error",
-                                                                    instance = instance.id,
-                                                                    protocol = ?instance.protocol,
-                                                                    reason = %err,
-                                                                    "Failed to accept proxied TCP connection");
+                                                    trc::event!(
+                                                        Network(trc::NetworkEvent::ProxyError),
+                                                        ListenerId = instance.id.clone(),
+                                                        LocalIp = local_addr.ip(),
+                                                        LocalPort = local_addr.port(),
+                                                        Tls = is_tls,
+                                                        Reason = err.to_string(),
+                                                    );
                                                 }
                                             }
                                         });
-                                    } else if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &core) {
+                                    } else if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &server) {
                                         // Set socket options
                                         opts.apply(&session.stream);
 
                                         // Spawn session
-                                        manager.spawn(session, is_tls, enable_acme);
+                                        manager.spawn(session, is_tls, enable_acme, span_start, span_end);
                                     }
                                 }
                                 Err(err) => {
-                                    tracing::trace!(context = "io",
-                                                    event = "error",
-                                                    instance = instance.id,
-                                                    protocol = ?instance.protocol,
-                                                    "Failed to accept TCP connection: {}", err);
+                                    trc::event!(
+                                        Network(trc::NetworkEvent::AcceptError),
+                                        ListenerId = instance.id.clone(),
+                                        LocalIp = local_addr.ip(),
+                                        LocalPort = local_addr.port(),
+                                        Tls = is_tls,
+                                        Reason = err.to_string(),
+                                    );
                                 }
                             }
                         },
                         _ = shutdown_rx.changed() => {
-                            tracing::debug!(
-                                event = "shutdown",
-                                instance = instance.id,
-                                protocol = ?instance.protocol,
-                                "Listener shutting down.");
+
+                            trc::event!(
+                                Network(trc::NetworkEvent::ListenStop),
+                                ListenerId = instance.id.clone(),
+                                LocalIp = local_addr.ip(),
+                                Tls = is_tls,
+                                LocalPort = local_addr.port(),
+                            );
+
                             manager.shutdown().await;
                             break;
                         }
@@ -185,7 +202,7 @@ trait BuildSession {
         stream: T,
         local_addr: SocketAddr,
         remote_addr: SocketAddr,
-        core: &Core,
+        server: &Server,
     ) -> Option<SessionData<T>>;
 }
 
@@ -195,7 +212,7 @@ impl BuildSession for Arc<ServerInstance> {
         stream: T,
         local_addr: SocketAddr,
         remote_addr: SocketAddr,
-        core: &Core,
+        server: &Server,
     ) -> Option<SessionData<T>> {
         // Convert mapped IPv6 addresses to IPv4
         let remote_ip = match remote_addr.ip() {
@@ -208,31 +225,23 @@ impl BuildSession for Arc<ServerInstance> {
         let remote_port = remote_addr.port();
 
         // Check if blocked
-        if core.is_ip_blocked(&remote_ip) {
-            tracing::debug!(
-                context = "listener",
-                event = "blocked",
-                instance = self.id,
-                protocol = ?self.protocol,
-                remote.ip = remote_ip.to_string(),
-                remote.port = remote_port,
-                "Dropping connection from blocked IP."
+        if server.is_ip_blocked(&remote_ip) {
+            trc::event!(
+                Security(trc::SecurityEvent::IpBlocked),
+                ListenerId = self.id.clone(),
+                LocalPort = local_addr.port(),
+                RemoteIp = remote_ip,
+                RemotePort = remote_port,
             );
             None
-        } else if let Some(in_flight) = self.limiter.is_allowed() {
+        } else if let LimiterResult::Allowed(in_flight) = self.limiter.is_allowed() {
             // Enforce concurrency
             SessionData {
                 stream,
                 in_flight,
-                span: tracing::info_span!(
-                    "session",
-                    instance = self.id,
-                    protocol = ?self.protocol,
-                    remote.ip = remote_ip.to_string(),
-                    remote.port = remote_port,
-                ),
                 local_ip: local_addr.ip(),
                 local_port: local_addr.port(),
+                session_id: 0,
                 remote_ip,
                 remote_port,
                 protocol: self.protocol,
@@ -240,16 +249,15 @@ impl BuildSession for Arc<ServerInstance> {
             }
             .into()
         } else {
-            tracing::info!(
-                context = "throttle",
-                event = "too-many-requests",
-                instance = self.id,
-                protocol = ?self.protocol,
-                remote.ip = remote_ip.to_string(),
-                remote.port = remote_port,
-                max_concurrent = self.limiter.max_concurrent,
-                "Too many concurrent connections."
+            trc::event!(
+                Limit(trc::LimitEvent::ConcurrentConnection),
+                ListenerId = self.id.clone(),
+                LocalPort = local_addr.port(),
+                RemoteIp = remote_ip,
+                RemotePort = remote_port,
+                Limit = self.limiter.max_concurrent,
             );
+
             None
         }
     }
@@ -265,37 +273,34 @@ impl SocketOpts {
     pub fn apply(&self, stream: &TcpStream) {
         // Set TCP options
         if let Err(err) = stream.set_nodelay(self.nodelay) {
-            tracing::warn!(
-                context = "tcp",
-                event = "error",
-                "Failed to set no-delay: {}",
-                err
+            trc::event!(
+                Network(trc::NetworkEvent::SetOptError),
+                Reason = err.to_string(),
+                Details = "Failed to set TCP_NODELAY",
             );
         }
         if let Some(ttl) = self.ttl {
             if let Err(err) = stream.set_ttl(ttl) {
-                tracing::warn!(
-                    context = "tcp",
-                    event = "error",
-                    "Failed to set TTL: {}",
-                    err
+                trc::event!(
+                    Network(trc::NetworkEvent::SetOptError),
+                    Reason = err.to_string(),
+                    Details = "Failed to set TTL",
                 );
             }
         }
         if self.linger.is_some() {
             if let Err(err) = stream.set_linger(self.linger) {
-                tracing::warn!(
-                    context = "tcp",
-                    event = "error",
-                    "Failed to set linger: {}",
-                    err
+                trc::event!(
+                    Network(trc::NetworkEvent::SetOptError),
+                    Reason = err.to_string(),
+                    Details = "Failed to set LINGER",
                 );
             }
         }
     }
 }
 
-impl Servers {
+impl Listeners {
     pub fn bind_and_drop_priv(&self, config: &mut Config) {
         // Bind as root
         for server in &self.servers {
@@ -313,9 +318,13 @@ impl Servers {
         #[cfg(not(target_env = "msvc"))]
         {
             if let Ok(run_as_user) = std::env::var("RUN_AS_USER") {
-                let mut pd = privdrop::PrivDrop::default().user(run_as_user);
+                let mut pd = privdrop::PrivDrop::default()
+                    .user(run_as_user)
+                    .fallback_to_ids_if_names_are_numeric();
                 if let Ok(run_as_group) = std::env::var("RUN_AS_GROUP") {
-                    pd = pd.group(run_as_group);
+                    pd = pd
+                        .group(run_as_group)
+                        .fallback_to_ids_if_names_are_numeric();
                 }
                 pd.apply().failed("Failed to drop privileges");
             }
@@ -324,7 +333,7 @@ impl Servers {
 
     pub fn spawn(
         mut self,
-        spawn: impl Fn(Server, TcpAcceptor, watch::Receiver<bool>),
+        spawn: impl Fn(Listener, TcpAcceptor, watch::Receiver<bool>),
     ) -> (watch::Sender<bool>, watch::Receiver<bool>) {
         // Spawn listeners
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -340,8 +349,8 @@ impl Servers {
     }
 }
 
-impl Listener {
-    pub fn listen(self) -> Result<TcpListener, String> {
+impl TcpListener {
+    pub fn listen(self) -> Result<tokio::net::TcpListener, String> {
         self.socket
             .listen(self.backlog.unwrap_or(1024))
             .map_err(|err| format!("Failed to listen on {}: {}", self.addr, err))
@@ -352,38 +361,49 @@ impl ServerInstance {
     pub async fn tls_accept<T: SessionStream>(
         &self,
         stream: T,
-        span: &Span,
+        session_id: u64,
     ) -> Result<TlsStream<T>, ()> {
         match &self.acceptor {
             TcpAcceptor::Tls { acceptor, .. } => match acceptor.accept(stream).await {
                 Ok(stream) => {
-                    tracing::info!(
-                        parent: span,
-                        context = "tls",
-                        event = "handshake",
-                        version = ?stream.get_ref().1.protocol_version().unwrap_or(rustls::ProtocolVersion::TLSv1_3),
-                        cipher = ?stream.get_ref().1.negotiated_cipher_suite().unwrap_or(TLS13_AES_128_GCM_SHA256),
+                    trc::event!(
+                        Tls(trc::TlsEvent::Handshake),
+                        ListenerId = self.id.clone(),
+                        SpanId = session_id,
+                        Version = format!(
+                            "{:?}",
+                            stream
+                                .get_ref()
+                                .1
+                                .protocol_version()
+                                .unwrap_or(rustls::ProtocolVersion::TLSv1_3)
+                        ),
+                        Details = format!(
+                            "{:?}",
+                            stream
+                                .get_ref()
+                                .1
+                                .negotiated_cipher_suite()
+                                .unwrap_or(TLS13_AES_128_GCM_SHA256)
+                        )
                     );
                     Ok(stream)
                 }
                 Err(err) => {
-                    tracing::debug!(
-                        parent: span,
-                        context = "tls",
-                        event = "error",
-                        "Failed to accept TLS connection: {}",
-                        err
+                    trc::event!(
+                        Tls(trc::TlsEvent::HandshakeError),
+                        ListenerId = self.id.clone(),
+                        SpanId = session_id,
+                        Reason = err.to_string(),
                     );
                     Err(())
                 }
             },
             TcpAcceptor::Plain => {
-                tracing::debug!(
-                    parent: span,
-                    context = "tls",
-                    event = "error",
-                    "Failed to accept TLS connection: {}",
-                    "TLS is not configured for this server."
+                trc::event!(
+                    Tls(trc::TlsEvent::NotConfigured),
+                    ListenerId = self.id.clone(),
+                    SpanId = session_id,
                 );
                 Err(())
             }

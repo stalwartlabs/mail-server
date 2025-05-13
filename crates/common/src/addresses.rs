@@ -1,29 +1,12 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::borrow::Cow;
 
-use directory::Directory;
+use directory::{backend::RcptType, Directory};
 use utils::config::{utils::AsKey, Config};
 
 use crate::{
@@ -31,34 +14,37 @@ use crate::{
     expr::{
         functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap, Variable, V_RECIPIENT,
     },
-    Core,
+    Server,
 };
 
-impl Core {
-    pub async fn email_to_ids(
+impl Server {
+    pub async fn email_to_id(
         &self,
         directory: &Directory,
         email: &str,
-    ) -> directory::Result<Vec<u32>> {
+        session_id: u64,
+    ) -> trc::Result<Option<u32>> {
         let mut address = self
+            .core
             .smtp
             .session
             .rcpt
             .subaddressing
-            .to_subaddress(self, email)
+            .to_subaddress(self, email, session_id)
             .await;
 
         for _ in 0..2 {
-            let result = directory.email_to_ids(address.as_ref()).await?;
+            let result = directory.email_to_id(address.as_ref()).await?;
 
-            if !result.is_empty() {
+            if result.is_some() {
                 return Ok(result);
             } else if let Some(catch_all) = self
+                .core
                 .smtp
                 .session
                 .rcpt
                 .catch_all
-                .to_catch_all(self, email)
+                .to_catch_all(self, email, session_id)
                 .await
             {
                 address = catch_all;
@@ -67,28 +53,36 @@ impl Core {
             }
         }
 
-        Ok(vec![])
+        Ok(None)
     }
 
-    pub async fn rcpt(&self, directory: &Directory, email: &str) -> directory::Result<bool> {
+    pub async fn rcpt(
+        &self,
+        directory: &Directory,
+        email: &str,
+        session_id: u64,
+    ) -> trc::Result<RcptType> {
         // Expand subaddress
         let mut address = self
+            .core
             .smtp
             .session
             .rcpt
             .subaddressing
-            .to_subaddress(self, email)
+            .to_subaddress(self, email, session_id)
             .await;
 
         for _ in 0..2 {
-            if directory.rcpt(address.as_ref()).await? {
-                return Ok(true);
+            let rcpt_type = directory.rcpt(address.as_ref()).await?;
+            if rcpt_type != RcptType::Invalid {
+                return Ok(rcpt_type);
             } else if let Some(catch_all) = self
+                .core
                 .smtp
                 .session
                 .rcpt
                 .catch_all
-                .to_catch_all(self, email)
+                .to_catch_all(self, email, session_id)
                 .await
             {
                 address = catch_all;
@@ -97,21 +91,23 @@ impl Core {
             }
         }
 
-        Ok(false)
+        Ok(RcptType::Invalid)
     }
 
     pub async fn vrfy(
         &self,
         directory: &Directory,
         address: &str,
-    ) -> directory::Result<Vec<String>> {
+        session_id: u64,
+    ) -> trc::Result<Vec<String>> {
         directory
             .vrfy(
-                self.smtp
+                self.core
+                    .smtp
                     .session
                     .rcpt
                     .subaddressing
-                    .to_subaddress(self, address)
+                    .to_subaddress(self, address, session_id)
                     .await
                     .as_ref(),
             )
@@ -122,14 +118,16 @@ impl Core {
         &self,
         directory: &Directory,
         address: &str,
-    ) -> directory::Result<Vec<String>> {
+        session_id: u64,
+    ) -> trc::Result<Vec<String>> {
         directory
             .expn(
-                self.smtp
+                self.core
+                    .smtp
                     .session
                     .rcpt
                     .subaddressing
-                    .to_subaddress(self, address)
+                    .to_subaddress(self, address, session_id)
                     .await
                     .as_ref(),
             )
@@ -174,13 +172,18 @@ impl ResolveVariable for Address<'_> {
     fn resolve_variable(&self, _: u32) -> crate::expr::Variable {
         Variable::from(self.0)
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }
 
 impl AddressMapping {
     pub async fn to_subaddress<'x, 'y: 'x>(
         &'x self,
-        core: &Core,
+        core: &Server,
         address: &'y str,
+        session_id: u64,
     ) -> Cow<'x, str> {
         match self {
             AddressMapping::Enable => {
@@ -191,11 +194,10 @@ impl AddressMapping {
                 }
             }
             AddressMapping::Custom(if_block) => {
-                if let Ok(result) = String::try_from(
-                    if_block
-                        .eval(&Address(address), core, "session.rcpt.sub-addressing")
-                        .await,
-                ) {
+                if let Some(result) = core
+                    .eval_if::<String, _>(if_block, &Address(address), session_id)
+                    .await
+                {
                     return result.into();
                 }
             }
@@ -207,26 +209,19 @@ impl AddressMapping {
 
     pub async fn to_catch_all<'x, 'y: 'x>(
         &'x self,
-        core: &Core,
+        core: &Server,
         address: &'y str,
+        session_id: u64,
     ) -> Option<Cow<'x, str>> {
         match self {
             AddressMapping::Enable => address
                 .rsplit_once('@')
                 .map(|(_, domain_part)| format!("@{}", domain_part))
                 .map(Cow::Owned),
-
-            AddressMapping::Custom(if_block) => {
-                if let Ok(result) = String::try_from(
-                    if_block
-                        .eval(&Address(address), core, "session.rcpt.catch-all")
-                        .await,
-                ) {
-                    Some(result.into())
-                } else {
-                    None
-                }
-            }
+            AddressMapping::Custom(if_block) => core
+                .eval_if::<String, _>(if_block, &Address(address), session_id)
+                .await
+                .map(Cow::Owned),
             AddressMapping::Disable => None,
         }
     }

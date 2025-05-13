@@ -1,43 +1,38 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use jmap_proto::{
-    error::method::MethodError,
-    method::{
-        changes::{self, ChangesRequest},
-        query::{self, QueryRequest},
-        query_changes::{AddedItem, QueryChangesRequest, QueryChangesResponse},
-    },
+use common::{auth::AccessToken, Server};
+use jmap_proto::method::{
+    changes::{self, ChangesRequest},
+    query::{self, QueryRequest},
+    query_changes::{AddedItem, QueryChangesRequest, QueryChangesResponse},
+};
+use std::future::Future;
+
+use crate::{
+    email::query::EmailQuery, mailbox::query::MailboxQuery, quota::query::QuotaQuery,
+    submission::query::EmailSubmissionQuery,
 };
 
-use crate::{auth::AccessToken, JMAP};
+use super::get::ChangesLookup;
 
-impl JMAP {
-    pub async fn query_changes(
+pub trait QueryChanges: Sync + Send {
+    fn query_changes(
         &self,
         request: QueryChangesRequest,
         access_token: &AccessToken,
-    ) -> Result<QueryChangesResponse, MethodError> {
+    ) -> impl Future<Output = trc::Result<QueryChangesResponse>> + Send;
+}
+
+impl QueryChanges for Server {
+    async fn query_changes(
+        &self,
+        request: QueryChangesRequest,
+        access_token: &AccessToken,
+    ) -> trc::Result<QueryChangesResponse> {
         // Query changes
         let changes = self
             .changes(
@@ -52,7 +47,11 @@ impl JMAP {
                             changes::RequestArguments::EmailSubmission
                         }
                         query::RequestArguments::Quota => changes::RequestArguments::Quota,
-                        _ => return Err(MethodError::UnknownMethod("Unknown method".to_string())),
+                        _ => {
+                            return Err(trc::JmapEvent::UnknownMethod
+                                .into_err()
+                                .details("Unknown method"))
+                        }
                     },
                 },
                 access_token,
@@ -85,7 +84,7 @@ impl JMAP {
                 || query
                     .sort
                     .as_ref()
-                    .map_or(false, |sort| sort.iter().any(|s| !s.is_immutable()));
+                    .is_some_and(|sort| sort.iter().any(|s| !s.is_immutable()));
             let results = match request.arguments {
                 query::RequestArguments::Email(arguments) => {
                     self.email_query(query.with_arguments(arguments), access_token)

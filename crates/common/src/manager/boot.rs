@@ -1,58 +1,60 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::path::PathBuf;
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use arc_swap::ArcSwap;
 use pwhash::sha512_crypt;
 use store::{
-    rand::{distributions::Alphanumeric, thread_rng, Rng},
     Stores,
+    rand::{Rng, distr::Alphanumeric, rng},
 };
-use tracing_appender::non_blocking::WorkerGuard;
+use tokio::sync::{Notify, Semaphore, mpsc};
 use utils::{
+    Semver, UnwrapFailure,
     config::{Config, ConfigKey},
-    failed, UnwrapFailure,
+    failed,
 };
 
 use crate::{
-    config::{server::Servers, tracers::Tracers},
-    Core, SharedCore,
+    Caches, Core, Data, IPC_CHANNEL_BUFFER, Inner, Ipc,
+    config::{network::AsnGeoLookupConfig, server::Listeners, telemetry::Telemetry},
+    core::BuildServer,
+    ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
 };
 
 use super::{
-    config::{ConfigManager, Patterns},
     WEBADMIN_KEY,
+    backup::BackupParams,
+    config::{ConfigManager, Patterns},
+    console::store_console,
 };
 
 pub struct BootManager {
     pub config: Config,
-    pub core: SharedCore,
-    pub servers: Servers,
-    pub guards: Option<Vec<WorkerGuard>>,
+    pub inner: Arc<Inner>,
+    pub servers: Listeners,
+    pub ipc_rxs: IpcReceivers,
 }
 
-const HELP: &str = r#"Stalwart Mail Server
+pub struct IpcReceivers {
+    pub state_rx: Option<mpsc::Receiver<StateEvent>>,
+    pub housekeeper_rx: Option<mpsc::Receiver<HousekeeperEvent>>,
+    pub queue_rx: Option<mpsc::Receiver<QueueEvent>>,
+    pub report_rx: Option<mpsc::Receiver<ReportingEvent>>,
+}
+
+const HELP: &str = concat!(
+    "Stalwart Mail Server v",
+    env!("CARGO_PKG_VERSION"),
+    r#"
 
 Usage: stalwart-mail [OPTIONS]
 
@@ -60,22 +62,25 @@ Options:
   -c, --config <PATH>              Start server with the specified configuration file
   -e, --export <PATH>              Export all store data to a specific path
   -i, --import <PATH>              Import store data from a specific path
+  -o, --console                    Open the store console
   -I, --init <PATH>                Initialize a new server at a specific path
   -h, --help                       Print help
   -V, --version                    Print version
-"#;
+"#
+);
 
 #[derive(PartialEq, Eq)]
-enum ImportExport {
-    Export(PathBuf),
+enum StoreOp {
+    Export(BackupParams),
     Import(PathBuf),
+    Console,
     None,
 }
 
 impl BootManager {
     pub async fn init() -> Self {
         let mut config_path = std::env::var("CONFIG_PATH").ok();
-        let mut import_export = ImportExport::None;
+        let mut import_export = StoreOp::None;
 
         if config_path.is_none() {
             let mut args = std::env::args().skip(1);
@@ -108,10 +113,13 @@ impl BootManager {
                         std::process::exit(0);
                     }
                     ("export" | "e", Some(value)) => {
-                        import_export = ImportExport::Export(value.into());
+                        import_export = StoreOp::Export(BackupParams::new(value.into()));
                     }
                     ("import" | "i", Some(value)) => {
-                        import_export = ImportExport::Import(value.into());
+                        import_export = StoreOp::Import(value.into());
+                    }
+                    ("console" | "o", None) => {
+                        import_export = StoreOp::Console;
                     }
                     (_, None) => {
                         failed(&format!("Unrecognized command '{key}', try '--help'."));
@@ -123,7 +131,7 @@ impl BootManager {
             }
 
             if config_path.is_none() {
-                if import_export == ImportExport::None {
+                if import_export == StoreOp::None {
                     eprintln!("{HELP}");
                 } else {
                     eprintln!("Missing '--config' argument for import/export.")
@@ -149,7 +157,7 @@ impl BootManager {
         config.resolve_macros(&["env"]).await;
 
         // Parser servers
-        let mut servers = Servers::parse(&mut config);
+        let mut servers = Listeners::parse(&mut config);
 
         // Bind ports and drop privileges
         servers.bind_and_drop_priv(&mut config);
@@ -180,30 +188,13 @@ impl BootManager {
                 .failed("Failed to read configuration");
         }
 
-        // Enable tracing
-        let guards = Tracers::parse(&mut config).enable(&mut config);
+        // Parse telemetry
+        let telemetry = Telemetry::parse(&mut config, &stores);
 
         match import_export {
-            ImportExport::None => {
-                tracing::info!(
-                    "Starting Stalwart Mail Server v{}...",
-                    env!("CARGO_PKG_VERSION")
-                );
-
+            StoreOp::None => {
                 // Add hostname lookup if missing
                 let mut insert_keys = Vec::new();
-                if config
-                    .value("lookup.default.hostname")
-                    .filter(|v| !v.is_empty())
-                    .is_none()
-                {
-                    insert_keys.push(ConfigKey::from((
-                        "lookup.default.hostname",
-                        hostname::get()
-                            .map(|v| v.to_string_lossy().into_owned())
-                            .unwrap_or_else(|_| "localhost".to_string()),
-                    )));
-                }
 
                 // Generate an OAuth key if missing
                 if config
@@ -213,7 +204,7 @@ impl BootManager {
                 {
                     insert_keys.push(ConfigKey::from((
                         "oauth.key",
-                        thread_rng()
+                        rng()
                             .sample_iter(Alphanumeric)
                             .take(64)
                             .map(char::from)
@@ -229,7 +220,7 @@ impl BootManager {
                 {
                     insert_keys.push(ConfigKey::from((
                         "cluster.key",
-                        thread_rng()
+                        rng()
                             .sample_iter(Alphanumeric)
                             .take(64)
                             .map(char::from)
@@ -237,48 +228,96 @@ impl BootManager {
                     )));
                 }
 
-                // Download SPAM filters if missing
-                if config
-                    .value("version.spam-filter")
-                    .filter(|v| !v.is_empty())
-                    .is_none()
-                {
-                    match manager.fetch_config_resource("spam-filter").await {
-                        Ok(external_config) => {
-                            tracing::info!(
-                                context = "config",
-                                event = "import",
-                                version = external_config.version,
-                                "Imported spam filter rules"
-                            );
-                            insert_keys.extend(external_config.keys);
-                        }
-                        Err(err) => {
-                            config.new_build_error(
-                                "*",
-                                format!("Failed to fetch spam filter: {err}"),
-                            );
-                        }
+                // Download Spam filter rules if missing
+                // TODO remove this check in 1.0
+                let mut update_webadmin = match config.value("version.spam-filter").and_then(|v| {
+                    if !v.is_empty() {
+                        Some(Semver::try_from(v))
+                    } else {
+                        None
                     }
+                }) {
+                    Some(Err(_)) => {
+                        let _ = manager.clear_prefix("lookup.spam-").await;
+                        let _ = manager
+                            .clear_prefix("sieve.trusted.scripts.spam-filter")
+                            .await;
+                        let _ = manager
+                            .clear_prefix("sieve.trusted.scripts.track-replies")
+                            .await;
+                        let _ = manager.clear_prefix("sieve.trusted.scripts.greylist").await;
+                        let _ = manager.clear_prefix("sieve.trusted.scripts.train").await;
+                        //let _ = manager.clear_prefix("session.data.script").await;
+                        let _ = manager.clear("version.spam-filter").await;
 
-                    // Add default settings
-                    for key in [
-                        ("queue.quota.size.messages", "100000"),
-                        ("queue.quota.size.size", "10737418240"),
-                        ("queue.quota.size.enable", "true"),
-                        ("queue.throttle.rcpt.key", "rcpt_domain"),
-                        ("queue.throttle.rcpt.concurrency", "5"),
-                        ("queue.throttle.rcpt.enable", "true"),
-                        ("session.throttle.ip.key", "remote_ip"),
-                        ("session.throttle.ip.concurrency", "5"),
-                        ("session.throttle.ip.enable", "true"),
-                        ("session.throttle.sender.key.0", "sender_domain"),
-                        ("session.throttle.sender.key.1", "rcpt"),
-                        ("session.throttle.sender.rate", "25/1h"),
-                        ("session.throttle.sender.enable", "true"),
-                        ("report.analysis.addresses", "postmaster@*"),
-                    ] {
-                        insert_keys.push(ConfigKey::from(key));
+                        match manager.fetch_spam_rules().await {
+                            Ok(external_config) => {
+                                trc::event!(
+                                    Config(trc::ConfigEvent::ImportExternal),
+                                    Version = external_config.version.to_string(),
+                                    Id = "spam-filter"
+                                );
+                                insert_keys.extend(external_config.keys);
+                            }
+                            Err(err) => {
+                                config.new_build_error(
+                                    "*",
+                                    format!("Failed to fetch spam filter: {err}"),
+                                );
+                            }
+                        }
+
+                        true
+                    }
+                    Some(Ok(_)) => false,
+                    None => {
+                        match manager.fetch_spam_rules().await {
+                            Ok(external_config) => {
+                                trc::event!(
+                                    Config(trc::ConfigEvent::ImportExternal),
+                                    Version = external_config.version.to_string(),
+                                    Id = "spam-filter"
+                                );
+                                insert_keys.extend(external_config.keys);
+                            }
+                            Err(err) => {
+                                config.new_build_error(
+                                    "*",
+                                    format!("Failed to fetch spam filter: {err}"),
+                                );
+                            }
+                        }
+
+                        // Add default settings
+                        for key in [
+                            ("queue.quota.size.messages", "100000"),
+                            ("queue.quota.size.size", "10737418240"),
+                            ("queue.quota.size.enable", "true"),
+                            ("queue.limiter.inbound.ip.key", "remote_ip"),
+                            ("queue.limiter.inbound.ip.rate", "5/1s"),
+                            ("queue.limiter.inbound.ip.enable", "true"),
+                            ("queue.limiter.inbound.sender.key.0", "sender_domain"),
+                            ("queue.limiter.inbound.sender.key.1", "rcpt"),
+                            ("queue.limiter.inbound.sender.rate", "25/1h"),
+                            ("queue.limiter.inbound.sender.enable", "true"),
+                            ("report.analysis.addresses", "postmaster@*"),
+                        ] {
+                            insert_keys.push(ConfigKey::from(key));
+                        }
+
+                        false
+                    }
+                };
+
+                // TODO remove key migration in 1.0
+                for (old_key, new_key) in [
+                    ("lookup.default.hostname", "server.hostname"),
+                    ("lookup.default.domain", "report.domain"),
+                ] {
+                    if let (Some(old_value), None) = (config.value(old_key), config.value(new_key))
+                    {
+                        insert_keys.push(ConfigKey::from((new_key, old_value)));
+                        update_webadmin = true;
                     }
                 }
 
@@ -292,10 +331,9 @@ impl BootManager {
                         Ok(None) => match manager.fetch_resource("webadmin").await {
                             Ok(bytes) => match blob_store.put_blob(WEBADMIN_KEY, &bytes).await {
                                 Ok(_) => {
-                                    tracing::info!(
-                                        context = "webadmin",
-                                        event = "download",
-                                        "Downloaded webadmin bundle"
+                                    trc::event!(
+                                        Resource(trc::ResourceEvent::DownloadExternal),
+                                        Id = "webadmin"
                                     );
                                 }
                                 Err(err) => {
@@ -323,46 +361,153 @@ impl BootManager {
                         config.keys.insert(item.key.clone(), item.value.clone());
                     }
 
-                    if let Err(err) = manager.set(insert_keys).await {
+                    if let Err(err) = manager.set(insert_keys, true).await {
                         config
                             .new_build_error("*", format!("Failed to update configuration: {err}"));
                     }
                 }
 
-                // Parse lookup stores
-                stores.parse_lookups(&mut config).await;
+                // Parse in-memory stores
+                stores.parse_in_memory(&mut config, false).await;
 
-                // Parse settings and build shared core
-                let core = Core::parse(&mut config, stores, manager)
-                    .await
-                    .into_shared();
+                // Parse settings
+                let core = Core::parse(&mut config, stores, manager).await;
+
+                // Parse data
+                let data = Data::parse(&mut config);
+
+                // Parse caches
+                let cache = Caches::parse(&mut config);
+
+                // Enable telemetry
+                #[cfg(feature = "enterprise")]
+                telemetry.enable(core.is_enterprise_edition());
+                #[cfg(not(feature = "enterprise"))]
+                telemetry.enable(false);
+
+                trc::event!(
+                    Server(trc::ServerEvent::Startup),
+                    Version = env!("CARGO_PKG_VERSION"),
+                );
+
+                // Webadmin auto-update
+                if update_webadmin
+                    || config
+                        .property_or_default::<bool>("webadmin.auto-update", "false")
+                        .unwrap_or_default()
+                {
+                    if let Err(err) = data.webadmin.update(&core).await {
+                        trc::event!(
+                            Resource(trc::ResourceEvent::Error),
+                            Details = "Failed to update webadmin",
+                            CausedBy = err
+                        );
+                    }
+                }
+
+                // Spam filter auto-update
+                if config
+                    .property_or_default::<bool>("spam-filter.auto-update", "false")
+                    .unwrap_or_default()
+                {
+                    if let Err(err) = core.storage.config.update_spam_rules(false, false).await {
+                        trc::event!(
+                            Resource(trc::ResourceEvent::Error),
+                            Details = "Failed to update spam-filter",
+                            CausedBy = err
+                        );
+                    }
+                }
+
+                // Build shared inner
+                let has_remote_asn = matches!(
+                    core.network.asn_geo_lookup,
+                    AsnGeoLookupConfig::Resource { .. }
+                );
+                let (ipc, ipc_rxs) = build_ipc(&mut config);
+                let inner = Arc::new(Inner {
+                    shared_core: ArcSwap::from_pointee(core),
+                    data,
+                    ipc,
+                    cache,
+                });
+
+                // Fetch ASN database
+                if has_remote_asn {
+                    inner
+                        .build_server()
+                        .lookup_asn_country(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))
+                        .await;
+                }
 
                 // Parse TCP acceptors
-                servers.parse_tcp_acceptors(&mut config, core.clone());
+                servers.parse_tcp_acceptors(&mut config, inner.clone());
 
                 BootManager {
-                    core,
-                    guards,
+                    inner,
                     config,
                     servers,
+                    ipc_rxs,
                 }
             }
-            ImportExport::Export(path) => {
+            StoreOp::Export(path) => {
+                // Enable telemetry
+                telemetry.enable(false);
+
+                // Parse settings and backup
                 Core::parse(&mut config, stores, manager)
                     .await
                     .backup(path)
                     .await;
                 std::process::exit(0);
             }
-            ImportExport::Import(path) => {
+            StoreOp::Import(path) => {
+                // Enable telemetry
+                telemetry.enable(false);
+
+                // Parse settings and restore
                 Core::parse(&mut config, stores, manager)
                     .await
                     .restore(path)
                     .await;
                 std::process::exit(0);
             }
+            StoreOp::Console => {
+                // Store console
+                store_console(Core::parse(&mut config, stores, manager).await.storage.data).await;
+                std::process::exit(0);
+            }
         }
     }
+}
+
+pub fn build_ipc(config: &mut Config) -> (Ipc, IpcReceivers) {
+    // Build ipc receivers
+    let (state_tx, state_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let (housekeeper_tx, housekeeper_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let (queue_tx, queue_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let (report_tx, report_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    (
+        Ipc {
+            state_tx,
+            housekeeper_tx,
+            queue_tx,
+            report_tx,
+            index_tx: Arc::new(Notify::new()),
+            local_delivery_sm: Arc::new(Semaphore::new(
+                config
+                    .property_or_default::<usize>("queue.threads.local", "10")
+                    .unwrap_or(10)
+                    .max(1),
+            )),
+        },
+        IpcReceivers {
+            state_rx: Some(state_rx),
+            housekeeper_rx: Some(housekeeper_rx),
+            queue_rx: Some(queue_rx),
+            report_rx: Some(report_rx),
+        },
+    )
 }
 
 fn quickstart(path: impl Into<PathBuf>) {
@@ -380,7 +525,7 @@ fn quickstart(path: impl Into<PathBuf>) {
     }
 
     let admin_pass = std::env::var("STALWART_ADMIN_PASSWORD").unwrap_or_else(|_| {
-        thread_rng()
+        rng()
             .sample_iter(Alphanumeric)
             .take(10)
             .map(char::from)

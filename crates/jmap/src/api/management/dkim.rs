@@ -1,31 +1,14 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::str::FromStr;
 
-use common::config::smtp::auth::simple_pem_parse;
+use common::{auth::AccessToken, config::smtp::auth::simple_pem_parse, Server};
+use directory::{backend::internal::manage, Permission};
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use mail_auth::{
     common::crypto::{Ed25519Key, RsaKey, Sha256},
     dkim::generate::DkimKeyPair,
@@ -38,15 +21,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use store::write::now;
 
-use crate::{
-    api::{
-        http::ToHttpResponse, management::ManagementApiError, HttpRequest, HttpResponse,
-        JsonResponse,
-    },
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 use super::decode_path_element;
+use std::future::Future;
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq)]
 pub enum Algorithm {
@@ -62,25 +40,64 @@ struct DkimSignature {
     selector: Option<String>,
 }
 
-impl JMAP {
-    pub async fn handle_manage_dkim(
+pub trait DkimManagement: Sync + Send {
+    fn handle_manage_dkim(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
-    ) -> HttpResponse {
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_get_public_key(
+        &self,
+        path: Vec<&str>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_create_signature(
+        &self,
+        body: Option<Vec<u8>>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn create_dkim_key(
+        &self,
+        algo: Algorithm,
+        id: impl AsRef<str> + Send,
+        domain: impl Into<String> + Send,
+        selector: impl Into<String> + Send,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+}
+
+impl DkimManagement for Server {
+    async fn handle_manage_dkim(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        body: Option<Vec<u8>>,
+        access_token: &AccessToken,
+    ) -> trc::Result<HttpResponse> {
         match *req.method() {
-            Method::GET => self.handle_get_public_key(path).await,
-            Method::POST => self.handle_create_signature(body).await,
-            _ => RequestError::not_found().into_http_response(),
+            Method::GET => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::DkimSignatureGet)?;
+
+                self.handle_get_public_key(path).await
+            }
+            Method::POST => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::DkimSignatureCreate)?;
+
+                self.handle_create_signature(body).await
+            }
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 
-    async fn handle_get_public_key(&self, path: Vec<&str>) -> HttpResponse {
+    async fn handle_get_public_key(&self, path: Vec<&str>) -> trc::Result<HttpResponse> {
         let signature_id = match path.get(1) {
             Some(signature_id) => decode_path_element(signature_id),
             None => {
-                return RequestError::not_found().into_http_response();
+                return Err(trc::ResourceEvent::NotFound.into_err());
             }
         };
 
@@ -98,27 +115,25 @@ impl JMAP {
                 .map(|algo| algo.and_then(|algo| algo.parse::<Algorithm>().ok())),
         ) {
             (Ok(Some(pk)), Ok(Some(algorithm))) => (pk, algorithm),
-            (Err(err), _) | (_, Err(err)) => return err.into_http_response(),
-            _ => return RequestError::not_found().into_http_response(),
+            (Err(err), _) | (_, Err(err)) => return Err(err.caused_by(trc::location!())),
+            _ => return Err(trc::ResourceEvent::NotFound.into_err()),
         };
 
-        match obtain_dkim_public_key(algo, &pk) {
-            Ok(data) => JsonResponse::new(json!({
-                "data": data,
-            }))
-            .into_http_response(),
-            Err(err) => ManagementApiError::Other {
-                details: err.into(),
-            }
-            .into_http_response(),
-        }
+        Ok(JsonResponse::new(json!({
+            "data": obtain_dkim_public_key(algo, &pk)?,
+        }))
+        .into_http_response())
     }
 
-    async fn handle_create_signature(&self, body: Option<Vec<u8>>) -> HttpResponse {
+    async fn handle_create_signature(&self, body: Option<Vec<u8>>) -> trc::Result<HttpResponse> {
         let request =
             match serde_json::from_slice::<DkimSignature>(body.as_deref().unwrap_or_default()) {
                 Ok(request) => request,
-                Err(err) => return err.into_http_response(),
+                Err(err) => {
+                    return Err(
+                        trc::EventType::Resource(trc::ResourceEvent::BadParameters).reason(err)
+                    )
+                }
             };
 
         let algo_str = match request.algorithm {
@@ -143,35 +158,27 @@ impl JMAP {
         });
 
         // Make sure the signature does not exist already
-        match self
+        if let Some(value) = self
             .core
             .storage
             .config
             .get(&format!("signature.{id}.private-key"))
-            .await
+            .await?
         {
-            Ok(None) => (),
-            Ok(Some(value)) => {
-                return ManagementApiError::FieldAlreadyExists {
-                    field: format!("signature.{id}.private-key").into(),
-                    value: value.into(),
-                }
-                .into_http_response();
-            }
-            Err(err) => return err.into_http_response(),
+            return Err(manage::err_exists(
+                format!("signature.{id}.private-key"),
+                value,
+            ));
         }
 
         // Create signature
-        match self
-            .create_dkim_key(request.algorithm, id, request.domain, selector)
-            .await
-        {
-            Ok(_) => JsonResponse::new(json!({
-                "data": (),
-            }))
-            .into_http_response(),
-            Err(err) => err.into_http_response(),
-        }
+        self.create_dkim_key(request.algorithm, id, request.domain, selector)
+            .await?;
+
+        Ok(JsonResponse::new(json!({
+            "data": (),
+        }))
+        .into_http_response())
     }
 
     async fn create_dkim_key(
@@ -180,7 +187,7 @@ impl JMAP {
         id: impl AsRef<str>,
         domain: impl Into<String>,
         selector: impl Into<String>,
-    ) -> store::Result<()> {
+    ) -> trc::Result<()> {
         let id = id.as_ref();
         let (algorithm, pk_type) = match algo {
             Algorithm::Rsa => ("rsa-sha256", "RSA PRIVATE KEY"),
@@ -193,7 +200,10 @@ impl JMAP {
                 Algorithm::Rsa => DkimKeyPair::generate_rsa(2048),
                 Algorithm::Ed25519 => DkimKeyPair::generate_ed25519(),
             }
-            .map_err(|err| store::Error::InternalError(err.to_string()))?
+            .map_err(|err| {
+                manage::error("Failed to generate key", err.to_string().into())
+                    .caused_by(trc::location!())
+            })?
             .private_key(),
         )
         .unwrap_or_default()
@@ -234,12 +244,12 @@ impl JMAP {
                     "Message-ID".to_string(),
                 ),
                 (format!("signature.{id}.report"), "false".to_string()),
-            ])
+            ], true)
             .await
     }
 }
 
-pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> Result<String, &'static str> {
+pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> trc::Result<String> {
     match simple_pem_parse(pk) {
         Some(der) => match algo {
             Algorithm::Rsa => match RsaKey::<Sha256>::from_der(&der).and_then(|key| {
@@ -250,11 +260,10 @@ pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> Result<String, &'sta
                     String::from_utf8(base64_encode(pk.as_bytes()).unwrap_or_default())
                         .unwrap_or_default(),
                 ),
-                Err(err) => {
-                    tracing::debug!("Failed to read RSA DER: {err}");
-
-                    Err("Failed to read RSA DER")
-                }
+                Err(err) => Err(manage::error(
+                    "Failed to read RSA DER",
+                    err.to_string().into(),
+                )),
             },
             Algorithm::Ed25519 => {
                 match Ed25519Key::from_pkcs8_maybe_unchecked_der(&der)
@@ -264,15 +273,11 @@ pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> Result<String, &'sta
                         base64_encode(&pk.public_key()).unwrap_or_default(),
                     )
                     .unwrap_or_default()),
-                    Err(err) => {
-                        tracing::debug!("Failed to read ED25519 DER: {err}");
-
-                        Err("Failed to read ED25519 DER")
-                    }
+                    Err(err) => Err(manage::error("Crypto error", err.to_string().into())),
                 }
             }
         },
-        None => Err("Failed to decode private key"),
+        None => Err(manage::error("Failed to decode private key", None::<u32>)),
     }
 }
 

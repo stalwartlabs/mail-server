@@ -1,31 +1,14 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use mail_parser::decoders::charsets::map::charset_decoder;
 
 use crate::{
     protocol::thread::{self, Algorithm},
-    receiver::Request,
+    receiver::{bad, Request},
     Command,
 };
 
@@ -33,7 +16,7 @@ use super::search::parse_filters;
 
 impl Request<Command> {
     #[allow(clippy::while_let_on_iterator)]
-    pub fn parse_thread(self) -> crate::Result<thread::Arguments> {
+    pub fn parse_thread(self) -> trc::Result<thread::Arguments> {
         if self.tokens.is_empty() {
             return Err(self.into_error("Missing thread criteria."));
         }
@@ -42,21 +25,22 @@ impl Request<Command> {
         let algorithm = Algorithm::parse(
             &tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing threading algorithm."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing threading algorithm."))?
                 .unwrap_bytes(),
         )
-        .map_err(|v| (self.tag.as_str(), v))?;
+        .map_err(|v| bad(self.tag.to_string(), v))?;
 
         let decoder = charset_decoder(
             &tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing charset."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing charset."))?
                 .unwrap_bytes(),
         );
 
-        let filter = parse_filters(&mut tokens, decoder).map_err(|v| (self.tag.as_str(), v))?;
+        let filter =
+            parse_filters(&mut tokens, decoder).map_err(|v| bad(self.tag.to_string(), v))?;
         match filter.len() {
-            0 => Err((self.tag.as_str(), "No filters found in command.").into()),
+            0 => Err(bad(self.tag.to_string(), "No filters found in command.")),
             _ => Ok(thread::Arguments {
                 algorithm,
                 filter,
@@ -68,17 +52,17 @@ impl Request<Command> {
 
 impl Algorithm {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"ORDEREDSUBJECT") {
-            Ok(Self::OrderedSubject)
-        } else if value.eq_ignore_ascii_case(b"REFERENCES") {
-            Ok(Self::References)
-        } else {
-            Err(format!(
+        hashify::tiny_map_ignore_case!(value,
+            "ORDEREDSUBJECT" => Self::OrderedSubject,
+            "REFERENCES" => Self::References,
+        )
+        .ok_or_else(|| {
+            format!(
                 "Invalid threading algorithm {:?}",
                 String::from_utf8_lossy(value)
             )
-            .into())
-        }
+            .into()
+        })
     }
 }
 

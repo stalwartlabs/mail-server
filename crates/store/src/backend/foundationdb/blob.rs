@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::ops::Range;
 
@@ -27,7 +10,7 @@ use foundationdb::{options::StreamingMode, KeySelector, RangeOption};
 use futures::TryStreamExt;
 use utils::BLOB_HASH_LEN;
 
-use crate::{write::key::KeySerializer, SUBSPACE_BLOBS};
+use crate::{backend::foundationdb::into_error, write::key::KeySerializer, SUBSPACE_BLOBS};
 
 use super::{FdbStore, MAX_VALUE_SIZE};
 
@@ -36,7 +19,7 @@ impl FdbStore {
         &self,
         key: &[u8],
         range: Range<usize>,
-    ) -> crate::Result<Option<Vec<u8>>> {
+    ) -> trc::Result<Option<Vec<u8>>> {
         let block_start = range.start / MAX_VALUE_SIZE;
         let bytes_start = range.start % MAX_VALUE_SIZE;
         let block_end = (range.end / MAX_VALUE_SIZE) + 1;
@@ -66,7 +49,7 @@ impl FdbStore {
         let mut blob_data: Option<Vec<u8>> = None;
         let blob_range = range.end - range.start;
 
-        'outer: while let Some(value) = values.try_next().await? {
+        'outer: while let Some(value) = values.try_next().await.map_err(into_error)? {
             let key = value.key();
             if key.len() == key_len {
                 let value = value.value();
@@ -109,7 +92,7 @@ impl FdbStore {
         Ok(blob_data)
     }
 
-    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
+    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
         const N_CHUNKS: usize = (1 << 5) - 1;
         let last_chunk = std::cmp::max(
             (data.len() / MAX_VALUE_SIZE)
@@ -120,7 +103,7 @@ impl FdbStore {
                 },
             1,
         ) - 1;
-        let mut trx = self.db.create_trx()?;
+        let mut trx = self.db.create_trx().map_err(into_error)?;
 
         for (chunk_pos, chunk_bytes) in data.chunks(MAX_VALUE_SIZE).enumerate() {
             trx.set(
@@ -134,7 +117,7 @@ impl FdbStore {
             if chunk_pos == last_chunk || (chunk_pos > 0 && chunk_pos % N_CHUNKS == 0) {
                 self.commit(trx, false).await?;
                 if chunk_pos < last_chunk {
-                    trx = self.db.create_trx()?;
+                    trx = self.db.create_trx().map_err(into_error)?;
                 } else {
                     break;
                 }
@@ -144,12 +127,12 @@ impl FdbStore {
         Ok(())
     }
 
-    pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
+    pub(crate) async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
         if key.len() < BLOB_HASH_LEN {
             return Ok(false);
         }
 
-        let trx = self.db.create_trx()?;
+        let trx = self.db.create_trx().map_err(into_error)?;
         trx.clear_range(
             &KeySerializer::new(key.len() + 3)
                 .write(SUBSPACE_BLOBS)

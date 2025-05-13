@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use argon2::Argon2;
 use mail_builder::encoders::base64::base64_encode;
@@ -33,21 +16,99 @@ use sha1::Sha1;
 use sha2::Sha256;
 use sha2::Sha512;
 use tokio::sync::oneshot;
+use totp_rs::TOTP;
 
+use crate::backend::internal::PrincipalField;
+use crate::backend::internal::SpecialSecrets;
 use crate::Principal;
 
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
-    pub async fn verify_secret(&self, secret: &str) -> bool {
-        for hashed_secret in &self.secrets {
-            if verify_secret_hash(hashed_secret, secret).await {
-                return true;
+impl Principal {
+    pub async fn verify_secret(&self, mut code: &str) -> trc::Result<bool> {
+        let mut totp_token = None;
+        let mut is_totp_token_missing = false;
+        let mut is_totp_required = false;
+        let mut is_totp_verified = false;
+        let mut is_authenticated = false;
+        let mut is_app_authenticated = false;
+
+        for secret in self.iter_str(PrincipalField::Secrets) {
+            if secret.is_otp_auth() {
+                if !is_totp_verified && !is_totp_token_missing {
+                    is_totp_required = true;
+
+                    let totp_token = if let Some(totp_token) = totp_token {
+                        totp_token
+                    } else if let Some((_code, _totp_token)) =
+                        code.rsplit_once('$').filter(|(c, t)| {
+                            !c.is_empty()
+                                && (6..=8).contains(&t.len())
+                                && t.as_bytes().iter().all(|b| b.is_ascii_digit())
+                        })
+                    {
+                        totp_token = Some(_totp_token);
+                        code = _code;
+                        _totp_token
+                    } else {
+                        is_totp_token_missing = true;
+                        continue;
+                    };
+
+                    // Token needs to validate with at least one of the TOTP secrets
+                    is_totp_verified = TOTP::from_url(secret)
+                        .map_err(|err| {
+                            trc::AuthEvent::Error
+                                .reason(err)
+                                .details(secret.to_string())
+                        })?
+                        .check_current(totp_token)
+                        .unwrap_or(false);
+                }
+            } else if !is_authenticated && !is_app_authenticated {
+                if let Some((_, app_secret)) =
+                    secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
+                {
+                    is_app_authenticated = verify_secret_hash(app_secret, code).await?;
+                } else {
+                    is_authenticated = verify_secret_hash(secret, code).await?;
+                }
             }
         }
-        false
+
+        if is_authenticated {
+            if !is_totp_required {
+                // Authenticated without TOTP enabled
+
+                Ok(true)
+            } else if is_totp_token_missing {
+                // Only let the client know if the TOTP code is missing
+                // if the password is correct
+
+                Err(trc::AuthEvent::MissingTotp.into_err())
+            } else {
+                // Return the TOTP verification status
+
+                Ok(is_totp_verified)
+            }
+        } else if is_app_authenticated {
+            // App passwords do not require TOTP
+
+            Ok(true)
+        } else {
+            if is_totp_verified {
+                // TOTP URL appeared after password hash in secrets list
+                for secret in self.iter_str(PrincipalField::Secrets) {
+                    if secret.is_password() && verify_secret_hash(secret, code).await? {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
     }
 }
 
-async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> bool {
+async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> trc::Result<bool> {
     if hashed_secret.starts_with("$argon2")
         || hashed_secret.starts_with("$pbkdf2")
         || hashed_secret.starts_with("$scrypt")
@@ -58,63 +119,53 @@ async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> bool {
 
         tokio::task::spawn_blocking(move || match PasswordHash::new(&hashed_secret) {
             Ok(hash) => {
-                tx.send(
-                    hash.verify_password(&[&Argon2::default(), &Pbkdf2, &Scrypt], &secret)
-                        .is_ok(),
-                )
-                .ok();
+                tx.send(Ok(hash
+                    .verify_password(&[&Argon2::default(), &Pbkdf2, &Scrypt], &secret)
+                    .is_ok()))
+                    .ok();
             }
-            Err(_) => {
-                tracing::warn!(
-                    context = "directory",
-                    event = "error",
-                    hash = hashed_secret,
-                    "Invalid password hash"
-                );
-                tx.send(false).ok();
+            Err(err) => {
+                tx.send(Err(trc::AuthEvent::Error
+                    .reason(err)
+                    .details(hashed_secret)))
+                    .ok();
             }
         });
 
         match rx.await {
             Ok(result) => result,
-            Err(_) => {
-                tracing::warn!(context = "directory", event = "error", "Thread join error");
-                false
-            }
+            Err(err) => Err(trc::EventType::Server(trc::ServerEvent::ThreadError)
+                .caused_by(trc::location!())
+                .reason(err)),
         }
     } else if hashed_secret.starts_with("$2") {
         // Blowfish crypt
-        bcrypt::verify(secret, hashed_secret)
+        Ok(bcrypt::verify(secret, hashed_secret))
     } else if hashed_secret.starts_with("$6$") {
         // SHA-512 crypt
-        sha512_crypt::verify(secret, hashed_secret)
+        Ok(sha512_crypt::verify(secret, hashed_secret))
     } else if hashed_secret.starts_with("$5$") {
         // SHA-256 crypt
-        sha256_crypt::verify(secret, hashed_secret)
+        Ok(sha256_crypt::verify(secret, hashed_secret))
     } else if hashed_secret.starts_with("$sha1") {
         // SHA-1 crypt
-        sha1_crypt::verify(secret, hashed_secret)
+        Ok(sha1_crypt::verify(secret, hashed_secret))
     } else if hashed_secret.starts_with("$1") {
         // MD5 based hash
-        md5_crypt::verify(secret, hashed_secret)
+        Ok(md5_crypt::verify(secret, hashed_secret))
     } else {
-        // Unknown hash
-        tracing::warn!(
-            context = "directory",
-            event = "error",
-            hash = hashed_secret,
-            "Invalid password hash"
-        );
-        false
+        Err(trc::AuthEvent::Error
+            .into_err()
+            .details(hashed_secret.to_string()))
     }
 }
 
-pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
+pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> trc::Result<bool> {
     if hashed_secret.starts_with('$') {
         verify_hash_prefix(hashed_secret, secret).await
     } else if hashed_secret.starts_with('_') {
         // Enhanced DES-based hash
-        bsdi_crypt::verify(secret, hashed_secret)
+        Ok(bsdi_crypt::verify(secret, hashed_secret))
     } else if let Some(hashed_secret) = hashed_secret.strip_prefix('{') {
         if let Some((algo, hashed_secret)) = hashed_secret.split_once('}') {
             match algo {
@@ -125,9 +176,13 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
                     // SHA-1
                     let mut hasher = Sha1::new();
                     hasher.update(secret.as_bytes());
-                    String::from_utf8(base64_encode(&hasher.finalize()[..]).unwrap_or_default())
+                    Ok(
+                        String::from_utf8(
+                            base64_encode(&hasher.finalize()[..]).unwrap_or_default(),
+                        )
                         .unwrap()
-                        == hashed_secret
+                            == hashed_secret,
+                    )
                 }
                 "SSHA" => {
                     // Salted SHA-1
@@ -137,15 +192,19 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
                     let mut hasher = Sha1::new();
                     hasher.update(secret.as_bytes());
                     hasher.update(salt);
-                    &hasher.finalize()[..] == hash
+                    Ok(&hasher.finalize()[..] == hash)
                 }
                 "SHA256" => {
                     // Verify hash
                     let mut hasher = Sha256::new();
                     hasher.update(secret.as_bytes());
-                    String::from_utf8(base64_encode(&hasher.finalize()[..]).unwrap_or_default())
+                    Ok(
+                        String::from_utf8(
+                            base64_encode(&hasher.finalize()[..]).unwrap_or_default(),
+                        )
                         .unwrap()
-                        == hashed_secret
+                            == hashed_secret,
+                    )
                 }
                 "SSHA256" => {
                     // Salted SHA-256
@@ -155,15 +214,19 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
                     let mut hasher = Sha256::new();
                     hasher.update(secret.as_bytes());
                     hasher.update(salt);
-                    &hasher.finalize()[..] == hash
+                    Ok(&hasher.finalize()[..] == hash)
                 }
                 "SHA512" => {
                     // SHA-512
                     let mut hasher = Sha512::new();
                     hasher.update(secret.as_bytes());
-                    String::from_utf8(base64_encode(&hasher.finalize()[..]).unwrap_or_default())
+                    Ok(
+                        String::from_utf8(
+                            base64_encode(&hasher.finalize()[..]).unwrap_or_default(),
+                        )
                         .unwrap()
-                        == hashed_secret
+                            == hashed_secret,
+                    )
                 }
                 "SSHA512" => {
                     // Salted SHA-512
@@ -173,43 +236,37 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
                     let mut hasher = Sha512::new();
                     hasher.update(secret.as_bytes());
                     hasher.update(salt);
-                    &hasher.finalize()[..] == hash
+                    Ok(&hasher.finalize()[..] == hash)
                 }
                 "MD5" => {
                     // MD5
                     let digest = md5::compute(secret.as_bytes());
-                    String::from_utf8(base64_encode(&digest[..]).unwrap_or_default()).unwrap()
-                        == hashed_secret
+                    Ok(
+                        String::from_utf8(base64_encode(&digest[..]).unwrap_or_default()).unwrap()
+                            == hashed_secret,
+                    )
                 }
                 "CRYPT" | "crypt" => {
                     if hashed_secret.starts_with('$') {
                         verify_hash_prefix(hashed_secret, secret).await
                     } else {
                         // Unix crypt
-                        unix_crypt::verify(secret, hashed_secret)
+                        Ok(unix_crypt::verify(secret, hashed_secret))
                     }
                 }
-                "PLAIN" | "plain" | "CLEAR" | "clear" => hashed_secret == secret,
-                _ => {
-                    tracing::warn!(
-                        context = "directory",
-                        event = "error",
-                        algorithm = algo,
-                        "Unsupported password hash algorithm"
-                    );
-                    false
-                }
+                "PLAIN" | "plain" | "CLEAR" | "clear" => Ok(hashed_secret == secret),
+                _ => Err(trc::AuthEvent::Error
+                    .ctx(trc::Key::Reason, "Unsupported algorithm")
+                    .details(hashed_secret.to_string())),
             }
         } else {
-            tracing::warn!(
-                context = "directory",
-                event = "error",
-                hash = hashed_secret,
-                "Invalid password hash"
-            );
-            false
+            Err(trc::AuthEvent::Error
+                .into_err()
+                .details(hashed_secret.to_string()))
         }
+    } else if !hashed_secret.is_empty() {
+        Ok(hashed_secret == secret)
     } else {
-        hashed_secret == secret
+        Ok(false)
     }
 }

@@ -1,28 +1,12 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+use common::{auth::AccessToken, Server};
+use email::mailbox::MailboxFnc;
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::{mailbox::QueryArguments, Object},
     types::{acl::Acl, collection::Collection, property::Property, value::Value},
@@ -33,14 +17,23 @@ use store::{
     roaring::RoaringBitmap,
 };
 
-use crate::{auth::AccessToken, UpdateResults, JMAP};
+use crate::{auth::acl::AclMethods, JmapMethods, UpdateResults};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn mailbox_query(
+pub trait MailboxQuery: Sync + Send {
+    fn mailbox_query(
+        &self,
+        request: QueryRequest<QueryArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<QueryResponse>> + Send;
+}
+
+impl MailboxQuery for Server {
+    async fn mailbox_query(
         &self,
         mut request: QueryRequest<QueryArguments>,
         access_token: &AccessToken,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let sort_as_tree = request.arguments.sort_as_tree.unwrap_or(false);
         let filter_as_tree = request.arguments.filter_as_tree.unwrap_or(false);
@@ -97,7 +90,11 @@ impl JMAP {
                     filters.push(cond.into());
                 }
 
-                other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                other => {
+                    return Err(trc::JmapEvent::UnsupportedFilter
+                        .into_err()
+                        .details(other.to_string()))
+                }
             }
         }
 
@@ -117,7 +114,7 @@ impl JMAP {
         let mut tree = AHashMap::default();
         if (filter_as_tree || sort_as_tree)
             && (paginate.is_some()
-                || (response.total.map_or(false, |total| total > 0) && filter_as_tree))
+                || (response.total.is_some_and(|total| total > 0) && filter_as_tree))
         {
             for (document_id, value) in self
                 .get_properties::<Object<Value>, _, _>(
@@ -199,7 +196,11 @@ impl JMAP {
                         query::Comparator::field(Property::ParentId, comparator.is_ascending)
                     }
 
-                    other => return Err(MethodError::UnsupportedSort(other.to_string())),
+                    other => {
+                        return Err(trc::JmapEvent::UnsupportedSort
+                            .into_err()
+                            .details(other.to_string()))
+                    }
                 });
             }
 

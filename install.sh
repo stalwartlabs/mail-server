@@ -1,6 +1,12 @@
 #!/usr/bin/env sh
 # shellcheck shell=dash
 
+#
+# SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+#
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+#
+
 # Stalwart Mail Server install script -- based on the rustup installation script.
 
 set -e
@@ -69,6 +75,9 @@ main() {
     ensure mkdir -p "$_dir"
     ensure downloader "$_url" "$_file" "$_arch"
     ensure tar zxvf "$_file" -C "$_dir/bin"
+    if [ "$_component" = "stalwart-mail-foundationdb" ]; then
+        ignore mv "$_dir/bin/stalwart-mail-foundationdb" "$_dir/bin/stalwart-mail"
+    fi
     ignore chmod +x "$_dir/bin/stalwart-mail"
     ignore rm "$_file"
 
@@ -99,7 +108,7 @@ main() {
             ensure dscl /Local/Default -delete /Users/_stalwart-mail AuthenticationAuthority
             ensure dscl /Local/Default -delete /Users/_stalwart-mail PasswordPolicyOptions
         else
-            ensure useradd ${_account} -s /sbin/nologin -M
+            ensure useradd ${_account} -s /usr/sbin/nologin -M -r -U
         fi
     fi
 
@@ -121,7 +130,7 @@ main() {
     fi
 
     # Installation complete
-    local _host=$(hostname)
+    local _host=$(hostname -f)
     say "🎉 Installation complete! Continue the setup at http://$_host:8080/login"
 
     return 0
@@ -132,7 +141,7 @@ create_service_linux() {
     local _dir="$1"
     cat <<EOF | sed "s|__PATH__|$_dir|g" > /etc/systemd/system/stalwart-mail.service
 [Unit]
-Description=Stalwart Mail Server Server
+Description=Stalwart Mail Server
 Conflicts=postfix.service sendmail.service exim4.service
 ConditionPathExists=__PATH__/etc/config.toml
 After=network-online.target
@@ -145,7 +154,6 @@ KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5
 ExecStart=__PATH__/bin/stalwart-mail --config=__PATH__/etc/config.toml
-PermissionsStartOnly=true
 SyslogIdentifier=stalwart-mail
 User=stalwart-mail
 Group=stalwart-mail

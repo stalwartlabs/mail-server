@@ -1,27 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
+
+use hyper::HeaderMap;
+use utils::HttpLimitResponse;
 
 use crate::USER_AGENT;
 
@@ -30,11 +16,13 @@ use self::config::ConfigManager;
 pub mod backup;
 pub mod boot;
 pub mod config;
+pub mod console;
 pub mod reload;
 pub mod restore;
 pub mod webadmin;
 
-const DEFAULT_SPAMFILTER_URL: &str = "https://get.stalw.art/resources/config/spamfilter.toml";
+const DEFAULT_SPAMFILTER_URL: &str =
+    "https://github.com/stalwartlabs/spam-filter/releases/latest/download/spam-filter.toml";
 const DEFAULT_WEBADMIN_URL: &str =
     "https://github.com/stalwartlabs/webadmin/releases/latest/download/webadmin.zip";
 pub const WEBADMIN_KEY: &[u8] = "STALWART_WEBADMIN".as_bytes();
@@ -42,41 +30,86 @@ pub const WEBADMIN_KEY: &[u8] = "STALWART_WEBADMIN".as_bytes();
 impl ConfigManager {
     pub async fn fetch_resource(&self, resource_id: &str) -> Result<Vec<u8>, String> {
         if let Some(url) = self
-            .get(&format!("config.resource.{resource_id}"))
+            .get(&format!("{resource_id}.resource"))
             .await
             .map_err(|err| {
-                format!("Failed to fetch configuration key 'resource.{resource_id}': {err}",)
+                format!("Failed to fetch configuration key '{resource_id}.resource': {err}",)
             })?
         {
-            fetch_resource(&url).await
+            fetch_resource(&url, None, Duration::from_secs(60), MAX_SIZE).await
         } else {
             match resource_id {
-                "spam-filter" => fetch_resource(DEFAULT_SPAMFILTER_URL).await,
-                "webadmin" => fetch_resource(DEFAULT_WEBADMIN_URL).await,
+                "spam-filter" => {
+                    fetch_resource(
+                        DEFAULT_SPAMFILTER_URL,
+                        None,
+                        Duration::from_secs(60),
+                        MAX_SIZE,
+                    )
+                    .await
+                }
+                "webadmin" => {
+                    fetch_resource(
+                        DEFAULT_WEBADMIN_URL,
+                        None,
+                        Duration::from_secs(60),
+                        MAX_SIZE,
+                    )
+                    .await
+                }
                 _ => Err(format!("Unknown resource: {resource_id}")),
             }
         }
     }
 }
 
-async fn fetch_resource(url: &str) -> Result<Vec<u8>, String> {
+const MAX_SIZE: usize = 100 * 1024 * 1024;
+
+pub async fn fetch_resource(
+    url: &str,
+    headers: Option<HeaderMap>,
+    timeout: Duration,
+    max_size: usize,
+) -> Result<Vec<u8>, String> {
     if let Some(path) = url.strip_prefix("file://") {
         tokio::fs::read(path)
             .await
             .map_err(|err| format!("Failed to read {path}: {err}"))
     } else {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
+        let response = reqwest::Client::builder()
+            .timeout(timeout)
+            .danger_accept_invalid_certs(is_localhost_url(url))
             .user_agent(USER_AGENT)
             .build()
             .unwrap_or_default()
             .get(url)
+            .headers(headers.unwrap_or_default())
             .send()
             .await
-            .map_err(|err| format!("Failed to fetch {url}: {err}"))?
-            .bytes()
-            .await
-            .map_err(|err| format!("Failed to fetch {url}: {err}"))
-            .map(|bytes| bytes.to_vec())
+            .map_err(|err| format!("Failed to fetch {url}: {err}"))?;
+
+        if response.status().is_success() {
+            response
+                .bytes_with_limit(max_size)
+                .await
+                .map_err(|err| format!("Failed to fetch {url}: {err}"))
+                .and_then(|bytes| bytes.ok_or_else(|| format!("Resource too large: {url}")))
+        } else {
+            let code = response.status().canonical_reason().unwrap_or_default();
+            let reason = response.text().await.unwrap_or_default();
+
+            Err(format!(
+                "Failed to fetch {url}: Code: {code}, Details: {reason}",
+            ))
+        }
     }
+}
+
+pub fn is_localhost_url(url: &str) -> bool {
+    url.split_once("://")
+        .map(|(_, url)| url.split_once('/').map_or(url, |(host, _)| host))
+        .is_some_and(|host| {
+            let host = host.rsplit_once(':').map_or(host, |(host, _)| host);
+            host == "localhost" || host == "127.0.0.1" || host == "[::1]"
+        })
 }

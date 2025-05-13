@@ -1,28 +1,17 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+use std::future::Future;
+
+use common::{auth::AccessToken, Server};
+use directory::{
+    backend::internal::{manage::ManageDirectory, PrincipalField},
+    Permission, Type,
+};
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use mail_auth::report::{
     tlsrpt::{FailureDetails, Policy, TlsReport},
     Feedback,
@@ -33,12 +22,10 @@ use store::{
     write::{key::DeserializeBigEndian, BatchBuilder, Bincode, ReportClass, ValueClass},
     Deserialize, IterateParams, ValueKey, U64_LEN,
 };
+use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 use super::decode_path_element;
 
@@ -48,129 +35,86 @@ enum ReportType {
     Arf,
 }
 
-impl JMAP {
-    pub async fn handle_manage_reports(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
+pub trait ManageReports: Sync + Send {
+    fn handle_manage_reports(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl ManageReports for Server {
+    async fn handle_manage_reports(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        access_token: &AccessToken,
+    ) -> trc::Result<HttpResponse> {
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+
+        // Limit to tenant domains
+        let mut tenant_domains: Option<Vec<String>> = None;
+        #[cfg(feature = "enterprise")]
+        if self.core.is_enterprise_edition() {
+            if let Some(tenant) = access_token.tenant {
+                tenant_domains = self
+                    .core
+                    .storage
+                    .data
+                    .list_principals(
+                        None,
+                        tenant.id.into(),
+                        &[Type::Domain],
+                        &[PrincipalField::Name],
+                        0,
+                        0,
+                    )
+                    .await
+                    .map(|principals| {
+                        principals
+                            .items
+                            .into_iter()
+                            .filter_map(|mut p| p.take_str(PrincipalField::Name))
+                            .collect::<Vec<_>>()
+                    })
+                    .caused_by(trc::location!())?
+                    .into();
+            }
+        }
+
+        // SPDX-SnippetEnd
+
         match (
             path.get(1).copied().unwrap_or_default(),
             path.get(2).copied().map(decode_path_element),
             req.method(),
         ) {
             (class @ ("dmarc" | "tls" | "arf"), None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::IncomingReportList)?;
+
                 let params = UrlParams::new(req.uri().query());
-                let filter = params.get("text");
-                let page: usize = params.parse::<usize>("page").unwrap_or_default();
-                let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
 
-                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
-                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
-                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+                let IncomingReports { ids, total } =
+                    fetch_incoming_reports(self, class, &params, &tenant_domains).await?;
 
-                let (from_key, to_key, typ) = match class {
-                    "dmarc" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
-                            id: range_start,
-                            expires: 0,
-                        })),
-                        ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
-                            id: range_end,
-                            expires: u64::MAX,
-                        })),
-                        ReportType::Dmarc,
-                    ),
-                    "tls" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Tls {
-                            id: range_start,
-                            expires: 0,
-                        })),
-                        ValueKey::from(ValueClass::Report(ReportClass::Tls {
-                            id: range_end,
-                            expires: u64::MAX,
-                        })),
-                        ReportType::Tls,
-                    ),
-                    "arf" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Arf {
-                            id: range_start,
-                            expires: 0,
-                        })),
-                        ValueKey::from(ValueClass::Report(ReportClass::Arf {
-                            id: range_end,
-                            expires: u64::MAX,
-                        })),
-                        ReportType::Arf,
-                    ),
-                    _ => unreachable!(),
-                };
-
-                let mut results = Vec::new();
-                let mut offset = page.saturating_sub(1) * limit;
-                let mut total = 0;
-                let mut last_id = 0;
-                let result = self
-                    .core
-                    .storage
-                    .data
-                    .iterate(
-                        IterateParams::new(from_key, to_key)
-                            .set_values(filter.is_some())
-                            .descending(),
-                        |key, value| {
-                            // Skip chunked records
-                            let id = key.deserialize_be_u64(U64_LEN + 1)?;
-                            if id == last_id {
-                                return Ok(true);
-                            }
-                            last_id = id;
-
-                            // TODO: Support filtering chunked records (over 10MB) on FDB
-                            let matches = filter.map_or(true, |filter| match typ {
-                                ReportType::Dmarc => Bincode::<
-                                    IncomingReport<mail_auth::report::Report>,
-                                >::deserialize(
-                                    value
-                                )
-                                .map_or(false, |v| v.inner.contains(filter)),
-                                ReportType::Tls => {
-                                    Bincode::<IncomingReport<TlsReport>>::deserialize(value)
-                                        .map_or(false, |v| v.inner.contains(filter))
-                                }
-                                ReportType::Arf => {
-                                    Bincode::<IncomingReport<Feedback>>::deserialize(value)
-                                        .map_or(false, |v| v.inner.contains(filter))
-                                }
-                            });
-                            if matches {
-                                if offset == 0 {
-                                    if limit == 0 || results.len() < limit {
-                                        results.push(format!(
-                                            "{}_{}",
-                                            id,
-                                            key.deserialize_be_u64(1)?
-                                        ));
-                                    }
-                                } else {
-                                    offset -= 1;
-                                }
-
-                                total += 1;
-                            }
-
-                            Ok(max_total == 0 || total < max_total)
+                Ok(JsonResponse::new(json!({
+                        "data": {
+                            "items": ids.into_iter().map(|(id, expires)| {
+                                format!("{id}_{expires}")
+                            }).collect::<Vec<_>>(),
+                            "total": total,
                         },
-                    )
-                    .await;
-                match result {
-                    Ok(_) => JsonResponse::new(json!({
-                            "data": {
-                                "items": results,
-                                "total": total,
-                            },
-                    }))
-                    .into_http_response(),
-                    Err(err) => err.into_http_response(),
-                }
+                }))
+                .into_http_response())
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::IncomingReportGet)?;
+
                 if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     match &report_id {
                         ReportClass::Tls { .. } => match self
@@ -180,14 +124,19 @@ impl JMAP {
                             .get_value::<Bincode<IncomingReport<TlsReport>>>(ValueKey::from(
                                 ValueClass::Report(report_id),
                             ))
-                            .await
+                            .await?
                         {
-                            Ok(Some(report)) => JsonResponse::new(json!({
-                                    "data": report.inner,
-                            }))
-                            .into_http_response(),
-                            Ok(None) => RequestError::not_found().into_http_response(),
-                            Err(err) => err.into_http_response(),
+                            Some(report)
+                                if tenant_domains
+                                    .as_ref()
+                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
+                            {
+                                Ok(JsonResponse::new(json!({
+                                        "data": report.inner,
+                                }))
+                                .into_http_response())
+                            }
+                            _ => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                         ReportClass::Dmarc { .. } => match self
                             .core
@@ -196,14 +145,19 @@ impl JMAP {
                             .get_value::<Bincode<IncomingReport<mail_auth::report::Report>>>(
                                 ValueKey::from(ValueClass::Report(report_id)),
                             )
-                            .await
+                            .await?
                         {
-                            Ok(Some(report)) => JsonResponse::new(json!({
-                                    "data": report.inner,
-                            }))
-                            .into_http_response(),
-                            Ok(None) => RequestError::not_found().into_http_response(),
-                            Err(err) => err.into_http_response(),
+                            Some(report)
+                                if tenant_domains
+                                    .as_ref()
+                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
+                            {
+                                Ok(JsonResponse::new(json!({
+                                        "data": report.inner,
+                                }))
+                                .into_http_response())
+                            }
+                            _ => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                         ReportClass::Arf { .. } => match self
                             .core
@@ -212,37 +166,276 @@ impl JMAP {
                             .get_value::<Bincode<IncomingReport<Feedback>>>(ValueKey::from(
                                 ValueClass::Report(report_id),
                             ))
-                            .await
+                            .await?
                         {
-                            Ok(Some(report)) => JsonResponse::new(json!({
-                                    "data": report.inner,
-                            }))
-                            .into_http_response(),
-                            Ok(None) => RequestError::not_found().into_http_response(),
-                            Err(err) => err.into_http_response(),
+                            Some(report)
+                                if tenant_domains
+                                    .as_ref()
+                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
+                            {
+                                Ok(JsonResponse::new(json!({
+                                        "data": report.inner,
+                                }))
+                                .into_http_response())
+                            }
+                            _ => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                     }
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
+            }
+            (class @ ("dmarc" | "tls" | "arf"), None, &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::IncomingReportDelete)?;
+
+                let params = UrlParams::new(req.uri().query());
+
+                let IncomingReports { ids, .. } =
+                    fetch_incoming_reports(self, class, &params, &tenant_domains).await?;
+
+                let found = !ids.is_empty();
+                if found {
+                    let class = match class {
+                        "dmarc" => ReportClass::Dmarc { id: 0, expires: 0 },
+                        "tls" => ReportClass::Tls { id: 0, expires: 0 },
+                        "arf" => ReportClass::Arf { id: 0, expires: 0 },
+                        _ => unreachable!(),
+                    };
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        let mut batch = BatchBuilder::new();
+
+                        for (id, expires) in ids {
+                            let report_id = match &class {
+                                ReportClass::Dmarc { .. } => ReportClass::Dmarc { id, expires },
+                                ReportClass::Tls { .. } => ReportClass::Tls { id, expires },
+                                ReportClass::Arf { .. } => ReportClass::Arf { id, expires },
+                            };
+
+                            batch.clear(ValueClass::Report(report_id));
+
+                            if batch.ops.len() > 1000 {
+                                if let Err(err) =
+                                    server.core.storage.data.write(batch.build()).await
+                                {
+                                    trc::error!(err.caused_by(trc::location!()));
+                                }
+                                batch = BatchBuilder::new();
+                            }
+                        }
+
+                        if !batch.ops.is_empty() {
+                            if let Err(err) = server.core.storage.data.write(batch.build()).await {
+                                trc::error!(err.caused_by(trc::location!()));
+                            }
+                        }
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": found,
+                }))
+                .into_http_response())
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::IncomingReportDelete)?;
+
                 if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
+                    if let Some(domains) = &tenant_domains {
+                        let is_tenant_report = match &report_id {
+                            ReportClass::Tls { .. } => self
+                                .core
+                                .storage
+                                .data
+                                .get_value::<Bincode<IncomingReport<TlsReport>>>(ValueKey::from(
+                                    ValueClass::Report(report_id.clone()),
+                                ))
+                                .await?
+                                .is_none_or( |report| report.inner.has_domain(domains)),
+                            ReportClass::Dmarc { .. } => self
+                                .core
+                                .storage
+                                .data
+                                .get_value::<Bincode<IncomingReport<mail_auth::report::Report>>>(
+                                    ValueKey::from(ValueClass::Report(report_id.clone())),
+                                )
+                                .await?
+                                .is_none_or( |report| report.inner.has_domain(domains)),
+
+                            ReportClass::Arf { .. } => self
+                                .core
+                                .storage
+                                .data
+                                .get_value::<Bincode<IncomingReport<Feedback>>>(ValueKey::from(
+                                    ValueClass::Report(report_id.clone()),
+                                ))
+                                .await?
+                                .is_none_or( |report| report.inner.has_domain(domains)),
+                        };
+
+                        if !is_tenant_report {
+                            return Err(trc::ResourceEvent::NotFound.into_err());
+                        }
+                    }
+
                     let mut batch = BatchBuilder::new();
                     batch.clear(ValueClass::Report(report_id));
-                    let result = self.core.storage.data.write(batch.build()).await.is_ok();
+                    self.core.storage.data.write(batch.build()).await?;
 
-                    JsonResponse::new(json!({
-                            "data": result,
+                    Ok(JsonResponse::new(json!({
+                            "data": true,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
-            _ => RequestError::not_found().into_http_response(),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
+}
+
+struct IncomingReports {
+    ids: Vec<(u64, u64)>,
+    total: usize,
+}
+
+async fn fetch_incoming_reports(
+    server: &Server,
+    class: &str,
+    params: &UrlParams<'_>,
+    tenant_domains: &Option<Vec<String>>,
+) -> trc::Result<IncomingReports> {
+    let filter = params.get("text");
+    let page: usize = params.parse::<usize>("page").unwrap_or_default();
+    let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
+
+    let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+    let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+    let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
+    let (from_key, to_key, typ) = match class {
+        "dmarc" => (
+            ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
+                id: range_start,
+                expires: 0,
+            })),
+            ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
+                id: range_end,
+                expires: u64::MAX,
+            })),
+            ReportType::Dmarc,
+        ),
+        "tls" => (
+            ValueKey::from(ValueClass::Report(ReportClass::Tls {
+                id: range_start,
+                expires: 0,
+            })),
+            ValueKey::from(ValueClass::Report(ReportClass::Tls {
+                id: range_end,
+                expires: u64::MAX,
+            })),
+            ReportType::Tls,
+        ),
+        "arf" => (
+            ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                id: range_start,
+                expires: 0,
+            })),
+            ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                id: range_end,
+                expires: u64::MAX,
+            })),
+            ReportType::Arf,
+        ),
+        _ => unreachable!(),
+    };
+
+    let mut results = IncomingReports {
+        ids: Vec::new(),
+        total: 0,
+    };
+    let mut offset = page.saturating_sub(1) * limit;
+    let mut last_id = 0;
+    let has_filters = filter.is_some() || tenant_domains.is_some();
+
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(from_key, to_key)
+                .set_values(has_filters)
+                .descending(),
+            |key, value| {
+                // Skip chunked records
+                let id = key.deserialize_be_u64(U64_LEN + 1)?;
+                if id == last_id {
+                    return Ok(true);
+                }
+                last_id = id;
+
+                // TODO: Support filtering chunked records (over 10MB) on FDB
+                let matches = if has_filters {
+                    match typ {
+                        ReportType::Dmarc => {
+                            let report =
+                                Bincode::<IncomingReport<mail_auth::report::Report>>::deserialize(
+                                    value,
+                                )
+                                .caused_by(trc::location!())?
+                                .inner;
+
+                            filter.is_none_or( |f| report.contains(f))
+                                && tenant_domains
+                                    .as_ref()
+                                    .is_none_or( |domains| report.has_domain(domains))
+                        }
+                        ReportType::Tls => {
+                            let report = Bincode::<IncomingReport<TlsReport>>::deserialize(value)
+                                .caused_by(trc::location!())?
+                                .inner;
+
+                            filter.is_none_or( |f| report.contains(f))
+                                && tenant_domains
+                                    .as_ref()
+                                    .is_none_or( |domains| report.has_domain(domains))
+                        }
+                        ReportType::Arf => {
+                            let report = Bincode::<IncomingReport<Feedback>>::deserialize(value)
+                                .caused_by(trc::location!())?
+                                .inner;
+
+                            filter.is_none_or( |f| report.contains(f))
+                                && tenant_domains
+                                    .as_ref()
+                                    .is_none_or( |domains| report.has_domain(domains))
+                        }
+                    }
+                } else {
+                    true
+                };
+
+                if matches {
+                    if offset == 0 {
+                        if limit == 0 || results.ids.len() < limit {
+                            results.ids.push((id, key.deserialize_be_u64(1)?));
+                        }
+                    } else {
+                        offset -= 1;
+                    }
+
+                    results.total += 1;
+                }
+
+                Ok(max_total == 0 || results.total < max_total)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| results)
 }
 
 fn parse_incoming_report_id(class: &str, id: &str) -> Option<ReportClass> {
@@ -279,7 +472,7 @@ impl Contains for mail_auth::report::Report {
             || self.report_id().contains(text)
             || self
                 .extra_contact_info()
-                .map_or(false, |c| c.to_lowercase().contains(text))
+                .is_some_and(|c| c.to_lowercase().contains(text))
             || self.records().iter().any(|record| record.contains(text))
     }
 }
@@ -288,22 +481,22 @@ impl Contains for mail_auth::report::Record {
     fn contains(&self, filter: &str) -> bool {
         self.envelope_from().contains(filter)
             || self.header_from().contains(filter)
-            || self.envelope_to().map_or(false, |to| to.contains(filter))
+            || self.envelope_to().is_some_and(|to| to.contains(filter))
             || self.dkim_auth_result().iter().any(|dkim| {
                 dkim.domain().contains(filter)
                     || dkim.selector().contains(filter)
                     || dkim
                         .human_result()
                         .as_ref()
-                        .map_or(false, |r| r.contains(filter))
+                        .is_some_and(|r| r.contains(filter))
             })
             || self.spf_auth_result().iter().any(|spf| {
                 spf.domain().contains(filter)
-                    || spf.human_result().map_or(false, |r| r.contains(filter))
+                    || spf.human_result().is_some_and(|r| r.contains(filter))
             })
             || self
                 .source_ip()
-                .map_or(false, |ip| ip.to_string().contains(filter))
+                .is_some_and(|ip| ip.to_string().contains(filter))
     }
 }
 
@@ -311,11 +504,11 @@ impl Contains for TlsReport {
     fn contains(&self, text: &str) -> bool {
         self.organization_name
             .as_ref()
-            .map_or(false, |o| o.to_lowercase().contains(text))
+            .is_some_and(|o| o.to_lowercase().contains(text))
             || self
                 .contact_info
                 .as_ref()
-                .map_or(false, |c| c.to_lowercase().contains(text))
+                .is_some_and(|c| c.to_lowercase().contains(text))
             || self.report_id.contains(text)
             || self.policies.iter().any(|p| p.contains(text))
     }
@@ -341,30 +534,30 @@ impl Contains for Policy {
 impl Contains for FailureDetails {
     fn contains(&self, filter: &str) -> bool {
         self.sending_mta_ip
-            .map_or(false, |s| s.to_string().contains(filter))
+            .is_some_and(|s| s.to_string().contains(filter))
             || self
                 .receiving_ip
-                .map_or(false, |s| s.to_string().contains(filter))
+                .is_some_and(|s| s.to_string().contains(filter))
             || self
                 .receiving_mx_hostname
                 .as_ref()
-                .map_or(false, |s| s.contains(filter))
+                .is_some_and(|s| s.contains(filter))
             || self
                 .receiving_mx_helo
                 .as_ref()
-                .map_or(false, |s| s.contains(filter))
+                .is_some_and(|s| s.contains(filter))
             || self
                 .additional_information
                 .as_ref()
-                .map_or(false, |s| s.contains(filter))
+                .is_some_and(|s| s.contains(filter))
             || self
                 .failure_reason_code
                 .as_ref()
-                .map_or(false, |s| s.contains(filter))
+                .is_some_and(|s| s.contains(filter))
     }
 }
 
-impl<'x> Contains for Feedback<'x> {
+impl Contains for Feedback<'_> {
     fn contains(&self, text: &str) -> bool {
         // Check if any of the string fields contain the filter
         self.authentication_results()
@@ -372,29 +565,27 @@ impl<'x> Contains for Feedback<'x> {
             .any(|s| s.contains(text))
             || self
                 .original_envelope_id()
-                .map_or(false, |s| s.contains(text))
-            || self
-                .original_mail_from()
-                .map_or(false, |s| s.contains(text))
-            || self.original_rcpt_to().map_or(false, |s| s.contains(text))
+                .is_some_and(|s| s.contains(text))
+            || self.original_mail_from().is_some_and(|s| s.contains(text))
+            || self.original_rcpt_to().is_some_and(|s| s.contains(text))
             || self.reported_domain().iter().any(|s| s.contains(text))
             || self.reported_uri().iter().any(|s| s.contains(text))
-            || self.reporting_mta().map_or(false, |s| s.contains(text))
-            || self.user_agent().map_or(false, |s| s.contains(text))
-            || self.dkim_adsp_dns().map_or(false, |s| s.contains(text))
+            || self.reporting_mta().is_some_and(|s| s.contains(text))
+            || self.user_agent().is_some_and(|s| s.contains(text))
+            || self.dkim_adsp_dns().is_some_and(|s| s.contains(text))
             || self
                 .dkim_canonicalized_body()
-                .map_or(false, |s| s.contains(text))
+                .is_some_and(|s| s.contains(text))
             || self
                 .dkim_canonicalized_header()
-                .map_or(false, |s| s.contains(text))
-            || self.dkim_domain().map_or(false, |s| s.contains(text))
-            || self.dkim_identity().map_or(false, |s| s.contains(text))
-            || self.dkim_selector().map_or(false, |s| s.contains(text))
-            || self.dkim_selector_dns().map_or(false, |s| s.contains(text))
-            || self.spf_dns().map_or(false, |s| s.contains(text))
-            || self.message().map_or(false, |s| s.contains(text))
-            || self.headers().map_or(false, |s| s.contains(text))
+                .is_some_and(|s| s.contains(text))
+            || self.dkim_domain().is_some_and(|s| s.contains(text))
+            || self.dkim_identity().is_some_and(|s| s.contains(text))
+            || self.dkim_selector().is_some_and(|s| s.contains(text))
+            || self.dkim_selector_dns().is_some_and(|s| s.contains(text))
+            || self.spf_dns().is_some_and(|s| s.contains(text))
+            || self.message().is_some_and(|s| s.contains(text))
+            || self.headers().is_some_and(|s| s.contains(text))
     }
 }
 

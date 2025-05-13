@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
 use std::time::Duration;
 
 use utils::config::{utils::ParseValue, Config};
@@ -73,7 +79,7 @@ impl ReportConfig {
                 &TokenMap::default().with_variables(RCPT_DOMAIN_VARS),
             )
             .unwrap_or_else(|| {
-                IfBlock::new::<()>("report.submitter", [], "key_get('default', 'hostname')")
+                IfBlock::new::<()>("report.submitter", [], "config_get('server.hostname')")
             }),
             analysis: ReportAnalysis {
                 addresses: config
@@ -112,7 +118,7 @@ impl Report {
             address: IfBlock::new::<()>(
                 format!("report.{id}.from-address"),
                 [],
-                format!("'noreply-{id}@' + key_get('default', 'domain')"),
+                format!("'noreply-{id}@' + config_get('report.domain')"),
             ),
             subject: IfBlock::new::<()>(
                 format!("report.{id}.subject"),
@@ -125,7 +131,7 @@ impl Report {
             sign: IfBlock::new::<()>(
                 format!("report.{id}.sign"),
                 [],
-                "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
+                "['rsa-' + config_get('report.domain'), 'ed25519-' + config_get('report.domain')]",
             ),
             send: IfBlock::new::<()>(format!("report.{id}.send"), [], "[1, 1d]"),
         };
@@ -158,12 +164,12 @@ impl AggregateReport {
             address: IfBlock::new::<()>(
                 format!("report.{id}.aggregate.from-address"),
                 [],
-                format!("'noreply-{id}@' + key_get('default', 'domain')"),
+                format!("'noreply-{id}@' + config_get('report.domain')"),
             ),
             org_name: IfBlock::new::<()>(
                 format!("report.{id}.aggregate.org-name"),
                 [],
-                "key_get('default', 'domain')",
+                "config_get('report.domain')",
             ),
             contact_info: IfBlock::empty(format!("report.{id}.aggregate.contact-info")),
             send: IfBlock::new::<AggregateFrequency>(
@@ -174,7 +180,7 @@ impl AggregateReport {
             sign: IfBlock::new::<()>(
                 format!("report.{id}.aggregate.sign"),
                 [],
-                "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
+                "['rsa-' + config_get('report.domain'), 'ed25519-' + config_get('report.domain')]",
             ),
             max_size: IfBlock::new::<()>(format!("report.{id}.aggregate.max-size"), [], "26214400"),
         };
@@ -208,7 +214,7 @@ impl Default for ReportConfig {
 }
 
 impl ParseValue for AggregateFrequency {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         match value {
             "daily" | "day" => Ok(AggregateFrequency::Daily),
             "hourly" | "hour" => Ok(AggregateFrequency::Hourly),
@@ -261,7 +267,7 @@ impl ConstantValue for AggregateFrequency {
 }
 
 impl ParseValue for AddressMatch {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         if let Some(value) = value.strip_prefix('*').map(|v| v.trim()) {
             if !value.is_empty() {
                 return Ok(AddressMatch::EndsWith(value.to_lowercase()));

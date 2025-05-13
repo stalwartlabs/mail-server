@@ -1,41 +1,25 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 use deadpool::{
-    managed::{Manager, Pool, PoolError},
+    managed::{Manager, Pool},
     Runtime,
 };
 use redis::{
     cluster::{ClusterClient, ClusterClientBuilder},
-    Client, RedisError,
+    Client,
 };
 use utils::config::{utils::AsKey, Config};
 
 pub mod lookup;
 pub mod pool;
 
+#[derive(Debug)]
 pub struct RedisStore {
     pool: RedisPool,
 }
@@ -166,7 +150,7 @@ fn build_pool<M: Manager>(
     config: &mut Config,
     prefix: &str,
     manager: M,
-) -> utils::config::Result<Pool<M>> {
+) -> Result<Pool<M>, String> {
     Pool::builder(manager)
         .runtime(Runtime::Tokio1)
         .max_size(
@@ -199,20 +183,16 @@ fn build_pool<M: Manager>(
         })
 }
 
-impl From<PoolError<RedisError>> for crate::Error {
-    fn from(value: PoolError<RedisError>) -> Self {
-        crate::Error::InternalError(format!("Redis pool error: {}", value))
-    }
+#[inline(always)]
+fn into_error(err: impl Display) -> trc::Error {
+    trc::StoreEvent::RedisError.reason(err)
 }
 
-impl From<PoolError<crate::Error>> for crate::Error {
-    fn from(value: PoolError<crate::Error>) -> Self {
-        crate::Error::InternalError(format!("Connection pool {}", value))
-    }
-}
-
-impl From<RedisError> for crate::Error {
-    fn from(value: RedisError) -> Self {
-        crate::Error::InternalError(format!("Redis error: {}", value))
+impl std::fmt::Debug for RedisPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Single(_) => f.debug_tuple("Single").finish(),
+            Self::Cluster(_) => f.debug_tuple("Cluster").finish(),
+        }
     }
 }

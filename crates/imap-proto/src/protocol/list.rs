@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use crate::utf7::utf7_encode;
 
@@ -167,15 +150,15 @@ impl TryFrom<&str> for Attribute {
     type Error = ();
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "archive" => Ok(Attribute::Archive),
-            "drafts" => Ok(Attribute::Drafts),
-            "junk" => Ok(Attribute::Junk),
-            "sent" => Ok(Attribute::Sent),
-            "trash" => Ok(Attribute::Trash),
-            "important" => Ok(Attribute::Important),
-            _ => Err(()),
-        }
+        hashify::tiny_map!(value.as_bytes(),
+            "archive" => Attribute::Archive,
+            "drafts" => Attribute::Drafts,
+            "junk" => Attribute::Junk,
+            "sent" => Attribute::Sent,
+            "trash" => Attribute::Trash,
+            "important" => Attribute::Important,
+        )
+        .ok_or(())
     }
 }
 
@@ -266,13 +249,27 @@ impl ImapResponse for Response {
     fn serialize(self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(100);
 
-        for list_item in &self.list_items {
-            list_item.serialize(&mut buf, self.is_rev2, self.is_lsub);
+        match (self.list_items.is_empty(), self.status_items.is_empty()) {
+            (false, false) => {
+                for (list_item, status_item) in self.list_items.iter().zip(self.status_items.iter())
+                {
+                    list_item.serialize(&mut buf, self.is_rev2, self.is_lsub);
+                    status_item.serialize(&mut buf, self.is_rev2);
+                }
+            }
+            (false, true) => {
+                for list_item in &self.list_items {
+                    list_item.serialize(&mut buf, self.is_rev2, self.is_lsub);
+                }
+            }
+            (true, false) => {
+                for status_item in &self.status_items {
+                    status_item.serialize(&mut buf, self.is_rev2);
+                }
+            }
+            _ => (),
         }
 
-        for status_item in &self.status_items {
-            status_item.serialize(&mut buf, self.is_rev2);
-        }
         buf
     }
 }
@@ -382,8 +379,8 @@ mod tests {
         };
         let expected_v2 = concat!(
             "* LIST (\\Subscribed) \"/\" \"INBOX\"\r\n",
-            "* LIST () \"/\" \"foo\" (\"CHILDINFO\" (\"SUBSCRIBED\"))\r\n",
             "* STATUS \"INBOX\" (MESSAGES 17)\r\n",
+            "* LIST () \"/\" \"foo\" (\"CHILDINFO\" (\"SUBSCRIBED\"))\r\n",
             "* STATUS \"foo\" (MESSAGES 30 UNSEEN 29)\r\n",
         );
         let expected_v1 = concat!(

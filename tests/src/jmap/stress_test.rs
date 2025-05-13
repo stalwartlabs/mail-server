@@ -1,32 +1,16 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{sync::Arc, time::Duration};
 
 use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
+use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
+use email::mailbox::UidMailbox;
 use futures::future::join_all;
-use jmap::{mailbox::UidMailbox, JMAP};
 use jmap_client::{
     client::Client,
     core::set::{SetErrorType, SetObject},
@@ -40,13 +24,13 @@ use super::assert_is_empty;
 const TEST_USER_ID: u32 = 1;
 const NUM_PASSES: usize = 1;
 
-pub async fn test(server: Arc<JMAP>, mut client: Client) {
+pub async fn test(server: Server, mut client: Client) {
     println!("Running concurrency stress tests...");
     server
         .core
         .storage
         .data
-        .get_or_create_account_id("john")
+        .get_or_create_principal_id("john", directory::Type::Individual)
         .await
         .unwrap();
     client.set_default_account_id(Id::from(TEST_USER_ID).to_string());
@@ -55,7 +39,7 @@ pub async fn test(server: Arc<JMAP>, mut client: Client) {
     mailbox_tests(server.clone(), client.clone()).await;
 }
 
-async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
+async fn email_tests(server: Server, client: Arc<Client>) {
     for pass in 0..NUM_PASSES {
         println!(
             "----------------- EMAIL STRESS TEST {} -----------------",
@@ -81,13 +65,13 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
         let mut futures = Vec::new();
 
         for num in 0..1000 {
-            match rand::thread_rng().gen_range(0..3) {
+            match rand::rng().random_range(0..3) {
                 0 => {
                     let client = client.clone();
                     let mailboxes = mailboxes.clone();
                     futures.push(tokio::spawn(async move {
                         let mailbox_num =
-                            rand::thread_rng().gen_range::<usize, _>(0..mailboxes.len());
+                            rand::rng().random_range::<usize, _>(0..mailboxes.len());
                         let _message_id = client
                             .email_import(
                                 format!(
@@ -123,7 +107,7 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                             req.query_email();
                             let ids = req.send_query_email().await.unwrap().take_ids();
                             if !ids.is_empty() {
-                                let message_id = &ids[rand::thread_rng().gen_range(0..ids.len())];
+                                let message_id = &ids[rand::rng().random_range(0..ids.len())];
                                 /*println!(
                                     "Deleting message {}.",
                                     Id::from_bytes(message_id.as_bytes()).unwrap().document_id()
@@ -175,14 +159,14 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                             .take_list();
 
                         if !emails.is_empty() {
-                            let message = &emails[rand::thread_rng().gen_range(0..emails.len())];
+                            let message = &emails[rand::rng().random_range(0..emails.len())];
                             let message_id = message.id().unwrap();
                             let mailbox_ids = message.mailbox_ids();
                             assert_eq!(mailbox_ids.len(), 1, "{:#?}", message);
                             let mailbox_id = mailbox_ids.last().unwrap();
                             loop {
                                 let new_mailbox_id =
-                                    &mailboxes[rand::thread_rng().gen_range(0..mailboxes.len())];
+                                    &mailboxes[rand::rng().random_range(0..mailboxes.len())];
                                 if new_mailbox_id != mailbox_id {
                                     /*println!(
                                         "Moving message {} from {} to {}.",
@@ -209,7 +193,7 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                     }));
                 }
             }
-            tokio::time::sleep(Duration::from_millis(rand::thread_rng().gen_range(5..10))).await;
+            tokio::time::sleep(Duration::from_millis(rand::rng().random_range(5..10))).await;
         }
 
         join_all(futures).await;
@@ -287,7 +271,7 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
     }
 }
 
-async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
+async fn mailbox_tests(server: Server, client: Arc<Client>) {
     let mailboxes = Arc::new(vec![
         "test/test1/test2/test3".to_string(),
         "test1/test2/test3".to_string(),
@@ -301,7 +285,7 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
     println!("----------------- MAILBOX STRESS TEST -----------------");
 
     for _ in 0..1000 {
-        match rand::thread_rng().gen_range(0..=3) {
+        match rand::rng().random_range(0..=3) {
             0 => {
                 for pos in 0..mailboxes.len() {
                     let client = client.clone();
@@ -348,15 +332,15 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
                         .unwrap()
                         .take_ids();
                     if !ids.is_empty() {
-                        let id = ids.swap_remove(rand::thread_rng().gen_range(0..ids.len()));
-                        let sort_order = rand::thread_rng().gen_range(0..100);
+                        let id = ids.swap_remove(rand::rng().random_range(0..ids.len()));
+                        let sort_order = rand::rng().random_range(0..100);
                         //println!("Updating mailbox {}.", id);
                         client.mailbox_update_sort_order(&id, sort_order).await.ok();
                     }
                 }));
             }
         }
-        tokio::time::sleep(Duration::from_millis(rand::thread_rng().gen_range(5..10))).await;
+        tokio::time::sleep(Duration::from_millis(rand::rng().random_range(5..10))).await;
     }
 
     join_all(futures).await;
@@ -437,7 +421,7 @@ async fn delete_mailbox(client: &Client, mailbox_id: &str) {
             Err(err) => match err {
                 jmap_client::Error::Set(_) => break,
                 jmap_client::Error::Transport(_) => {
-                    let backoff = rand::thread_rng().gen_range(50..=300);
+                    let backoff = rand::rng().random_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
                 }
                 _ => panic!("Failed: {:?}", err),

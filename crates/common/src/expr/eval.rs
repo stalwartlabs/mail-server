@@ -1,142 +1,232 @@
 /*
- * Copyright (c) 2020-2023, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 
-use crate::Core;
+use hyper::StatusCode;
+use trc::EvalEvent;
+
+use crate::Server;
 
 use super::{
     functions::{ResolveVariable, FUNCTIONS},
     if_block::IfBlock,
-    BinaryOperator, Constant, Expression, ExpressionItem, UnaryOperator, Variable,
+    BinaryOperator, Constant, Expression, ExpressionItem, Setting, UnaryOperator, Variable,
 };
 
-impl Core {
+impl Server {
     pub async fn eval_if<'x, R: TryFrom<Variable<'x>>, V: ResolveVariable>(
-        &self,
+        &'x self,
         if_block: &'x IfBlock,
         resolver: &'x V,
+        session_id: u64,
     ) -> Option<R> {
         if if_block.is_empty() {
-            tracing::trace!(context = "eval_if", property = if_block.key, result = "");
+            trc::event!(
+                Eval(EvalEvent::Result),
+                SpanId = session_id,
+                Id = if_block.key.clone(),
+                Result = ""
+            );
 
             return None;
         }
 
-        let result = if_block.eval(resolver, self, &if_block.key).await;
+        match (EvalContext {
+            resolver,
+            core: self,
+            expr: if_block,
+            captures: Vec::new(),
+            session_id,
+        })
+        .eval()
+        .await
+        {
+            Ok(result) => {
+                trc::event!(
+                    Eval(EvalEvent::Result),
+                    SpanId = session_id,
+                    Id = if_block.key.clone(),
+                    Result = format!("{result:?}"),
+                );
 
-        tracing::trace!(context = "eval_if",
-                property = if_block.key,
-                result = ?result,
-        );
+                match result.try_into() {
+                    Ok(value) => Some(value),
+                    Err(_) => {
+                        trc::event!(
+                            Eval(EvalEvent::Result),
+                            SpanId = session_id,
+                            Id = if_block.key.clone(),
+                            Result = "",
+                        );
 
-        match result.try_into() {
-            Ok(value) => Some(value),
-            Err(_) => None,
+                        None
+                    }
+                }
+            }
+            Err(err) => {
+                trc::event!(
+                    Eval(EvalEvent::Error),
+                    SpanId = session_id,
+                    Id = if_block.key.clone(),
+                    CausedBy = err,
+                );
+
+                None
+            }
         }
     }
 
     pub async fn eval_expr<'x, R: TryFrom<Variable<'x>>, V: ResolveVariable>(
-        &self,
+        &'x self,
         expr: &'x Expression,
         resolver: &'x V,
         expr_id: &str,
+        session_id: u64,
     ) -> Option<R> {
         if expr.is_empty() {
             return None;
         }
 
-        let result = expr.eval(resolver, self, expr_id, &mut Vec::new()).await;
+        match (EvalContext {
+            resolver,
+            core: self,
+            expr,
+            captures: &mut Vec::new(),
+            session_id,
+        })
+        .eval()
+        .await
+        {
+            Ok(result) => {
+                trc::event!(
+                    Eval(EvalEvent::Result),
+                    SpanId = session_id,
+                    Id = expr_id.to_string(),
+                    Result = format!("{result:?}"),
+                );
 
-        tracing::trace!(context = "eval_expr",
-                property = expr_id,
-                result = ?result,
-        );
+                match result.try_into() {
+                    Ok(value) => Some(value),
+                    Err(_) => {
+                        trc::event!(
+                            Eval(EvalEvent::Error),
+                            SpanId = session_id,
+                            Id = expr_id.to_string(),
+                            Details = "Failed to convert result",
+                        );
 
-        match result.try_into() {
-            Ok(value) => Some(value),
-            Err(_) => None,
+                        None
+                    }
+                }
+            }
+            Err(err) => {
+                trc::event!(
+                    Eval(EvalEvent::Error),
+                    SpanId = session_id,
+                    Id = expr_id.to_string(),
+                    CausedBy = err,
+                );
+
+                None
+            }
         }
     }
 }
 
-impl IfBlock {
-    pub async fn eval<'x, V: ResolveVariable>(
-        &'x self,
-        resolver: &'x V,
-        core: &Core,
-        property: &str,
-    ) -> Variable<'x> {
-        let mut captures = Vec::new();
+struct EvalContext<'x, V: ResolveVariable, T, C> {
+    resolver: &'x V,
+    core: &'x Server,
+    expr: &'x T,
+    captures: C,
+    session_id: u64,
+}
 
-        for if_then in &self.if_then {
-            if if_then
-                .expr
-                .eval(resolver, core, property, &mut captures)
-                .await
-                .to_bool()
+impl<'x, V: ResolveVariable> EvalContext<'x, V, IfBlock, Vec<String>> {
+    async fn eval(&mut self) -> trc::Result<Variable<'x>> {
+        for if_then in &self.expr.if_then {
+            if (EvalContext {
+                resolver: self.resolver,
+                core: self.core,
+                expr: &if_then.expr,
+                captures: &mut self.captures,
+                session_id: self.session_id,
+            })
+            .eval()
+            .await?
+            .to_bool()
             {
-                return if_then
-                    .then
-                    .eval(resolver, core, property, &mut captures)
-                    .await;
+                return (EvalContext {
+                    resolver: self.resolver,
+                    core: self.core,
+                    expr: &if_then.then,
+                    captures: &mut self.captures,
+                    session_id: self.session_id,
+                })
+                .eval()
+                .await;
             }
         }
 
-        self.default
-            .eval(resolver, core, property, &mut captures)
-            .await
+        (EvalContext {
+            resolver: self.resolver,
+            core: self.core,
+            expr: &self.expr.default,
+            captures: &mut self.captures,
+            session_id: self.session_id,
+        })
+        .eval()
+        .await
     }
 }
 
-impl Expression {
-    async fn eval<'x, 'y, V: ResolveVariable>(
-        &'x self,
-        resolver: &'x V,
-        core: &Core,
-        property: &str,
-        captures: &'y mut Vec<String>,
-    ) -> Variable<'x> {
+impl<'x, V: ResolveVariable> EvalContext<'x, V, Expression, &mut Vec<String>> {
+    async fn eval(&mut self) -> trc::Result<Variable<'x>> {
         let mut stack = Vec::new();
-        let mut exprs = self.items.iter();
+        let mut exprs = self.expr.items.iter();
 
         while let Some(expr) = exprs.next() {
             match expr {
                 ExpressionItem::Variable(v) => {
-                    stack.push(resolver.resolve_variable(*v));
+                    stack.push(self.resolver.resolve_variable(*v));
+                }
+                ExpressionItem::Global(v) => {
+                    stack.push(self.resolver.resolve_global(v));
                 }
                 ExpressionItem::Constant(val) => {
                     stack.push(Variable::from(val));
                 }
                 ExpressionItem::Capture(v) => {
                     stack.push(Variable::String(Cow::Owned(
-                        captures
+                        self.captures
                             .get(*v as usize)
                             .map(|v| v.as_str())
                             .unwrap_or_default()
                             .to_string(),
                     )));
                 }
+                ExpressionItem::Setting(setting) => match setting {
+                    Setting::Hostname => {
+                        stack.push(self.core.core.network.server_name.as_str().into())
+                    }
+                    Setting::ReportDomain => {
+                        stack.push(self.core.core.network.report_domain.as_str().into())
+                    }
+                    Setting::NodeId => stack.push(self.core.core.network.node_id.into()),
+                    Setting::Other(key) => stack.push(
+                        self.core
+                            .core
+                            .storage
+                            .config
+                            .get(key)
+                            .await?
+                            .unwrap_or_default()
+                            .into(),
+                    ),
+                },
                 ExpressionItem::UnaryOperator(op) => {
                     let value = stack.pop().unwrap_or_default();
                     stack.push(match op {
@@ -174,14 +264,18 @@ impl Expression {
                     let result = if let Some((_, fnc, _)) = FUNCTIONS.get(*id as usize) {
                         (fnc)(arguments)
                     } else {
-                        core.eval_fnc(*id - FUNCTIONS.len() as u32, arguments, property)
-                            .await
+                        Box::pin(self.core.eval_fnc(
+                            *id - FUNCTIONS.len() as u32,
+                            arguments,
+                            self.session_id,
+                        ))
+                        .await?
                     };
 
                     stack.push(result);
                 }
                 ExpressionItem::JmpIf { val, pos } => {
-                    if stack.last().map_or(false, |v| v.to_bool()) == *val {
+                    if stack.last().is_some_and(|v| v.to_bool()) == *val {
                         for _ in 0..*pos {
                             exprs.next();
                         }
@@ -205,23 +299,26 @@ impl Expression {
                     stack.push(Variable::Array(items));
                 }
                 ExpressionItem::Regex(regex) => {
-                    captures.clear();
+                    self.captures.clear();
                     let value = stack.pop().unwrap_or_default().into_string();
 
                     if let Some(captures_) = regex.captures(value.as_ref()) {
                         for capture in captures_.iter() {
-                            captures.push(capture.map_or("", |m| m.as_str()).to_string());
+                            self.captures
+                                .push(capture.map_or("", |m| m.as_str()).to_string());
                         }
                     }
 
-                    stack.push(Variable::Integer(!captures.is_empty() as i64));
+                    stack.push(Variable::Integer(!self.captures.is_empty() as i64));
                 }
             }
         }
 
-        stack.pop().unwrap_or_default()
+        Ok(stack.pop().unwrap_or_default())
     }
+}
 
+impl Expression {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -625,5 +722,19 @@ impl<'x> TryFrom<Variable<'x>> for usize {
 
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         value.to_usize().ok_or(())
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for StatusCode {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value.to_integer() {
+            Some(v) => match StatusCode::from_u16(v as u16) {
+                Ok(status) => Ok(status),
+                Err(_) => Err(()),
+            },
+            None => Err(()),
+        }
     }
 }

@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{io::Cursor, time::Duration};
 
@@ -27,7 +10,9 @@ use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
     store::deflate_test_resource,
 };
-use jmap::{email::ingest::IngestEmail, IngestError};
+use common::auth::AccessToken;
+
+use ::email::ingest::{EmailIngest, IngestEmail, IngestSource};
 use jmap_client::{email, mailbox::Role};
 use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{mailbox::mbox::MessageIterator, MessageParser};
@@ -259,32 +244,30 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                     .email_ingest(IngestEmail {
                         raw_message: message.contents(),
                         message: MessageParser::new().parse(message.contents()),
-                        account_id: 0,
-                        account_quota: 0,
+                        resource: AccessToken::from_id(0).as_resource_token(),
                         mailbox_ids: vec![mailbox_id],
                         keywords: vec![],
                         received_at: None,
-                        skip_duplicates: true,
-                        encrypt: false,
+                        source: IngestSource::Smtp {
+                            deliver_to: "test@domain.org",
+                        },
+                        spam_classify: false,
+                        spam_train: false,
+                        session_id: 0,
                     })
                     .await
                 {
                     Ok(_) => break,
-                    Err(IngestError::Temporary) if retry_count < 10 => {
-                        //println!("Retrying ingest for {}...", message.from());
-                        let backoff = rand::thread_rng().gen_range(50..=300);
-                        tokio::time::sleep(Duration::from_millis(backoff)).await;
-                        retry_count += 1;
-                        continue;
+                    Err(err) => {
+                        if err.is_assertion_failure() && retry_count < 10 {
+                            //println!("Retrying ingest for {}...", message.from());
+                            let backoff = rand::rng().random_range(50..=300);
+                            tokio::time::sleep(Duration::from_millis(backoff)).await;
+                            retry_count += 1;
+                            continue;
+                        }
+                        panic!("Failed to ingest message: {:?}", err);
                     }
-                    Err(IngestError::Permanent { .. }) => {
-                        panic!(
-                            "Failed to ingest message: {:?} {}",
-                            message.from(),
-                            String::from_utf8_lossy(message.contents())
-                        );
-                    }
-                    Err(err) => panic!("Failed to ingest message: {:?}", err),
                 }
             }
         }));

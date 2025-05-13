@@ -1,58 +1,40 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
 
-use crate::smtp::{build_smtp, session::TestSession, TempDir};
+use crate::smtp::{session::TestSession, TempDir, TestSMTP};
 use common::Core;
-use smtp::core::{Inner, Session, SessionAddress};
+use smtp::core::{Session, SessionAddress};
 use store::Stores;
 use utils::config::Config;
 
 const CONFIG: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/data.db"
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 match = "remote_ip = '10.0.0.1'"
 key = 'remote_ip'
-concurrency = 2
-rate = '3/1s'
+rate = '2/1s'
 enable = true
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 key = 'sender'
 rate = '2/1s'
 enable = true
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 key = ['remote_ip', 'rcpt']
 rate = '2/1s'
 enable = true
@@ -62,38 +44,19 @@ enable = true
 #[tokio::test]
 async fn throttle_inbound() {
     // Enable logging
-    /*let disable = "true";
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    crate::enable_logging();
 
     let tmp_dir = TempDir::new("smtp_inbound_throttle", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-    let inner = Inner::default();
-
-    // Test connection concurrency limit
-    let mut session = Session::test(build_smtp(core, inner));
-    session.data.remote_ip_str = "10.0.0.1".to_string();
-    assert!(
-        session.is_allowed().await,
-        "Concurrency limiter too strict."
-    );
-    assert!(
-        session.is_allowed().await,
-        "Concurrency limiter too strict."
-    );
-    assert!(!session.is_allowed().await, "Concurrency limiter failed.");
 
     // Test connection rate limit
-    session.in_flight.clear(); // Manually reset concurrency limiter
+    let mut session = Session::test(TestSMTP::from_core(core).server);
+    session.data.remote_ip_str = "10.0.0.1".to_string();
+    assert!(session.is_allowed().await, "Rate limiter too strict.");
     assert!(session.is_allowed().await, "Rate limiter too strict.");
     assert!(!session.is_allowed().await, "Rate limiter failed.");
-    session.in_flight.clear();
     tokio::time::sleep(Duration::from_millis(1100)).await;
     assert!(
         session.is_allowed().await,

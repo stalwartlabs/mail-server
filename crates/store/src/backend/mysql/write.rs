@@ -1,80 +1,70 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use futures::TryStreamExt;
-use mysql_async::{params, prelude::Queryable, Conn, Error, IsolationLevel, TxOpts};
+use mysql_async::{Conn, Error, IsolationLevel, TxOpts, params, prelude::Queryable};
 use rand::Rng;
 use roaring::RoaringBitmap;
 
 use crate::{
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    U32_LEN,
     write::{
-        key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
-        ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
+        RandomAvailableId, ValueOp, key::DeserializeBigEndian,
     },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
 };
 
-use super::MysqlStore;
+use super::{MysqlStore, into_error};
 
 #[derive(Debug)]
 enum CommitError {
     Mysql(mysql_async::Error),
-    Internal(crate::Error),
+    Internal(trc::Error),
     Retry,
 }
 
 impl MysqlStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
+    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
-        let mut conn = self.conn_pool.get_conn().await?;
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
 
         loop {
-            match self.write_trx(&mut conn, &batch).await {
+            let err = match self.write_trx(&mut conn, &batch).await {
                 Ok(result) => {
                     return Ok(result);
                 }
-                Err(CommitError::Mysql(Error::Server(err)))
+                Err(err) => err,
+            };
+
+            let _ = conn.query_drop("ROLLBACK;").await;
+
+            match err {
+                CommitError::Mysql(Error::Server(err))
                     if [1062, 1213].contains(&err.code)
                         && retry_count < MAX_COMMIT_ATTEMPTS
                         && start.elapsed() < MAX_COMMIT_TIME => {}
-                Err(CommitError::Retry) => {
+                CommitError::Retry => {
                     if retry_count > MAX_COMMIT_ATTEMPTS || start.elapsed() > MAX_COMMIT_TIME {
-                        return Err(crate::Error::AssertValueFailed);
+                        return Err(trc::StoreEvent::AssertValueFailed.into());
                     }
                 }
-                Err(CommitError::Mysql(err)) => {
-                    return Err(err.into());
+                CommitError::Mysql(err) => {
+                    return Err(into_error(err));
                 }
-                Err(CommitError::Internal(err)) => {
+                CommitError::Internal(err) => {
                     return Err(err);
                 }
             }
 
-            let backoff = rand::thread_rng().gen_range(50..=300);
+            let backoff = rand::rng().random_range(50..=300);
             tokio::time::sleep(Duration::from_millis(backoff)).await;
             retry_count += 1;
         }
@@ -125,10 +115,10 @@ impl MysqlStore {
                             let exists = asserted_values.get(&key);
                             let s = if let Some(exists) = exists {
                                 if *exists {
-                                    trx.prep(&format!("UPDATE {} SET v = :v WHERE k = :k", table))
+                                    trx.prep(format!("UPDATE {} SET v = :v WHERE k = :k", table))
                                         .await?
                                 } else {
-                                    trx.prep(&format!(
+                                    trx.prep(format!(
                                         "INSERT INTO {} (k, v) VALUES (:k, :v)",
                                         table
                                     ))
@@ -137,7 +127,7 @@ impl MysqlStore {
                             } else {
                                 trx
                             .prep(
-                                &format!("INSERT INTO {} (k, v) VALUES (:k, :v) ON DUPLICATE KEY UPDATE v = VALUES(v)", table),
+                                format!("INSERT INTO {} (k, v) VALUES (:k, :v) ON DUPLICATE KEY UPDATE v = VALUES(v)", table),
                             )
                             .await?
                             };
@@ -152,7 +142,9 @@ impl MysqlStore {
                                 Ok(_) => {
                                     if exists.is_some() && trx.affected_rows() == 0 {
                                         trx.rollback().await?;
-                                        return Err(crate::Error::AssertValueFailed.into());
+                                        return Err(trc::StoreEvent::AssertValueFailed
+                                            .into_err()
+                                            .into());
                                     }
                                 }
                                 Err(err) => {
@@ -164,7 +156,7 @@ impl MysqlStore {
                         ValueOp::AtomicAdd(by) => {
                             if *by >= 0 {
                                 let s = trx
-                                    .prep(&format!(
+                                    .prep(format!(
                                         concat!(
                                             "INSERT INTO {} (k, v) VALUES (?, ?) ",
                                             "ON DUPLICATE KEY UPDATE v = v + VALUES(v)"
@@ -175,14 +167,14 @@ impl MysqlStore {
                                 trx.exec_drop(&s, (key, by)).await?;
                             } else {
                                 let s = trx
-                                    .prep(&format!("UPDATE {table} SET v = v + ? WHERE k = ?"))
+                                    .prep(format!("UPDATE {table} SET v = v + ? WHERE k = ?"))
                                     .await?;
                                 trx.exec_drop(&s, (by, key)).await?;
                             }
                         }
                         ValueOp::AddAndGet(by) => {
                             let s = trx
-                                .prep(&format!(
+                                .prep(format!(
                                     concat!(
                                         "INSERT INTO {} (k, v) VALUES (:k, LAST_INSERT_ID(:v)) ",
                                         "ON DUPLICATE KEY UPDATE v = LAST_INSERT_ID(v + :v)"
@@ -205,7 +197,7 @@ impl MysqlStore {
                         }
                         ValueOp::Clear => {
                             let s = trx
-                                .prep(&format!("DELETE FROM {} WHERE k = ?", table))
+                                .prep(format!("DELETE FROM {} WHERE k = ?", table))
                                 .await?;
                             trx.exec_drop(&s, (key,)).await?;
                         }
@@ -271,20 +263,20 @@ impl MysqlStore {
                         if is_document_id {
                             trx.prep("INSERT INTO b (k) VALUES (?)").await?
                         } else {
-                            trx.prep(&format!("INSERT IGNORE INTO {} (k) VALUES (?)", table))
+                            trx.prep(format!("INSERT IGNORE INTO {} (k) VALUES (?)", table))
                                 .await?
                         }
                     } else {
-                        trx.prep(&format!("DELETE FROM {} WHERE k = ?", table))
+                        trx.prep(format!("DELETE FROM {} WHERE k = ?", table))
                             .await?
                     };
 
                     if let Err(err) = trx.exec_drop(&s, (key,)).await {
+                        trx.rollback().await?;
                         return Err(
                             if is_document_id
                                 && matches!(&err, Error::Server(err) if [1062, 1213].contains(&err.code))
                             {
-                                trx.rollback().await?;
                                 CommitError::Retry
                             } else {
                                 CommitError::Mysql(err)
@@ -316,7 +308,7 @@ impl MysqlStore {
                     let table = char::from(class.subspace(collection));
 
                     let s = trx
-                        .prep(&format!("SELECT v FROM {} WHERE k = ? FOR UPDATE", table))
+                        .prep(format!("SELECT v FROM {} WHERE k = ? FOR UPDATE", table))
                         .await?;
                     let (exists, matches) = trx
                         .exec_first::<Vec<u8>, _, _>(&s, (&key,))
@@ -325,7 +317,7 @@ impl MysqlStore {
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
                         trx.rollback().await?;
-                        return Err(crate::Error::AssertValueFailed.into());
+                        return Err(trc::StoreEvent::AssertValueFailed.into_err().into());
                     }
                     asserted_values.insert(key, exists);
                 }
@@ -335,35 +327,37 @@ impl MysqlStore {
         trx.commit().await.map(|_| result).map_err(Into::into)
     }
 
-    pub(crate) async fn purge_store(&self) -> crate::Result<()> {
-        let mut conn = self.conn_pool.get_conn().await?;
-        for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
+    pub(crate) async fn purge_store(&self) -> trc::Result<()> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
+        for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER] {
             let s = conn
-                .prep(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
-                .await?;
-            conn.exec_drop(&s, ()).await?;
+                .prep(format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
+                .await
+                .map_err(into_error)?;
+            conn.exec_drop(&s, ()).await.map_err(into_error)?;
         }
 
         Ok(())
     }
 
-    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
-        let mut conn = self.conn_pool.get_conn().await?;
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
 
         let s = conn
-            .prep(&format!(
+            .prep(format!(
                 "DELETE FROM {} WHERE k >= ? AND k < ?",
                 char::from(from.subspace()),
             ))
-            .await?;
+            .await
+            .map_err(into_error)?;
         conn.exec_drop(&s, (&from.serialize(0), &to.serialize(0)))
             .await
-            .map_err(Into::into)
+            .map_err(into_error)
     }
 }
 
-impl From<crate::Error> for CommitError {
-    fn from(err: crate::Error) -> Self {
+impl From<trc::Error> for CommitError {
+    fn from(err: trc::Error) -> Self {
         CommitError::Internal(err)
     }
 }

@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
@@ -30,25 +13,36 @@ use rustls::{
 
 use tokio::net::TcpSocket;
 use tokio_rustls::TlsAcceptor;
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config,
+use utils::{
+    config::{
+        utils::{AsKey, ParseValue},
+        Config,
+    },
+    snowflake::SnowflakeIdGenerator,
 };
 
 use crate::{
     listener::{tls::CertificateResolver, TcpAcceptor},
-    SharedCore,
+    Inner,
 };
 
 use super::{
     tls::{TLS12_VERSION, TLS13_VERSION},
-    Listener, Server, ServerProtocol, Servers,
+    Listener, Listeners, ServerProtocol, TcpListener,
 };
 
-impl Servers {
+impl Listeners {
     pub fn parse(config: &mut Config) -> Self {
         // Parse ACME managers
-        let mut servers = Servers::default();
+        let mut servers = Listeners {
+            span_id_gen: Arc::new(
+                config
+                    .property::<u64>("cluster.node-id")
+                    .map(SnowflakeIdGenerator::with_node_id)
+                    .unwrap_or_default(),
+            ),
+            ..Default::default()
+        };
 
         // Parse servers
         for id in config
@@ -145,7 +139,7 @@ impl Servers {
                 let _ = socket.set_reuseaddr(true);
             }
 
-            listeners.push(Listener {
+            listeners.push(TcpListener {
                 socket,
                 addr,
                 ttl: config
@@ -189,7 +183,11 @@ impl Servers {
 
         // Parse proxy networks
         let mut proxy_networks = Vec::new();
-        let proxy_keys = if config.has_prefix(("server.listener", id, "proxy.trusted-networks")) {
+        let proxy_keys = if config
+            .value(("server.listener", id, "proxy.trusted-networks"))
+            .is_some()
+            || config.has_prefix(("server.listener", id, "proxy.trusted-networks"))
+        {
             ("server.listener", id, "proxy.trusted-networks").as_key()
         } else {
             "server.proxy.trusted-networks".as_key()
@@ -198,7 +196,8 @@ impl Servers {
             proxy_networks.push(network);
         }
 
-        self.servers.push(Server {
+        let span_id_gen = self.span_id_gen.clone();
+        self.servers.push(Listener {
             max_connections: config
                 .property_or_else(
                     ("server.listener", id, "max-connections"),
@@ -210,11 +209,12 @@ impl Servers {
             protocol,
             listeners,
             proxy_networks,
+            span_id_gen,
         });
     }
 
-    pub fn parse_tcp_acceptors(&mut self, config: &mut Config, core: SharedCore) {
-        let resolver = Arc::new(CertificateResolver::new(core.clone()));
+    pub fn parse_tcp_acceptors(&mut self, config: &mut Config, inner: Arc<Inner>) {
+        let resolver = Arc::new(CertificateResolver::new(inner.clone()));
 
         for id_ in config
             .sub_keys("server.listener", ".protocol")
@@ -321,7 +321,7 @@ impl Servers {
 }
 
 impl ParseValue for ServerProtocol {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         if value.eq_ignore_ascii_case("smtp") {
             Ok(Self::Smtp)
         } else if value.eq_ignore_ascii_case("lmtp") {

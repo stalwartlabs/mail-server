@@ -1,16 +1,24 @@
 # Contributing
 
-When contributing to this repository, please first discuss the change you wish to make via issue,
-email, or any other method with the owners of this repository before making a change. 
+When contributing to this repository, please first discuss the change you wish to make via issue, email, or any other method with the owners of this repository before making a change. 
 
 Please note we have a code of conduct, please follow it in all your interactions with the project.
 
-## Any contributions you make will be under AGPL
+## Licensing
 
-This software is licensed under the Affero General Public License (AGPL). Any contributions made to 
-this project will be under this license. Before any contributions can be made, contributors are 
-required to sign a Contributor License Agreement (CLA). The purpose of the agreement is to clarify 
-and document the rights granted by contributors to us.
+This project is licensed under the Affero General Public License (AGPL) version 3.0. By contributing to this project, you agree that your contributions will be licensed under the AGPL-3.0 license.
+
+## Fiduciary Contributor License Agreement
+
+Before making any contributions, all contributors are required to sign the Fiduciary Contributor License Agreement (FLA). The FLA is a legal agreement that assigns the copyright of contributions to a designated fiduciary, who manages these rights on behalf of the project. This arrangement ensures that the software remains free and open, even as contributors come and go.
+
+Key points of the FLA:
+
+- Ensures the software remains free and open source
+- Protects the project from potential copyright issues
+- Includes a reversion clause: if the fiduciary violates Free Software principles, rights revert to the original contributors
+
+For more details about FLA, please refer to the [FLA FAQ](https://fsfe.org/activities/fla/fla.en.html).
 
 ## Pull Request Process
 

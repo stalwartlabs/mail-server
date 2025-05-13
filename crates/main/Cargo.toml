@@ -6,9 +6,9 @@ repository = "https://github.com/stalwartlabs/jmap-server"
 homepage = "https://stalw.art"
 keywords = ["imap", "jmap", "smtp", "email", "mail", "server"]
 categories = ["email"]
-license = "AGPL-3.0-only"
-version = "0.8.1"
-edition = "2021"
+license = "AGPL-3.0-only OR LicenseRef-SEL"
+version = "0.11.8"
+edition = "2024"
 resolver = "2"
 
 [[bin]]
@@ -19,27 +19,36 @@ path = "src/main.rs"
 store = { path = "../store" }
 jmap = { path = "../jmap" }
 jmap_proto = { path = "../jmap-proto" }
-smtp = { path = "../smtp", features = ["local_delivery"] }
+smtp = { path = "../smtp" }
 imap = { path = "../imap" }
 pop3 = { path = "../pop3" }
+spam-filter = { path = "../spam-filter" }
 managesieve = { path = "../managesieve" }
 common = { path = "../common" }
 directory = { path = "../directory" }
+trc = { path = "../trc" }
 utils = { path = "../utils" }
 tokio = { version = "1.23", features = ["full"] }
-tracing = "0.1"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"
 
 [features]
-default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis"]
-#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "foundationdb"]
+#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "enterprise"]
+default = ["rocks", "enterprise"]
 sqlite = ["store/sqlite"]
-foundationdb = ["store/foundation"]
+foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres"]
 mysql = ["store/mysql"]
 rocks = ["store/rocks"]
 elastic = ["store/elastic"]
 s3 = ["store/s3"]
 redis = ["store/redis"]
+azure = ["store/azure"]
+enterprise = [ "jmap/enterprise", 
+               "smtp/enterprise", 
+               "common/enterprise", 
+               "store/enterprise", 
+               "managesieve/enterprise", 
+               "directory/enterprise", 
+               "spam-filter/enterprise" ]

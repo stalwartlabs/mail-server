@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use foundationdb::{
     future::FdbSlice,
@@ -38,7 +21,7 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
-use super::{FdbStore, ReadVersion, MAX_VALUE_SIZE};
+use super::{into_error, FdbStore, ReadVersion, TimedTransaction, MAX_VALUE_SIZE};
 
 #[allow(dead_code)]
 pub(crate) enum ChunkedValue {
@@ -48,7 +31,7 @@ pub(crate) enum ChunkedValue {
 }
 
 impl FdbStore {
-    pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
+    pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
     where
         U: Deserialize,
     {
@@ -65,7 +48,7 @@ impl FdbStore {
     pub(crate) async fn get_bitmap(
         &self,
         mut key: BitmapKey<BitmapClass<u32>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         let mut bm = RoaringBitmap::new();
         let begin = key.serialize(WITH_SUBSPACE);
         key.document_id = u32::MAX;
@@ -83,7 +66,7 @@ impl FdbStore {
             true,
         );
 
-        while let Some(value) = values.try_next().await? {
+        while let Some(value) = values.try_next().await.map_err(into_error)? {
             let key = value.key();
             if key.len() == key_len {
                 bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
@@ -96,33 +79,69 @@ impl FdbStore {
     pub(crate) async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,
-        mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
-        let begin = params.begin.serialize(WITH_SUBSPACE);
+        mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
+    ) -> trc::Result<()> {
+        let mut begin = params.begin.serialize(WITH_SUBSPACE);
         let end = params.end.serialize(WITH_SUBSPACE);
 
-        let trx = self.read_trx().await?;
-        let mut values = trx.get_ranges_keyvalues(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(&begin),
-                end: KeySelector::first_greater_than(&end),
-                mode: if params.first {
-                    options::StreamingMode::Small
+        if !params.first {
+            let mut begin_selector = KeySelector::first_greater_or_equal(&begin);
+
+            loop {
+                let mut last_key_bytes = None;
+
+                {
+                    let trx = self.timed_read_trx().await?;
+                    let mut values = trx.as_ref().get_ranges(
+                        RangeOption {
+                            begin: begin_selector,
+                            end: KeySelector::first_greater_than(&end),
+                            mode: options::StreamingMode::WantAll,
+                            reverse: !params.ascending,
+                            ..Default::default()
+                        },
+                        true,
+                    );
+
+                    while let Some(values) = values.try_next().await.map_err(into_error)? {
+                        let mut last_key = &[] as &[u8];
+
+                        for value in values.iter() {
+                            last_key = value.key();
+                            if !cb(last_key.get(1..).unwrap_or_default(), value.value())? {
+                                return Ok(());
+                            }
+                        }
+
+                        if values.more() && trx.is_expired() {
+                            last_key_bytes = last_key.to_vec().into();
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(last_key_bytes) = last_key_bytes {
+                    begin = last_key_bytes;
+                    begin_selector = KeySelector::first_greater_than(&begin);
                 } else {
-                    options::StreamingMode::WantAll
+                    break;
+                }
+            }
+        } else {
+            let trx = self.read_trx().await?;
+            let mut values = trx.get_ranges_keyvalues(
+                RangeOption {
+                    begin: KeySelector::first_greater_or_equal(&begin),
+                    end: KeySelector::first_greater_than(&end),
+                    mode: options::StreamingMode::Small,
+                    reverse: !params.ascending,
+                    ..Default::default()
                 },
-                reverse: !params.ascending,
-                ..Default::default()
-            },
-            true,
-        );
+                true,
+            );
 
-        while let Some(value) = values.try_next().await? {
-            let key = value.key().get(1..).unwrap_or_default();
-            let value = value.value();
-
-            if !cb(key, value)? || params.first {
-                return Ok(());
+            if let Some(value) = values.try_next().await.map_err(into_error)? {
+                cb(value.key().get(1..).unwrap_or_default(), value.value())?;
             }
         }
 
@@ -132,24 +151,30 @@ impl FdbStore {
     pub(crate) async fn get_counter(
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
-    ) -> crate::Result<i64> {
+    ) -> trc::Result<i64> {
         let key = key.into().serialize(WITH_SUBSPACE);
-        if let Some(bytes) = self.read_trx().await?.get(&key, true).await? {
-            deserialize_i64_le(&bytes)
+        if let Some(bytes) = self
+            .read_trx()
+            .await?
+            .get(&key, true)
+            .await
+            .map_err(into_error)?
+        {
+            deserialize_i64_le(&key, &bytes)
         } else {
             Ok(0)
         }
     }
 
-    pub(crate) async fn read_trx(&self) -> crate::Result<Transaction> {
+    pub(crate) async fn read_trx(&self) -> trc::Result<Transaction> {
         let (is_expired, mut read_version) = {
             let version = self.version.lock();
             (version.is_expired(), version.version)
         };
-        let trx = self.db.create_trx()?;
+        let trx = self.db.create_trx().map_err(into_error)?;
 
         if is_expired {
-            read_version = trx.get_read_version().await?;
+            read_version = trx.get_read_version().await.map_err(into_error)?;
             *self.version.lock() = ReadVersion::new(read_version);
         } else {
             trx.set_read_version(read_version);
@@ -157,14 +182,21 @@ impl FdbStore {
 
         Ok(trx)
     }
+
+    pub(crate) async fn timed_read_trx(&self) -> trc::Result<TimedTransaction> {
+        self.db
+            .create_trx()
+            .map_err(into_error)
+            .map(TimedTransaction::new)
+    }
 }
 
 pub(crate) async fn read_chunked_value(
     key: &[u8],
     trx: &Transaction,
     snapshot: bool,
-) -> crate::Result<ChunkedValue> {
-    if let Some(bytes) = trx.get(key, snapshot).await? {
+) -> trc::Result<ChunkedValue> {
+    if let Some(bytes) = trx.get(key, snapshot).await.map_err(into_error)? {
         if bytes.len() < MAX_VALUE_SIZE {
             Ok(ChunkedValue::Single(bytes))
         } else {
@@ -175,7 +207,7 @@ pub(crate) async fn read_chunked_value(
                 .write(0u8)
                 .finalize();
 
-            while let Some(bytes) = trx.get(&key, snapshot).await? {
+            while let Some(bytes) = trx.get(&key, snapshot).await.map_err(into_error)? {
                 value.extend_from_slice(&bytes);
                 *key.last_mut().unwrap() += 1;
             }

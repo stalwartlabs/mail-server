@@ -1,27 +1,10 @@
 /*
- * Copyright (c) 2023, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{borrow::Borrow, fmt};
+use std::{borrow::Borrow, cmp::Ordering, fmt, hash::Hash};
 
 use serde::{de::DeserializeOwned, ser::SerializeMap, Deserialize, Serialize};
 
@@ -31,50 +14,51 @@ use serde::{de::DeserializeOwned, ser::SerializeMap, Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VecMap<K: Eq + PartialEq, V> {
-    pub k: Vec<K>,
-    pub v: Vec<V>,
+    inner: Vec<KeyValue<K, V>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct KeyValue<K: Eq + PartialEq, V> {
+    key: K,
+    value: V,
 }
 
 impl<K: Eq + PartialEq, V> Default for VecMap<K, V> {
     fn default() -> Self {
-        VecMap {
-            k: Vec::new(),
-            v: Vec::new(),
-        }
+        VecMap { inner: Vec::new() }
     }
 }
 
 impl<K: Eq + PartialEq, V> VecMap<K, V> {
     pub fn new() -> Self {
-        Self {
-            k: Vec::new(),
-            v: Vec::new(),
-        }
+        Self::default()
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            k: Vec::with_capacity(capacity),
-            v: Vec::with_capacity(capacity),
+            inner: Vec::with_capacity(capacity),
         }
     }
 
     #[inline(always)]
     pub fn set(&mut self, key: K, value: V) -> bool {
-        if let Some(pos) = self.k.iter().position(|k| *k == key) {
-            self.v[pos] = value;
+        if let Some(kv) = self.inner.iter_mut().find(|kv| kv.key == key) {
+            kv.value = value;
             false
         } else {
-            self.k.push(key);
-            self.v.push(value);
+            self.inner.push(KeyValue { key, value });
             true
         }
     }
 
     #[inline(always)]
     pub fn append(&mut self, key: K, value: V) {
-        self.k.push(key);
-        self.v.push(value);
+        self.inner.push(KeyValue { key, value });
+    }
+
+    #[inline(always)]
+    pub fn insert(&mut self, idx: usize, key: K, value: V) {
+        self.inner.insert(idx, KeyValue { key, value });
     }
 
     #[inline(always)]
@@ -82,104 +66,161 @@ impl<K: Eq + PartialEq, V> VecMap<K, V> {
     where
         K: Borrow<Q> + PartialEq<Q>,
     {
-        self.k.iter().position(|k| k == key).map(|pos| &self.v[pos])
-    }
-
-    #[inline(always)]
-    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        self.k
-            .iter_mut()
-            .position(|k| k == key)
-            .map(|pos| &mut self.v[pos])
-    }
-
-    #[inline(always)]
-    pub fn contains_key(&self, key: &K) -> bool {
-        self.k.contains(key)
-    }
-
-    #[inline(always)]
-    pub fn remove(&mut self, key: &K) -> Option<V> {
-        self.k.iter().position(|k| k == key).map(|pos| {
-            self.k.swap_remove(pos);
-            self.v.swap_remove(pos)
+        self.inner.iter().find_map(|kv| {
+            if &kv.key == key {
+                Some(&kv.value)
+            } else {
+                None
+            }
         })
     }
 
     #[inline(always)]
-    pub fn remove_entry(&mut self, key: &K) -> Option<(K, V)> {
-        self.k
+    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+        self.inner.iter_mut().find_map(|kv| {
+            if &kv.key == key {
+                Some(&mut kv.value)
+            } else {
+                None
+            }
+        })
+    }
+
+    #[inline(always)]
+    pub fn contains_key(&self, key: &K) -> bool {
+        self.inner.iter().any(|kv| kv.key == *key)
+    }
+
+    #[inline(always)]
+    pub fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q> + PartialEq<Q>,
+    {
+        self.inner
             .iter()
-            .position(|k| k == key)
-            .map(|pos| (self.k.swap_remove(pos), self.v.swap_remove(pos)))
+            .position(|kv| kv.key == *key)
+            .map(|pos| self.inner.remove(pos).value)
+    }
+
+    #[inline(always)]
+    pub fn remove_all(&mut self, key: &K) {
+        self.inner.retain(|kv| kv.key != *key);
+    }
+
+    #[inline(always)]
+    pub fn remove_entry(&mut self, key: &K) -> Option<(K, V)> {
+        self.inner.iter().position(|k| &k.key == key).map(|pos| {
+            let kv = self.inner.remove(pos);
+            (kv.key, kv.value)
+        })
     }
 
     #[inline(always)]
     pub fn swap_remove(&mut self, index: usize) -> V {
-        self.k.swap_remove(index);
-        self.v.swap_remove(index)
+        self.inner.swap_remove(index).value
     }
 
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.k.is_empty()
+        self.inner.is_empty()
     }
 
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.k.len()
+        self.inner.len()
     }
 
     #[inline(always)]
     pub fn clear(&mut self) {
-        self.k.clear();
-        self.v.clear();
+        self.inner.clear();
     }
 
     #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-        self.k.iter().zip(self.v.iter())
+        self.inner.iter().map(|kv| (&kv.key, &kv.value))
+    }
+
+    #[inline(always)]
+    pub fn iter_by_key<'x, 'y: 'x>(&'x self, key: &'y K) -> impl Iterator<Item = &'x V> + 'x {
+        self.inner.iter().filter_map(move |kv| {
+            if &kv.key == key {
+                Some(&kv.value)
+            } else {
+                None
+            }
+        })
     }
 
     #[inline(always)]
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (&mut K, &mut V)> {
-        self.k.iter_mut().zip(self.v.iter_mut())
+        self.inner.iter_mut().map(|kv| (&mut kv.key, &mut kv.value))
+    }
+
+    #[inline(always)]
+    pub fn iter_mut_by_key<'x, 'y: 'x>(
+        &'x mut self,
+        key: &'y K,
+    ) -> impl Iterator<Item = &'x mut V> + 'x {
+        self.inner.iter_mut().filter_map(move |kv| {
+            if &kv.key == key {
+                Some(&mut kv.value)
+            } else {
+                None
+            }
+        })
     }
 
     #[inline(always)]
     pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.k.iter()
+        self.inner.iter().map(|kv| &kv.key)
     }
 
     #[inline(always)]
     pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.v.iter()
+        self.inner.iter().map(|kv| &kv.value)
     }
 
     #[inline(always)]
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
-        self.v.iter_mut()
+        self.inner.iter_mut().map(|kv| &mut kv.value)
     }
 
     pub fn get_mut_or_insert_with(&mut self, key: K, fnc: impl FnOnce() -> V) -> &mut V {
-        if let Some(pos) = self.k.iter().position(|k| k == &key) {
-            &mut self.v[pos]
+        if let Some(pos) = self.inner.iter().position(|kv| kv.key == key) {
+            &mut self.inner[pos].value
         } else {
-            self.k.push(key);
-            self.v.push(fnc());
-            self.v.last_mut().unwrap()
+            self.inner.push(KeyValue { key, value: fnc() });
+            &mut self.inner.last_mut().unwrap().value
         }
+    }
+
+    pub fn with_key_value(mut self, key: K, value: V) -> Self {
+        self.append(key, value);
+        self
+    }
+
+    pub fn sort_unstable(&mut self)
+    where
+        K: Ord,
+        V: Ord,
+    {
+        self.inner.sort_unstable_by(|a, b| match a.key.cmp(&b.key) {
+            Ordering::Equal => a.value.cmp(&b.value),
+            cmp => cmp,
+        });
     }
 }
 
 impl<K: Eq + PartialEq, V: Default> VecMap<K, V> {
     pub fn get_mut_or_insert(&mut self, key: K) -> &mut V {
-        if let Some(pos) = self.k.iter().position(|k| k == &key) {
-            &mut self.v[pos]
+        if let Some(pos) = self.inner.iter().position(|kv| kv.key == key) {
+            &mut self.inner[pos].value
         } else {
-            self.k.push(key);
-            self.v.push(V::default());
-            self.v.last_mut().unwrap()
+            self.inner.push(KeyValue {
+                key,
+                value: V::default(),
+            });
+            &mut self.inner.last_mut().unwrap().value
         }
     }
 }
@@ -187,20 +228,34 @@ impl<K: Eq + PartialEq, V: Default> VecMap<K, V> {
 impl<K: Eq + PartialEq, V> IntoIterator for VecMap<K, V> {
     type Item = (K, V);
 
-    type IntoIter = std::iter::Zip<std::vec::IntoIter<K>, std::vec::IntoIter<V>>;
+    type IntoIter =
+        std::iter::Map<std::vec::IntoIter<KeyValue<K, V>>, fn(KeyValue<K, V>) -> (K, V)>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.k.into_iter().zip(self.v)
+        self.inner.into_iter().map(|kv| (kv.key, kv.value))
     }
 }
 
 impl<'x, K: Eq + PartialEq, V> IntoIterator for &'x VecMap<K, V> {
     type Item = (&'x K, &'x V);
 
-    type IntoIter = std::iter::Zip<std::slice::Iter<'x, K>, std::slice::Iter<'x, V>>;
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'x, KeyValue<K, V>>,
+        fn(&'x KeyValue<K, V>) -> (&'x K, &'x V),
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.k.iter().zip(self.v.iter())
+        self.inner.iter().map(|kv| (&kv.key, &kv.value))
+    }
+}
+
+impl<K, V> Hash for VecMap<K, V>
+where
+    K: Eq + PartialEq + Hash,
+    V: Hash,
+{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.inner.hash(state);
     }
 }
 

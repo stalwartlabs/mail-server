@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use store::{Store, Stores};
 use utils::config::{utils::AsKey, Config};
@@ -35,13 +18,14 @@ impl SqlDirectory {
     ) -> Option<Self> {
         let prefix = prefix.as_key();
         let store_id = config.value_require((&prefix, "store"))?.to_string();
-        let store = if let Some(store) = stores.lookup_stores.get(&store_id) {
-            store.clone()
-        } else {
-            let err = format!("Directory references a non-existent store {store_id:?}");
-            config.new_build_error((&prefix, "store"), err);
-            return None;
-        };
+        let sql_store =
+            if let Some(sql_store) = stores.stores.get(&store_id).filter(|store| store.is_sql()) {
+                sql_store.clone()
+            } else {
+                let err = format!("Directory references a non-existent store {store_id:?}");
+                config.new_build_error((&prefix, "store"), err);
+                return None;
+            };
 
         let mut mappings = SqlMappings {
             column_description: config
@@ -50,6 +34,10 @@ impl SqlDirectory {
                 .to_string(),
             column_secret: config
                 .value((&prefix, "columns.secret"))
+                .unwrap_or_default()
+                .to_string(),
+            column_email: config
+                .value((&prefix, "columns.email"))
                 .unwrap_or_default()
                 .to_string(),
             column_quota: config
@@ -66,11 +54,9 @@ impl SqlDirectory {
         for (query_id, query) in [
             ("name", &mut mappings.query_name),
             ("members", &mut mappings.query_members),
-            ("recipients", &mut mappings.query_recipients),
             ("emails", &mut mappings.query_emails),
-            ("verify", &mut mappings.query_verify),
-            ("expand", &mut mappings.query_expand),
-            ("domains", &mut mappings.query_domains),
+            ("recipients", &mut mappings.query_recipients),
+            ("secrets", &mut mappings.query_secrets),
         ] {
             *query = config
                 .value(("store", store_id.as_str(), "query", query_id))
@@ -79,7 +65,7 @@ impl SqlDirectory {
         }
 
         Some(SqlDirectory {
-            store,
+            sql_store,
             mappings,
             data_store,
         })

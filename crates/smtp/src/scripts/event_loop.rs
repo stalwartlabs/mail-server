@@ -1,30 +1,14 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, future::Future, sync::Arc, time::Instant};
 
-use common::scripts::plugins::PluginContext;
+use common::{scripts::plugins::PluginContext, Server};
 use mail_auth::common::headers::HeaderWriter;
+use mail_parser::{Encoding, Message, MessagePart, PartType};
 use sieve::{
     compiler::grammar::actions::action_redirect::{ByMode, ByTime, Notify, NotifyItem, Ret},
     Event, Input, MatchAs, Recipient, Sieve,
@@ -33,30 +17,57 @@ use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
     RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
+use trc::SieveEvent;
 
-use crate::{core::SMTP, inbound::DkimSign, queue::DomainPart};
+use crate::{
+    inbound::DkimSign,
+    queue::{quota::HasQueueQuota, spool::SmtpSpool, DomainPart, MessageSource},
+};
 
 use super::{ScriptModification, ScriptParameters, ScriptResult};
 
-impl SMTP {
-    pub async fn run_script(
+pub trait RunScript: Sync + Send {
+    fn run_script(
         &self,
+        script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
-        span: tracing::Span,
+    ) -> impl Future<Output = ScriptResult> + Send;
+}
+
+impl RunScript for Server {
+    async fn run_script(
+        &self,
+        script_id: String,
+        script: Arc<Sieve>,
+        params: ScriptParameters<'_>,
     ) -> ScriptResult {
         // Create filter instance
+        let time = Instant::now();
         let mut instance = self
             .core
             .sieve
             .trusted_runtime
-            .filter(params.message.unwrap_or_default())
+            .filter_parsed(params.message.unwrap_or_else(|| Message {
+                parts: vec![MessagePart {
+                    headers: vec![],
+                    is_encoding_problem: false,
+                    body: PartType::Text("".into()),
+                    encoding: Encoding::None,
+                    offset_header: 0,
+                    offset_body: 0,
+                    offset_end: 0,
+                }],
+                raw_message: b""[..].into(),
+                ..Default::default()
+            }))
             .with_vars_env(params.variables)
             .with_envelope_list(params.envelope)
             .with_user_address(&params.from_addr)
             .with_user_full_name(&params.from_name);
         let mut input = Input::script("__script", script);
         let mut messages: Vec<Vec<u8>> = Vec::new();
+        let session_id = params.session_id;
 
         let mut reject_reason = None;
         let mut modifications = vec![];
@@ -67,16 +78,17 @@ impl SMTP {
             match result {
                 Ok(event) => match event {
                     Event::IncludeScript { name, optional } => {
-                        if let Some(script) = self.core.sieve.scripts.get(name.as_str()) {
+                        let name_ = name.as_str().to_lowercase();
+                        if let Some(script) = self.core.sieve.trusted_scripts.get(&name_) {
                             input = Input::script(name, script.clone());
                         } else if optional {
                             input = false.into();
                         } else {
-                            tracing::warn!(
-                                parent: &span,
-                                context = "sieve",
-                                event = "script-not-found",
-                                script = name.as_str()
+                            trc::event!(
+                                Sieve(SieveEvent::ScriptNotFound),
+                                Id = script_id.clone(),
+                                SpanId = session_id,
+                                Details = name_,
                             );
                             break;
                         }
@@ -91,14 +103,11 @@ impl SMTP {
                             if let Some(store) = self.core.storage.lookups.get(&list) {
                                 for value in &values {
                                     if let Ok(true) = store
-                                        .key_exists(
-                                            if !matches!(match_as, MatchAs::Lowercase) {
-                                                value.clone()
-                                            } else {
-                                                value.to_lowercase()
-                                            }
-                                            .into_bytes(),
-                                        )
+                                        .key_exists(if !matches!(match_as, MatchAs::Lowercase) {
+                                            value.clone()
+                                        } else {
+                                            value.to_lowercase()
+                                        })
                                         .await
                                     {
                                         input = true.into();
@@ -106,11 +115,11 @@ impl SMTP {
                                     }
                                 }
                             } else {
-                                tracing::debug!(
-                                    parent: &span,
-                                    context = "sieve",
-                                    event = "list-not-found",
-                                    list = list,
+                                trc::event!(
+                                    Sieve(SieveEvent::ListNotFound),
+                                    Id = script_id.clone(),
+                                    SpanId = session_id,
+                                    Details = list,
                                 );
                             }
                         }
@@ -121,10 +130,11 @@ impl SMTP {
                             .run_plugin(
                                 id,
                                 PluginContext {
-                                    span: &span,
-                                    core: &self.core,
+                                    session_id,
+                                    server: self,
                                     message: instance.message(),
                                     modifications: &mut modifications,
+                                    access_token: params.access_token,
                                     arguments,
                                 },
                             )
@@ -156,6 +166,7 @@ impl SMTP {
                             params.return_path.clone(),
                             return_path_lcase,
                             return_path_domain,
+                            session_id,
                         );
                         match recipient {
                             Recipient::Address(rcpt) => {
@@ -167,11 +178,12 @@ impl SMTP {
                                 }
                             }
                             Recipient::List(list) => {
-                                tracing::warn!(
-                                    parent: &span,
-                                    context = "sieve",
-                                    event = "send-failed",
-                                    reason = format!("Lookup {list:?} not supported.")
+                                trc::event!(
+                                    Sieve(SieveEvent::NotSupported),
+                                    Id = script_id.clone(),
+                                    SpanId = session_id,
+                                    Details = list,
+                                    Reason = "Sending to lists is not supported.",
                                 );
                             }
                         }
@@ -271,16 +283,16 @@ impl SMTP {
                                 let mut headers = Vec::new();
 
                                 for dkim in &params.sign {
-                                    if let Some(dkim) = self.core.get_dkim_signer(dkim) {
+                                    if let Some(dkim) = self.get_dkim_signer(dkim, session_id) {
                                         match dkim.sign(raw_message) {
                                             Ok(signature) => {
                                                 signature.write_header(&mut headers);
                                             }
                                             Err(err) => {
-                                                tracing::warn!(parent: &span,
-                                                    context = "dkim",
-                                                    event = "sign-failed",
-                                                    reason = %err);
+                                                trc::error!(trc::Error::from(err)
+                                                    .span_id(session_id)
+                                                    .caused_by(trc::location!())
+                                                    .details("DKIM sign failed"));
                                             }
                                         }
                                     }
@@ -299,17 +311,25 @@ impl SMTP {
 
                             if self.has_quota(&mut message).await {
                                 message
-                                    .queue(headers.as_deref(), raw_message, self, &span)
+                                    .queue(
+                                        headers.as_deref(),
+                                        raw_message,
+                                        session_id,
+                                        self,
+                                        MessageSource::Autogenerated,
+                                    )
                                     .await;
                             } else {
-                                tracing::warn!(
-                                    parent: &span,
-                                    context = "sieve",
-                                    event = "send-message",
-                                    error = "quota-exceeded",
-                                    return_path = %message.return_path_lcase,
-                                    recipient = %message.recipients[0].address_lcase,
-                                    reason = "Queue quota exceeded by sieve script"
+                                trc::event!(
+                                    Sieve(SieveEvent::QuotaExceeded),
+                                    SpanId = session_id,
+                                    Id = script_id.clone(),
+                                    From = message.return_path_lcase,
+                                    To = message
+                                        .recipients
+                                        .into_iter()
+                                        .map(|r| trc::Value::from(r.address_lcase))
+                                        .collect::<Vec<_>>(),
                                 );
                             }
                         }
@@ -328,49 +348,24 @@ impl SMTP {
                         input = true.into();
                     }
                     unsupported => {
-                        tracing::warn!(
-                            parent: &span,
-                            context = "sieve",
-                            event = "runtime-error",
-                            reason = format!("Unsupported event: {unsupported:?}")
+                        trc::event!(
+                            Sieve(SieveEvent::NotSupported),
+                            Id = script_id.clone(),
+                            SpanId = session_id,
+                            Reason = "Unsupported event",
+                            Details = format!("{unsupported:?}"),
                         );
                         break;
                     }
                 },
                 Err(err) => {
-                    tracing::warn!(parent: &span,
-                        context = "sieve",
-                        event = "runtime-error",
-                        reason = %err
+                    trc::event!(
+                        Sieve(SieveEvent::RuntimeError),
+                        Id = script_id.clone(),
+                        SpanId = session_id,
+                        Reason = err.to_string(),
                     );
                     break;
-                }
-            }
-        }
-
-        // Assert global variables
-        #[cfg(feature = "test_mode")]
-        if let Some(expected_variables) = params.expected_variables {
-            for var_name in instance.global_variable_names() {
-                if instance.global_variable(var_name).unwrap().to_bool()
-                    && !expected_variables.contains_key(var_name)
-                {
-                    panic!(
-                        "Unexpected variable {var_name:?} with value {:?}\nExpected {:?}\nFound: {:?}",
-                        instance.global_variable(var_name).unwrap(),
-                        expected_variables.keys().collect::<Vec<_>>(),
-                        instance.global_variable_names().collect::<Vec<_>>()
-                    );
-                }
-            }
-
-            for (name, expected) in &expected_variables {
-                if let Some(value) = instance.global_variable(name.as_str()) {
-                    assert_eq!(value, expected, "Variable {name:?} has unexpected value");
-                } else {
-                    panic!("Missing variable {name:?} with value {expected:?}\nExpected {:?}\nFound: {:?}", 
-                    expected_variables.keys().collect::<Vec<_>>(),
-                    instance.global_variable_names().collect::<Vec<_>>());
                 }
             }
         }
@@ -381,8 +376,23 @@ impl SMTP {
         // MAX - 1 = discard message
 
         if keep_id == 0 {
+            trc::event!(
+                Sieve(SieveEvent::ActionAccept),
+                SpanId = session_id,
+                Id = script_id,
+                Elapsed = time.elapsed(),
+            );
+
             ScriptResult::Accept { modifications }
         } else if let Some(mut reject_reason) = reject_reason {
+            trc::event!(
+                Sieve(SieveEvent::ActionReject),
+                Id = script_id,
+                SpanId = session_id,
+                Details = reject_reason.clone(),
+                Elapsed = time.elapsed(),
+            );
+
             if !reject_reason.ends_with('\n') {
                 reject_reason.push_str("\r\n");
             }
@@ -398,14 +408,35 @@ impl SMTP {
             }
         } else if keep_id != usize::MAX - 1 {
             if let Some(message) = messages.into_iter().nth(keep_id - 1) {
+                trc::event!(
+                    Sieve(SieveEvent::ActionAccept),
+                    SpanId = session_id,
+                    Id = script_id,
+                    Elapsed = time.elapsed(),
+                );
+
                 ScriptResult::Replace {
                     message,
                     modifications,
                 }
             } else {
+                trc::event!(
+                    Sieve(SieveEvent::ActionAcceptReplace),
+                    SpanId = session_id,
+                    Id = script_id,
+                    Elapsed = time.elapsed(),
+                );
+
                 ScriptResult::Accept { modifications }
             }
         } else {
+            trc::event!(
+                Sieve(SieveEvent::ActionDiscard),
+                SpanId = session_id,
+                Id = script_id,
+                Elapsed = time.elapsed()
+            );
+
             ScriptResult::Discard
         }
     }

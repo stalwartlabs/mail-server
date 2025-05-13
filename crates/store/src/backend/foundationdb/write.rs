@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     cmp::Ordering,
@@ -27,30 +10,31 @@ use std::{
 };
 
 use foundationdb::{
-    options::{self, MutationType, StreamingMode},
     FdbError, KeySelector, RangeOption, Transaction,
+    options::{self, MutationType, StreamingMode},
 };
 use futures::TryStreamExt;
 use rand::Rng;
 use roaring::RoaringBitmap;
 
 use crate::{
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    U32_LEN, WITH_SUBSPACE,
     backend::deserialize_i64_le,
     write::{
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
+        RandomAvailableId, ValueOp,
         key::{DeserializeBigEndian, KeySerializer},
-        AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId, ValueOp,
-        MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN, WITH_SUBSPACE,
 };
 
 use super::{
-    read::{read_chunked_value, ChunkedValue},
-    FdbStore, ReadVersion, MAX_VALUE_SIZE,
+    FdbStore, MAX_VALUE_SIZE, ReadVersion, into_error,
+    read::{ChunkedValue, read_chunked_value},
 };
 
 impl FdbStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
+    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
 
@@ -61,7 +45,7 @@ impl FdbStore {
             let mut change_id = u64::MAX;
             let mut result = AssignedIds::default();
 
-            let trx = self.db.create_trx()?;
+            let trx = self.db.create_trx().map_err(into_error)?;
 
             for op in &batch.ops {
                 match op {
@@ -110,9 +94,11 @@ impl FdbStore {
                                                     *key.last_mut().unwrap() += 1;
                                                 } else {
                                                     trx.cancel();
-                                                    return Err(crate::Error::InternalError(
-                                                        "Value too large".into(),
-                                                    ));
+                                                    return Err(trc::StoreEvent::FoundationdbError
+                                                        .ctx(
+                                                            trc::Key::Reason,
+                                                            "Value is too large",
+                                                        ));
                                                 }
                                             }
                                         }
@@ -126,8 +112,10 @@ impl FdbStore {
                                 trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
                             }
                             ValueOp::AddAndGet(by) => {
-                                let num = if let Some(bytes) = trx.get(&key, false).await? {
-                                    deserialize_i64_le(&bytes)? + *by
+                                let num = if let Some(bytes) =
+                                    trx.get(&key, false).await.map_err(into_error)?
+                                {
+                                    deserialize_i64_le(&key, &bytes)? + *by
                                 } else {
                                     *by
                                 };
@@ -197,7 +185,7 @@ impl FdbStore {
                                 true,
                             );
                             let mut found_ids = RoaringBitmap::new();
-                            while let Some(value) = values.try_next().await? {
+                            while let Some(value) = values.try_next().await.map_err(into_error)? {
                                 let key = value.key();
                                 if key.len() == key_len {
                                     found_ids.insert(key.deserialize_be_u32(key_len - U32_LEN)?);
@@ -229,7 +217,8 @@ impl FdbStore {
                                         (&result).into(),
                                     ),
                                     options::ConflictRangeType::Read,
-                                )?;
+                                )
+                                .map_err(into_error)?;
                             }
 
                             trx.set(&key, &[]);
@@ -269,7 +258,7 @@ impl FdbStore {
 
                         if !matches {
                             trx.cancel();
-                            return Err(crate::Error::AssertValueFailed);
+                            return Err(trc::StoreEvent::AssertValueFailed.into());
                         }
                     }
                 }
@@ -284,17 +273,17 @@ impl FdbStore {
             {
                 return Ok(result);
             } else {
-                let backoff = rand::thread_rng().gen_range(50..=300);
+                let backoff = rand::rng().random_range(50..=300);
                 tokio::time::sleep(Duration::from_millis(backoff)).await;
                 retry_count += 1;
             }
         }
     }
 
-    pub(crate) async fn commit(&self, trx: Transaction, will_retry: bool) -> crate::Result<bool> {
+    pub(crate) async fn commit(&self, trx: Transaction, will_retry: bool) -> trc::Result<bool> {
         match trx.commit().await {
             Ok(result) => {
-                let commit_version = result.committed_version()?;
+                let commit_version = result.committed_version().map_err(into_error)?;
                 let mut version = self.version.lock();
                 if commit_version > version.version {
                     *version = ReadVersion::new(commit_version);
@@ -303,20 +292,20 @@ impl FdbStore {
             }
             Err(err) => {
                 if will_retry {
-                    err.on_error().await?;
+                    err.on_error().await.map_err(into_error)?;
                     Ok(false)
                 } else {
-                    Err(FdbError::from(err).into())
+                    Err(into_error(FdbError::from(err)))
                 }
             }
         }
     }
 
-    pub(crate) async fn purge_store(&self) -> crate::Result<()> {
+    pub(crate) async fn purge_store(&self) -> trc::Result<()> {
         // Obtain all zero counters
         let mut delete_keys = Vec::new();
-        for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
-            let trx = self.db.create_trx()?;
+        for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA, SUBSPACE_IN_MEMORY_COUNTER] {
+            let trx = self.db.create_trx().map_err(into_error)?;
             let from_key = [subspace, 0u8];
             let to_key = [subspace, u8::MAX, u8::MAX, u8::MAX, u8::MAX, u8::MAX];
 
@@ -331,7 +320,7 @@ impl FdbStore {
                 true,
             );
 
-            while let Some(value) = values.try_next().await? {
+            while let Some(value) = values.try_next().await.map_err(into_error)? {
                 if value.value().iter().all(|byte| *byte == 0) {
                     delete_keys.push(value.key().to_vec());
                 }
@@ -347,7 +336,7 @@ impl FdbStore {
         for chunk in delete_keys.chunks(1024) {
             let mut retry_count = 0;
             loop {
-                let trx = self.db.create_trx()?;
+                let trx = self.db.create_trx().map_err(into_error)?;
                 for key in chunk {
                     trx.atomic_op(key, &integer, MutationType::CompareAndClear);
                 }
@@ -363,11 +352,11 @@ impl FdbStore {
         Ok(())
     }
 
-    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
         let from = from.serialize(WITH_SUBSPACE);
         let to = to.serialize(WITH_SUBSPACE);
 
-        let trx = self.db.create_trx()?;
+        let trx = self.db.create_trx().map_err(into_error)?;
         trx.clear_range(&from, &to);
         self.commit(trx, false).await.map(|_| ())
     }

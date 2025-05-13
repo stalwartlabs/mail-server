@@ -1,35 +1,27 @@
 /*
- * Copyright (c) 2020-2023, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::borrow::Cow;
 
-use prettytable::{Attr, Cell, Row, Table};
+use prettytable::{format, Attr, Cell, Row, Table};
 use reqwest::Method;
 use serde_json::Value;
 
 use crate::modules::List;
 
 use super::cli::{Client, DomainCommands};
+
+use serde::{Deserialize, Serialize};
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct DnsRecord {
+    #[serde(rename = "type")]
+    typ: String,
+    name: String,
+    content: String,
+}
 
 impl DomainCommands {
     pub async fn exec(self, client: Client) {
@@ -53,6 +45,39 @@ impl DomainCommands {
                     )
                     .await;
                 eprintln!("Successfully deleted domain {name:?}");
+            }
+            DomainCommands::DNSRecords { name } => {
+                let records = client
+                    .http_request::<Vec<DnsRecord>, String>(
+                        Method::GET,
+                        &format!("/api/domain/{name}"),
+                        None,
+                    )
+                    .await;
+
+                if !records.is_empty() {
+                    let mut table = Table::new();
+                    // no borderline separator separator, as long values will mess it up
+                    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
+
+                    table.add_row(Row::new(vec![
+                        Cell::new("Type").with_style(Attr::Bold),
+                        Cell::new("Name").with_style(Attr::Bold),
+                        Cell::new("Contents").with_style(Attr::Bold),
+                    ]));
+
+                    for record in &records {
+                        table.add_row(Row::new(vec![
+                            Cell::new(&record.typ),
+                            Cell::new(&record.name),
+                            Cell::new(&record.content),
+                        ]));
+                    }
+
+                    eprintln!();
+                    table.printstd();
+                    eprintln!();
+                }
             }
             DomainCommands::List { from, limit } => {
                 let query = if from.is_none() && limit.is_none() {

@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     io::Cursor,
@@ -29,8 +12,10 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use arc_swap::ArcSwap;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{
+    engine::general_purpose::{self, STANDARD},
+    Engine,
+};
 use dns_update::{providers::rfc2136::DnsAddress, DnsUpdater, TsigAlgorithm};
 use rcgen::generate_simple_self_signed;
 use rustls::{
@@ -49,21 +34,18 @@ use x509_parser::{
 };
 
 use crate::listener::{
-    acme::{directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeProvider, ChallengeSettings},
-    tls::TlsManager,
+    acme::{
+        directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeProvider, ChallengeSettings, EabSettings,
+    },
+    tls::AcmeProviders,
 };
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 
-impl TlsManager {
+impl AcmeProviders {
     pub fn parse(config: &mut Config) -> Self {
-        let mut certificates = AHashMap::new();
-        let mut acme_providers = AHashMap::new();
-        let mut subject_names = AHashSet::new();
-
-        // Parse certificates
-        parse_certificates(config, &mut certificates, &mut subject_names);
+        let mut providers = AHashMap::new();
 
         // Parse ACME providers
         'outer: for acme_id in config
@@ -152,13 +134,38 @@ impl TlsManager {
                 continue 'outer;
             }
 
+            // Obtain EAB settings
+            let eab = if let (Some(eab_kid), Some(eab_hmac_key)) = (
+                config
+                    .value(("acme", acme_id, "eab.kid"))
+                    .filter(|s| !s.is_empty()),
+                config
+                    .value(("acme", acme_id, "eab.hmac-key"))
+                    .filter(|s| !s.is_empty()),
+            ) {
+                if let Ok(hmac_key) =
+                    general_purpose::URL_SAFE_NO_PAD.decode(eab_hmac_key.trim().as_bytes())
+                {
+                    EabSettings {
+                        kid: eab_kid.to_string(),
+                        hmac_key,
+                    }
+                    .into()
+                } else {
+                    config.new_build_error(
+                        format!("acme.{acme_id}.eab.hmac-key"),
+                        "Failed to base64 decode HMAC key",
+                    );
+                    None
+                }
+            } else {
+                None
+            };
+
             // This ACME manager is the default when SNI is not available
             let default = config
                 .property::<bool>(("acme", acme_id, "default"))
                 .unwrap_or_default();
-
-            // Add domains for self-signed certificate
-            subject_names.extend(domains.iter().cloned());
 
             if !domains.is_empty() {
                 match AcmeProvider::new(
@@ -167,34 +174,21 @@ impl TlsManager {
                     domains,
                     contact,
                     challenge,
+                    eab,
                     renew_before,
                     default,
                 ) {
                     Ok(acme_provider) => {
-                        acme_providers.insert(acme_id.to_string(), acme_provider);
+                        providers.insert(acme_id.to_string(), acme_provider);
                     }
                     Err(err) => {
-                        config.new_build_error(format!("acme.{acme_id}"), err);
+                        config.new_build_error(format!("acme.{acme_id}"), err.to_string());
                     }
                 }
             }
         }
 
-        if subject_names.is_empty() {
-            subject_names.insert("localhost".to_string());
-        }
-
-        TlsManager {
-            certificates: ArcSwap::from_pointee(certificates),
-            acme_providers,
-            self_signed_cert: build_self_signed_cert(subject_names.into_iter().collect::<Vec<_>>())
-                .or_else(|err| {
-                    config.new_build_error("certificate.self-signed", err);
-                    build_self_signed_cert(vec!["localhost".to_string()])
-                })
-                .ok()
-                .map(Arc::new),
-        }
+        AcmeProviders { providers }
     }
 }
 
@@ -376,10 +370,7 @@ pub(crate) fn parse_certificates(
     }
 }
 
-pub(crate) fn build_certified_key(
-    cert: Vec<u8>,
-    pk: Vec<u8>,
-) -> utils::config::Result<CertifiedKey> {
+pub(crate) fn build_certified_key(cert: Vec<u8>, pk: Vec<u8>) -> Result<CertifiedKey, String> {
     let cert = certs(&mut Cursor::new(cert))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("Failed to read certificates: {err}"))?;
@@ -408,7 +399,7 @@ pub(crate) fn build_certified_key(
 
 pub(crate) fn build_self_signed_cert(
     domains: impl Into<Vec<String>>,
-) -> utils::config::Result<CertifiedKey> {
+) -> Result<CertifiedKey, String> {
     let cert = generate_simple_self_signed(domains)
         .map_err(|err| format!("Failed to generate self-signed certificate: {err}",))?;
     build_certified_key(

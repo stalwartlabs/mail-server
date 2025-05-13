@@ -1,56 +1,48 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::fmt::Write;
 
-use common::manager::webadmin::Resource;
-use directory::QueryBy;
-use jmap_proto::error::request::RequestError;
+use common::{manager::webadmin::Resource, Server};
+use directory::{backend::internal::PrincipalField, QueryBy};
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use crate::{api::http::ToHttpResponse, JMAP};
+use crate::api::http::ToHttpResponse;
 
 use super::{HttpRequest, HttpResponse};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn handle_autoconfig_request(&self, req: &HttpRequest) -> HttpResponse {
+pub trait Autoconfig: Sync + Send {
+    fn handle_autoconfig_request(
+        &self,
+        req: &HttpRequest,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+    fn handle_autodiscover_request(
+        &self,
+        body: Option<Vec<u8>>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+    fn autoconfig_parameters<'x>(
+        &self,
+        emailaddress: &'x str,
+    ) -> impl Future<Output = trc::Result<(String, String, &'x str)>> + Send;
+}
+
+impl Autoconfig for Server {
+    async fn handle_autoconfig_request(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
         // Obtain parameters
         let params = UrlParams::new(req.uri().query());
         let emailaddress = params
             .get("emailaddress")
             .unwrap_or_default()
             .to_lowercase();
-        let (account_name, server_name, domain) =
-            match self.autoconfig_parameters(&emailaddress).await {
-                Ok(result) => result,
-                Err(err) => return err.into_http_response(),
-            };
-        let services = match self.core.storage.config.get_services().await {
-            Ok(services) => services,
-            Err(err) => return err.into_http_response(),
-        };
+        let (account_name, server_name, domain) = self.autoconfig_parameters(&emailaddress).await?;
+        let services = self.core.storage.config.get_services().await?;
 
         // Build XML response
         let mut config = String::with_capacity(1024);
@@ -92,30 +84,26 @@ impl JMAP {
         );
         config.push_str("</clientConfig>\n");
 
-        Resource {
-            content_type: "application/xml; charset=utf-8",
-            contents: config.into_bytes(),
-        }
-        .into_http_response()
+        Ok(
+            Resource::new("application/xml; charset=utf-8", config.into_bytes())
+                .into_http_response(),
+        )
     }
 
-    pub async fn handle_autodiscover_request(&self, body: Option<Vec<u8>>) -> HttpResponse {
+    async fn handle_autodiscover_request(
+        &self,
+        body: Option<Vec<u8>>,
+    ) -> trc::Result<HttpResponse> {
         // Obtain parameters
-        let emailaddress = match parse_autodiscover_request(body.as_deref().unwrap_or_default()) {
-            Ok(emailaddress) => emailaddress,
-            Err(err) => {
-                return RequestError::blank(400, "Failed to parse autodiscover request", err)
-                    .into_http_response()
-            }
-        };
-        let (account_name, server_name, _) = match self.autoconfig_parameters(&emailaddress).await {
-            Ok(result) => result,
-            Err(err) => return err.into_http_response(),
-        };
-        let services = match self.core.storage.config.get_services().await {
-            Ok(services) => services,
-            Err(err) => return err.into_http_response(),
-        };
+        let emailaddress = parse_autodiscover_request(body.as_deref().unwrap_or_default())
+            .map_err(|err| {
+                trc::ResourceEvent::BadParameters
+                    .into_err()
+                    .details("Failed to parse autodiscover request")
+                    .ctx(trc::Key::Reason, err)
+            })?;
+        let (account_name, server_name, _) = self.autoconfig_parameters(&emailaddress).await?;
+        let services = self.core.storage.config.get_services().await?;
 
         // Build XML response
         let mut config = String::with_capacity(1024);
@@ -175,56 +163,49 @@ impl JMAP {
         let _ = writeln!(&mut config, "\t</Response>");
         let _ = writeln!(&mut config, "</Autodiscover>");
 
-        Resource {
-            content_type: "application/xml; charset=utf-8",
-            contents: config.into_bytes(),
-        }
-        .into_http_response()
+        Ok(
+            Resource::new("application/xml; charset=utf-8", config.into_bytes())
+                .into_http_response(),
+        )
     }
 
     async fn autoconfig_parameters<'x>(
         &self,
         emailaddress: &'x str,
-    ) -> Result<(String, String, &'x str), RequestError> {
-        let domain = if let Some((_, domain)) = emailaddress.rsplit_once('@') {
-            domain
-        } else {
-            return Err(RequestError::invalid_parameters());
-        };
+    ) -> trc::Result<(String, String, &'x str)> {
+        let (_, domain) = emailaddress.rsplit_once('@').ok_or_else(|| {
+            trc::ResourceEvent::BadParameters
+                .into_err()
+                .details("Missing domain in email address")
+        })?;
 
         // Obtain server name
-        let server_name = if let Ok(Some(server_name)) = self
-            .core
-            .storage
-            .config
-            .get("lookup.default.hostname")
-            .await
-        {
-            server_name
-        } else {
-            tracing::error!("Autoconfig request failed: Server name not configured");
-            return Err(RequestError::internal_server_error());
-        };
+        let server_name = self.core.network.server_name.to_string();
 
         // Find the account name by e-mail address
         let mut account_name = emailaddress.to_string();
-        for id in self
+        if let Some(id) = self
             .core
             .storage
             .directory
-            .email_to_ids(emailaddress)
+            .email_to_id(emailaddress)
             .await
-            .unwrap_or_default()
+            .caused_by(trc::location!())?
         {
-            if let Ok(Some(principal)) = self
+            if let Ok(Some(mut principal)) = self
                 .core
                 .storage
                 .directory
                 .query(QueryBy::Id(id), false)
                 .await
             {
-                account_name = principal.name;
-                break;
+                if principal
+                    .get_str_array(PrincipalField::Emails)
+                    .and_then(|emails| emails.first())
+                    .is_some_and(|email| email.eq_ignore_ascii_case(emailaddress))
+                {
+                    account_name = principal.take_str(PrincipalField::Name).unwrap_or_default();
+                }
             }
         }
 
@@ -238,7 +219,7 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
     }
 
     let mut reader = Reader::from_reader(bytes);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
     let mut buf = Vec::with_capacity(128);
 
     'outer: for tag_name in ["Autodiscover", "Request", "EMailAddress"] {
@@ -284,6 +265,7 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
                         ));
                     }
                 }
+                Ok(Event::Decl(_) | Event::Text(_)) => (),
                 Err(e) => {
                     return Err(format!(
                         "Error at position {}: {:?}",
@@ -291,9 +273,9 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
                         e
                     ))
                 }
-                _ => {
+                Ok(event) => {
                     return Err(format!(
-                        "Expected tag {}, found unexpected EOF at position {}.",
+                        "Expected tag {}, found unexpected event {event:?} at position {}.",
                         tag_name,
                         reader.buffer_position()
                     ))
@@ -314,4 +296,24 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
         "Expected email address, found unexpected value at position {}.",
         reader.buffer_position()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn parse_autodiscover() {
+        let r = r#"<?xml version="1.0" encoding="utf-8"?>
+            <Autodiscover xmlns="http://schemas.microsoft.com/exchange/autodiscover/outlook/requestschema/2006">
+                <Request>
+                        <EMailAddress>email@example.com</EMailAddress>
+                        <AcceptableResponseSchema>http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a</AcceptableResponseSchema>
+                </Request>
+            </Autodiscover>"#;
+
+        assert_eq!(
+            super::parse_autodiscover_request(r.as_bytes()).unwrap(),
+            "email@example.com"
+        );
+    }
 }

@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use deadpool::{
     managed::{Manager, Pool},
@@ -33,8 +16,8 @@ use ahash::AHashMap;
 
 use crate::{
     backend::{
-        imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-        sql::SqlDirectory,
+        imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, oidc::OpenIdDirectory,
+        smtp::SmtpDirectory, sql::SqlDirectory,
     },
     Directories, Directory, DirectoryInner,
 };
@@ -42,7 +25,12 @@ use crate::{
 use super::cache::CachedDirectory;
 
 impl Directories {
-    pub async fn parse(config: &mut Config, stores: &Stores, data_store: Store) -> Self {
+    pub async fn parse(
+        config: &mut Config,
+        stores: &Stores,
+        data_store: Store,
+        is_enterprise: bool,
+    ) -> Self {
         let mut directories = AHashMap::new();
 
         for id in config
@@ -58,13 +46,15 @@ impl Directories {
                     .property_or_default::<bool>(("directory", id, "disable"), "false")
                     .unwrap_or(false)
                 {
-                    tracing::debug!("Skipping disabled directory {id:?}.");
                     continue;
                 }
             }
-            let protocol = config.value_require(("directory", id, "type")).unwrap();
+            let protocol = config
+                .value_require(("directory", id, "type"))
+                .unwrap()
+                .to_string();
             let prefix = ("directory", id);
-            let store = match protocol {
+            let store = match protocol.as_str() {
                 "internal" => Some(DirectoryInner::Internal(
                     if let Some(store_id) = config.value_require(("directory", id, "store")) {
                         if let Some(data) = stores.stores.get(store_id) {
@@ -94,6 +84,8 @@ impl Directories {
                 "memory" => MemoryDirectory::from_config(config, prefix, data_store.clone())
                     .await
                     .map(DirectoryInner::Memory),
+                "oidc" => OpenIdDirectory::from_config(config, prefix, data_store.clone())
+                    .map(DirectoryInner::OpenId),
                 unknown => {
                     let err = format!("Unknown directory type: {unknown:?}");
                     config.new_parse_error(("directory", id, "type"), err);
@@ -103,6 +95,14 @@ impl Directories {
 
             // Build directory
             if let Some(store) = store {
+                #[cfg(feature = "enterprise")]
+                if store.is_enterprise_directory() && !is_enterprise {
+                    let message =
+                        format!("Directory {protocol:?} is an Enterprise Edition feature");
+                    config.new_parse_error(("directory", id, "type"), message);
+                    continue;
+                }
+
                 let directory = Arc::new(Directory {
                     store,
                     cache: CachedDirectory::try_from_config(config, ("directory", id)),
@@ -121,7 +121,7 @@ pub(crate) fn build_pool<M: Manager>(
     config: &mut Config,
     prefix: &str,
     manager: M,
-) -> utils::config::Result<Pool<M>> {
+) -> Result<Pool<M>, String> {
     Pool::builder(manager)
         .runtime(Runtime::Tokio1)
         .max_size(

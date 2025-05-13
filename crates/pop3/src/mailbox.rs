@@ -1,38 +1,21 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::collections::BTreeMap;
 
 use common::listener::SessionStream;
-use jmap::mailbox::{UidMailbox, INBOX_ID};
+use email::mailbox::{MailboxFnc, UidMailbox, INBOX_ID};
 use jmap_proto::{
-    error::method::MethodError,
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
 use store::{
     ahash::AHashMap, write::key::DeserializeBigEndian, IndexKey, IterateParams, Serialize, U32_LEN,
 };
+use trc::AddContext;
 
 use crate::Session;
 
@@ -53,17 +36,18 @@ pub struct Message {
 }
 
 impl<T: SessionStream> Session<T> {
-    pub async fn fetch_mailbox(&self, account_id: u32) -> Result<Mailbox, MethodError> {
+    pub async fn fetch_mailbox(&self, account_id: u32) -> trc::Result<Mailbox> {
         // Obtain message ids
         let message_ids = self
-            .jmap
+            .server
             .get_tag(
                 account_id,
                 Collection::Email,
                 Property::MailboxIds,
                 INBOX_ID,
             )
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .unwrap_or_default();
 
         if message_ids.is_empty() {
@@ -74,30 +58,32 @@ impl<T: SessionStream> Session<T> {
         let mut message_sizes = AHashMap::new();
 
         // Obtain UID validity
-        self.jmap.mailbox_get_or_create(account_id).await?;
+        self.server
+            .mailbox_get_or_create(account_id)
+            .await
+            .caused_by(trc::location!())?;
         let uid_validity = self
-            .jmap
+            .server
             .get_property::<Object<Value>>(
                 account_id,
                 Collection::Mailbox,
                 INBOX_ID,
                 &Property::Value,
             )
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .and_then(|obj| obj.get(&Property::Cid).as_uint())
             .ok_or_else(|| {
-                tracing::debug!(event = "error",
-                context = "store",
-                account_id = account_id,
-                collection = ?Collection::Mailbox,
-                mailbox_id = INBOX_ID,
-                "Failed to obtain uid validity");
-                MethodError::ServerPartialFail
+                trc::StoreEvent::UnexpectedError
+                    .caused_by(trc::location!())
+                    .details("Failed to obtain UID validity")
+                    .account_id(account_id)
+                    .document_id(INBOX_ID)
             })
             .map(|v| v as u32)?;
 
         // Obtain message sizes
-        self.jmap
+        self.server
             .core
             .storage
             .data
@@ -132,24 +118,19 @@ impl<T: SessionStream> Session<T> {
                 },
             )
             .await
-            .map_err(|err| {
-                tracing::error!(context = "fetch_mailbox", 
-                reason = ?err,
-                 "Failed to iterate message sizes");
-
-                MethodError::ServerPartialFail
-            })?;
+            .caused_by(trc::location!())?;
 
         // Sort by UID
         for (message_id, uid_mailbox) in self
-            .jmap
+            .server
             .get_properties::<Vec<UidMailbox>, _, _>(
                 account_id,
                 Collection::Email,
                 &message_ids,
                 Property::MailboxIds,
             )
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .into_iter()
         {
             // Make sure the message is still in Inbox

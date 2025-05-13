@@ -1,46 +1,59 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use common::{config::smtp::queue::QueueQuota, expr::functions::ResolveVariable};
+use std::future::Future;
+
+use common::{config::smtp::queue::QueueQuota, expr::functions::ResolveVariable, Server};
 use store::{
     write::{BatchBuilder, QueueClass, ValueClass},
     ValueKey,
 };
+use trc::QueueEvent;
 
-use crate::core::{throttle::NewKey, SMTP};
+use crate::core::throttle::NewKey;
 
 use super::{Message, QueueEnvelope, QuotaKey, Status};
 
-impl SMTP {
-    pub async fn has_quota(&self, message: &mut Message) -> bool {
+pub trait HasQueueQuota: Sync + Send {
+    fn has_quota(&self, message: &mut Message) -> impl Future<Output = bool> + Send;
+    fn check_quota<'x>(
+        &'x self,
+        quota: &'x QueueQuota,
+        envelope: &impl ResolveVariable,
+        size: usize,
+        id: u64,
+        refs: &mut Vec<QuotaKey>,
+        session_id: u64,
+    ) -> impl Future<Output = bool> + Send;
+}
+
+impl HasQueueQuota for Server {
+    async fn has_quota(&self, message: &mut Message) -> bool {
         let mut quota_keys = Vec::new();
 
         if !self.core.smtp.queue.quota.sender.is_empty() {
             for quota in &self.core.smtp.queue.quota.sender {
                 if !self
-                    .check_quota(quota, message, message.size, 0, &mut quota_keys)
+                    .check_quota(
+                        quota,
+                        message,
+                        message.size,
+                        0,
+                        &mut quota_keys,
+                        message.span_id,
+                    )
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.span_id,
+                        Id = quota.id.clone(),
+                        Type = "Sender"
+                    );
+
                     return false;
                 }
             }
@@ -55,9 +68,17 @@ impl SMTP {
                         message.size,
                         ((domain_idx + 1) << 32) as u64,
                         &mut quota_keys,
+                        message.span_id,
                     )
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.span_id,
+                        Id = quota.id.clone(),
+                        Type = "Domain"
+                    );
+
                     return false;
                 }
             }
@@ -72,9 +93,17 @@ impl SMTP {
                         message.size,
                         (rcpt_idx + 1) as u64,
                         &mut quota_keys,
+                        message.span_id,
                     )
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.span_id,
+                        Id = quota.id.clone(),
+                        Type = "Recipient"
+                    );
+
                     return false;
                 }
             }
@@ -92,15 +121,15 @@ impl SMTP {
         size: usize,
         id: u64,
         refs: &mut Vec<QuotaKey>,
+        session_id: u64,
     ) -> bool {
         if !quota.expr.is_empty()
             && self
-                .core
-                .eval_expr(&quota.expr, envelope, "check_quota")
+                .eval_expr(&quota.expr, envelope, "check_quota", session_id)
                 .await
                 .unwrap_or(false)
         {
-            let key = quota.new_key(envelope);
+            let key = quota.new_key(envelope, "");
             if let Some(max_size) = quota.size {
                 let used_size = self
                     .core

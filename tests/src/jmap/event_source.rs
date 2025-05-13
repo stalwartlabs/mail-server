@@ -1,34 +1,21 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
 
-use crate::jmap::{
-    assert_is_empty, delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_login,
+use crate::{
+    directory::internal::TestInternalDirectory,
+    jmap::{
+        assert_is_empty, delivery::SmtpConnection, mailbox::destroy_all_mailboxes,
+        test_account_login,
+    },
 };
-use directory::backend::internal::manage::ManageDirectory;
+use email::mailbox::INBOX_ID;
 use futures::StreamExt;
-use jmap::mailbox::INBOX_ID;
+
 use jmap_client::{event_source::Changes, mailbox::Role, TypeState};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashSet;
@@ -42,20 +29,21 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create test account
     let server = params.server.clone();
-    params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
-        .await;
     let account_id = Id::from(
         server
             .core
             .storage
             .data
-            .get_or_create_account_id("jdoe@example.com")
-            .await
-            .unwrap(),
+            .create_test_user(
+                "jdoe@example.com",
+                "12345",
+                "John Doe",
+                &["jdoe@example.com"],
+            )
+            .await,
     )
     .to_string();
+
     let client = test_account_login("jdoe@example.com", "12345").await;
 
     let mut changes = client
@@ -129,9 +117,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
 
     // Destroy Inbox
-    params
-        .client
-        .set_default_account_id(&account_id.to_string());
+    params.client.set_default_account_id(account_id.to_string());
     params
         .client
         .mailbox_destroy(&Id::from(INBOX_ID).to_string(), true)

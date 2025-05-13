@@ -1,29 +1,12 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
 
-use crate::smtp::{inbound::TestQueueEvent, outbound::TestServer, session::TestSession};
+use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestSMTP};
 
 use store::{
     write::{ReportClass, ValueClass},
@@ -45,12 +28,15 @@ store = "1s"
 
 #[tokio::test(flavor = "multi_thread")]
 async fn report_analyze() {
+    // Enable logging
+    crate::enable_logging();
+
     // Create temp dir for queue
-    let mut local = TestServer::new("smtp_analyze_report_test", CONFIG, true).await;
+    let mut local = TestSMTP::new("smtp_analyze_report_test", CONFIG).await;
 
     // Create test message
     let mut session = local.new_session();
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
@@ -130,6 +116,6 @@ async fn report_analyze() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    qr.read_event().await.assert_reload();
+    qr.read_event().await.assert_refresh();
     qr.last_queued_message().await;
 }

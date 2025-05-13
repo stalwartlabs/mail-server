@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::{Duration, Instant};
 
@@ -29,8 +12,8 @@ use smtp_proto::{MAIL_REQUIRETLS, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_NEVE
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
-    outbound::TestServer,
     session::{TestSession, VerifyResponse},
+    DnsCache, TestSMTP,
 };
 
 const LOCAL: &str = r#"
@@ -67,23 +50,19 @@ return-path = false
 #[tokio::test]
 #[serial_test::serial]
 async fn extensions() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Start test server
-    let mut remote = TestServer::new("smtp_ext_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("smtp_ext_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
 
     // Successful delivery with DSN
-    let mut local = TestServer::new("smtp_ext_local", LOCAL, true).await;
+    let mut local = TestSMTP::new("smtp_ext_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -91,7 +70,7 @@ async fn extensions() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -110,27 +89,26 @@ async fn extensions() {
         )
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
 
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: delivered");
-    local.qr.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_done();
     remote
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&remote.qr)
+        .read_lines(&remote.queue_receiver)
         .await
         .assert_contains("using TLSv1.3 with cipher");
 
@@ -139,23 +117,22 @@ async fn extensions() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:arc", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (host 'mx.foobar.org' rejected command 'MAIL FROM:")
         .assert_contains("Action: failed")
         .assert_contains("Diagnostic-Code: smtp;552")
         .assert_contains("Status: 5.3.4");
-    local.qr.read_event().await.assert_reload();
-    remote.qr.assert_no_events();
+    local.queue_receiver.read_event().await.assert_done();
+    remote.queue_receiver.assert_no_events();
 
     // Test DSN, SMTPUTF8 and REQUIRETLS extensions
     session
@@ -167,13 +144,12 @@ async fn extensions() {
         )
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
-    local.qr.read_event().await.assert_reload();
-    let message = remote.qr.expect_message().await;
+        .try_deliver(core.clone());
+    local.queue_receiver.read_event().await.assert_done();
+    let message = remote.queue_receiver.expect_message().await;
     assert_eq!(message.env_id, Some("abc123".to_string()));
     assert!((message.flags & MAIL_RET_HDRS) != 0);
     assert!((message.flags & MAIL_REQUIRETLS) != 0);

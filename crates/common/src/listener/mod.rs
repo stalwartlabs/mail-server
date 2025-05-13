@@ -1,27 +1,10 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
+use std::{borrow::Cow, net::IpAddr, sync::Arc, time::Instant};
 
 use rustls::ServerConfig;
 use std::fmt::Debug;
@@ -30,17 +13,19 @@ use tokio::{
     sync::watch,
 };
 use tokio_rustls::{Accept, TlsAcceptor};
-use utils::config::ipmask::IpAddrMask;
+use trc::{Event, EventType, Key};
+use utils::{config::ipmask::IpAddrMask, snowflake::SnowflakeIdGenerator};
 
 use crate::{
     config::server::ServerProtocol,
     expr::{functions::ResolveVariable, *},
-    Core,
+    Server,
 };
 
 use self::limiter::{ConcurrencyLimiter, InFlight};
 
 pub mod acme;
+pub mod asn;
 pub mod blocked;
 pub mod limiter;
 pub mod listen;
@@ -54,6 +39,7 @@ pub struct ServerInstance {
     pub limiter: ConcurrencyLimiter,
     pub proxy_networks: Vec<IpAddrMask>,
     pub shutdown_rx: watch::Receiver<bool>,
+    pub span_id_gen: Arc<SnowflakeIdGenerator>,
 }
 
 #[derive(Default)]
@@ -84,7 +70,7 @@ pub struct SessionData<T: SessionStream> {
     pub remote_ip: IpAddr,
     pub remote_port: u16,
     pub protocol: ServerProtocol,
-    pub span: tracing::Span,
+    pub session_id: u64,
     pub in_flight: InFlight,
     pub instance: Arc<ServerInstance>,
 }
@@ -94,59 +80,137 @@ pub trait SessionStream: AsyncRead + AsyncWrite + Unpin + 'static + Sync + Send 
     fn tls_version_and_cipher(&self) -> (Cow<'static, str>, Cow<'static, str>);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionResult {
+    Continue,
+    Close,
+    UpgradeTls,
+}
+
 pub trait SessionManager: Sync + Send + 'static + Clone {
     fn spawn<T: SessionStream>(
         &self,
         mut session: SessionData<T>,
         is_tls: bool,
-        acme_core: Option<Arc<Core>>,
+        acme_core: Option<Server>,
+        span_start: EventType,
+        span_end: EventType,
     ) {
         let manager = self.clone();
 
         tokio::spawn(async move {
+            let start_time = Instant::now();
+            let local_port = session.local_port;
+            let session_id;
+
             if is_tls {
                 match session
                     .instance
                     .acceptor
-                    .accept(session.stream, acme_core)
+                    .accept(session.stream, acme_core, &session.instance)
                     .await
                 {
                     TcpAcceptorResult::Tls(accept) => match accept.await {
                         Ok(stream) => {
-                            let session = SessionData {
-                                stream,
-                                local_ip: session.local_ip,
-                                local_port: session.local_port,
-                                remote_ip: session.remote_ip,
-                                remote_port: session.remote_port,
-                                protocol: session.protocol,
-                                span: session.span,
-                                in_flight: session.in_flight,
-                                instance: session.instance,
-                            };
-                            manager.handle(session).await;
+                            // Generate sessionId
+                            session.session_id =
+                                session.instance.span_id_gen.generate().unwrap_or_default();
+                            session_id = session.session_id;
+
+                            // Send span
+                            Event::with_keys(
+                                span_start,
+                                vec![
+                                    (Key::ListenerId, session.instance.id.clone().into()),
+                                    (Key::LocalPort, session.local_port.into()),
+                                    (Key::RemoteIp, session.remote_ip.into()),
+                                    (Key::RemotePort, session.remote_port.into()),
+                                    (Key::SpanId, session.session_id.into()),
+                                ],
+                            )
+                            .send_with_metrics();
+
+                            manager
+                                .handle(SessionData {
+                                    stream,
+                                    local_ip: session.local_ip,
+                                    local_port: session.local_port,
+                                    remote_ip: session.remote_ip,
+                                    remote_port: session.remote_port,
+                                    protocol: session.protocol,
+                                    session_id: session.session_id,
+                                    in_flight: session.in_flight,
+                                    instance: session.instance,
+                                })
+                                .await;
                         }
                         Err(err) => {
-                            tracing::debug!(
-                                context = "tls",
-                                event = "error",
-                                instance = session.instance.id,
-                                protocol = ?session.instance.protocol,
-                                remote.ip = session.remote_ip.to_string(),
-                                "Failed to accept TLS connection: {}",
-                                err
+                            trc::event!(
+                                Tls(trc::TlsEvent::HandshakeError),
+                                ListenerId = session.instance.id.clone(),
+                                LocalPort = local_port,
+                                RemoteIp = session.remote_ip,
+                                RemotePort = session.remote_port,
+                                Reason = err.to_string(),
                             );
+
+                            return;
                         }
                     },
                     TcpAcceptorResult::Plain(stream) => {
+                        // Generate sessionId
+                        session.session_id =
+                            session.instance.span_id_gen.generate().unwrap_or_default();
+                        session_id = session.session_id;
+
+                        // Send span
+                        Event::with_keys(
+                            span_start,
+                            vec![
+                                (Key::ListenerId, session.instance.id.clone().into()),
+                                (Key::LocalPort, session.local_port.into()),
+                                (Key::RemoteIp, session.remote_ip.into()),
+                                (Key::RemotePort, session.remote_port.into()),
+                                (Key::SpanId, session.session_id.into()),
+                            ],
+                        )
+                        .send_with_metrics();
+
                         session.stream = stream;
                         manager.handle(session).await;
                     }
-                    TcpAcceptorResult::Close => (),
+                    TcpAcceptorResult::Close => return,
                 }
             } else {
+                // Generate sessionId
+                session.session_id = session.instance.span_id_gen.generate().unwrap_or_default();
+                session_id = session.session_id;
+
+                // Send span
+                Event::with_keys(
+                    span_start,
+                    vec![
+                        (Key::ListenerId, session.instance.id.clone().into()),
+                        (Key::LocalPort, session.local_port.into()),
+                        (Key::RemoteIp, session.remote_ip.into()),
+                        (Key::RemotePort, session.remote_port.into()),
+                        (Key::SpanId, session.session_id.into()),
+                    ],
+                )
+                .send_with_metrics();
+
                 manager.handle(session).await;
             }
+
+            // End span
+            Event::with_keys(
+                span_end,
+                vec![
+                    (Key::SpanId, session_id.into()),
+                    (Key::Elapsed, start_time.elapsed().into()),
+                ],
+            )
+            .send_with_metrics();
         });
     }
 
@@ -170,6 +234,10 @@ impl<T: SessionStream> ResolveVariable for SessionData<T> {
             V_TLS => self.stream.is_tls().into(),
             _ => crate::expr::Variable::default(),
         }
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
     }
 }
 

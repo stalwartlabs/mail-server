@@ -1,30 +1,16 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use store::Store;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{backend::internal::manage::ManageDirectory, Principal, Type};
+use crate::{
+    backend::internal::{manage::ManageDirectory, PrincipalField},
+    Principal, Type, ROLE_ADMIN, ROLE_USER,
+};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -51,17 +37,18 @@ impl MemoryDirectory {
             let name = config
                 .value_require((prefix.as_str(), "principals", lookup_id, "name"))?
                 .to_string();
-            let typ = match config.value((prefix.as_str(), "principals", lookup_id, "class")) {
-                Some("individual") => Type::Individual,
-                Some("admin") => Type::Superuser,
-                Some("group") => Type::Group,
-                _ => Type::Individual,
-            };
+            let (typ, is_superuser) =
+                match config.value((prefix.as_str(), "principals", lookup_id, "class")) {
+                    Some("individual") => (Type::Individual, false),
+                    Some("admin") => (Type::Individual, true),
+                    Some("group") => (Type::Group, false),
+                    _ => (Type::Individual, false),
+                };
 
             // Obtain id
             let id = directory
                 .data_store
-                .get_or_create_account_id(&name)
+                .get_or_create_principal_id(&name, Type::Individual)
                 .await
                 .map_err(|err| {
                     config.new_build_error(
@@ -74,17 +61,28 @@ impl MemoryDirectory {
                 })
                 .ok()?;
 
+            // Create principal
+            let mut principal = Principal {
+                id,
+                typ,
+                ..Default::default()
+            }
+            .with_field(
+                PrincipalField::Roles,
+                if is_superuser { ROLE_ADMIN } else { ROLE_USER },
+            );
+
             // Obtain group ids
-            let mut member_of = Vec::new();
             for group in config
                 .values((prefix.as_str(), "principals", lookup_id, "member-of"))
                 .map(|(_, s)| s.to_string())
                 .collect::<Vec<_>>()
             {
-                member_of.push(
+                principal.append_int(
+                    PrincipalField::MemberOf,
                     directory
                         .data_store
-                        .get_or_create_account_id(&group)
+                        .get_or_create_principal_id(&group, Type::Group)
                         .await
                         .map_err(|err| {
                             config.new_build_error(
@@ -100,7 +98,6 @@ impl MemoryDirectory {
             }
 
             // Parse email addresses
-            let mut emails = Vec::new();
             for (pos, (_, email)) in config
                 .values((prefix.as_str(), "principals", lookup_id, "email"))
                 .enumerate()
@@ -119,7 +116,7 @@ impl MemoryDirectory {
                     directory.domains.insert(domain.to_lowercase());
                 }
 
-                emails.push(email.to_lowercase());
+                principal.append_str(PrincipalField::Emails, email.to_lowercase());
             }
 
             // Parse mailing lists
@@ -136,23 +133,22 @@ impl MemoryDirectory {
                 }
             }
 
-            directory.principals.push(Principal {
-                name: name.clone(),
-                secrets: config
-                    .values((prefix.as_str(), "principals", lookup_id, "secret"))
-                    .map(|(_, v)| v.to_string())
-                    .collect(),
-                typ,
-                description: config
-                    .value((prefix.as_str(), "principals", lookup_id, "description"))
-                    .map(|v| v.to_string()),
-                quota: config
-                    .property((prefix.as_str(), "principals", lookup_id, "quota"))
-                    .unwrap_or(0),
-                member_of,
-                id,
-                emails,
-            });
+            principal.set(PrincipalField::Name, name.clone());
+            for (_, secret) in config.values((prefix.as_str(), "principals", lookup_id, "secret")) {
+                principal.append_str(PrincipalField::Secrets, secret.to_string());
+            }
+            if let Some(description) =
+                config.value((prefix.as_str(), "principals", lookup_id, "description"))
+            {
+                principal.set(PrincipalField::Description, description.to_string());
+            }
+            if let Some(quota) =
+                config.property::<u64>((prefix.as_str(), "principals", lookup_id, "quota"))
+            {
+                principal.set(PrincipalField::Quota, quota);
+            }
+
+            directory.principals.push(principal);
         }
 
         Some(directory)

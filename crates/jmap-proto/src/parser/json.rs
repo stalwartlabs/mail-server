@@ -1,31 +1,14 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{fmt::Display, iter::Peekable, slice::Iter};
 
-use crate::{error::method::MethodError, request::method::MethodObject};
+use crate::request::method::MethodObject;
 
-use super::{Error, Ignore, JsonObjectParser, Token};
+use super::{Ignore, JsonObjectParser, Token};
 
 const MAX_NESTED_LEVELS: u32 = 16;
 
@@ -57,25 +40,33 @@ impl<'x> Parser<'x> {
         }
     }
 
-    pub fn error(&self, message: &str) -> Error {
-        format!("{message} at position {}.", self.pos).into()
+    pub fn error(&self, message: &str) -> trc::Error {
+        trc::JmapEvent::NotJson
+            .into_err()
+            .details(format!("{message} at position {}.", self.pos))
     }
 
-    pub fn error_unterminated(&self) -> Error {
-        format!("Unterminated string at position {pos}.", pos = self.pos).into()
+    pub fn error_unterminated(&self) -> trc::Error {
+        trc::JmapEvent::NotJson.into_err().details(format!(
+            "Unterminated string at position {pos}.",
+            pos = self.pos
+        ))
     }
 
-    pub fn error_utf8(&self) -> Error {
-        format!("Invalid UTF-8 sequence at position {pos}.", pos = self.pos).into()
+    pub fn error_utf8(&self) -> trc::Error {
+        trc::JmapEvent::NotJson.into_err().details(format!(
+            "Invalid UTF-8 sequence at position {pos}.",
+            pos = self.pos
+        ))
     }
 
-    pub fn error_value(&mut self) -> Error {
+    pub fn error_value(&mut self) -> trc::Error {
         if self.is_eof || self.skip_string() {
-            Error::Method(MethodError::InvalidArguments(format!(
+            trc::JmapEvent::InvalidArguments.into_err().details(format!(
                 "Invalid value {:?} at position {}.",
                 String::from_utf8_lossy(self.bytes[self.pos_marker..self.pos - 1].as_ref()),
                 self.pos
-            )))
+            ))
         } else {
             self.error_unterminated()
         }
@@ -93,7 +84,7 @@ impl<'x> Parser<'x> {
     }
 
     #[inline(always)]
-    pub fn next_unescaped(&mut self) -> super::Result<Option<u8>> {
+    pub fn next_unescaped(&mut self) -> trc::Result<Option<u8>> {
         match self.next_char() {
             Some(b'"') => {
                 self.is_eof = true;
@@ -129,7 +120,7 @@ impl<'x> Parser<'x> {
         false
     }
 
-    pub fn next_token<T: JsonObjectParser>(&mut self) -> super::Result<Token<T>> {
+    pub fn next_token<T: JsonObjectParser>(&mut self) -> trc::Result<Token<T>> {
         let mut next_ch = self.next_ch.take().or_else(|| self.next_char());
 
         while let Some(mut ch) = next_ch {
@@ -280,9 +271,7 @@ impl<'x> Parser<'x> {
         Err(self.error("Unexpected EOF"))
     }
 
-    pub fn next_dict_key<T: JsonObjectParser + Display + Eq>(
-        &mut self,
-    ) -> super::Result<Option<T>> {
+    pub fn next_dict_key<T: JsonObjectParser + Display + Eq>(&mut self) -> trc::Result<Option<T>> {
         loop {
             match self.next_token::<T>()? {
                 Token::String(k) => {
@@ -298,11 +287,7 @@ impl<'x> Parser<'x> {
         }
     }
 
-    pub fn skip_token(
-        &mut self,
-        start_depth_array: u32,
-        start_depth_dict: u32,
-    ) -> super::Result<()> {
+    pub fn skip_token(&mut self, start_depth_array: u32, start_depth_dict: u32) -> trc::Result<()> {
         while {
             self.next_token::<Ignore>()?;
             start_depth_array != self.depth_array || start_depth_dict != self.depth_dict

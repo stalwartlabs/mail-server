@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use sieve::{runtime::Variable, Context};
 
@@ -33,14 +16,13 @@ pub fn fn_img_metadata<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Variable {
                 "type" => imagesize::image_type(bytes).ok().map(|t| {
                     Variable::from(match t {
                         imagesize::ImageType::Aseprite => "aseprite",
-                        imagesize::ImageType::Avif => "avif",
                         imagesize::ImageType::Bmp => "bmp",
                         imagesize::ImageType::Dds => "dds",
                         imagesize::ImageType::Exr => "exr",
                         imagesize::ImageType::Farbfeld => "farbfeld",
                         imagesize::ImageType::Gif => "gif",
                         imagesize::ImageType::Hdr => "hdr",
-                        imagesize::ImageType::Heif => "heif",
+                        imagesize::ImageType::Heif(_) => "heif",
                         imagesize::ImageType::Ico => "ico",
                         imagesize::ImageType::Jpeg => "jpeg",
                         imagesize::ImageType::Jxl => "jxl",
@@ -53,6 +35,8 @@ pub fn fn_img_metadata<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Variable {
                         imagesize::ImageType::Tiff => "tiff",
                         imagesize::ImageType::Vtf => "vtf",
                         imagesize::ImageType::Webp => "webp",
+                        imagesize::ImageType::Ilbm => "ilbm",
+                        _ => "unknown",
                     })
                 }),
                 "width" => imagesize::blob_size(bytes)

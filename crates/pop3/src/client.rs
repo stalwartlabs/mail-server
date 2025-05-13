@@ -1,40 +1,29 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use common::listener::SessionStream;
+use common::{
+    listener::{SessionResult, SessionStream},
+    KV_RATE_LIMIT_IMAP,
+};
 use mail_send::Credentials;
+use trc::{AddContext, SecurityEvent};
 
 use crate::{
-    protocol::{request::Error, response::Response, Command, Mechanism},
+    protocol::{request::Error, Command, Mechanism},
     Session, State,
 };
 
 impl<T: SessionStream> Session<T> {
-    pub async fn ingest(&mut self, bytes: &[u8]) -> Result<bool, ()> {
-        /*let tmp = "dd";
-        for line in String::from_utf8_lossy(bytes).split("\r\n") {
-            println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);
-        }*/
+    pub async fn ingest(&mut self, bytes: &[u8]) -> SessionResult {
+        trc::event!(
+            Pop3(trc::Pop3Event::RawInput),
+            SpanId = self.session_id,
+            Size = bytes.len(),
+            Contents = trc::Value::from_maybe_string(bytes),
+        );
 
         let mut bytes = bytes.iter();
         let mut requests = Vec::with_capacity(2);
@@ -63,20 +52,43 @@ impl<T: SessionStream> Session<T> {
                     break;
                 }
                 Err(Error::Parse(err)) => {
-                    requests.push(Err(err));
+                    // Check for port scanners
+                    if matches!(&self.state, State::NotAuthenticated { .. },) {
+                        match self.server.is_scanner_fail2banned(self.remote_addr).await {
+                            Ok(true) => {
+                                trc::event!(
+                                    Security(SecurityEvent::ScanBan),
+                                    SpanId = self.session_id,
+                                    RemoteIp = self.remote_addr,
+                                    Reason = "Invalid POP3 command",
+                                );
+
+                                return SessionResult::Close;
+                            }
+                            Ok(false) => {}
+                            Err(err) => {
+                                trc::error!(err
+                                    .span_id(self.session_id)
+                                    .details("Failed to check for fail2ban"));
+                            }
+                        }
+                    }
+                    requests.push(Err(trc::Pop3Event::Error.into_err().details(err)));
                 }
             }
         }
 
         for request in requests {
-            match request {
+            let result = match request {
                 Ok(command) => match self.validate_request(command).await {
                     Ok(command) => match command {
                         Command::User { name } => {
                             if let State::NotAuthenticated { username, .. } = &mut self.state {
                                 let response = format!("{name} is a valid mailbox");
                                 *username = Some(name);
-                                self.write_ok(response).await?;
+                                self.write_ok(response)
+                                    .await
+                                    .map(|_| SessionResult::Continue)
                             } else {
                                 unreachable!();
                             }
@@ -92,78 +104,79 @@ impl<T: SessionStream> Session<T> {
                                 username,
                                 secret: string,
                             })
-                            .await?;
+                            .await
+                            .map(|_| SessionResult::Continue)
                         }
-                        Command::Quit => {
-                            self.handle_quit().await?;
-                        }
-                        Command::Stat => self.handle_stat().await?,
+                        Command::Quit => self.handle_quit().await.map(|_| SessionResult::Close),
+                        Command::Stat => self.handle_stat().await.map(|_| SessionResult::Continue),
                         Command::List { msg } => {
-                            self.handle_list(msg).await?;
+                            self.handle_list(msg).await.map(|_| SessionResult::Continue)
                         }
-                        Command::Retr { msg } => {
-                            self.handle_fetch(msg, None).await?;
+                        Command::Retr { msg } => self
+                            .handle_fetch(msg, None)
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Dele { msg } => self
+                            .handle_dele(vec![msg])
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::DeleMany { msgs } => self
+                            .handle_dele(msgs)
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Top { msg, n } => self
+                            .handle_fetch(msg, n.into())
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Uidl { msg } => {
+                            self.handle_uidl(msg).await.map(|_| SessionResult::Continue)
                         }
-                        Command::Dele { msg } => self.handle_dele(vec![msg]).await?,
-                        Command::DeleMany { msgs } => self.handle_dele(msgs).await?,
-                        Command::Top { msg, n } => {
-                            self.handle_fetch(msg, n.into()).await?;
-                        }
-                        Command::Uidl { msg } => self.handle_uidl(msg).await?,
                         Command::Noop => {
-                            self.write_ok("NOOP").await?;
-                        }
-                        Command::Rset => {
-                            self.handle_rset().await?;
-                        }
-                        Command::Capa => {
-                            let mechanisms =
-                                if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
-                                    vec![Mechanism::Plain, Mechanism::OAuthBearer]
-                                } else {
-                                    vec![Mechanism::OAuthBearer]
-                                };
+                            trc::event!(
+                                Pop3(trc::Pop3Event::Noop),
+                                SpanId = self.session_id,
+                                Elapsed = trc::Value::Duration(0)
+                            );
 
-                            self.write_bytes(
-                                Response::Capability::<u32> {
-                                    mechanisms,
-                                    stls: !self.stream.is_tls(),
-                                }
-                                .serialize(),
-                            )
-                            .await?;
+                            self.write_ok("NOOP").await.map(|_| SessionResult::Continue)
                         }
+                        Command::Rset => self.handle_rset().await.map(|_| SessionResult::Continue),
+                        Command::Capa => self.handle_capa().await.map(|_| SessionResult::Continue),
                         Command::Stls => {
-                            self.write_ok("Begin TLS negotiation now").await?;
-                            return Ok(false);
+                            self.handle_stls().await.map(|_| SessionResult::UpgradeTls)
                         }
-                        Command::Utf8 => {
-                            self.write_ok("UTF8 enabled").await?;
-                        }
-                        Command::Auth { mechanism, params } => {
-                            self.handle_sasl(mechanism, params).await?;
-                        }
-                        Command::Apop { .. } => {
-                            self.write_err("APOP not supported.").await?;
-                        }
+                        Command::Utf8 => self.handle_utf8().await.map(|_| SessionResult::Continue),
+                        Command::Auth { mechanism, params } => self
+                            .handle_sasl(mechanism, params)
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Apop { .. } => Err(trc::Pop3Event::Error
+                            .into_err()
+                            .details("APOP not supported.")),
                     },
-                    Err(err) => {
-                        self.write_err(err).await?;
-                    }
+                    Err(err) => Err(err),
                 },
+                Err(err) => Err(err),
+            };
+
+            match result {
+                Ok(SessionResult::Continue) => (),
+                Ok(result) => return result,
                 Err(err) => {
-                    self.write_err(err).await?;
+                    if !self.write_err(err).await {
+                        return SessionResult::Close;
+                    }
                 }
             }
         }
 
-        Ok(true)
+        SessionResult::Continue
     }
 
     async fn validate_request(
         &self,
         command: Command<String, Mechanism>,
-    ) -> Result<Command<String, Mechanism>, &'static str> {
+    ) -> trc::Result<Command<String, Mechanism>> {
         match &command {
             Command::Capa | Command::Quit | Command::Noop => Ok(command),
             Command::Auth {
@@ -174,31 +187,41 @@ impl<T: SessionStream> Session<T> {
             | Command::Pass { .. }
             | Command::Apop { .. } => {
                 if let State::NotAuthenticated { username, .. } = &self.state {
-                    if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
+                    if self.stream.is_tls() || self.server.core.imap.allow_plain_auth {
                         if !matches!(command, Command::Pass { .. }) || username.is_some() {
                             Ok(command)
                         } else {
-                            Err("Username was not provided.")
+                            Err(trc::Pop3Event::Error
+                                .into_err()
+                                .details("Username was not provided."))
                         }
                     } else {
-                        Err("Cannot authenticate over plain-text.")
+                        Err(trc::Pop3Event::Error
+                            .into_err()
+                            .details("Cannot authenticate over plain-text."))
                     }
                 } else {
-                    Err("Already authenticated.")
+                    Err(trc::Pop3Event::Error
+                        .into_err()
+                        .details("Already authenticated."))
                 }
             }
             Command::Auth { .. } => {
                 if let State::NotAuthenticated { .. } = &self.state {
                     Ok(command)
                 } else {
-                    Err("Already authenticated.")
+                    Err(trc::Pop3Event::Error
+                        .into_err()
+                        .details("Already authenticated."))
                 }
             }
             Command::Stls => {
                 if !self.stream.is_tls() {
                     Ok(command)
                 } else {
-                    Err("Already in TLS mode.")
+                    Err(trc::Pop3Event::Error
+                        .into_err()
+                        .details("Already in TLS mode."))
                 }
             }
 
@@ -212,28 +235,33 @@ impl<T: SessionStream> Session<T> {
             | Command::Stat
             | Command::Rset => {
                 if let State::Authenticated { mailbox, .. } = &self.state {
-                    if let Some(rate) = &self.jmap.core.imap.rate_requests {
-                        match self
-                            .jmap
+                    if let Some(rate) = &self.server.core.imap.rate_requests {
+                        if self
+                            .server
                             .core
                             .storage
                             .lookup
                             .is_rate_allowed(
-                                format!("ireq:{}", mailbox.account_id).as_bytes(),
+                                KV_RATE_LIMIT_IMAP,
+                                &mailbox.account_id.to_be_bytes(),
                                 rate,
                                 true,
                             )
                             .await
+                            .caused_by(trc::location!())?
+                            .is_none()
                         {
-                            Ok(None) => Ok(command),
-                            Ok(Some(_)) => Err("Too many requests"),
-                            Err(_) => Err("Internal server error"),
+                            Ok(command)
+                        } else {
+                            Err(trc::LimitEvent::TooManyRequests.into_err())
                         }
                     } else {
                         Ok(command)
                     }
                 } else {
-                    Err("Not authenticated.")
+                    Err(trc::Pop3Event::Error
+                        .into_err()
+                        .details("Not authenticated."))
                 }
             }
         }

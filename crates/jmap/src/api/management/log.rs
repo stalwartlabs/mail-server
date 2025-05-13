@@ -5,39 +5,49 @@ use std::{
 };
 
 use chrono::DateTime;
+use common::{auth::AccessToken, Server};
+use directory::{backend::internal::manage, Permission};
 use rev_lines::RevLines;
 use serde::Serialize;
 use serde_json::json;
+use std::future::Future;
 use tokio::sync::oneshot;
 use utils::url_params::UrlParams;
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
-
-use super::ManagementApiError;
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 #[derive(Serialize)]
 struct LogEntry {
     timestamp: String,
     level: String,
-    message: String,
+    event: String,
+    event_id: String,
+    details: String,
 }
 
-impl JMAP {
-    pub async fn handle_view_logs(&self, req: &HttpRequest) -> HttpResponse {
-        // Obtain log file path
-        let path = match self.core.storage.config.get("tracer.log.path").await {
-            Ok(Some(path)) => path,
-            Ok(None) => {
-                return ManagementApiError::Unsupported {
-                    details: "Tracer log path not configured".into(),
-                }
-                .into_http_response()
-            }
-            Err(err) => return err.into_http_response(),
-        };
+pub trait LogManagement: Sync + Send {
+    fn handle_view_logs(
+        &self,
+        req: &HttpRequest,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl LogManagement for Server {
+    async fn handle_view_logs(
+        &self,
+        req: &HttpRequest,
+        access_token: &AccessToken,
+    ) -> trc::Result<HttpResponse> {
+        // Validate the access token
+        access_token.assert_has_permission(Permission::LogsView)?;
+
+        let path = self
+            .core
+            .metrics
+            .log_path
+            .clone()
+            .ok_or_else(|| manage::unsupported("Tracer log path not configured"))?;
 
         let params = UrlParams::new(req.uri().query());
         let filter = params.get("filter").unwrap_or_default().to_string();
@@ -51,25 +61,27 @@ impl JMAP {
             let _ = tx.send(read_log_files(path, &filter, offset, limit));
         });
 
-        match rx.await {
-            Ok(result) => match result {
-                Ok((total, items)) => JsonResponse::new(json!({
-                    "data": {
-                        "items": items,
-                        "total": total,
-                    },
-                }))
-                .into_http_response(),
-                Err(err) => err.into_http_response(),
+        let (total, items) = rx
+            .await
+            .map_err(|err| {
+                trc::EventType::Server(trc::ServerEvent::ThreadError)
+                    .reason(err)
+                    .caused_by(trc::location!())
+            })?
+            .map_err(|err| {
+                trc::ManageEvent::Error
+                    .reason(err)
+                    .details("Failed to read log files")
+                    .caused_by(trc::location!())
+            })?;
+
+        Ok(JsonResponse::new(json!({
+            "data": {
+                "items": items,
+                "total": total,
             },
-            Err(_) => {
-                tracing::warn!(context = "view_logs", event = "error", "Thread join error");
-                ManagementApiError::Other {
-                    details: "Thread join error".into(),
-                }
-                .into_http_response()
-            }
-        }
+        }))
+        .into_http_response())
     }
 }
 
@@ -122,12 +134,15 @@ impl LogEntry {
     fn from_line(line: &str) -> Option<Self> {
         let (timestamp, rest) = line.split_once(' ')?;
         let timestamp = DateTime::parse_from_rfc3339(timestamp).ok()?;
-        let (level, message) = rest.trim().split_once(' ')?;
-        let message = message.split_once(": ").map_or(message, |(_, v)| v);
+        let (level, rest) = rest.trim().split_once(' ')?;
+        let (event, rest) = rest.trim().split_once(" (")?;
+        let (event_id, details) = rest.split_once(")")?;
         Some(Self {
             timestamp: timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             level: level.to_string(),
-            message: message.to_string(),
+            event: event.to_string(),
+            event_id: event_id.to_string(),
+            details: details.trim().to_string(),
         })
     }
 }

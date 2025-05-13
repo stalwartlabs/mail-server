@@ -1,55 +1,41 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{
-    fmt::Debug,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::atomic::AtomicU8,
-};
+use std::{fmt::Debug, net::IpAddr};
 
 use ahash::AHashSet;
-use parking_lot::RwLock;
-use utils::config::{
-    ipmask::{IpAddrMask, IpAddrOrMask},
-    utils::ParseValue,
-    Config, ConfigKey, Rate,
+use utils::{
+    config::{
+        ipmask::{IpAddrMask, IpAddrOrMask},
+        utils::ParseValue,
+        Config, ConfigKey, Rate,
+    },
+    glob::GlobPattern,
 };
 
-use crate::Core;
+use crate::{
+    ip_to_bytes, manager::config::MatchType, Server, KV_RATE_LIMIT_AUTH, KV_RATE_LIMIT_LOITER,
+    KV_RATE_LIMIT_RCPT, KV_RATE_LIMIT_SCAN,
+};
 
-pub struct BlockedIps {
-    pub ip_addresses: RwLock<AHashSet<IpAddr>>,
-    pub version: AtomicU8,
-    ip_networks: Vec<IpAddrMask>,
-    has_networks: bool,
-    limiter_rate: Option<Rate>,
-}
+#[derive(Debug, Clone)]
+pub struct Security {
+    blocked_ip_networks: Vec<IpAddrMask>,
+    has_blocked_networks: bool,
 
-#[derive(Clone)]
-pub struct AllowedIps {
-    ip_addresses: AHashSet<IpAddr>,
-    ip_networks: Vec<IpAddrMask>,
-    has_networks: bool,
+    allowed_ip_addresses: AHashSet<IpAddr>,
+    allowed_ip_networks: Vec<IpAddrMask>,
+    has_allowed_networks: bool,
+
+    http_banned_paths: Vec<MatchType>,
+    scanner_fail_rate: Option<Rate>,
+
+    auth_fail_rate: Option<Rate>,
+    rcpt_fail_rate: Option<Rate>,
+    loiter_fail_rate: Option<Rate>,
 }
 
 pub const BLOCKED_IP_KEY: &str = "server.blocked-ip";
@@ -57,43 +43,15 @@ pub const BLOCKED_IP_PREFIX: &str = "server.blocked-ip.";
 pub const ALLOWED_IP_KEY: &str = "server.allowed-ip";
 pub const ALLOWED_IP_PREFIX: &str = "server.allowed-ip.";
 
-impl BlockedIps {
-    pub fn parse(config: &mut Config) -> Self {
-        let mut ip_addresses = AHashSet::new();
-        let mut ip_networks = Vec::new();
-
-        for ip in config
-            .set_values(BLOCKED_IP_KEY)
-            .map(IpAddrOrMask::parse_value)
-            .collect::<Vec<_>>()
-        {
-            match ip {
-                Ok(IpAddrOrMask::Ip(ip)) => {
-                    ip_addresses.insert(ip);
-                }
-                Ok(IpAddrOrMask::Mask(ip)) => {
-                    ip_networks.push(ip);
-                }
-                Err(err) => {
-                    config.new_parse_error(BLOCKED_IP_KEY, err);
-                }
-            }
-        }
-
-        BlockedIps {
-            ip_addresses: RwLock::new(ip_addresses),
-            has_networks: !ip_networks.is_empty(),
-            ip_networks,
-            limiter_rate: config.property_or_default::<Rate>("authentication.fail2ban", "100/1d"),
-            version: 0.into(),
-        }
-    }
+pub struct BlockedIps {
+    pub blocked_ip_addresses: AHashSet<IpAddr>,
+    pub blocked_ip_networks: Vec<IpAddrMask>,
 }
 
-impl AllowedIps {
+impl Security {
     pub fn parse(config: &mut Config) -> Self {
-        let mut ip_addresses = AHashSet::new();
-        let mut ip_networks = Vec::new();
+        let mut allowed_ip_addresses = AHashSet::new();
+        let mut allowed_ip_networks = Vec::new();
 
         for ip in config
             .set_values(ALLOWED_IP_KEY)
@@ -102,10 +60,10 @@ impl AllowedIps {
         {
             match ip {
                 Ok(IpAddrOrMask::Ip(ip)) => {
-                    ip_addresses.insert(ip);
+                    allowed_ip_addresses.insert(ip);
                 }
                 Ok(IpAddrOrMask::Mask(ip)) => {
-                    ip_networks.push(ip);
+                    allowed_ip_networks.push(ip);
                 }
                 Err(err) => {
                     config.new_parse_error(ALLOWED_IP_KEY, err);
@@ -113,138 +71,271 @@ impl AllowedIps {
             }
         }
 
-        // Add loopback addresses
-        ip_addresses.insert(IpAddr::V4(Ipv4Addr::LOCALHOST));
-        ip_addresses.insert(IpAddr::V6(Ipv6Addr::LOCALHOST));
+        #[cfg(not(feature = "test_mode"))]
+        {
+            // Add loopback addresses
+            allowed_ip_addresses.insert(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+            allowed_ip_addresses.insert(IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
+        }
 
-        AllowedIps {
-            ip_addresses,
-            has_networks: !ip_networks.is_empty(),
-            ip_networks,
+        let blocked = BlockedIps::parse(config);
+
+        // Parse blocked HTTP paths
+        let mut http_banned_paths = config
+            .values("server.auto-ban.scan.paths")
+            .filter_map(|(_, v)| {
+                let v = v.trim();
+                if !v.is_empty() {
+                    MatchType::parse(v).into()
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if http_banned_paths.is_empty() {
+            for pattern in [
+                "*.php*",
+                "*.cgi*",
+                "*.asp*",
+                "*/wp-*",
+                "*/php*",
+                "*/cgi-bin*",
+                "*xmlrpc*",
+                "*../*",
+                "*/..*",
+                "*joomla*",
+                "*wordpress*",
+                "*drupal*",
+            ]
+            .iter()
+            {
+                http_banned_paths.push(MatchType::Matches(GlobPattern::compile(pattern, true)));
+            }
+        }
+
+        Security {
+            has_blocked_networks: !blocked.blocked_ip_networks.is_empty(),
+            blocked_ip_networks: blocked.blocked_ip_networks,
+            has_allowed_networks: !allowed_ip_networks.is_empty(),
+            allowed_ip_addresses,
+            allowed_ip_networks,
+            auth_fail_rate: config
+                .property_or_default::<Option<Rate>>("server.auto-ban.auth.rate", "100/1d")
+                .unwrap_or_default(),
+            rcpt_fail_rate: config
+                .property_or_default::<Option<Rate>>("server.auto-ban.abuse.rate", "35/1d")
+                .unwrap_or_default(),
+            loiter_fail_rate: config
+                .property_or_default::<Option<Rate>>("server.auto-ban.loiter.rate", "150/1d")
+                .unwrap_or_default(),
+            http_banned_paths,
+            scanner_fail_rate: config
+                .property_or_default::<Option<Rate>>("server.auto-ban.scan.rate", "30/1d")
+                .unwrap_or_default(),
         }
     }
 }
 
-impl Core {
-    pub async fn is_fail2banned(&self, ip: IpAddr, login: String) -> store::Result<bool> {
-        if let Some(rate) = &self.network.blocked_ips.limiter_rate {
+impl Server {
+    pub async fn is_rcpt_fail2banned(&self, ip: IpAddr, rcpt: &str) -> trc::Result<bool> {
+        if let Some(rate) = &self.core.network.security.rcpt_fail_rate {
             let is_allowed = self.is_ip_allowed(&ip)
                 || (self
-                    .storage
-                    .lookup
-                    .is_rate_allowed(format!("b:{}", ip).as_bytes(), rate, false)
+                    .in_memory_store()
+                    .is_rate_allowed(KV_RATE_LIMIT_RCPT, &ip_to_bytes(&ip), rate, false)
                     .await?
                     .is_none()
                     && self
-                        .storage
-                        .lookup
-                        .is_rate_allowed(format!("b:{}", login).as_bytes(), rate, false)
+                        .in_memory_store()
+                        .is_rate_allowed(KV_RATE_LIMIT_RCPT, rcpt.as_bytes(), rate, false)
                         .await?
                         .is_none());
+
             if !is_allowed {
-                // Add IP to blocked list
-                self.network.blocked_ips.ip_addresses.write().insert(ip);
-
-                // Write blocked IP to config
-                self.storage
-                    .config
-                    .set([ConfigKey {
-                        key: format!("{}.{}", BLOCKED_IP_KEY, ip),
-                        value: String::new(),
-                    }])
-                    .await?;
-
-                // Increment version
-                self.network.blocked_ips.increment_version();
-
-                return Ok(true);
+                return self.block_ip(ip).await.map(|_| true);
             }
         }
 
         Ok(false)
     }
 
-    pub fn has_fail2ban(&self) -> bool {
-        self.network.blocked_ips.limiter_rate.is_some()
+    pub async fn is_scanner_fail2banned(&self, ip: IpAddr) -> trc::Result<bool> {
+        if let Some(rate) = &self.core.network.security.scanner_fail_rate {
+            let is_allowed = self.is_ip_allowed(&ip)
+                || self
+                    .in_memory_store()
+                    .is_rate_allowed(KV_RATE_LIMIT_SCAN, &ip_to_bytes(&ip), rate, false)
+                    .await?
+                    .is_none();
+
+            if !is_allowed {
+                return self.block_ip(ip).await.map(|_| true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub async fn is_http_banned_path(&self, path: &str, ip: IpAddr) -> trc::Result<bool> {
+        let paths = &self.core.network.security.http_banned_paths;
+
+        if !paths.is_empty() && paths.iter().any(|p| p.matches(path)) && !self.is_ip_allowed(&ip) {
+            self.block_ip(ip).await.map(|_| true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub async fn is_loiter_fail2banned(&self, ip: IpAddr) -> trc::Result<bool> {
+        if let Some(rate) = &self.core.network.security.loiter_fail_rate {
+            let is_allowed = self.is_ip_allowed(&ip)
+                || self
+                    .in_memory_store()
+                    .is_rate_allowed(KV_RATE_LIMIT_LOITER, &ip_to_bytes(&ip), rate, false)
+                    .await?
+                    .is_none();
+
+            if !is_allowed {
+                return self.block_ip(ip).await.map(|_| true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub async fn is_auth_fail2banned(&self, ip: IpAddr, login: Option<&str>) -> trc::Result<bool> {
+        if let Some(rate) = &self.core.network.security.auth_fail_rate {
+            let login = login.unwrap_or_default();
+            let is_allowed = self.is_ip_allowed(&ip)
+                || (self
+                    .in_memory_store()
+                    .is_rate_allowed(KV_RATE_LIMIT_AUTH, &ip_to_bytes(&ip), rate, false)
+                    .await?
+                    .is_none()
+                    && (login.is_empty()
+                        || self
+                            .in_memory_store()
+                            .is_rate_allowed(KV_RATE_LIMIT_AUTH, login.as_bytes(), rate, false)
+                            .await?
+                            .is_none()));
+            if !is_allowed {
+                return self.block_ip(ip).await.map(|_| true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    async fn block_ip(&self, ip: IpAddr) -> trc::Result<()> {
+        // Add IP to blocked list
+        self.inner.data.blocked_ips.write().insert(ip);
+
+        // Write blocked IP to config
+        self.core
+            .storage
+            .config
+            .set(
+                [ConfigKey {
+                    key: format!("{}.{}", BLOCKED_IP_KEY, ip),
+                    value: String::new(),
+                }],
+                true,
+            )
+            .await?;
+
+        // Increment version
+        self.increment_blocked_version();
+
+        Ok(())
+    }
+
+    pub fn has_auth_fail2ban(&self) -> bool {
+        self.core.network.security.auth_fail_rate.is_some()
     }
 
     pub fn is_ip_blocked(&self, ip: &IpAddr) -> bool {
-        self.network.blocked_ips.ip_addresses.read().contains(ip)
-            || (self.network.blocked_ips.has_networks
+        self.inner.data.blocked_ips.read().contains(ip)
+            || (self.core.network.security.has_blocked_networks
                 && self
+                    .core
                     .network
-                    .blocked_ips
-                    .ip_networks
+                    .security
+                    .blocked_ip_networks
                     .iter()
                     .any(|network| network.matches(ip)))
     }
 
     pub fn is_ip_allowed(&self, ip: &IpAddr) -> bool {
-        self.network.allowed_ips.ip_addresses.contains(ip)
-            || (self.network.allowed_ips.has_networks
+        self.core.network.security.allowed_ip_addresses.contains(ip)
+            || (self.core.network.security.has_allowed_networks
                 && self
+                    .core
                     .network
-                    .allowed_ips
-                    .ip_networks
+                    .security
+                    .allowed_ip_networks
                     .iter()
                     .any(|network| network.matches(ip)))
     }
-}
 
-impl BlockedIps {
-    pub fn increment_version(&self) {
-        self.version
+    pub fn increment_blocked_version(&self) {
+        self.inner
+            .data
+            .blocked_ips_version
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
-impl Default for BlockedIps {
-    fn default() -> Self {
+impl BlockedIps {
+    pub fn parse(config: &mut Config) -> Self {
+        let mut blocked_ip_addresses = AHashSet::new();
+        let mut blocked_ip_networks = Vec::new();
+
+        for ip in config
+            .set_values(BLOCKED_IP_KEY)
+            .map(IpAddrOrMask::parse_value)
+            .collect::<Vec<_>>()
+        {
+            match ip {
+                Ok(IpAddrOrMask::Ip(ip)) => {
+                    blocked_ip_addresses.insert(ip);
+                }
+                Ok(IpAddrOrMask::Mask(ip)) => {
+                    blocked_ip_networks.push(ip);
+                }
+                Err(err) => {
+                    config.new_parse_error(BLOCKED_IP_KEY, err);
+                }
+            }
+        }
+
         Self {
-            ip_addresses: RwLock::new(AHashSet::new()),
-            ip_networks: Default::default(),
-            has_networks: Default::default(),
-            limiter_rate: Default::default(),
-            version: Default::default(),
+            blocked_ip_addresses,
+            blocked_ip_networks,
         }
     }
 }
 
-impl Default for AllowedIps {
+#[allow(clippy::derivable_impls)]
+impl Default for Security {
     fn default() -> Self {
         // Add IPv4 and IPv6 loopback addresses
         Self {
-            ip_addresses: AHashSet::from_iter([
-                IpAddr::V4(Ipv4Addr::LOCALHOST),
-                IpAddr::V6(Ipv6Addr::LOCALHOST),
+            #[cfg(not(feature = "test_mode"))]
+            allowed_ip_addresses: AHashSet::from_iter([
+                IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
             ]),
-            ip_networks: Default::default(),
-            has_networks: Default::default(),
+            #[cfg(feature = "test_mode")]
+            allowed_ip_addresses: Default::default(),
+            allowed_ip_networks: Default::default(),
+            has_allowed_networks: Default::default(),
+            blocked_ip_networks: Default::default(),
+            has_blocked_networks: Default::default(),
+            auth_fail_rate: Default::default(),
+            rcpt_fail_rate: Default::default(),
+            loiter_fail_rate: Default::default(),
+            scanner_fail_rate: Default::default(),
+            http_banned_paths: Default::default(),
         }
-    }
-}
-
-impl Clone for BlockedIps {
-    fn clone(&self) -> Self {
-        Self {
-            ip_addresses: RwLock::new(self.ip_addresses.read().clone()),
-            ip_networks: self.ip_networks.clone(),
-            has_networks: self.has_networks,
-            limiter_rate: self.limiter_rate.clone(),
-            version: self
-                .version
-                .load(std::sync::atomic::Ordering::Relaxed)
-                .into(),
-        }
-    }
-}
-
-impl Debug for BlockedIps {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BlockedIps")
-            .field("ip_addresses", &self.ip_addresses)
-            .field("ip_networks", &self.ip_networks)
-            .field("limiter_rate", &self.limiter_rate)
-            .finish()
     }
 }

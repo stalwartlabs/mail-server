@@ -1,46 +1,30 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 pub mod client;
 pub mod session;
 
 use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
-use common::listener::{limiter::InFlight, ServerInstance};
-use imap::core::{ImapInstance, Inner};
+use common::{
+    auth::AccessToken,
+    listener::{limiter::InFlight, ServerInstance},
+    Inner, Server,
+};
 use imap_proto::receiver::{CommandParser, Receiver};
-use jmap::{auth::AccessToken, JMAP};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 pub struct Session<T: AsyncRead + AsyncWrite> {
-    pub jmap: JMAP,
-    pub imap: Arc<Inner>,
+    pub server: Server,
     pub instance: Arc<ServerInstance>,
     pub receiver: Receiver<Command>,
     pub state: State,
     pub remote_addr: IpAddr,
     pub stream: T,
-    pub span: tracing::Span,
+    pub session_id: u64,
     pub in_flight: InFlight,
 }
 
@@ -65,12 +49,12 @@ impl State {
 
 #[derive(Clone)]
 pub struct ManageSieveSessionManager {
-    pub imap: ImapInstance,
+    pub inner: Arc<Inner>,
 }
 
 impl ManageSieveSessionManager {
-    pub fn new(imap: ImapInstance) -> Self {
-        Self { imap }
+    pub fn new(inner: Arc<Inner>) -> Self {
+        Self { inner }
     }
 }
 
@@ -176,15 +160,38 @@ impl ResponseCode {
             ResponseCode::Warnings => b"WARNINGS",
         });
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ResponseCode::AuthTooWeak => "AUTH-TOO-WEAK",
+            ResponseCode::EncryptNeeded => "ENCRYPT-NEEDED",
+            ResponseCode::Quota => "QUOTA",
+            ResponseCode::QuotaMaxScripts => "QUOTA/MAXSCRIPTS",
+            ResponseCode::QuotaMaxSize => "QUOTA/MAXSIZE",
+            ResponseCode::Referral => "REFERRAL",
+            ResponseCode::Sasl => "SASL",
+            ResponseCode::TransitionNeeded => "TRANSITION-NEEDED",
+            ResponseCode::TryLater => "TRYLATER",
+            ResponseCode::Active => "ACTIVE",
+            ResponseCode::NonExistent => "NONEXISTENT",
+            ResponseCode::AlreadyExists => "ALREADYEXISTS",
+            ResponseCode::Tag(_) => "TAG",
+            ResponseCode::Warnings => "WARNINGS",
+        }
+    }
 }
 
 impl ResponseType {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(match self {
-            ResponseType::Ok => b"OK",
-            ResponseType::No => b"NO",
-            ResponseType::Bye => b"BYE",
-        });
+        buf.extend_from_slice(self.as_str().as_bytes());
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ResponseType::Ok => "OK",
+            ResponseType::No => "NO",
+            ResponseType::Bye => "BYE",
+        }
     }
 }
 
@@ -249,5 +256,57 @@ impl StatusResponse {
             message: Cow::Borrowed("Database failure"),
             rtype: ResponseType::No,
         }
+    }
+}
+
+pub trait SerializeResponse {
+    fn serialize(&self) -> Vec<u8>;
+}
+
+impl SerializeResponse for trc::Error {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(64);
+        buf.extend_from_slice(self.value_as_str(trc::Key::Type).unwrap_or("NO").as_bytes());
+        if let Some(code) = self
+            .value_as_str(trc::Key::Code)
+            .or_else(|| match self.as_ref() {
+                trc::EventType::Store(trc::StoreEvent::NotFound) => {
+                    Some(ResponseCode::NonExistent.as_str())
+                }
+                trc::EventType::Store(_) => Some(ResponseCode::TryLater.as_str()),
+                trc::EventType::Limit(trc::LimitEvent::Quota) => Some(ResponseCode::Quota.as_str()),
+                trc::EventType::Limit(_) => Some(ResponseCode::TryLater.as_str()),
+                _ => None,
+            })
+        {
+            buf.extend_from_slice(b" (");
+            buf.extend_from_slice(code.as_bytes());
+            buf.push(b')');
+        }
+        let message = self
+            .value_as_str(trc::Key::Details)
+            .unwrap_or_else(|| self.as_ref().message());
+        buf.extend_from_slice(b" \"");
+        for ch in message.as_bytes() {
+            if [b'\"', b'\\'].contains(ch) {
+                buf.push(b'\\');
+            }
+            buf.push(*ch);
+        }
+        buf.push(b'\"');
+        buf.extend_from_slice(b"\r\n");
+        buf
+    }
+}
+
+impl From<ResponseCode> for trc::Value {
+    fn from(value: ResponseCode) -> Self {
+        trc::Value::Static(value.as_str())
+    }
+}
+
+impl From<ResponseType> for trc::Value {
+    fn from(value: ResponseType) -> Self {
+        trc::Value::Static(value.as_str())
     }
 }

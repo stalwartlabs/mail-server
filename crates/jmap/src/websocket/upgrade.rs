@@ -1,49 +1,39 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::sync::Arc;
 
-use common::listener::ServerInstance;
-use http_body_util::{BodyExt, Full};
-use hyper::{body::Bytes, Response, StatusCode};
+use common::{auth::AccessToken, Server};
+use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
-use jmap_proto::error::request::RequestError;
 use tokio_tungstenite::WebSocketStream;
+use trc::JmapEvent;
 use tungstenite::{handshake::derive_accept_key, protocol::Role};
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse},
-    auth::AccessToken,
-    JMAP,
-};
+use crate::api::{http::HttpSessionData, HttpRequest, HttpResponse, HttpResponseBody};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn upgrade_websocket_connection(
+use super::stream::WebSocketHandler;
+
+pub trait WebSocketUpgrade: Sync + Send {
+    fn upgrade_websocket_connection(
         &self,
         req: HttpRequest,
         access_token: Arc<AccessToken>,
-        instance: Arc<ServerInstance>,
-    ) -> HttpResponse {
+        session: HttpSessionData,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl WebSocketUpgrade for Server {
+    async fn upgrade_websocket_connection(
+        &self,
+        req: HttpRequest,
+        access_token: Arc<AccessToken>,
+        session: HttpSessionData,
+    ) -> trc::Result<HttpResponse> {
         let headers = req.headers();
         if headers
             .get(hyper::header::CONNECTION)
@@ -54,12 +44,13 @@ impl JMAP {
                 .and_then(|h| h.to_str().ok())
                 != Some("websocket")
         {
-            return RequestError::blank(
-                StatusCode::BAD_REQUEST.as_u16(),
-                "WebSocket upgrade failed",
-                "Missing or Invalid Connection or Upgrade headers.",
-            )
-            .into_http_response();
+            return Err(trc::ResourceEvent::BadParameters
+                .into_err()
+                .details("WebSocket upgrade failed")
+                .ctx(
+                    trc::Key::Reason,
+                    "Missing or Invalid Connection or Upgrade headers.",
+                ));
         }
         let derived_key = match (
             headers
@@ -71,12 +62,13 @@ impl JMAP {
         ) {
             (Some(key), Some("13")) => derive_accept_key(key.as_bytes()),
             _ => {
-                return RequestError::blank(
-                    StatusCode::BAD_REQUEST.as_u16(),
-                    "WebSocket upgrade failed",
-                    "Missing or Invalid Sec-WebSocket-Key headers.",
-                )
-                .into_http_response();
+                return Err(trc::ResourceEvent::BadParameters
+                    .into_err()
+                    .details("WebSocket upgrade failed")
+                    .ctx(
+                        trc::Key::Reason,
+                        "Missing or Invalid Sec-WebSocket-Key headers.",
+                    ));
             }
         };
 
@@ -84,6 +76,7 @@ impl JMAP {
         let jmap = self.clone();
         tokio::spawn(async move {
             // Upgrade connection
+            let session_id = session.session_id;
             match hyper::upgrade::on(req).await {
                 Ok(upgraded) => {
                     jmap.handle_websocket_stream(
@@ -94,27 +87,27 @@ impl JMAP {
                         )
                         .await,
                         access_token,
-                        instance,
+                        session,
                     )
                     .await;
                 }
-                Err(e) => {
-                    tracing::debug!("WebSocket upgrade failed: {}", e);
+                Err(err) => {
+                    trc::event!(
+                        Jmap(JmapEvent::WebsocketError),
+                        Details = "Websocket upgrade failed",
+                        SpanId = session_id,
+                        Reason = err.to_string()
+                    );
                 }
             }
         });
 
-        Response::builder()
-            .status(hyper::StatusCode::SWITCHING_PROTOCOLS)
-            .header(hyper::header::CONNECTION, "upgrade")
-            .header(hyper::header::UPGRADE, "websocket")
-            .header("Sec-WebSocket-Accept", &derived_key)
-            .header("Sec-WebSocket-Protocol", "jmap")
-            .body(
-                Full::new(Bytes::from("Switching to WebSocket protocol"))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+        Ok(HttpResponse {
+            status: StatusCode::SWITCHING_PROTOCOLS,
+            content_type: "".into(),
+            content_disposition: "".into(),
+            cache_control: "".into(),
+            body: HttpResponseBody::WebsocketUpgrade(derived_key),
+        })
     }
 }

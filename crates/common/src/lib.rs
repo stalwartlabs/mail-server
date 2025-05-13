@@ -1,126 +1,306 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    hash::{BuildHasher, Hasher},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::{
+        atomic::{AtomicBool, AtomicU8},
+        Arc,
+    },
+};
 
+use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
+use auth::{oauth::config::OAuthConfig, roles::RolePermissions, AccessToken};
 use config::{
     imap::ImapConfig,
     jmap::settings::JmapConfig,
+    network::Network,
     scripts::Scripting,
     smtp::{
-        auth::{ArcSealer, DkimSigner},
-        queue::RelayHost,
+        resolver::{Policy, Tlsa},
         SmtpConfig,
     },
+    spamfilter::{IpResolver, SpamFilterConfig},
     storage::Storage,
-    tracers::{OtelTracer, Tracer, Tracers},
+    telemetry::Metrics,
 };
-use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy};
-use expr::if_block::IfBlock;
-use listener::{
-    blocked::{AllowedIps, BlockedIps},
-    tls::TlsManager,
+
+use imap_proto::protocol::list::Attribute;
+use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
+use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
+
+use mail_auth::{Txt, MX};
+use manager::webadmin::{Resource, WebAdminManager};
+use nlp::bayes::{TokenHash, Weights};
+use parking_lot::{Mutex, RwLock};
+use rustls::sign::CertifiedKey;
+use tokio::sync::{mpsc, Notify, Semaphore};
+use tokio_rustls::TlsConnector;
+use utils::{
+    cache::{Cache, CacheItemWeight, CacheWithTtl},
+    snowflake::SnowflakeIdGenerator,
 };
-use mail_send::Credentials;
-use opentelemetry::KeyValue;
-use opentelemetry_sdk::{
-    trace::{self, Sampler},
-    Resource,
-};
-use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
-use sieve::Sieve;
-use store::LookupStore;
-use tokio::sync::oneshot;
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{
-    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer, Registry,
-};
-use utils::{config::Config, BlobHash};
 
 pub mod addresses;
+pub mod auth;
 pub mod config;
+pub mod core;
+pub mod dns;
+#[cfg(feature = "enterprise")]
+pub mod enterprise;
 pub mod expr;
+pub mod ipc;
 pub mod listener;
 pub mod manager;
 pub mod scripts;
+pub mod telemetry;
 
-pub static USER_AGENT: &str = concat!("StalwartMail/", env!("CARGO_PKG_VERSION"),);
+pub use psl;
+
+pub static USER_AGENT: &str = concat!("Stalwart/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
 
-pub type SharedCore = Arc<ArcSwap<Core>>;
+pub const IPC_CHANNEL_BUFFER: usize = 1024;
+
+pub const KV_ACME: u8 = 0;
+pub const KV_OAUTH: u8 = 1;
+pub const KV_RATE_LIMIT_RCPT: u8 = 2;
+pub const KV_RATE_LIMIT_SCAN: u8 = 3;
+pub const KV_RATE_LIMIT_LOITER: u8 = 4;
+pub const KV_RATE_LIMIT_AUTH: u8 = 5;
+pub const KV_RATE_LIMIT_SMTP: u8 = 6;
+pub const KV_RATE_LIMIT_CONTACT: u8 = 7;
+pub const KV_RATE_LIMIT_HTTP_AUTHENTICATED: u8 = 8;
+pub const KV_RATE_LIMIT_HTTP_ANONYMOUS: u8 = 9;
+pub const KV_RATE_LIMIT_IMAP: u8 = 10;
+pub const KV_TOKEN_REVISION: u8 = 11;
+pub const KV_REPUTATION_IP: u8 = 12;
+pub const KV_REPUTATION_FROM: u8 = 13;
+pub const KV_REPUTATION_DOMAIN: u8 = 14;
+pub const KV_REPUTATION_ASN: u8 = 15;
+pub const KV_GREYLIST: u8 = 16;
+pub const KV_BAYES_MODEL_GLOBAL: u8 = 17;
+pub const KV_BAYES_MODEL_USER: u8 = 18;
+pub const KV_TRUSTED_REPLY: u8 = 19;
+pub const KV_LOCK_PURGE_ACCOUNT: u8 = 20;
+pub const KV_LOCK_QUEUE_MESSAGE: u8 = 21;
+pub const KV_LOCK_QUEUE_REPORT: u8 = 22;
+pub const KV_LOCK_EMAIL_TASK: u8 = 23;
+pub const KV_LOCK_HOUSEKEEPER: u8 = 24;
+
+#[derive(Clone)]
+pub struct Server {
+    pub inner: Arc<Inner>,
+    pub core: Arc<Core>,
+}
+
+pub struct Inner {
+    pub shared_core: ArcSwap<Core>,
+    pub data: Data,
+    pub cache: Caches,
+    pub ipc: Ipc,
+}
+
+pub struct Data {
+    pub tls_certificates: ArcSwap<AHashMap<String, Arc<CertifiedKey>>>,
+    pub tls_self_signed_cert: Option<Arc<CertifiedKey>>,
+
+    pub blocked_ips: RwLock<AHashSet<IpAddr>>,
+    pub blocked_ips_version: AtomicU8,
+
+    pub asn_geo_data: AsnGeoLookupData,
+
+    pub jmap_id_gen: SnowflakeIdGenerator,
+    pub queue_id_gen: SnowflakeIdGenerator,
+    pub span_id_gen: SnowflakeIdGenerator,
+    pub queue_status: AtomicBool,
+
+    pub webadmin: WebAdminManager,
+    pub logos: Mutex<AHashMap<String, Option<Resource<Vec<u8>>>>>,
+    pub config_version: AtomicU8,
+
+    pub smtp_connectors: TlsConnectors,
+}
+
+pub struct Caches {
+    pub access_tokens: Cache<u32, Arc<AccessToken>>,
+    pub http_auth: Cache<String, HttpAuthCache>,
+    pub permissions: Cache<u32, Arc<RolePermissions>>,
+
+    pub account: Cache<AccountId, Arc<Account>>,
+    pub mailbox: Cache<MailboxId, Arc<MailboxState>>,
+    pub threads: Cache<u32, Arc<Threads>>,
+
+    pub bayes: CacheWithTtl<TokenHash, Weights>,
+
+    pub dns_txt: CacheWithTtl<String, Txt>,
+    pub dns_mx: CacheWithTtl<String, Arc<Vec<MX>>>,
+    pub dns_ptr: CacheWithTtl<IpAddr, Arc<Vec<String>>>,
+    pub dns_ipv4: CacheWithTtl<String, Arc<Vec<Ipv4Addr>>>,
+    pub dns_ipv6: CacheWithTtl<String, Arc<Vec<Ipv6Addr>>>,
+    pub dns_tlsa: CacheWithTtl<String, Arc<Tlsa>>,
+    pub dbs_mta_sts: CacheWithTtl<String, Arc<Policy>>,
+    pub dns_rbl: CacheWithTtl<String, Option<Arc<IpResolver>>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HttpAuthCache {
+    pub account_id: u32,
+    pub revision: u64,
+}
+
+pub struct Ipc {
+    pub state_tx: mpsc::Sender<StateEvent>,
+    pub housekeeper_tx: mpsc::Sender<HousekeeperEvent>,
+    pub index_tx: Arc<Notify>,
+    pub queue_tx: mpsc::Sender<QueueEvent>,
+    pub report_tx: mpsc::Sender<ReportingEvent>,
+    pub local_delivery_sm: Arc<Semaphore>,
+}
+
+pub struct TlsConnectors {
+    pub pki_verify: TlsConnector,
+    pub dummy_verify: TlsConnector,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct AccountId {
+    pub account_id: u32,
+    pub primary_id: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct MailboxId {
+    pub account_id: u32,
+    pub mailbox_id: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Account {
+    pub account_id: u32,
+    pub prefix: Option<String>,
+    pub mailbox_names: BTreeMap<String, u32>,
+    pub mailbox_state: AHashMap<u32, Mailbox>,
+    pub state_email: Option<u64>,
+    pub state_mailbox: Option<u64>,
+    pub obj_size: u64,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Mailbox {
+    pub has_children: bool,
+    pub is_subscribed: bool,
+    pub special_use: Option<Attribute>,
+    pub total_messages: Option<u64>,
+    pub total_unseen: Option<u64>,
+    pub total_deleted: Option<u64>,
+    pub total_deleted_storage: Option<u64>,
+    pub uid_validity: Option<u64>,
+    pub uid_next: Option<u64>,
+    pub size: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MailboxState {
+    pub uid_next: u32,
+    pub uid_validity: u32,
+    pub uid_max: u32,
+    pub id_to_imap: AHashMap<u32, ImapId>,
+    pub uid_to_id: AHashMap<u32, u32>,
+    pub total_messages: usize,
+    pub modseq: Option<u64>,
+    pub next_state: Option<Box<NextMailboxState>>,
+    pub obj_size: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct NextMailboxState {
+    pub next_state: MailboxState,
+    pub deletions: Vec<ImapId>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ImapId {
+    pub uid: u32,
+    pub seqnum: u32,
+}
+
+#[derive(Debug, Default)]
+pub struct Threads {
+    pub threads: AHashMap<u32, u32>,
+    pub modseq: Option<u64>,
+}
 
 #[derive(Clone, Default)]
 pub struct Core {
     pub storage: Storage,
     pub sieve: Scripting,
     pub network: Network,
-    pub tls: TlsManager,
+    pub acme: AcmeProviders,
+    pub oauth: OAuthConfig,
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
+    pub spam: SpamFilterConfig,
     pub imap: ImapConfig,
+    pub metrics: Metrics,
+    #[cfg(feature = "enterprise")]
+    pub enterprise: Option<enterprise::Enterprise>,
 }
 
-#[derive(Clone)]
-pub struct Network {
-    pub blocked_ips: BlockedIps,
-    pub allowed_ips: AllowedIps,
-    pub url: IfBlock,
+impl CacheItemWeight for AccountId {
+    fn weight(&self) -> u64 {
+        std::mem::size_of::<AccountId>() as u64
+    }
 }
 
-pub enum AuthResult<T> {
-    Success(T),
-    Failure,
-    Banned,
+impl CacheItemWeight for MailboxId {
+    fn weight(&self) -> u64 {
+        std::mem::size_of::<MailboxId>() as u64
+    }
 }
 
-#[derive(Debug)]
-pub enum DeliveryEvent {
-    Ingest {
-        message: IngestMessage,
-        result_tx: oneshot::Sender<Vec<DeliveryResult>>,
-    },
-    Stop,
+impl CacheItemWeight for Threads {
+    fn weight(&self) -> u64 {
+        ((self.threads.len() + 2) * std::mem::size_of::<Threads>()) as u64
+    }
 }
 
-#[derive(Debug)]
-pub struct IngestMessage {
-    pub sender_address: String,
-    pub recipients: Vec<String>,
-    pub message_blob: BlobHash,
-    pub message_size: usize,
+impl CacheItemWeight for MailboxState {
+    fn weight(&self) -> u64 {
+        self.obj_size
+    }
 }
 
-#[derive(Debug, Clone)]
-pub enum DeliveryResult {
-    Success,
-    TemporaryFailure {
-        reason: Cow<'static, str>,
-    },
-    PermanentFailure {
-        code: [u8; 3],
-        reason: Cow<'static, str>,
-    },
+impl CacheItemWeight for Account {
+    fn weight(&self) -> u64 {
+        self.obj_size
+    }
+}
+
+impl CacheItemWeight for HttpAuthCache {
+    fn weight(&self) -> u64 {
+        std::mem::size_of::<HttpAuthCache>() as u64
+    }
+}
+
+impl MailboxState {
+    pub fn calculate_weight(&self) -> u64 {
+        std::mem::size_of::<MailboxState>() as u64
+            + (self.id_to_imap.len() * std::mem::size_of::<ImapId>() + std::mem::size_of::<u32>())
+                as u64
+            + (self.uid_to_id.len() * std::mem::size_of::<u64>()) as u64
+            + self.next_state.as_ref().map_or(0, |n| {
+                std::mem::size_of::<NextMailboxState>() as u64
+                    + (n.deletions.len() * std::mem::size_of::<ImapId>()) as u64
+                    + n.next_state.calculate_weight()
+            })
+    }
 }
 
 pub trait IntoString: Sized {
@@ -134,290 +314,143 @@ impl IntoString for Vec<u8> {
     }
 }
 
-impl Core {
-    pub fn get_directory(&self, name: &str) -> Option<&Arc<Directory>> {
-        self.storage.directories.get(name)
+#[derive(Debug, Clone, Eq)]
+pub struct ThrottleKey {
+    pub hash: [u8; 32],
+}
+
+impl PartialEq for ThrottleKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+
+impl std::hash::Hash for ThrottleKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
+impl AsRef<[u8]> for ThrottleKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.hash
+    }
+}
+
+#[derive(Default)]
+pub struct ThrottleKeyHasher {
+    hash: u64,
+}
+
+impl Hasher for ThrottleKeyHasher {
+    fn finish(&self) -> u64 {
+        self.hash
     }
 
-    pub fn get_directory_or_default(&self, name: &str) -> &Arc<Directory> {
-        self.storage.directories.get(name).unwrap_or_else(|| {
-            tracing::debug!(
-                context = "get_directory",
-                event = "error",
-                directory = name,
-                "Directory not found, using default."
-            );
-
-            &self.storage.directory
-        })
+    fn write(&mut self, bytes: &[u8]) {
+        debug_assert!(
+            bytes.len() >= std::mem::size_of::<u64>(),
+            "ThrottleKeyHasher: input too short {bytes:?}"
+        );
+        self.hash = bytes
+            .get(0..std::mem::size_of::<u64>())
+            .map_or(0, |b| u64::from_ne_bytes(b.try_into().unwrap()));
     }
+}
 
-    pub fn get_lookup_store(&self, name: &str) -> &LookupStore {
-        self.storage.lookups.get(name).unwrap_or_else(|| {
-            tracing::debug!(
-                context = "get_lookup_store",
-                event = "error",
-                directory = name,
-                "Store not found, using default."
-            );
+#[derive(Clone, Default)]
+pub struct ThrottleKeyHasherBuilder {}
 
-            &self.storage.lookup
-        })
+impl BuildHasher for ThrottleKeyHasherBuilder {
+    type Hasher = ThrottleKeyHasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        ThrottleKeyHasher::default()
     }
+}
 
-    pub fn get_arc_sealer(&self, name: &str) -> Option<&ArcSealer> {
-        self.smtp
-            .mail_auth
-            .sealers
-            .get(name)
-            .map(|s| s.as_ref())
-            .or_else(|| {
-                tracing::warn!(
-                    context = "get_arc_sealer",
-                    event = "error",
-                    name = name,
-                    "Arc sealer not found."
-                );
-
-                None
-            })
-    }
-
-    pub fn get_dkim_signer(&self, name: &str) -> Option<&DkimSigner> {
-        self.smtp
-            .mail_auth
-            .signers
-            .get(name)
-            .map(|s| s.as_ref())
-            .or_else(|| {
-                tracing::warn!(
-                    context = "get_dkim_signer",
-                    event = "error",
-                    name = name,
-                    "DKIM signer not found."
-                );
-
-                None
-            })
-    }
-
-    pub fn get_sieve_script(&self, name: &str) -> Option<&Arc<Sieve>> {
-        self.sieve.scripts.get(name).or_else(|| {
-            tracing::warn!(
-                context = "get_sieve_script",
-                event = "error",
-                name = name,
-                "Sieve script not found."
-            );
-
-            None
-        })
-    }
-
-    pub fn get_relay_host(&self, name: &str) -> Option<&RelayHost> {
-        self.smtp.queue.relay_hosts.get(name).or_else(|| {
-            tracing::warn!(
-                context = "get_relay_host",
-                event = "error",
-                name = name,
-                "Remote host not found."
-            );
-
-            None
-        })
-    }
-
-    pub async fn authenticate(
-        &self,
-        directory: &Directory,
-        credentials: &Credentials<String>,
-        remote_ip: IpAddr,
-        return_member_of: bool,
-    ) -> directory::Result<AuthResult<Principal<u32>>> {
-        // First try to authenticate the user against the default directory
-        let result = match directory
-            .query(QueryBy::Credentials(credentials), return_member_of)
-            .await
-        {
-            Ok(Some(principal)) => return Ok(AuthResult::Success(principal)),
-            Ok(None) => Ok(()),
-            Err(err) => Err(err),
-        };
-
-        // Then check if the credentials match the fallback admin or master user
-        match (
-            &self.jmap.fallback_admin,
-            &self.jmap.master_user,
-            credentials,
-        ) {
-            (Some((fallback_admin, fallback_pass)), _, Credentials::Plain { username, secret })
-                if username == fallback_admin =>
-            {
-                if verify_secret_hash(fallback_pass, secret).await {
-                    return Ok(AuthResult::Success(Principal::fallback_admin(
-                        fallback_pass,
-                    )));
-                }
-            }
-            (_, Some((master_user, master_pass)), Credentials::Plain { username, secret })
-                if username.ends_with(master_user) =>
-            {
-                if verify_secret_hash(master_pass, secret).await {
-                    let username = username.strip_suffix(master_user).unwrap();
-                    let username = username.strip_suffix('%').unwrap_or(username);
-                    return Ok(
-                        if let Some(principal) = directory
-                            .query(QueryBy::Name(username), return_member_of)
-                            .await?
-                        {
-                            AuthResult::Success(principal)
-                        } else {
-                            AuthResult::Failure
-                        },
-                    );
-                }
-            }
-            _ => {}
-        }
-
-        if let Err(err) = result {
-            Err(err)
-        } else if self.has_fail2ban() {
-            let login = match credentials {
-                Credentials::Plain { username, .. }
-                | Credentials::XOauth2 { username, .. }
-                | Credentials::OAuthBearer { token: username } => username,
-            };
-            if self.is_fail2banned(remote_ip, login.to_string()).await? {
-                tracing::info!(
-                    context = "directory",
-                    event = "fail2ban",
-                    remote_ip = ?remote_ip,
-                    login = ?login,
-                    "IP address blocked after too many failed login attempts",
-                );
-
-                Ok(AuthResult::Banned)
-            } else {
-                Ok(AuthResult::Failure)
-            }
-        } else {
-            Ok(AuthResult::Failure)
+#[cfg(feature = "test_mode")]
+#[allow(clippy::derivable_impls)]
+impl Default for Server {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+            core: Default::default(),
         }
     }
 }
 
-impl Tracers {
-    pub fn enable(self, config: &mut Config) -> Option<Vec<WorkerGuard>> {
-        let mut layers: Option<Box<dyn Layer<Registry> + Sync + Send>> = None;
-        let mut guards = Vec::new();
-
-        for tracer in self.tracers {
-            let (Tracer::Stdout { level, .. }
-            | Tracer::Log { level, .. }
-            | Tracer::Journal { level }
-            | Tracer::Otel { level, .. }) = tracer;
-
-            let filter = match EnvFilter::builder().parse(format!(
-                "smtp={level},imap={level},jmap={level},pop3={level},store={level},common={level},utils={level},directory={level}"
-            )) {
-                Ok(filter) => {
-                    filter
-                }
-                Err(err) => {
-                    config.new_build_error("tracer", format!("Failed to set env filter: {err}"));
-                    continue;
-                }
-            };
-
-            let layer = match tracer {
-                Tracer::Stdout { ansi, .. } => tracing_subscriber::fmt::layer()
-                    .with_ansi(ansi)
-                    .with_filter(filter)
-                    .boxed(),
-                Tracer::Log { appender, ansi, .. } => {
-                    let (non_blocking, guard) = tracing_appender::non_blocking(appender);
-                    guards.push(guard);
-                    tracing_subscriber::fmt::layer()
-                        .with_writer(non_blocking)
-                        .with_ansi(ansi)
-                        .with_filter(filter)
-                        .boxed()
-                }
-                Tracer::Otel { tracer, .. } => {
-                    let tracer = match tracer {
-                        OtelTracer::Gprc(exporter) => opentelemetry_otlp::new_pipeline()
-                            .tracing()
-                            .with_exporter(exporter),
-                        OtelTracer::Http(exporter) => opentelemetry_otlp::new_pipeline()
-                            .tracing()
-                            .with_exporter(exporter),
-                    }
-                    .with_trace_config(
-                        trace::config()
-                            .with_resource(Resource::new(vec![
-                                KeyValue::new(SERVICE_NAME, "stalwart-mail".to_string()),
-                                KeyValue::new(
-                                    SERVICE_VERSION,
-                                    env!("CARGO_PKG_VERSION").to_string(),
-                                ),
-                            ]))
-                            .with_sampler(Sampler::AlwaysOn),
-                    )
-                    .install_batch(opentelemetry_sdk::runtime::Tokio);
-
-                    match tracer {
-                        Ok(tracer) => tracing_opentelemetry::layer()
-                            .with_tracer(tracer)
-                            .with_filter(filter)
-                            .boxed(),
-                        Err(err) => {
-                            config.new_build_error(
-                                "tracer",
-                                format!("Failed to start OpenTelemetry: {err}"),
-                            );
-                            continue;
-                        }
-                    }
-                }
-                Tracer::Journal { .. } => {
-                    #[cfg(unix)]
-                    {
-                        match tracing_journald::layer() {
-                            Ok(layer) => layer.with_filter(filter).boxed(),
-                            Err(err) => {
-                                config.new_build_error(
-                                    "tracer",
-                                    format!("Failed to start Journald: {err}"),
-                                );
-                                continue;
-                            }
-                        }
-                    }
-
-                    #[cfg(not(unix))]
-                    {
-                        config.new_build_error(
-                            "tracer",
-                            "Journald is only available on Unix systems.",
-                        );
-                        continue;
-                    }
-                }
-            };
-
-            layers = Some(match layers {
-                Some(layers) => layers.and_then(layer).boxed(),
-                None => layer,
-            });
+#[cfg(feature = "test_mode")]
+#[allow(clippy::derivable_impls)]
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            shared_core: Default::default(),
+            data: Default::default(),
+            ipc: Default::default(),
+            cache: Default::default(),
         }
+    }
+}
 
-        match tracing_subscriber::registry().with(layers?).try_init() {
-            Ok(_) => Some(guards),
-            Err(err) => {
-                config.new_build_error("tracer", format!("Failed to start tracing: {err}"));
-                None
-            }
+#[cfg(feature = "test_mode")]
+#[allow(clippy::derivable_impls)]
+impl Default for Caches {
+    fn default() -> Self {
+        Self {
+            access_tokens: Cache::new(1024, 10 * 1024 * 1024),
+            http_auth: Cache::new(1024, 10 * 1024 * 1024),
+            permissions: Cache::new(1024, 10 * 1024 * 1024),
+            account: Cache::new(1024, 10 * 1024 * 1024),
+            mailbox: Cache::new(1024, 10 * 1024 * 1024),
+            threads: Cache::new(1024, 10 * 1024 * 1024),
+            bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_rbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_txt: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_mx: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_ptr: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_ipv4: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_ipv6: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_tlsa: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dbs_mta_sts: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+        }
+    }
+}
+
+#[cfg(feature = "test_mode")]
+impl Default for Ipc {
+    fn default() -> Self {
+        Self {
+            state_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
+            housekeeper_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
+            index_tx: Default::default(),
+            queue_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
+            report_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
+            local_delivery_sm: Arc::new(Semaphore::new(10)),
+        }
+    }
+}
+
+pub fn ip_to_bytes(ip: &IpAddr) -> Vec<u8> {
+    match ip {
+        IpAddr::V4(ip) => ip.octets().to_vec(),
+        IpAddr::V6(ip) => ip.octets().to_vec(),
+    }
+}
+
+pub fn ip_to_bytes_prefix(prefix: u8, ip: &IpAddr) -> Vec<u8> {
+    match ip {
+        IpAddr::V4(ip) => {
+            let mut buf = Vec::with_capacity(5);
+            buf.push(prefix);
+            buf.extend_from_slice(&ip.octets());
+            buf
+        }
+        IpAddr::V6(ip) => {
+            let mut buf = Vec::with_capacity(17);
+            buf.push(prefix);
+            buf.extend_from_slice(&ip.octets());
+            buf
         }
     }
 }

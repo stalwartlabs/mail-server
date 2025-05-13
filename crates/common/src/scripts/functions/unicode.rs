@@ -1,35 +1,19 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use sieve::{runtime::Variable, Context};
-use unicode_security::MixedScript;
+
+use crate::scripts::IsMixedCharset;
 
 pub fn fn_is_ascii<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     match &v[0] {
-        Variable::String(s) => s.chars().all(|c| c.is_ascii()),
+        Variable::String(s) => s.is_ascii(),
         Variable::Integer(_) | Variable::Float(_) => true,
         Variable::Array(a) => a.iter().all(|v| match v {
-            Variable::String(s) => s.chars().all(|c| c.is_ascii()),
+            Variable::String(s) => s.is_ascii(),
             _ => true,
         }),
     }
@@ -60,7 +44,7 @@ pub fn fn_has_obscured<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     .into()
 }
 
-trait CharUtils {
+pub trait CharUtils {
     fn is_zwsp(&self) -> bool;
     fn is_obscured(&self) -> bool;
 }
@@ -97,12 +81,12 @@ pub fn fn_unicode_skeleton<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable
         .into()
 }
 
-pub fn fn_is_single_script<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_mixed_charset<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let text = v[0].to_string();
     if !text.is_empty() {
-        text.as_ref().is_single_script()
+        text.as_ref().is_mixed_charset()
     } else {
-        true
+        false
     }
     .into()
 }

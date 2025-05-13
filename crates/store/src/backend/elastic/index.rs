@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{borrow::Cow, fmt::Display};
 
@@ -33,7 +16,7 @@ use crate::{
     fts::{index::FtsDocument, Field},
 };
 
-use super::ElasticSearchStore;
+use super::{assert_success, ElasticSearchStore};
 
 #[derive(Serialize, Deserialize, Default)]
 struct Document<'x> {
@@ -55,23 +38,16 @@ impl ElasticSearchStore {
     pub async fn fts_index<T: Into<u8> + Display + Clone + std::fmt::Debug>(
         &self,
         document: FtsDocument<'_, T>,
-    ) -> crate::Result<()> {
-        self.index
-            .index(IndexParts::Index(INDEX_NAMES[document.collection as usize]))
-            .body(Document::from(document))
-            .send()
-            .await
-            .map_err(Into::into)
-            .and_then(|response| {
-                if response.status_code().is_success() {
-                    Ok(())
-                } else {
-                    Err(crate::Error::InternalError(format!(
-                        "Failed to index document: {:?}",
-                        response
-                    )))
-                }
-            })
+    ) -> trc::Result<()> {
+        assert_success(
+            self.index
+                .index(IndexParts::Index(INDEX_NAMES[document.collection as usize]))
+                .body(Document::from(document))
+                .send()
+                .await,
+        )
+        .await
+        .map(|_| ())
     }
 
     pub async fn fts_remove(
@@ -79,63 +55,49 @@ impl ElasticSearchStore {
         account_id: u32,
         collection: u8,
         document_ids: &impl DocumentSet,
-    ) -> crate::Result<()> {
+    ) -> trc::Result<()> {
         let document_ids = document_ids.iterate().collect::<Vec<_>>();
 
-        self.index
-            .delete_by_query(DeleteByQueryParts::Index(&[
-                INDEX_NAMES[collection as usize]
-            ]))
-            .body(json!({
-                "query": {
-                    "bool": {
-                        "must": [
-                            { "match": { "account_id": account_id } },
-                            { "terms": { "document_id": document_ids } }
-                        ]
+        assert_success(
+            self.index
+                .delete_by_query(DeleteByQueryParts::Index(&[
+                    INDEX_NAMES[collection as usize]
+                ]))
+                .body(json!({
+                    "query": {
+                        "bool": {
+                            "must": [
+                                { "match": { "account_id": account_id } },
+                                { "terms": { "document_id": document_ids } }
+                            ]
+                        }
                     }
-                }
-            }))
-            .send()
-            .await
-            .map_err(Into::into)
-            .and_then(|response| {
-                if response.status_code().is_success() {
-                    Ok(())
-                } else {
-                    Err(crate::Error::InternalError(format!(
-                        "Failed to remove document: {:?}",
-                        response
-                    )))
-                }
-            })
+                }))
+                .send()
+                .await,
+        )
+        .await
+        .map(|_| ())
     }
 
-    pub async fn fts_remove_all(&self, account_id: u32) -> crate::Result<()> {
-        self.index
-            .delete_by_query(DeleteByQueryParts::Index(INDEX_NAMES))
-            .body(json!({
-                "query": {
-                    "bool": {
-                        "must": [
-                            { "match": { "account_id": account_id } },
-                        ]
+    pub async fn fts_remove_all(&self, account_id: u32) -> trc::Result<()> {
+        assert_success(
+            self.index
+                .delete_by_query(DeleteByQueryParts::Index(INDEX_NAMES))
+                .body(json!({
+                    "query": {
+                        "bool": {
+                            "must": [
+                                { "match": { "account_id": account_id } },
+                            ]
+                        }
                     }
-                }
-            }))
-            .send()
-            .await
-            .map_err(Into::into)
-            .and_then(|response| {
-                if response.status_code().is_success() {
-                    Ok(())
-                } else {
-                    Err(crate::Error::InternalError(format!(
-                        "Failed to remove document: {:?}",
-                        response
-                    )))
-                }
-            })
+                }))
+                .send()
+                .await,
+        )
+        .await
+        .map(|_| ())
     }
 }
 

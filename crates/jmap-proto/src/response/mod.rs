@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 pub mod references;
 pub mod serialize;
@@ -27,7 +10,7 @@ pub mod serialize;
 use std::collections::HashMap;
 
 use crate::{
-    error::method::MethodError,
+    error::method::MethodErrorWrapper,
     method::{
         changes::ChangesResponse,
         copy::{CopyBlobResponse, CopyResponse},
@@ -65,7 +48,7 @@ pub enum ResponseMethod {
     LookupBlob(BlobLookupResponse),
     UploadBlob(BlobUploadResponse),
     Echo(Echo),
-    Error(MethodError),
+    Error(MethodErrorWrapper),
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -104,10 +87,10 @@ impl Response {
         });
     }
 
-    pub fn push_error(&mut self, id: String, err: MethodError) {
+    pub fn push_error(&mut self, id: String, err: impl Into<MethodErrorWrapper>) {
         self.method_responses.push(Call {
             id,
-            method: ResponseMethod::Error(err),
+            method: ResponseMethod::Error(err.into()),
             name: MethodName::error(),
         });
     }
@@ -117,9 +100,9 @@ impl Response {
     }
 }
 
-impl From<MethodError> for ResponseMethod {
-    fn from(error: MethodError) -> Self {
-        ResponseMethod::Error(error)
+impl From<trc::Error> for ResponseMethod {
+    fn from(error: trc::Error) -> Self {
+        ResponseMethod::Error(error.into())
     }
 }
 
@@ -207,8 +190,8 @@ impl From<BlobLookupResponse> for ResponseMethod {
     }
 }
 
-impl<T: Into<ResponseMethod>> From<Result<T, MethodError>> for ResponseMethod {
-    fn from(result: Result<T, MethodError>) -> Self {
+impl<T: Into<ResponseMethod>> From<trc::Result<T>> for ResponseMethod {
+    fn from(result: trc::Result<T>) -> Self {
         match result {
             Ok(value) => value.into(),
             Err(error) => error.into(),

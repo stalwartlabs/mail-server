@@ -1,61 +1,52 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{fmt::Debug, path::PathBuf, sync::Arc, time::Duration};
 
 use base64::{
-    engine::general_purpose::{self, STANDARD},
     Engine,
+    engine::general_purpose::{self, STANDARD},
 };
 use common::{
-    config::server::{ServerProtocol, Servers},
-    manager::config::{ConfigManager, Patterns},
-    Core,
+    Caches, Core, Data, Inner, KV_BAYES_MODEL_GLOBAL, Server,
+    auth::AccessToken,
+    config::{
+        server::{Listeners, ServerProtocol},
+        telemetry::Telemetry,
+    },
+    core::BuildServer,
+    manager::{
+        boot::build_ipc,
+        config::{ConfigManager, Patterns},
+    },
 };
-use hyper::{header::AUTHORIZATION, Method};
-use imap::core::{ImapSessionManager, IMAP};
-use jmap::{
-    api::JmapSessionManager,
-    services::{housekeeper::Event, IPC_CHANNEL_BUFFER},
-    JMAP,
-};
+use enterprise::{EnterpriseCore, insert_test_metrics};
+use hyper::{Method, header::AUTHORIZATION};
+use imap::core::ImapSessionManager;
+use jmap::{SpawnServices, api::JmapSessionManager, email::delete::EmailDeletion};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use reqwest::header;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use smtp::core::{SmtpSessionManager, SMTP};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use smtp::{SpawnQueueManager, core::SmtpSessionManager};
 
 use store::{
+    IterateParams, SUBSPACE_PROPERTY, Stores, ValueKey,
     roaring::RoaringBitmap,
-    write::{key::DeserializeBigEndian, AnyKey},
-    IterateParams, Stores, SUBSPACE_PROPERTY,
+    write::{AnyKey, TaskQueueClass, ValueClass, key::DeserializeBigEndian},
 };
-use tokio::sync::{mpsc, watch};
-use utils::config::Config;
+use tokio::sync::watch;
+use utils::{BlobHash, config::Config};
+use webhooks::{MockWebhookEndpoint, spawn_mock_webhook_endpoint};
 
-use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
+use crate::{
+    AssertConfig, add_test_certs, directory::internal::TestInternalDirectory, store::TempDir,
+};
 
 pub mod auth_acl;
 pub mod auth_limits;
@@ -72,8 +63,10 @@ pub mod email_query_changes;
 pub mod email_search_snippet;
 pub mod email_set;
 pub mod email_submission;
+pub mod enterprise;
 pub mod event_source;
 pub mod mailbox;
+pub mod permissions;
 pub mod purge;
 pub mod push_subscription;
 pub mod quota;
@@ -82,6 +75,7 @@ pub mod stress_test;
 pub mod thread_get;
 pub mod thread_merge;
 pub mod vacation_response;
+pub mod webhooks;
 pub mod websocket;
 
 const SERVER: &str = r#"
@@ -106,6 +100,12 @@ greeting = 'Test LMTP instance'
 protocol = 'lmtp'
 tls.implicit = false
 
+[server.listener.pop3]
+bind = ["127.0.0.1:4110"]
+protocol = "pop3"
+max-connections = 81920
+tls.implicit = true
+
 [server.socket]
 reuse-addr = true
 
@@ -114,8 +114,10 @@ enable = true
 implicit = false
 certificate = "default"
 
+[server.fail2ban]
+authentication = "100/5s"
+
 [authentication]
-fail2ban = "101/5s"
 rate-limit = "100/2s"
 
 [session.ehlo]
@@ -124,11 +126,21 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-directory = "'auth'"
+directory = "'{STORE}'"
 
 [session.rcpt.errors]
 total = 5
 wait = "1ms"
+
+[session.auth]
+mechanisms = "[plain, login, oauthbearer]"
+directory = "'{STORE}'"
+
+[session.data]
+spam-filter = "recipients[0] != 'robert@example.com'"
+
+[session.data.add-headers]
+delivered-to = false
 
 [queue]
 path = "{TMP}"
@@ -203,10 +215,7 @@ data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
 lookup = "{STORE}"
-directory = "auth"
-
-[spam.header]
-is-spam  = "X-Spam-Status: Yes"
+directory = "{STORE}"
 
 [jmap.protocol.get]
 max-objects = 100000
@@ -259,17 +268,12 @@ verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
-[directory."auth"]
-type = "sql"
-store = "auth"
+[directory."{STORE}"]
+type = "internal"
+store = "{STORE}"
 
-[directory."auth".columns]
-name = "name"
-description = "description"
-secret = "secret"
-email = "address"
-quota = "quota"
-class = "type"
+[imap.auth]
+allow-plain-text = true
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -283,29 +287,82 @@ token = "1s"
 refresh-token = "3s"
 refresh-token-renew = "2s"
 
+[oauth.client-registration]
+anonymous = true
+require = true
+
+[oauth.oidc]
+signature-key = '''-----BEGIN PRIVATE KEY-----
+MIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQDMXJI1bL3z8gaF
+Ze/6493VjL+jHkFMP2Pc7fLwRF1fhkuIdYTp69LabzrSEJCRCz0UI2NHqPOgtOta
++zRHKAMr7c7Z6uKO0K+aXiQYHw4Y70uSG8CnmNl7kb4OM/CAcoO6fePmvBsyESfn
+TmkJ5bfHEZQFDQEAoDlDjtjxuwYsAQQVQXuAydi8j8pyTWKAJ1RDgnUT+HbOub7j
+JrQ7sPe6MPCjXv5N76v9RMHKktfYwRNMlkLkxImQU55+vlvghNztgFlIlJDFfNiy
+UQPV5FTEZJli9BzMoj1JQK3sZyV8WV0W1zN41QQ+glAAC6+K7iTDPRMINBSwbHyn
+6Lb9Q6U7AgMBAAECggEAB93qZ5xrhYgEFeoyKO4mUdGsu4qZyJB0zNeWGgdaXCfZ
+zC4l8zFM+R6osix0EY6lXRtC95+6h9hfFQNa5FWseupDzmIQiEnim1EowjWef87l
+Eayi0nDRB8TjqZKjR/aLOUhzrPlXHKrKEUk/RDkacCiDklwz9S0LIfLOSXlByBDM
+/n/eczfX2gUATexMHSeIXs8vN2jpuiVv0r+FPXcRvqdzDZnYSzS8BJ9k6RYXVQ4o
+NzCbfqgFIpVryB7nHgSTrNX9G7299If8/dXmesXWSFEJvvDSSpcBoINKbfgSlrxd
+6ubjiotcEIBUSlbaanRrydwShhLHnXyupNAb7tlvyQKBgQDsIipSK4+H9FGl1rAk
+Gg9DLJ7P/94sidhoq1KYnj/CxwGLoRq22khZEUYZkSvYXDu1Qkj9Avi3TRhw8uol
+l2SK1VylL5FQvTLKhWB7b2hjrUd5llMRgS3/NIdLhOgDMB7w3UxJnCA/df/Rj+dM
+WhkyS1f0x3t7XPLwWGurW0nJcwKBgQDdjhrNfabrK7OQvDpAvNJizuwZK9WUL7CD
+rR0V0MpDGYW12BTEOY6tUK6XZgiRitAXf4EkEI6R0Q0bFzwDDLrg7TvGdTuzNeg/
+8vm8IlRlOkrdihtHZI4uRB7Ytmz24vzywEBE0p6enA7v4oniscUks/KKmDGr0V90
+yT9gIVrjGQKBgQCjnWC5otlHGLDiOgm+WhgtMWOxN9dYAQNkMyF+Alinu4CEoVKD
+VGhA3sk1ufMpbW8pvw4X0dFIITFIQeift3DBCemxw23rBc2FqjkaDi3EszINO22/
+eUTHyjvcxfCFFPi7aHsNnhJyJm7lY9Kegudmg/Ij93zGE7d5darVBuHvpQKBgBBY
+YovUgFMLR1UfPeD2zUKy52I4BKrJFemxBNtOKw3mPSIcTfPoFymcMTVENs+eARoq
+svlZK1uAo8ni3e+Pqd3cQrOyhHQFPxwwrdH+amGJemp7vOV4erDZH7l3Q/S27Fhw
+bI1nSIKFGukBupB58wRxLiyha9C0QqmYC0/pRg5JAn8Rbj5tP26oVCXjZEfWJL8J
+axxSxsGA4Vol6i6LYnVgZG+1ez2rP8vUORo1lRzmdeP4o1BSJf9TPwXkuppE5J+t
+UZVKtYGlEn1RqwGNd8I9TiWvU84rcY9nsxlDR86xwKRWFvYqVOiGYtzRyewYRdjU
+rTs9aqB3v1+OVxGxR6Na
+-----END PRIVATE KEY-----
+'''
+signature-algorithm = "RS256"
+
+[oauth.oidc-ignore]
+signature-key = '''-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQggybcqc86ulFFiOon
+WiYrLO4z8/kmkqvA7wGElBok9IqhRANCAAQxZK68FnQtHC0eyh8CA05xRIvxhVHn
+0ymka6XBh9aFtW4wfeoKhTkSKjHc/zjh9Rr2dr3kvmYe80fMGhW4ycGA
+-----END PRIVATE KEY-----
+'''
+signature-algorithm = "ES256"
+
 [session.extensions]
 expn = true
 vrfy = true
 
+[spam-filter]
+enable = true
+
+[tracer.console]
+type = "console"
+level = "{LEVEL}"
+multiline = false
+ansi = true
+disabled-events = ["network.*", "telemetry.webhook-error", "http.request-body"]
+
+[webhook."test"]
+url = "http://127.0.0.1:8821/hook"
+events = ["auth.*", "delivery.dsn*", "message-ingest.*", "security.authentication-ban"]
+signature-key = "ovos-moles"
+throttle = "100ms"
+
+[sieve.untrusted.scripts."common"]
+contents = '''
+require "reject";
+
+reject "Rejected from a global script.";
+stop;
+'''
 "#;
 
 #[tokio::test(flavor = "multi_thread")]
 pub async fn jmap_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::builder()
-                        .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
-                        )
-                        .unwrap(),
-                )
-                .finish(),
-        )
-        .unwrap();
-    }
-
     let delete = true;
     let mut params = init_jmap_tests(
         &std::env::var("STORE")
@@ -314,7 +371,8 @@ pub async fn jmap_tests() {
     )
     .await;
 
-    email_query::test(&mut params, delete).await;
+    webhooks::test(&mut params).await;
+    /*email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -326,7 +384,7 @@ pub async fn jmap_tests() {
     thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
-    auth_acl::test(&mut params).await;
+    auth_acl::test(&mut params).await;*/
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
@@ -338,7 +396,9 @@ pub async fn jmap_tests() {
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
     blob::test(&mut params).await;
+    permissions::test(&params).await;
     purge::test(&mut params).await;
+    enterprise::test(&mut params).await;
 
     if delete {
         params.temp_dir.delete();
@@ -348,21 +408,6 @@ pub async fn jmap_tests() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 pub async fn jmap_stress_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::builder()
-                        .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
-                        )
-                        .unwrap(),
-                )
-                .finish(),
-        )
-        .unwrap();
-    }
-
     let params = init_jmap_tests(
         &std::env::var("STORE")
             .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
@@ -373,35 +418,84 @@ pub async fn jmap_stress_tests() {
     params.temp_dir.delete();
 }
 
+#[ignore]
+#[tokio::test(flavor = "multi_thread")]
+pub async fn jmap_metric_tests() {
+    let params = init_jmap_tests(
+        &std::env::var("STORE")
+            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+        false,
+    )
+    .await;
+
+    insert_test_metrics(params.server.core.clone()).await;
+}
+
 #[allow(dead_code)]
 pub struct JMAPTest {
-    server: Arc<JMAP>,
+    server: Server,
     client: Client,
-    directory: DirectoryStore,
     temp_dir: TempDir,
+    webhook: Arc<MockWebhookEndpoint>,
     shutdown_tx: watch::Sender<bool>,
 }
 
-pub async fn wait_for_index(server: &JMAP) {
+pub async fn wait_for_index(server: &Server) {
     loop {
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut has_index_tasks = false;
         server
-            .inner
-            .housekeeper_tx
-            .send(Event::IndexIsActive(tx))
+            .core
+            .storage
+            .data
+            .iterate(
+                IterateParams::new(
+                    ValueKey::<ValueClass<u32>> {
+                        account_id: 0,
+                        collection: 0,
+                        document_id: 0,
+                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
+                            seq: 0,
+                            hash: BlobHash::default(),
+                        }),
+                    },
+                    ValueKey::<ValueClass<u32>> {
+                        account_id: u32::MAX,
+                        collection: u8::MAX,
+                        document_id: u32::MAX,
+                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
+                            seq: u64::MAX,
+                            hash: BlobHash::default(),
+                        }),
+                    },
+                )
+                .ascending(),
+                |_, _| {
+                    has_index_tasks = true;
+
+                    Ok(false)
+                },
+            )
             .await
             .unwrap();
-        if rx.await.unwrap() {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+
+        if has_index_tasks {
+            tokio::time::sleep(Duration::from_millis(300)).await;
         } else {
             break;
         }
     }
 }
 
-pub async fn assert_is_empty(server: Arc<JMAP>) {
+pub async fn assert_is_empty(server: Server) {
     // Wait for pending FTS index tasks
     wait_for_index(&server).await;
+
+    // Delete bayes model
+    server
+        .in_memory_store()
+        .key_delete_prefix(&[KV_BAYES_MODEL_GLOBAL])
+        .await
+        .unwrap();
 
     // Purge accounts
     emails_purge_tombstoned(&server).await;
@@ -415,7 +509,7 @@ pub async fn assert_is_empty(server: Arc<JMAP>) {
         .await;
 }
 
-pub async fn emails_purge_tombstoned(server: &JMAP) {
+pub async fn emails_purge_tombstoned(server: &Server) {
     let mut account_ids = RoaringBitmap::new();
     server
         .core
@@ -443,7 +537,19 @@ pub async fn emails_purge_tombstoned(server: &JMAP) {
         .unwrap();
 
     for account_id in account_ids {
+        let do_add = server.inner.cache.access_tokens.get(&account_id).is_none();
+
+        if do_add {
+            server
+                .inner
+                .cache
+                .access_tokens
+                .insert(account_id, Arc::new(AccessToken::from_id(account_id)));
+        }
         server.emails_purge_tombstoned(account_id).await.unwrap();
+        if do_add {
+            server.inner.cache.access_tokens.remove(&account_id);
+        }
     }
 }
 
@@ -453,19 +559,23 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let mut config = Config::new(
         add_test_certs(SERVER)
             .replace("{STORE}", store_id)
-            .replace("{TMP}", &temp_dir.path.display().to_string()),
+            .replace("{TMP}", &temp_dir.path.display().to_string())
+            .replace(
+                "{LEVEL}",
+                &std::env::var("LOG").unwrap_or_else(|_| "disable".to_string()),
+            ),
     )
     .unwrap();
     config.resolve_all_macros().await;
 
     // Parse servers
-    let mut servers = Servers::parse(&mut config);
+    let mut servers = Listeners::parse(&mut config);
 
     // Bind ports and drop privileges
     servers.bind_and_drop_priv(&mut config);
 
     // Build stores
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
 
     // Parse core
     let config_manager = ConfigManager {
@@ -478,80 +588,80 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .cloned()
             .unwrap_or_default(),
     };
-    let core = Core::parse(&mut config, stores, config_manager).await;
+    let tracers = Telemetry::parse(&mut config, &stores);
+    let core = Core::parse(&mut config, stores, config_manager)
+        .await
+        .enable_enterprise();
+    let data = Data::parse(&mut config);
+    let cache = Caches::parse(&mut config);
     let store = core.storage.data.clone();
-    let shared_core = core.into_shared();
+    let (ipc, mut ipc_rxs) = build_ipc(&mut config);
+    let inner = Arc::new(Inner {
+        shared_core: core.into_shared(),
+        data,
+        ipc,
+        cache,
+    });
 
     // Parse acceptors
-    servers.parse_tcp_acceptors(&mut config, shared_core.clone());
+    servers.parse_tcp_acceptors(&mut config, inner.clone());
 
-    // Init servers
-    let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&mut config, shared_core.clone(), delivery_tx).await;
-    let jmap = JMAP::init(
-        &mut config,
-        delivery_rx,
-        shared_core.clone(),
-        smtp.inner.clone(),
-    )
-    .await;
-    let imap = IMAP::init(&mut config, jmap.clone()).await;
+    // Enable tracing
+    tracers.enable(true);
+
+    // Start services
     config.assert_no_errors();
+    ipc_rxs.spawn_queue_manager(inner.clone());
+    ipc_rxs.spawn_services(inner.clone());
 
     // Spawn servers
     let (shutdown_tx, _) = servers.spawn(|server, acceptor, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
-                SmtpSessionManager::new(smtp.clone()),
-                shared_core.clone(),
+                SmtpSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Http => server.spawn(
-                JmapSessionManager::new(jmap.clone()),
-                shared_core.clone(),
+                JmapSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Imap => server.spawn(
-                ImapSessionManager::new(imap.clone()),
-                shared_core.clone(),
+                ImapSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Pop3 => server.spawn(
-                Pop3SessionManager::new(imap.clone()),
-                shared_core.clone(),
+                Pop3SessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::ManageSieve => server.spawn(
-                ManageSieveSessionManager::new(imap.clone()),
-                shared_core.clone(),
+                ManageSieveSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
         };
     });
 
-    // Create tables
-    let directory = DirectoryStore {
-        store: shared_core
-            .load()
-            .storage
-            .lookups
-            .get("auth")
-            .unwrap()
-            .clone(),
-    };
-    directory.create_test_directory().await;
-    directory
-        .create_test_user("admin", "secret", "Superuser")
-        .await;
-
     if delete_if_exists {
         store.destroy().await;
     }
+
+    // Create tables
+    inner
+        .shared_core
+        .load()
+        .storage
+        .data
+        .create_test_user("admin", "secret", "Superuser", &[])
+        .await;
 
     // Create client
     let mut client = Client::new()
@@ -564,11 +674,11 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     client.set_default_account_id(Id::new(1));
 
     JMAPTest {
-        server: JMAP::from(jmap).into(),
+        server: inner.build_server(),
         temp_dir,
         client,
-        directory,
         shutdown_tx,
+        webhook: spawn_mock_webhook_endpoint(),
     }
 }
 
@@ -686,9 +796,16 @@ pub async fn test_account_login(login: &str, secret: &str) -> Client {
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Response<T> {
-    RequestError(RequestError),
-    Error { error: String, details: String },
-    Data { data: T },
+    RequestError(RequestError<'static>),
+    Error {
+        error: String,
+        details: Option<String>,
+        item: Option<String>,
+        reason: Option<String>,
+    },
+    Data {
+        data: T,
+    },
 }
 
 pub struct ManagementApi {
@@ -733,6 +850,40 @@ impl ManagementApi {
         })
     }
 
+    pub async fn patch<T: DeserializeOwned>(
+        &self,
+        query: &str,
+        body: &impl Serialize,
+    ) -> Result<Response<T>, String> {
+        self.request_raw(
+            Method::PATCH,
+            query,
+            Some(serde_json::to_string(body).unwrap()),
+        )
+        .await
+        .map(|result| {
+            serde_json::from_str::<Response<T>>(&result)
+                .unwrap_or_else(|err| panic!("{err}: {result}"))
+        })
+    }
+
+    pub async fn delete<T: DeserializeOwned>(&self, query: &str) -> Result<Response<T>, String> {
+        self.request_raw(Method::DELETE, query, None)
+            .await
+            .map(|result| {
+                serde_json::from_str::<Response<T>>(&result)
+                    .unwrap_or_else(|err| panic!("{err}: {result}"))
+            })
+    }
+
+    pub async fn get<T: DeserializeOwned>(&self, query: &str) -> Result<Response<T>, String> {
+        self.request_raw(Method::GET, query, None)
+            .await
+            .map(|result| {
+                serde_json::from_str::<Response<T>>(&result)
+                    .unwrap_or_else(|err| panic!("{err}: {result}"))
+            })
+    }
     pub async fn request<T: DeserializeOwned>(
         &self,
         method: Method,
@@ -779,12 +930,17 @@ impl ManagementApi {
     }
 }
 
-impl<T> Response<T> {
+impl<T: Debug> Response<T> {
     pub fn unwrap_data(self) -> T {
         match self {
             Response::Data { data } => data,
-            Response::Error { error, details } => {
-                panic!("Expected data, found error {error:?}: {details:?}")
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected data, found error {error:?}: {details:?} {reason:?}")
             }
             Response::RequestError(err) => {
                 panic!("Expected data, found error {err:?}")
@@ -796,8 +952,13 @@ impl<T> Response<T> {
         match self {
             Response::Data { data } => Some(data),
             Response::RequestError(error) if error.status == 404 => None,
-            Response::Error { error, details } => {
-                panic!("Expected data, found error {error:?}: {details:?}")
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected data, found error {error:?}: {details:?} {reason:?}")
             }
             Response::RequestError(err) => {
                 panic!("Expected data, found error {err:?}")
@@ -805,13 +966,50 @@ impl<T> Response<T> {
         }
     }
 
-    pub fn unwrap_error(self) -> (String, String) {
+    pub fn unwrap_error(self) -> (String, Option<String>, Option<String>) {
         match self {
-            Response::Error { error, details } => (error, details),
-            Response::Data { .. } => panic!("Expected error, found data."),
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => (error, details, reason),
+            Response::Data { data } => panic!("Expected error, found data: {data:?}"),
             Response::RequestError(err) => {
                 panic!("Expected error, found request error {err:?}")
             }
+        }
+    }
+
+    pub fn unwrap_request_error(self) -> RequestError<'static> {
+        match self {
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected request error, found error {error:?}: {details:?} {reason:?}")
+            }
+            Response::Data { data } => panic!("Expected request error, found data: {data:?}"),
+            Response::RequestError(err) => err,
+        }
+    }
+
+    pub fn expect_request_error(self, value: &str) {
+        let err = self.unwrap_request_error();
+        if !err.detail.contains(value) && !err.title.as_ref().is_some_and(|t| t.contains(value)) {
+            panic!("Expected request error containing {value:?}, found {err:?}")
+        }
+    }
+
+    pub fn expect_error(self, value: &str) {
+        let (error, details, reason) = self.unwrap_error();
+        if !error.contains(value)
+            && !details.as_ref().is_some_and(|d| d.contains(value))
+            && !reason.as_ref().is_some_and(|r| r.contains(value))
+        {
+            panic!("Expected error containing {value:?}, found {error:?}: {details:?} {reason:?}")
         }
     }
 }

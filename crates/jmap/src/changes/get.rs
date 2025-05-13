@@ -1,41 +1,39 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
-    error::method::MethodError,
     method::changes::{ChangesRequest, ChangesResponse, RequestArguments},
     types::{collection::Collection, property::Property, state::State},
 };
+use std::future::Future;
 use store::query::log::{Change, Changes, Query};
+use trc::AddContext;
 
-use crate::{auth::AccessToken, JMAP};
-
-impl JMAP {
-    pub async fn changes(
+pub trait ChangesLookup: Sync + Send {
+    fn changes(
         &self,
         request: ChangesRequest,
         access_token: &AccessToken,
-    ) -> Result<ChangesResponse, MethodError> {
+    ) -> impl Future<Output = trc::Result<ChangesResponse>> + Send;
+
+    fn changes_(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        query: Query,
+    ) -> impl Future<Output = trc::Result<Changes>> + Send;
+}
+
+impl ChangesLookup for Server {
+    async fn changes(
+        &self,
+        request: ChangesRequest,
+        access_token: &AccessToken,
+    ) -> trc::Result<ChangesResponse> {
         // Map collection and validate ACLs
         let collection = match request.arguments {
             RequestArguments::Email => {
@@ -65,7 +63,7 @@ impl JMAP {
             RequestArguments::Quota => {
                 access_token.assert_is_member(request.account_id)?;
 
-                return Err(MethodError::CannotCalculateChanges);
+                return Err(trc::JmapEvent::CannotCalculateChanges.into_err());
             }
         };
 
@@ -176,26 +174,17 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn changes_(
+    async fn changes_(
         &self,
         account_id: u32,
         collection: Collection,
         query: Query,
-    ) -> Result<Changes, MethodError> {
+    ) -> trc::Result<Changes> {
         self.core
             .storage
             .data
             .changes(account_id, collection, query)
             .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "changes",
-                account_id = account_id,
-                collection = ?collection,
-                error = ?err,
-                "Failed to query changes.");
-                MethodError::ServerPartialFail
-            })
+            .caused_by(trc::location!())
     }
 }

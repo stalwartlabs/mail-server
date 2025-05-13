@@ -1,34 +1,17 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
 
 use mail_auth::hickory_resolver::proto::op::ResponseCode;
 
-use smtp::queue::{Domain, Message, Schedule, Status};
+use smtp::queue::{spool::SmtpSpool, Domain, Message, Schedule, Status};
 use store::write::now;
 
-use crate::smtp::outbound::TestServer;
+use crate::smtp::TestSMTP;
 
 const CONFIG: &str = r#"
 [session.ehlo]
@@ -40,9 +23,12 @@ relay = true
 
 #[tokio::test]
 async fn queue_due() {
-    let local = TestServer::new("smtp_queue_due_test", CONFIG, true).await;
+    // Enable logging
+    crate::enable_logging();
+
+    let local = TestSMTP::new("smtp_queue_due_test", CONFIG).await;
     let core = local.build_smtp();
-    let qr = &local.qr;
+    let qr = &local.queue_receiver;
 
     let mut message = new_message(0);
     message.domains.push(domain("c", 3, 8, 9));
@@ -140,10 +126,11 @@ fn delivery_events() {
     assert!(message.next_event().is_none());
 }
 
-pub fn new_message(id: u64) -> Message {
+pub fn new_message(queue_id: u64) -> Message {
     Message {
         size: 0,
-        id,
+        queue_id,
+        span_id: 0,
         created: 0,
         return_path: "sender@foobar.org".to_string(),
         return_path_lcase: "".to_string(),

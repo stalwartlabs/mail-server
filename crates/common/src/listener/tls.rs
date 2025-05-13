@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     cmp::Ordering,
@@ -28,7 +11,6 @@ use std::{
 };
 
 use ahash::AHashMap;
-use arc_swap::ArcSwap;
 use rustls::{
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
@@ -38,49 +20,44 @@ use rustls::{
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio_rustls::{Accept, LazyConfigAcceptor};
 
-use crate::{Core, SharedCore};
+use crate::{Inner, Server};
 
 use super::{
     acme::{
         resolver::{build_acme_static_resolver, IsTlsAlpnChallenge},
         AcmeProvider,
     },
-    SessionStream, TcpAcceptor, TcpAcceptorResult,
+    ServerInstance, SessionStream, TcpAcceptor, TcpAcceptorResult,
 };
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 
-#[derive(Default)]
-pub struct TlsManager {
-    pub certificates: ArcSwap<AHashMap<String, Arc<CertifiedKey>>>,
-    pub acme_providers: AHashMap<String, AcmeProvider>,
-    pub self_signed_cert: Option<Arc<CertifiedKey>>,
+#[derive(Default, Clone)]
+pub struct AcmeProviders {
+    pub providers: AHashMap<String, AcmeProvider>,
 }
 
 #[derive(Clone)]
 pub struct CertificateResolver {
-    pub core: SharedCore,
+    pub inner: Arc<Inner>,
 }
 
 impl CertificateResolver {
-    pub fn new(core: SharedCore) -> Self {
-        Self { core }
+    pub fn new(inner: Arc<Inner>) -> Self {
+        Self { inner }
     }
 }
 
 impl ResolvesServerCert for CertificateResolver {
     fn resolve(&self, hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
-        self.core
-            .as_ref()
-            .load()
-            .resolve_certificate(hello.server_name())
+        self.resolve_certificate(hello.server_name())
     }
 }
 
-impl Core {
+impl CertificateResolver {
     pub(crate) fn resolve_certificate(&self, name: Option<&str>) -> Option<Arc<CertifiedKey>> {
-        let certs = self.tls.certificates.load();
+        let certs = self.inner.data.tls_certificates.load();
 
         name.map_or_else(
             || certs.get("*"),
@@ -93,11 +70,9 @@ impl Core {
                             .and_then(|(_, domain)| certs.get(domain))
                     })
                     .or_else(|| {
-                        tracing::debug!(
-                            context = "tls",
-                            event = "not-found",
-                            client_name = name,
-                            "No SNI certificate found by name, using default."
+                        trc::event!(
+                            Tls(trc::TlsEvent::CertificateNotFound),
+                            Hostname = name.to_string(),
                         );
                         certs.get("*")
                     })
@@ -106,20 +81,18 @@ impl Core {
         .or_else(|| match certs.len().cmp(&1) {
             Ordering::Equal => certs.values().next(),
             Ordering::Greater => {
-                tracing::debug!(
-                    context = "tls",
-                    event = "error",
-                    "Multiple certificates available and no default certificate configured."
+                trc::event!(
+                    Tls(trc::TlsEvent::MultipleCertificatesAvailable),
+                    Total = certs.len(),
                 );
                 certs.values().next()
             }
             Ordering::Less => {
-                tracing::warn!(
-                    context = "tls",
-                    event = "error",
-                    "No certificates available, using self-signed."
+                trc::event!(
+                    Tls(trc::TlsEvent::NoCertificatesAvailable),
+                    Total = certs.len(),
                 );
-                self.tls.self_signed_cert.as_ref()
+                self.inner.data.tls_self_signed_cert.as_ref()
             }
         })
         .cloned()
@@ -130,7 +103,8 @@ impl TcpAcceptor {
     pub async fn accept<IO>(
         &self,
         stream: IO,
-        enable_acme: Option<Arc<Core>>,
+        enable_acme: Option<Server>,
+        instance: &ServerInstance,
     ) -> TcpAcceptorResult<IO>
     where
         IO: SessionStream,
@@ -152,21 +126,21 @@ impl TcpAcceptor {
                                     Some(domain) => {
                                         let key = core.build_acme_certificate(domain).await;
 
-                                        tracing::trace!(
-                                            context = "acme",
-                                            event = "auth-key",
-                                            domain = %domain,
-                                            found_key = key.is_some(),
-                                            "Client supplied SNI");
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::ClientSuppliedSni),
+                                            ListenerId = instance.id.clone(),
+                                            Domain = domain.to_string(),
+                                            Result = key.is_some(),
+                                        );
+
                                         key
                                     }
                                     None => {
-                                        tracing::debug!(
-                                            context = "acme",
-                                            event = "error",
-                                            reason = "missing-sni",
-                                            "Client did not supply SNI"
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::ClientMissingSni),
+                                            ListenerId = instance.id.clone(),
                                         );
+
                                         None
                                     }
                                 };
@@ -176,19 +150,18 @@ impl TcpAcceptor {
                                     .await
                                 {
                                     Ok(mut tls) => {
-                                        tracing::debug!(
-                                            context = "acme",
-                                            event = "validation",
-                                            "Received TLS-ALPN-01 validation request."
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::TlsAlpnReceived),
+                                            ListenerId = instance.id.clone(),
                                         );
+
                                         let _ = tls.shutdown().await;
                                     }
                                     Err(err) => {
-                                        tracing::info!(
-                                            context = "acme",
-                                            event = "error",
-                                            error = ?err,
-                                            "TLS-ALPN-01 validation request failed."
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::TlsAlpnError),
+                                            ListenerId = instance.id.clone(),
+                                            Reason = err.to_string(),
                                         );
                                     }
                                 }
@@ -199,11 +172,10 @@ impl TcpAcceptor {
                             }
                         }
                         Err(err) => {
-                            tracing::debug!(
-                                context = "listener",
-                                event = "error",
-                                error = ?err,
-                                "TLS handshake failed."
+                            trc::event!(
+                                Tls(trc::TlsEvent::HandshakeError),
+                                ListenerId = instance.id.clone(),
+                                Reason = err.to_string(),
                             );
                         }
                     }
@@ -235,15 +207,5 @@ where
 impl std::fmt::Debug for CertificateResolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("CertificateResolver").finish()
-    }
-}
-
-impl Clone for TlsManager {
-    fn clone(&self) -> Self {
-        Self {
-            certificates: ArcSwap::from_pointee(self.certificates.load().as_ref().clone()),
-            acme_providers: self.acme_providers.clone(),
-            self_signed_cert: self.self_signed_cert.clone(),
-        }
     }
 }

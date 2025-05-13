@@ -1,33 +1,23 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::sync::Arc;
 
-use common::listener::{stream::NullIo, SessionData, SessionManager, SessionStream};
-use imap_proto::{protocol::ProtocolVersion, receiver::Receiver};
-use jmap::JMAP;
+use common::{
+    core::BuildServer,
+    listener::{stream::NullIo, SessionData, SessionManager, SessionResult, SessionStream},
+};
+use imap_proto::{
+    protocol::{ProtocolVersion, SerializeResponse},
+    receiver::Receiver,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::server::TlsStream;
+
+use crate::{GREETING_WITHOUT_TLS, GREETING_WITH_TLS};
 
 use super::{ImapSessionManager, Session, State};
 
@@ -63,43 +53,60 @@ impl<T: SessionStream> Session<T> {
             tokio::select! {
                 result = tokio::time::timeout(
                     if !matches!(self.state, State::NotAuthenticated {..}) {
-                        self.jmap.core.imap.timeout_auth
+                        self.server.core.imap.timeout_auth
                     } else {
-                        self.jmap.core.imap.timeout_unauth
+                        self.server.core.imap.timeout_unauth
                     },
                     self.stream_rx.read(&mut buf)) => {
                     match result {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
                                 match self.ingest(&buf[..bytes_read]).await {
-                                    Ok(false) => (),
-                                    Ok(true) => {
+                                    SessionResult::Continue => (),
+                                    SessionResult::UpgradeTls => {
                                         return true;
                                     }
-                                    Err(_) => {
-                                        tracing::debug!(parent: &self.span, event = "disconnect", "Disconnecting client.");
+                                    SessionResult::Close => {
                                         break;
                                     }
                                 }
                             } else {
-                                tracing::debug!(parent: &self.span, event = "close", "IMAP connection closed by client.");
+                                trc::event!(
+                                    Network(trc::NetworkEvent::Closed),
+                                    SpanId = self.session_id,
+                                    CausedBy = trc::location!()
+                                );
                                 break;
                             }
                         },
                         Ok(Err(err)) => {
-                            tracing::debug!(parent: &self.span, event = "error", reason = %err, "IMAP connection error.");
+                            trc::event!(
+                                Network(trc::NetworkEvent::ReadError),
+                                SpanId = self.session_id,
+                                Reason = err.to_string(),
+                                CausedBy = trc::location!()
+                            );
                             break;
                         },
                         Err(_) => {
+                            trc::event!(
+                                Network(trc::NetworkEvent::Timeout),
+                                SpanId = self.session_id,
+                                CausedBy = trc::location!()
+                            );
                             self.write_bytes(&b"* BYE Connection timed out.\r\n"[..]).await.ok();
-                            tracing::debug!(parent: &self.span, "IMAP connection timed out.");
                             break;
                         }
                     }
                 },
                 _ = shutdown_rx.changed() => {
+                    trc::event!(
+                        Network(trc::NetworkEvent::Closed),
+                        SpanId = self.session_id,
+                        Reason = "Server shutting down",
+                        CausedBy = trc::location!()
+                    );
                     self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
-                    tracing::debug!(parent: &self.span, event = "shutdown", "IMAP server shutting down.");
                     break;
                 }
             };
@@ -113,32 +120,38 @@ impl<T: SessionStream> Session<T> {
         manager: ImapSessionManager,
     ) -> Result<Session<T>, ()> {
         // Write greeting
-        let (is_tls, greeting) = if session.stream.is_tls() {
-            (true, &manager.imap.imap_inner.greeting_tls)
+        let is_tls = session.stream.is_tls();
+        let greeting = if !is_tls && session.instance.acceptor.is_tls() {
+            &GREETING_WITH_TLS
         } else {
-            (false, &manager.imap.imap_inner.greeting_plain)
+            &GREETING_WITHOUT_TLS
         };
+
         if let Err(err) = session.stream.write_all(greeting).await {
-            tracing::debug!(parent: &session.span, event = "error", reason = %err, "Failed to write greeting.");
+            trc::event!(
+                Network(trc::NetworkEvent::WriteError),
+                Reason = err.to_string(),
+                SpanId = session.session_id,
+                Details = "Failed to write to stream"
+            );
             return Err(());
         }
         let _ = session.stream.flush().await;
 
         // Split stream into read and write halves
         let (stream_rx, stream_tx) = tokio::io::split(session.stream);
-        let jmap = JMAP::from(manager.imap.jmap_instance);
+        let server = manager.inner.build_server();
 
         Ok(Session {
-            receiver: Receiver::with_max_request_size(jmap.core.imap.max_request_size),
+            receiver: Receiver::with_max_request_size(server.core.imap.max_request_size),
             version: ProtocolVersion::Rev1,
             state: State::NotAuthenticated { auth_failures: 0 },
             is_tls,
             is_condstore: false,
             is_qresync: false,
-            jmap,
-            imap: manager.imap.imap_inner,
+            server,
             instance: session.instance,
-            span: session.span,
+            session_id: session.session_id,
             in_flight: session.in_flight,
             remote_addr: session.remote_ip,
             stream_rx,
@@ -155,7 +168,11 @@ impl<T: SessionStream> Session<T> {
                 ))) {
             state
         } else {
-            tracing::debug!("Failed to obtain write half state.");
+            trc::event!(
+                Network(trc::NetworkEvent::SplitError),
+                SpanId = self.session_id,
+                Details = "Failed to obtain write half state"
+            );
             return Err(());
         };
 
@@ -165,18 +182,22 @@ impl<T: SessionStream> Session<T> {
         {
             self.stream_rx.unsplit(stream_tx)
         } else {
-            tracing::debug!("Failed to take ownership of write half.");
+            trc::event!(
+                Network(trc::NetworkEvent::SplitError),
+                SpanId = self.session_id,
+                Details = "Failed to take ownership of write half"
+            );
+
             return Err(());
         };
 
         // Upgrade to TLS
         let (stream_rx, stream_tx) =
-            tokio::io::split(self.instance.tls_accept(stream, &self.span).await?);
+            tokio::io::split(self.instance.tls_accept(stream, self.session_id).await?);
         let stream_tx = Arc::new(tokio::sync::Mutex::new(stream_tx));
 
         Ok(Session {
-            jmap: self.jmap,
-            imap: self.imap,
+            server: self.server,
             instance: self.instance,
             receiver: self.receiver,
             version: self.version,
@@ -184,7 +205,7 @@ impl<T: SessionStream> Session<T> {
             is_tls: true,
             is_condstore: self.is_condstore,
             is_qresync: self.is_qresync,
-            span: self.span,
+            session_id: self.session_id,
             in_flight: self.in_flight,
             remote_addr: self.remote_addr,
             stream_rx,
@@ -194,49 +215,79 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> Session<T> {
-    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> crate::OpResult {
+    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
-        /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
-            let c = println!("{}", line);
-        }*/
-        tracing::trace!(
-            parent: &self.span,
-            event = "write",
-            data = std::str::from_utf8(bytes).unwrap_or_default(),
-            size = bytes.len()
+
+        trc::event!(
+            Imap(trc::ImapEvent::RawOutput),
+            SpanId = self.session_id,
+            Size = bytes.len(),
+            Contents = trc::Value::from_maybe_string(bytes),
         );
 
         let mut stream = self.stream_tx.lock().await;
         if let Err(err) = stream.write_all(bytes).await {
-            tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
-            Err(())
+            Err(trc::NetworkEvent::WriteError
+                .into_err()
+                .reason(err)
+                .details("Failed to write to stream"))
         } else {
             let _ = stream.flush().await;
             Ok(())
         }
     }
+
+    pub async fn write_error(&self, err: trc::Error) -> bool {
+        if err.should_write_err() {
+            let disconnect = err.must_disconnect();
+            let bytes = err.serialize();
+            trc::error!(err.span_id(self.session_id));
+
+            if let Err(err) = self.write_bytes(bytes).await {
+                trc::error!(err.span_id(self.session_id));
+                false
+            } else {
+                !disconnect
+            }
+        } else {
+            trc::error!(err);
+
+            false
+        }
+    }
 }
 
 impl<T: SessionStream> super::SessionData<T> {
-    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> bool {
+    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
-        /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
-            let c = println!("{}", line);
-        }*/
-        tracing::trace!(
-            parent: &self.span,
-            event = "write",
-            data = std::str::from_utf8(bytes).unwrap_or_default(),
-            size = bytes.len()
+
+        trc::event!(
+            Imap(trc::ImapEvent::RawOutput),
+            SpanId = self.session_id,
+            Size = bytes.len(),
+            Contents = trc::Value::from_maybe_string(bytes),
         );
 
         let mut stream = self.stream_tx.lock().await;
         if let Err(err) = stream.write_all(bytes.as_ref()).await {
-            tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
-            false
+            Err(trc::NetworkEvent::WriteError
+                .into_err()
+                .reason(err)
+                .details("Failed to write to stream"))
         } else {
             let _ = stream.flush().await;
-            true
+            Ok(())
+        }
+    }
+
+    pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
+        if err.should_write_err() {
+            let bytes = err.serialize();
+            trc::error!(err.span_id(self.session_id));
+            self.write_bytes(bytes).await
+        } else {
+            trc::error!(err.span_id(self.session_id));
+            Ok(())
         }
     }
 }

@@ -1,41 +1,24 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use crate::{
     protocol::{capability::Capability, enable},
-    receiver::Request,
+    receiver::{bad, Request},
     Command,
 };
 
 impl Request<Command> {
-    pub fn parse_enable(self) -> crate::Result<enable::Arguments> {
+    pub fn parse_enable(self) -> trc::Result<enable::Arguments> {
         let len = self.tokens.len();
         if len > 0 {
             let mut capabilities = Vec::with_capacity(len);
             for capability in self.tokens {
                 capabilities.push(
                     Capability::parse(&capability.unwrap_bytes())
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                 );
             }
             Ok(enable::Arguments {
@@ -50,25 +33,21 @@ impl Request<Command> {
 
 impl Capability {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"IMAP4rev2") {
-            Ok(Self::IMAP4rev2)
-        } else if value.eq_ignore_ascii_case(b"STARTTLS") {
-            Ok(Self::StartTLS)
-        } else if value.eq_ignore_ascii_case(b"LOGINDISABLED") {
-            Ok(Self::LoginDisabled)
-        } else if value.eq_ignore_ascii_case(b"CONDSTORE") {
-            Ok(Self::CondStore)
-        } else if value.eq_ignore_ascii_case(b"QRESYNC") {
-            Ok(Self::QResync)
-        } else if value.eq_ignore_ascii_case(b"UTF8=ACCEPT") {
-            Ok(Self::Utf8Accept)
-        } else {
-            Err(format!(
+        hashify::tiny_map_ignore_case!(value,
+            "IMAP4rev2" => Self::IMAP4rev2,
+            "STARTTLS" => Self::StartTLS,
+            "LOGINDISABLED" => Self::LoginDisabled,
+            "CONDSTORE" => Self::CondStore,
+            "QRESYNC" => Self::QResync,
+            "UTF8=ACCEPT" => Self::Utf8Accept,
+        )
+        .ok_or_else(|| {
+            format!(
                 "Unsupported capability '{}'.",
                 String::from_utf8_lossy(value)
             )
-            .into())
-        }
+            .into()
+        })
     }
 }
 

@@ -1,25 +1,10 @@
 /*
- * Copyright (c) 2020-2023, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Sieve Interpreter.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+use ahash::{AHashMap, AHashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobPattern {
@@ -78,6 +63,36 @@ impl GlobPattern {
         }
     }
 
+    pub fn try_compile(pattern: &str, to_lower: bool) -> Result<Self, String> {
+        // Detect if the key is a glob pattern
+        let mut last_ch = '\0';
+        let mut has_escape = false;
+        let mut is_glob = false;
+        for ch in pattern.chars() {
+            match ch {
+                '\\' => {
+                    has_escape = true;
+                }
+                '*' | '?' if last_ch != '\\' => {
+                    is_glob = true;
+                }
+                _ => {}
+            }
+
+            last_ch = ch;
+        }
+
+        if is_glob {
+            Ok(GlobPattern::compile(pattern, to_lower))
+        } else {
+            Err(if has_escape {
+                pattern.replace('\\', "")
+            } else {
+                pattern.to_string()
+            })
+        }
+    }
+
     // Credits: Algorithm ported from https://research.swtch.com/glob
     pub fn matches(&self, value: &str) -> bool {
         let value = if self.to_lower {
@@ -123,5 +138,72 @@ impl GlobPattern {
             return false;
         }
         true
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GlobSet {
+    entries: AHashSet<String>,
+    patterns: Vec<GlobPattern>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobMap<V> {
+    entries: AHashMap<String, V>,
+    patterns: Vec<(GlobPattern, V)>,
+}
+
+impl GlobSet {
+    pub fn new() -> Self {
+        GlobSet::default()
+    }
+
+    pub fn insert(&mut self, pattern: &str) {
+        match GlobPattern::try_compile(pattern, false) {
+            Ok(glob) => {
+                self.patterns.push(glob);
+            }
+            Err(entry) => {
+                self.entries.insert(entry);
+            }
+        }
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.entries.contains(key) || self.patterns.iter().any(|pattern| pattern.matches(key))
+    }
+}
+
+impl<V> GlobMap<V> {
+    pub fn new() -> Self {
+        GlobMap {
+            entries: AHashMap::new(),
+            patterns: Vec::new(),
+        }
+    }
+
+    pub fn insert(&mut self, pattern: &str, value: V) {
+        match GlobPattern::try_compile(pattern, false) {
+            Ok(glob) => {
+                self.patterns.push((glob, value));
+            }
+            Err(entry) => {
+                self.entries.insert(entry, value);
+            }
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&V> {
+        self.entries.get(key).or_else(|| {
+            self.patterns
+                .iter()
+                .find_map(|(pattern, value)| pattern.matches(key).then_some(value))
+        })
+    }
+}
+
+impl<V> Default for GlobMap<V> {
+    fn default() -> Self {
+        GlobMap::new()
     }
 }

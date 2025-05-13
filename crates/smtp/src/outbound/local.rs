@@ -1,40 +1,27 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use common::{DeliveryEvent, DeliveryResult, IngestMessage};
+use common::Server;
+use email::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
 use smtp_proto::Response;
-use tokio::sync::{mpsc, oneshot};
+use trc::SieveEvent;
 
-use crate::queue::{
-    Error, ErrorDetails, HostResponse, Message, Recipient, Status, RCPT_STATUS_CHANGED,
+use crate::{
+    queue::{
+        quota::HasQueueQuota, spool::SmtpSpool, DomainPart, Error, ErrorDetails, HostResponse,
+        Message, MessageSource, Recipient, Status, RCPT_STATUS_CHANGED,
+    },
+    reporting::SmtpReporting,
 };
 
 impl Message {
     pub async fn deliver_local(
         &self,
         recipients: impl Iterator<Item = &mut Recipient>,
-        delivery_tx: &mpsc::Sender<DeliveryEvent>,
-        span: &tracing::Span,
+        server: &Server,
     ) -> Status<(), Error> {
         // Prepare recipients list
         let mut total_rcpt = 0;
@@ -54,60 +41,22 @@ impl Message {
             pending_recipients.push(rcpt);
         }
 
-        // Create oneshot channel
-        let (result_tx, result_rx) = oneshot::channel();
-
-        // Deliver message to JMAP server
-        let delivery_result = match delivery_tx
-            .send(DeliveryEvent::Ingest {
-                message: IngestMessage {
-                    sender_address: self.return_path_lcase.clone(),
-                    recipients: recipient_addresses,
-                    message_blob: self.blob_hash.clone(),
-                    message_size: self.size,
-                },
-                result_tx,
+        // Deliver message
+        let delivery_result = server
+            .deliver_message(IngestMessage {
+                sender_address: self.return_path_lcase.clone(),
+                recipients: recipient_addresses,
+                message_blob: self.blob_hash.clone(),
+                message_size: self.size,
+                session_id: self.span_id,
             })
-            .await
-        {
-            Ok(_) => {
-                // Wait for result
-                match result_rx.await {
-                    Ok(delivery_result) => delivery_result,
-                    Err(_) => {
-                        tracing::warn!(
-                            parent: span,
-                            context = "deliver_local",
-                            event = "error",
-                            reason = "result channel closed",
-                        );
-                        return Status::local_error();
-                    }
-                }
-            }
-            Err(_) => {
-                tracing::warn!(
-                    parent: span,
-                    context = "deliver_local",
-                    event = "error",
-                    reason = "tx channel closed",
-                );
-                return Status::local_error();
-            }
-        };
+            .await;
 
         // Process delivery results
-        for (rcpt, result) in pending_recipients.into_iter().zip(delivery_result) {
+        for (rcpt, result) in pending_recipients.into_iter().zip(delivery_result.status) {
             rcpt.flags |= RCPT_STATUS_CHANGED;
             match result {
-                DeliveryResult::Success => {
-                    tracing::info!(
-                        parent: span,
-                        context = "deliver_local",
-                        event = "delivered",
-                        rcpt = rcpt.address,
-                    );
-
+                LocalDeliveryStatus::Success => {
                     rcpt.status = Status::Completed(HostResponse {
                         hostname: "localhost".to_string(),
                         response: Response {
@@ -118,14 +67,7 @@ impl Message {
                     });
                     total_completed += 1;
                 }
-                DeliveryResult::TemporaryFailure { reason } => {
-                    tracing::info!(
-                        parent: span,
-                        context = "deliver_local",
-                        event = "deferred",
-                        rcpt = rcpt.address,
-                        reason = reason.as_ref(),
-                    );
+                LocalDeliveryStatus::TemporaryFailure { reason } => {
                     rcpt.status = Status::TemporaryFailure(HostResponse {
                         hostname: ErrorDetails {
                             entity: "localhost".to_string(),
@@ -138,14 +80,7 @@ impl Message {
                         },
                     });
                 }
-                DeliveryResult::PermanentFailure { code, reason } => {
-                    tracing::info!(
-                        parent: span,
-                        context = "deliver_local",
-                        event = "rejected",
-                        rcpt = rcpt.address,
-                        reason = reason.as_ref(),
-                    );
+                LocalDeliveryStatus::PermanentFailure { code, reason } => {
                     total_completed += 1;
                     rcpt.status = Status::PermanentFailure(HostResponse {
                         hostname: ErrorDetails {
@@ -159,6 +94,56 @@ impl Message {
                         },
                     });
                 }
+            }
+        }
+
+        // Process autogenerated messages
+        for autogenerated in delivery_result.autogenerated {
+            let from_addr_lcase = autogenerated.sender_address.to_lowercase();
+            let from_addr_domain = from_addr_lcase.domain_part().to_string();
+
+            let mut message = server.new_message(
+                autogenerated.sender_address,
+                from_addr_lcase,
+                from_addr_domain,
+                self.span_id,
+            );
+            for rcpt in autogenerated.recipients {
+                message.add_recipient(rcpt, server).await;
+            }
+
+            // Sign message
+            let signature = server
+                .sign_message(
+                    &mut message,
+                    &server.core.sieve.sign,
+                    &autogenerated.message,
+                )
+                .await;
+
+            // Queue Message
+            message.size = autogenerated.message.len() + signature.as_ref().map_or(0, |s| s.len());
+            if server.has_quota(&mut message).await {
+                message
+                    .queue(
+                        signature.as_deref(),
+                        &autogenerated.message,
+                        self.span_id,
+                        server,
+                        MessageSource::Autogenerated,
+                    )
+                    .await;
+            } else {
+                trc::event!(
+                    Sieve(SieveEvent::QuotaExceeded),
+                    SpanId = self.span_id,
+                    From = message.return_path_lcase,
+                    To = message
+                        .recipients
+                        .into_iter()
+                        .map(|r| trc::Value::from(r.address_lcase))
+                        .collect::<Vec<_>>(),
+                );
             }
         }
 

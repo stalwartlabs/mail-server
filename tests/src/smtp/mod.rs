@@ -1,33 +1,35 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    path::PathBuf,
+    sync::Arc,
+};
 
-use common::Core;
+use common::{
+    config::{
+        server::{Listeners, ServerProtocol},
+        smtp::resolver::Tlsa,
+        spamfilter::IpResolver,
+    },
+    ipc::{QueueEvent, ReportingEvent},
+    manager::boot::{build_ipc, IpcReceivers},
+    Core, Data, Inner, Server,
+};
 
-use smtp::core::{Inner, SMTP};
-use store::{BlobStore, Store};
-use tokio::sync::mpsc;
+use jmap::api::JmapSessionManager;
+use mail_auth::{common::resolver::IntoFqdn, Txt, MX};
+use session::{DummyIo, TestSession};
+use smtp::core::{Session, SmtpSessionManager};
+use store::{BlobStore, Store, Stores};
+use tokio::sync::{mpsc, watch};
+use utils::config::Config;
+
+use crate::AssertConfig;
 
 pub mod config;
 pub mod inbound;
@@ -89,40 +91,312 @@ pub fn add_test_certs(config: &str) -> String {
 pub struct QueueReceiver {
     store: Store,
     blob_store: BlobStore,
-    pub queue_rx: mpsc::Receiver<smtp::queue::Event>,
+    pub queue_rx: mpsc::Receiver<QueueEvent>,
 }
 
 pub struct ReportReceiver {
-    pub report_rx: mpsc::Receiver<smtp::reporting::Event>,
+    pub report_rx: mpsc::Receiver<ReportingEvent>,
 }
 
-pub trait TestSMTP {
-    fn init_test_queue(&mut self, core: &Core) -> QueueReceiver;
-    fn init_test_report(&mut self) -> ReportReceiver;
+pub struct TestSMTP {
+    pub server: Server,
+    pub temp_dir: Option<TempDir>,
+    pub queue_receiver: QueueReceiver,
+    pub report_receiver: ReportReceiver,
 }
 
-impl TestSMTP for Inner {
-    fn init_test_queue(&mut self, core: &Core) -> QueueReceiver {
-        let (queue_tx, queue_rx) = mpsc::channel(128);
-        self.queue_tx = queue_tx;
+const CONFIG: &str = r#"
+[session.connect]
+hostname = "'mx.example.org'"
+greeting = "'Test SMTP instance'"
 
-        QueueReceiver {
-            blob_store: core.storage.blob.clone(),
-            store: core.storage.data.clone(),
-            queue_rx,
+[server.listener.smtp-debug]
+bind = ['127.0.0.1:9925']
+protocol = 'smtp'
+
+[server.listener.lmtp-debug]
+bind = ['127.0.0.1:9924']
+protocol = 'lmtp'
+tls.implicit = true
+
+[server.listener.management-debug]
+bind = ['127.0.0.1:9980']
+protocol = 'http'
+tls.implicit = true
+
+[server.socket]
+reuse-addr = true
+
+[server.tls]
+enable = true
+implicit = false
+certificate = 'default'
+
+[certificate.default]
+cert = '%{file:{CERT}}%'
+private-key = '%{file:{PK}}%'
+
+[storage]
+data = "{STORE}"
+fts = "{STORE}"
+blob = "{STORE}"
+lookup = "{STORE}"
+
+[store."rocksdb"]
+type = "rocksdb"
+path = "{TMP}/queue.db"
+
+[store."foundationdb"]
+type = "foundationdb"
+
+[store."postgresql"]
+type = "postgresql"
+host = "localhost"
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
+port = 3307
+database = "stalwart"
+user = "root"
+password = "password"
+
+"#;
+
+impl TestSMTP {
+    pub fn from_core(core: Core) -> Self {
+        Self::from_core_and_tempdir(core, Default::default(), None)
+    }
+
+    pub fn inner_with_rxs(&self) -> (Arc<Inner>, IpcReceivers) {
+        let (ipc, ipc_rxs) = build_ipc(&mut Config::default());
+
+        (
+            Inner {
+                shared_core: self.server.core.as_ref().clone().into_shared(),
+                data: Default::default(),
+                ipc,
+                cache: Default::default(),
+            }
+            .into(),
+            ipc_rxs,
+        )
+    }
+
+    fn from_core_and_tempdir(core: Core, data: Data, temp_dir: Option<TempDir>) -> Self {
+        let store = core.storage.data.clone();
+        let blob_store = core.storage.blob.clone();
+        let shared_core = core.into_shared();
+        let (ipc, mut ipc_rxs) = build_ipc(&mut Config::default());
+
+        TestSMTP {
+            queue_receiver: QueueReceiver {
+                store,
+                blob_store,
+                queue_rx: ipc_rxs.queue_rx.take().unwrap(),
+            },
+            report_receiver: ReportReceiver {
+                report_rx: ipc_rxs.report_rx.take().unwrap(),
+            },
+            server: Server {
+                core: shared_core.load_full(),
+                inner: Inner {
+                    shared_core,
+                    data,
+                    ipc,
+                    cache: Default::default(),
+                }
+                .into(),
+            },
+            temp_dir,
         }
     }
 
-    fn init_test_report(&mut self) -> ReportReceiver {
-        let (report_tx, report_rx) = mpsc::channel(128);
-        self.report_tx = report_tx;
-        ReportReceiver { report_rx }
+    pub async fn new(name: &str, config: impl AsRef<str>) -> TestSMTP {
+        Self::with_database(name, config, "rocksdb").await
+    }
+
+    pub async fn with_database(
+        name: &str,
+        config: impl AsRef<str>,
+        store_id: impl AsRef<str>,
+    ) -> TestSMTP {
+        let temp_dir = TempDir::new(name, true);
+        let mut config = Config::new(
+            temp_dir
+                .update_config(add_test_certs(CONFIG) + config.as_ref())
+                .replace("{STORE}", store_id.as_ref()),
+        )
+        .unwrap();
+        config.resolve_all_macros().await;
+        let stores = Stores::parse_all(&mut config, false).await;
+        let core = Core::parse(&mut config, stores, Default::default()).await;
+        let data = Data::parse(&mut config);
+
+        Self::from_core_and_tempdir(core, data, Some(temp_dir))
+    }
+
+    pub async fn start(&self, protocols: &[ServerProtocol]) -> watch::Sender<bool> {
+        // Spawn listeners
+        let mut config = Config::new(CONFIG).unwrap();
+        let mut servers = Listeners::parse(&mut config);
+        servers.parse_tcp_acceptors(&mut config, self.server.inner.clone());
+
+        // Filter out protocols
+        servers
+            .servers
+            .retain(|server| protocols.contains(&server.protocol));
+
+        // Start servers
+        servers.bind_and_drop_priv(&mut config);
+        config.assert_no_errors();
+
+        servers
+            .spawn(|server, acceptor, shutdown_rx| {
+                match &server.protocol {
+                    ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                        SmtpSessionManager::new(self.server.inner.clone()),
+                        self.server.inner.clone(),
+                        acceptor,
+                        shutdown_rx,
+                    ),
+                    ServerProtocol::Http => server.spawn(
+                        JmapSessionManager::new(self.server.inner.clone()),
+                        self.server.inner.clone(),
+                        acceptor,
+                        shutdown_rx,
+                    ),
+                    ServerProtocol::Imap | ServerProtocol::Pop3 | ServerProtocol::ManageSieve => {
+                        unreachable!()
+                    }
+                };
+            })
+            .0
+    }
+
+    pub fn new_session(&self) -> Session<DummyIo> {
+        Session::test(self.server.clone())
+    }
+
+    pub fn build_smtp(&self) -> Server {
+        self.server.clone()
     }
 }
 
-fn build_smtp(core: impl Into<Arc<Core>>, inner: impl Into<Arc<Inner>>) -> SMTP {
-    SMTP {
-        core: core.into(),
-        inner: inner.into(),
+pub trait DnsCache {
+    fn txt_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: impl Into<Txt>,
+        valid_until: std::time::Instant,
+    );
+    fn ipv4_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Vec<Ipv4Addr>,
+        valid_until: std::time::Instant,
+    );
+    fn ipv6_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Vec<Ipv6Addr>,
+        valid_until: std::time::Instant,
+    );
+    fn dnsbl_add(&self, name: &str, value: Vec<Ipv4Addr>, valid_until: std::time::Instant);
+    fn ptr_add(&self, name: IpAddr, value: Vec<String>, valid_until: std::time::Instant);
+    fn mx_add<'x>(&self, name: impl IntoFqdn<'x>, value: Vec<MX>, valid_until: std::time::Instant);
+    fn tlsa_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Arc<Tlsa>,
+        valid_until: std::time::Instant,
+    );
+}
+
+impl DnsCache for Server {
+    fn txt_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: impl Into<Txt>,
+        valid_until: std::time::Instant,
+    ) {
+        self.inner.cache.dns_txt.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            value.into(),
+            valid_until,
+        );
+    }
+
+    fn ipv4_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Vec<Ipv4Addr>,
+        valid_until: std::time::Instant,
+    ) {
+        self.inner.cache.dns_ipv4.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            Arc::new(value),
+            valid_until,
+        );
+    }
+
+    fn dnsbl_add(&self, name: &str, value: Vec<Ipv4Addr>, valid_until: std::time::Instant) {
+        self.inner.cache.dns_rbl.insert_with_expiry(
+            name.to_string(),
+            Some(Arc::new(IpResolver::new(
+                value
+                    .iter()
+                    .copied()
+                    .next()
+                    .unwrap_or(Ipv4Addr::BROADCAST)
+                    .into(),
+            ))),
+            valid_until,
+        );
+    }
+
+    fn ipv6_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Vec<Ipv6Addr>,
+        valid_until: std::time::Instant,
+    ) {
+        self.inner.cache.dns_ipv6.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            Arc::new(value),
+            valid_until,
+        );
+    }
+
+    fn ptr_add(&self, name: IpAddr, value: Vec<String>, valid_until: std::time::Instant) {
+        self.inner
+            .cache
+            .dns_ptr
+            .insert_with_expiry(name, Arc::new(value), valid_until);
+    }
+
+    fn mx_add<'x>(&self, name: impl IntoFqdn<'x>, value: Vec<MX>, valid_until: std::time::Instant) {
+        self.inner.cache.dns_mx.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            Arc::new(value),
+            valid_until,
+        );
+    }
+
+    fn tlsa_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Arc<Tlsa>,
+        valid_until: std::time::Instant,
+    ) {
+        self.inner.cache.dns_tlsa.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            value,
+            valid_until,
+        );
     }
 }

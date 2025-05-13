@@ -1,31 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    error::request::RequestError,
-    parser::{json::Parser, Error, JsonObjectParser},
+    parser::{json::Parser, JsonObjectParser},
     response::serialize::serialize_hex,
     types::{id::Id, type_state::DataType},
 };
@@ -332,7 +314,7 @@ impl WebSocketCapabilities {
 }
 
 impl JsonObjectParser for Capability {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -360,18 +342,19 @@ impl JsonObjectParser for Capability {
                 0x0061_746f_7571 => Ok(Capability::Quota),
                 _ => Err(parser.error_capability()),
             },
-            Err(Error::Method(_)) => Err(parser.error_capability()),
-            Err(err @ Error::Request(_)) => Err(err),
+            Err(err) if err.is_jmap_method_error() => Err(parser.error_capability()),
+            Err(err) => Err(err),
         }
     }
 }
 
-impl<'x> Parser<'x> {
-    fn error_capability(&mut self) -> Error {
+impl Parser<'_> {
+    fn error_capability(&mut self) -> trc::Error {
         if self.is_eof || self.skip_string() {
-            Error::Request(RequestError::unknown_capability(&String::from_utf8_lossy(
-                self.bytes[self.pos_marker..self.pos - 1].as_ref(),
-            )))
+            trc::JmapEvent::UnknownCapability.into_err().details(
+                String::from_utf8_lossy(self.bytes[self.pos_marker..self.pos - 1].as_ref())
+                    .into_owned(),
+            )
         } else {
             self.error_unterminated()
         }

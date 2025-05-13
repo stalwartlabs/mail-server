@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     net::IpAddr,
@@ -27,32 +10,34 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::config::smtp::report::AggregateFrequency;
+use common::{config::smtp::report::AggregateFrequency, ipc::DmarcEvent};
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::Dmarc,
     report::{ActionDisposition, Disposition, DmarcResult, Record, Report},
 };
+use smtp::reporting::dmarc::DmarcReporting;
 use store::write::QueueClass;
-
-use smtp::reporting::DmarcEvent;
 
 use crate::smtp::{
     inbound::{sign::SIGNATURES, TestMessage},
-    outbound::TestServer,
     session::VerifyResponse,
+    DnsCache, TestSMTP,
 };
 
 const CONFIG: &str = r#"
 [session.rcpt]
 relay = true
 
+[server]
+hostname = "mx.example.org"
+
 [report]
 submitter = "'mx.example.org'"
 
 [report.dmarc.aggregate]
 from-name = "'DMARC Report'"
-from-address = "'reports@example.org'"
+from-address = "'reports@' + config_get('report.domain')"
 org-name = "'Foobar, Inc.'"
 contact-info = "'https://foobar.org/contact'"
 send = "daily"
@@ -63,29 +48,20 @@ sign = "['rsa']"
 
 #[tokio::test]
 async fn report_dmarc() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Create scheduler
-    let mut local = TestServer::new(
-        "smtp_report_dmarc_test",
-        CONFIG.to_string() + SIGNATURES,
-        true,
-    )
-    .await;
+    let mut local = TestSMTP::new("smtp_report_dmarc_test", CONFIG.to_string() + SIGNATURES).await;
 
     // Authorize external report for foobar.org
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.txt_add(
+    core.txt_add(
         "foobar.org._report._dmarc.foobar.net",
         Dmarc::parse(b"v=DMARC1;").unwrap(),
         Instant::now() + Duration::from_secs(10),
     );
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
 
     // Schedule two events with a same policy and another one with a different policy
     let dmarc_record = Arc::new(

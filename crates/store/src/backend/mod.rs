@@ -1,31 +1,19 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+#[cfg(feature = "azure")]
+pub mod azure;
+#[cfg(feature = "enterprise")]
+pub mod composite;
 #[cfg(feature = "elastic")]
 pub mod elastic;
 #[cfg(feature = "foundation")]
 pub mod foundationdb;
 pub mod fs;
+pub mod http;
 pub mod memory;
 #[cfg(feature = "mysql")]
 pub mod mysql;
@@ -43,15 +31,9 @@ pub mod sqlite;
 pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 1) as usize;
 pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
 
-impl From<std::io::Error> for crate::Error {
-    fn from(err: std::io::Error) -> Self {
-        Self::InternalError(format!("IO error: {}", err))
-    }
-}
-
 #[allow(dead_code)]
-fn deserialize_i64_le(bytes: &[u8]) -> crate::Result<i64> {
+fn deserialize_i64_le(key: &[u8], bytes: &[u8]) -> trc::Result<i64> {
     Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
-        crate::Error::InternalError("Failed to deserialize i64 value.".to_string())
+        trc::Error::corrupted_key(key, bytes.into(), trc::location!())
     })?))
 }

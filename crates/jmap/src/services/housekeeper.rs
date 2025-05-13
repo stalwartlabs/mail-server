@@ -1,59 +1,35 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     collections::BinaryHeap,
-    time::{Duration, Instant},
+    future::Future,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
 };
 
-use store::{write::purge::PurgeStore, BlobStore, LookupStore, Store};
+use common::{
+    config::telemetry::OtelMetrics,
+    core::BuildServer,
+    ipc::{HousekeeperEvent, PurgeType},
+    Inner, Server, KV_LOCK_HOUSEKEEPER,
+};
+
+#[cfg(feature = "enterprise")]
+use common::telemetry::{
+    metrics::store::{MetricsStore, SharedMetricHistory},
+    tracers::store::TracingStore,
+};
+
+use smtp::reporting::SmtpReporting;
+use store::{write::now, PurgeStore};
 use tokio::sync::mpsc;
-use utils::map::ttl_dashmap::TtlMap;
+use trc::{Collector, MetricType, PurgeEvent};
 
-use crate::{Inner, JmapInstance, JMAP, LONG_SLUMBER};
-
-use super::IPC_CHANNEL_BUFFER;
-
-pub enum Event {
-    IndexStart,
-    IndexDone,
-    AcmeReload,
-    AcmeReschedule {
-        provider_id: String,
-        renew_at: Instant,
-    },
-    Purge(PurgeType),
-    #[cfg(feature = "test_mode")]
-    IndexIsActive(tokio::sync::oneshot::Sender<bool>),
-    Exit,
-}
-
-pub enum PurgeType {
-    Data(Store),
-    Blobs { store: Store, blob_store: BlobStore },
-    Lookup(LookupStore),
-    Account(Option<u32>),
-}
+use crate::{email::delete::EmailDeletion, JmapMethods, LONG_SLUMBER};
 
 #[derive(PartialEq, Eq)]
 struct Action {
@@ -63,10 +39,17 @@ struct Action {
 
 #[derive(PartialEq, Eq, Debug)]
 enum ActionClass {
-    Session,
     Account,
     Store(usize),
     Acme(String),
+    OtelMetrics,
+    #[cfg(feature = "enterprise")]
+    InternalMetrics,
+    CalculateMetrics,
+    #[cfg(feature = "enterprise")]
+    AlertMetrics,
+    #[cfg(feature = "enterprise")]
+    RenewLicense,
 }
 
 #[derive(Default)]
@@ -74,70 +57,159 @@ struct Queue {
     heap: BinaryHeap<Action>,
 }
 
-pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
+#[cfg(feature = "enterprise")]
+const METRIC_ALERTS_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEvent>) {
     tokio::spawn(async move {
-        tracing::debug!("Housekeeper task started.");
-
-        let mut index_busy = true;
-        let mut index_pending = false;
-
-        // Index any queued messages
-        let jmap = JMAP::from(core.clone());
-        tokio::spawn(async move {
-            jmap.fts_index_queued().await;
-        });
-        let mut queue = Queue::default();
+        trc::event!(Housekeeper(trc::HousekeeperEvent::Start));
+        let start_time = SystemTime::now();
 
         // Add all events to queue
-        let core_ = core.core.load();
-        queue.schedule(
-            Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
-            ActionClass::Session,
-        );
-        queue.schedule(
-            Instant::now() + core_.jmap.account_purge_frequency.time_to_next(),
-            ActionClass::Account,
-        );
-        for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
-            queue.schedule(
-                Instant::now() + schedule.cron.time_to_next(),
-                ActionClass::Store(idx),
-            );
-        }
+        let mut queue = Queue::default();
+        {
+            let server = inner.build_server();
 
-        // Add all ACME renewals to heap
-        for provider in core_.tls.acme_providers.values() {
-            match core_.init_acme(provider).await {
-                Ok(renew_at) => {
+            // Account purge
+            if server.core.network.roles.purge_accounts {
+                queue.schedule(
+                    Instant::now() + server.core.jmap.account_purge_frequency.time_to_next(),
+                    ActionClass::Account,
+                );
+            }
+
+            // Store purges
+            if server.core.network.roles.purge_stores {
+                for (idx, schedule) in server.core.storage.purge_schedules.iter().enumerate() {
                     queue.schedule(
-                        Instant::now() + renew_at,
-                        ActionClass::Acme(provider.id.clone()),
+                        Instant::now() + schedule.cron.time_to_next(),
+                        ActionClass::Store(idx),
                     );
                 }
-                Err(err) => {
-                    tracing::error!(
-                        context = "acme",
-                        event = "error",
-                        error = ?err,
-                        "Failed to initialize ACME certificate manager.");
+            }
+
+            // OTEL Push Metrics
+            if server.core.network.roles.push_metrics {
+                if let Some(otel) = &server.core.metrics.otel {
+                    OtelMetrics::enable_errors();
+                    queue.schedule(Instant::now() + otel.interval, ActionClass::OtelMetrics);
                 }
-            };
+            }
+
+            // Calculate expensive metrics
+            queue.schedule(Instant::now(), ActionClass::CalculateMetrics);
+
+            // Add all ACME renewals to heap
+            if server.core.network.roles.renew_acme {
+                for provider in server.core.acme.providers.values() {
+                    match server.init_acme(provider).await {
+                        Ok(renew_at) => {
+                            queue.schedule(
+                                Instant::now() + renew_at,
+                                ActionClass::Acme(provider.id.clone()),
+                            );
+                        }
+                        Err(err) => {
+                            trc::error!(
+                                err.details("Failed to initialize ACME certificate manager.")
+                            );
+                        }
+                    };
+                }
+            }
+
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+
+            // Enterprise Edition license management
+            #[cfg(feature = "enterprise")]
+            if let Some(enterprise) = &server.core.enterprise {
+                queue.schedule(
+                    Instant::now() + enterprise.license.renew_in(),
+                    ActionClass::RenewLicense,
+                );
+
+                if let Some(metrics_store) = enterprise.metrics_store.as_ref() {
+                    queue.schedule(
+                        Instant::now() + metrics_store.interval.time_to_next(),
+                        ActionClass::InternalMetrics,
+                    );
+                }
+
+                if !enterprise.metrics_alerts.is_empty() {
+                    queue.schedule(
+                        Instant::now() + METRIC_ALERTS_INTERVAL,
+                        ActionClass::AlertMetrics,
+                    );
+                }
+            }
+            // SPDX-SnippetEnd
         }
+
+        // Metrics history
+        #[cfg(feature = "enterprise")]
+        let metrics_history = SharedMetricHistory::default();
+        let mut next_metric_update = Instant::now();
 
         loop {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    Event::AcmeReload => {
-                        let core_ = core.core.load().clone();
-                        let inner = core.jmap_inner.clone();
+                    HousekeeperEvent::ReloadSettings => {
+                        let server = inner.build_server();
 
+                        // Reload OTEL push metrics
+                        match &server.core.metrics.otel {
+                            Some(otel) if !queue.has_action(&ActionClass::OtelMetrics) => {
+                                OtelMetrics::enable_errors();
+
+                                queue.schedule(
+                                    Instant::now() + otel.interval,
+                                    ActionClass::OtelMetrics,
+                                );
+                            }
+                            _ => {}
+                        }
+
+                        // SPDX-SnippetBegin
+                        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                        // SPDX-License-Identifier: LicenseRef-SEL
+                        #[cfg(feature = "enterprise")]
+                        if let Some(enterprise) = &server.core.enterprise {
+                            if !queue.has_action(&ActionClass::RenewLicense) {
+                                queue.schedule(
+                                    Instant::now() + enterprise.license.renew_in(),
+                                    ActionClass::RenewLicense,
+                                );
+                            }
+
+                            if let Some(metrics_store) = enterprise.metrics_store.as_ref() {
+                                if !queue.has_action(&ActionClass::InternalMetrics) {
+                                    queue.schedule(
+                                        Instant::now() + metrics_store.interval.time_to_next(),
+                                        ActionClass::InternalMetrics,
+                                    );
+                                }
+                            }
+
+                            if !enterprise.metrics_alerts.is_empty()
+                                && !queue.has_action(&ActionClass::AlertMetrics)
+                            {
+                                queue.schedule(Instant::now(), ActionClass::AlertMetrics);
+                            }
+                        }
+                        // SPDX-SnippetEnd
+
+                        // Reload ACME certificates
                         tokio::spawn(async move {
-                            for provider in core_.tls.acme_providers.values() {
-                                match core_.init_acme(provider).await {
+                            for provider in server.core.acme.providers.values() {
+                                match server.init_acme(provider).await {
                                     Ok(renew_at) => {
-                                        inner
+                                        server
+                                            .inner
+                                            .ipc
                                             .housekeeper_tx
-                                            .send(Event::AcmeReschedule {
+                                            .send(HousekeeperEvent::AcmeReschedule {
                                                 provider_id: provider.id.clone(),
                                                 renew_at: Instant::now() + renew_at,
                                             })
@@ -145,17 +217,14 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             .ok();
                                     }
                                     Err(err) => {
-                                        tracing::error!(
-                                            context = "acme",
-                                            event = "error",
-                                            error = ?err,
-                                            "Failed to reload ACME certificate manager.");
+                                        trc::error!(err
+                                            .details("Failed to reload ACME certificate manager."));
                                     }
                                 };
                             }
                         });
                     }
-                    Event::AcmeReschedule {
+                    HousekeeperEvent::AcmeReschedule {
                         provider_id,
                         renew_at,
                     } => {
@@ -163,118 +232,67 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                         queue.remove_action(&action);
                         queue.schedule(renew_at, action);
                     }
-                    Event::IndexStart => {
-                        if !index_busy {
-                            index_busy = true;
-                            let jmap = JMAP::from(core.clone());
-                            tokio::spawn(async move {
-                                jmap.fts_index_queued().await;
-                            });
-                        } else {
-                            index_pending = true;
-                        }
+                    HousekeeperEvent::Purge(purge) => {
+                        let server = inner.build_server();
+                        tokio::spawn(async move {
+                            server.purge(purge, 0).await;
+                        });
                     }
-                    Event::IndexDone => {
-                        if index_pending {
-                            index_pending = false;
-                            let jmap = JMAP::from(core.clone());
-                            tokio::spawn(async move {
-                                jmap.fts_index_queued().await;
-                            });
-                        } else {
-                            index_busy = false;
-                        }
-                    }
-                    Event::Purge(purge) => match purge {
-                        PurgeType::Data(store) => {
-                            tokio::spawn(async move {
-                                if let Err(err) = store.purge_store().await {
-                                    tracing::error!("Failed to purge data store: {err}",);
-                                }
-                            });
-                        }
-                        PurgeType::Blobs { store, blob_store } => {
-                            tokio::spawn(async move {
-                                if let Err(err) = store.purge_blobs(blob_store).await {
-                                    tracing::error!("Failed to purge blob store: {err}",);
-                                }
-                            });
-                        }
-                        PurgeType::Lookup(store) => {
-                            tokio::spawn(async move {
-                                if let Err(err) = store.purge_lookup_store().await {
-                                    tracing::error!("Failed to purge lookup store: {err}",);
-                                }
-                            });
-                        }
-                        PurgeType::Account(account_id) => {
-                            let jmap = JMAP::from(core.clone());
-                            tokio::spawn(async move {
-                                tracing::debug!("Purging accounts.");
-                                if let Some(account_id) = account_id {
-                                    jmap.purge_account(account_id).await;
-                                } else {
-                                    jmap.purge_accounts().await;
-                                }
-                            });
-                        }
-                    },
-                    #[cfg(feature = "test_mode")]
-                    Event::IndexIsActive(tx) => {
-                        tx.send(index_busy).ok();
-                    }
-                    Event::Exit => {
-                        tracing::debug!("Housekeeper task exiting.");
+                    HousekeeperEvent::Exit => {
+                        trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
+
                         return;
                     }
                 },
                 Ok(None) => {
-                    tracing::debug!("Housekeeper task exiting.");
+                    trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
                     return;
                 }
                 Err(_) => {
-                    let core_ = core.core.load();
+                    let server = inner.build_server();
                     while let Some(event) = queue.pop() {
                         match event.event {
                             ActionClass::Acme(provider_id) => {
-                                let inner = core.jmap_inner.clone();
-                                let core = core_.clone();
+                                trc::event!(Housekeeper(trc::HousekeeperEvent::Run), Type = "acme");
+
+                                let server = server.clone();
                                 tokio::spawn(async move {
                                     if let Some(provider) =
-                                        core.tls.acme_providers.get(&provider_id)
+                                        server.core.acme.providers.get(&provider_id)
                                     {
-                                        tracing::info!(
-                                            context = "acme",
-                                            event = "order",
-                                            domains = ?provider.domains,
-                                            "Ordering certificates.");
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::OrderStart),
+                                            Hostname = provider.domains.as_slice()
+                                        );
 
-                                        let renew_at = match core.renew(provider).await {
+                                        let renew_at = match server.renew(provider).await {
                                             Ok(renew_at) => {
-                                                tracing::info!(
-                                                    context = "acme",
-                                                    event = "success",
-                                                    domains = ?provider.domains,
-                                                    next_renewal = ?renew_at,
-                                                    "Certificates renewed.");
+                                                trc::event!(
+                                                    Acme(trc::AcmeEvent::OrderCompleted),
+                                                    Domain = provider.domains.as_slice(),
+                                                    Expires = trc::Value::Timestamp(
+                                                        now() + renew_at.as_secs()
+                                                    )
+                                                );
+
                                                 renew_at
                                             }
                                             Err(err) => {
-                                                tracing::error!(
-                                                    context = "acme",
-                                                    event = "error",
-                                                    error = ?err,
-                                                    "Failed to renew certificates.");
+                                                trc::error!(
+                                                    err.details("Failed to renew certificates.")
+                                                );
 
                                                 Duration::from_secs(3600)
                                             }
                                         };
 
-                                        inner.increment_config_version();
+                                        server.increment_config_version();
 
-                                        inner
+                                        server
+                                            .inner
+                                            .ipc
                                             .housekeeper_tx
-                                            .send(Event::AcmeReschedule {
+                                            .send(HousekeeperEvent::AcmeReschedule {
                                                 provider_id: provider_id.clone(),
                                                 renew_at: Instant::now() + renew_at,
                                             })
@@ -284,67 +302,282 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                 });
                             }
                             ActionClass::Account => {
-                                let jmap = JMAP::from(core.clone());
-                                tokio::spawn(async move {
-                                    tracing::debug!("Purging accounts.");
-                                    jmap.purge_accounts().await;
-                                });
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "purge_account"
+                                );
+
+                                let server = server.clone();
                                 queue.schedule(
                                     Instant::now()
-                                        + core_.jmap.account_purge_frequency.time_to_next(),
+                                        + server.core.jmap.account_purge_frequency.time_to_next(),
                                     ActionClass::Account,
                                 );
-                            }
-                            ActionClass::Session => {
-                                let inner = core.jmap_inner.clone();
                                 tokio::spawn(async move {
-                                    tracing::debug!("Purging session cache.");
-                                    inner.purge();
+                                    server.purge(PurgeType::Account(None), 0).await;
                                 });
-                                queue.schedule(
-                                    Instant::now()
-                                        + core_.jmap.session_purge_frequency.time_to_next(),
-                                    ActionClass::Session,
-                                );
                             }
                             ActionClass::Store(idx) => {
                                 if let Some(schedule) =
-                                    core_.storage.purge_schedules.get(idx).cloned()
+                                    server.core.storage.purge_schedules.get(idx).cloned()
                                 {
+                                    trc::event!(
+                                        Housekeeper(trc::HousekeeperEvent::Run),
+                                        Type = "purge_store",
+                                        Id = idx
+                                    );
+
                                     queue.schedule(
                                         Instant::now() + schedule.cron.time_to_next(),
                                         ActionClass::Store(idx),
                                     );
-                                    tokio::spawn(async move {
-                                        let (class, result) = match schedule.store {
-                                            PurgeStore::Data(store) => {
-                                                ("data", store.purge_store().await)
-                                            }
-                                            PurgeStore::Blobs { store, blob_store } => {
-                                                ("blob", store.purge_blobs(blob_store).await)
-                                            }
-                                            PurgeStore::Lookup(lookup_store) => {
-                                                ("lookup", lookup_store.purge_lookup_store().await)
-                                            }
-                                        };
 
-                                        match result {
-                                            Ok(_) => {
-                                                tracing::debug!(
-                                                    "Purged {class} store {}.",
-                                                    schedule.store_id
-                                                );
+                                    let server = server.clone();
+                                    tokio::spawn(async move {
+                                        server
+                                            .purge(
+                                                match schedule.store {
+                                                    PurgeStore::Data(store) => {
+                                                        PurgeType::Data(store)
+                                                    }
+                                                    PurgeStore::Blobs { store, blob_store } => {
+                                                        PurgeType::Blobs { store, blob_store }
+                                                    }
+                                                    PurgeStore::Lookup(in_memory_store) => {
+                                                        PurgeType::Lookup {
+                                                            store: in_memory_store,
+                                                            prefix: None,
+                                                        }
+                                                    }
+                                                },
+                                                idx as u32,
+                                            )
+                                            .await;
+                                    });
+                                }
+                            }
+                            ActionClass::OtelMetrics => {
+                                if let Some(otel) = &server.core.metrics.otel {
+                                    trc::event!(
+                                        Housekeeper(trc::HousekeeperEvent::Run),
+                                        Type = "metrics_report"
+                                    );
+
+                                    queue.schedule(
+                                        Instant::now() + otel.interval,
+                                        ActionClass::OtelMetrics,
+                                    );
+
+                                    let otel = otel.clone();
+
+                                    #[cfg(feature = "enterprise")]
+                                    let is_enterprise = server.is_enterprise_edition();
+
+                                    #[cfg(not(feature = "enterprise"))]
+                                    let is_enterprise = false;
+
+                                    tokio::spawn(async move {
+                                        otel.push_metrics(is_enterprise, start_time).await;
+                                    });
+                                }
+                            }
+                            ActionClass::CalculateMetrics => {
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "metrics_calculate"
+                                );
+
+                                // Calculate expensive metrics every 5 minutes
+                                queue.schedule(
+                                    Instant::now() + Duration::from_secs(5 * 60),
+                                    ActionClass::OtelMetrics,
+                                );
+
+                                let update_other_metrics = if Instant::now() >= next_metric_update {
+                                    next_metric_update =
+                                        Instant::now() + Duration::from_secs(86400);
+                                    true
+                                } else {
+                                    false
+                                };
+
+                                let server = server.clone();
+                                tokio::spawn(async move {
+                                    if server.core.network.roles.calculate_metrics {
+                                        #[cfg(feature = "enterprise")]
+                                        if server.is_enterprise_edition() {
+                                            // Obtain queue size
+                                            match server.total_queued_messages().await {
+                                                Ok(total) => {
+                                                    Collector::update_gauge(
+                                                        MetricType::QueueCount,
+                                                        total,
+                                                    );
+                                                }
+                                                Err(err) => {
+                                                    trc::error!(
+                                                        err.details("Failed to obtain queue size")
+                                                    );
+                                                }
                                             }
-                                            Err(err) => {
-                                                tracing::error!(
-                                                    "Failed to purge {class} store {}: {err}",
-                                                    schedule.store_id
-                                                );
+                                        }
+
+                                        if update_other_metrics {
+                                            match server.total_accounts().await {
+                                                Ok(total) => {
+                                                    Collector::update_gauge(
+                                                        MetricType::UserCount,
+                                                        total,
+                                                    );
+                                                }
+                                                Err(err) => {
+                                                    trc::error!(err
+                                                        .details("Failed to obtain account count"));
+                                                }
                                             }
+
+                                            match server.total_domains().await {
+                                                Ok(total) => {
+                                                    Collector::update_gauge(
+                                                        MetricType::DomainCount,
+                                                        total,
+                                                    );
+                                                }
+                                                Err(err) => {
+                                                    trc::error!(err
+                                                        .details("Failed to obtain domain count"));
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    match tokio::task::spawn_blocking(memory_stats::memory_stats)
+                                        .await
+                                    {
+                                        Ok(Some(stats)) => {
+                                            Collector::update_gauge(
+                                                MetricType::ServerMemory,
+                                                stats.physical_mem as u64,
+                                            );
+                                        }
+                                        Ok(None) => {}
+                                        Err(err) => {
+                                            trc::error!(trc::EventType::Server(
+                                                trc::ServerEvent::ThreadError,
+                                            )
+                                            .reason(err)
+                                            .caused_by(trc::location!())
+                                            .details("Join Error"));
+                                        }
+                                    }
+                                });
+                            }
+
+                            // SPDX-SnippetBegin
+                            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                            // SPDX-License-Identifier: LicenseRef-SEL
+                            #[cfg(feature = "enterprise")]
+                            ActionClass::InternalMetrics => {
+                                if let Some(metrics_store) = &server
+                                    .core
+                                    .enterprise
+                                    .as_ref()
+                                    .and_then(|e| e.metrics_store.as_ref())
+                                {
+                                    trc::event!(
+                                        Housekeeper(trc::HousekeeperEvent::Run),
+                                        Type = "metrics_internal"
+                                    );
+
+                                    queue.schedule(
+                                        Instant::now() + metrics_store.interval.time_to_next(),
+                                        ActionClass::InternalMetrics,
+                                    );
+
+                                    let metrics_store = metrics_store.store.clone();
+                                    let metrics_history = metrics_history.clone();
+                                    let core = server.core.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(err) = metrics_store
+                                            .write_metrics(core, now(), metrics_history)
+                                            .await
+                                        {
+                                            trc::error!(err.details("Failed to write metrics"));
                                         }
                                     });
                                 }
                             }
+
+                            #[cfg(feature = "enterprise")]
+                            ActionClass::AlertMetrics => {
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "metrics_alert"
+                                );
+
+                                let server = server.clone();
+
+                                tokio::spawn(async move {
+                                    if let Some(messages) = server.process_alerts().await {
+                                        for message in messages {
+                                            server
+                                                .send_autogenerated(
+                                                    message.from,
+                                                    message.to.into_iter(),
+                                                    message.body,
+                                                    None,
+                                                    0,
+                                                )
+                                                .await;
+                                        }
+                                    }
+                                });
+                            }
+
+                            #[cfg(feature = "enterprise")]
+                            ActionClass::RenewLicense => {
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "renew_license"
+                                );
+
+                                match server.reload().await {
+                                    Ok(result) => {
+                                        if let Some(new_core) = result.new_core {
+                                            if let Some(enterprise) = &new_core.enterprise {
+                                                let renew_in =
+                                                    if enterprise.license.is_near_expiration() {
+                                                        // Something went wrong during renewal, try again in 1 day or 1 hour,
+                                                        // depending on the time left on the license
+                                                        if enterprise.license.expires_in()
+                                                            < Duration::from_secs(86400)
+                                                        {
+                                                            Duration::from_secs(3600)
+                                                        } else {
+                                                            Duration::from_secs(86400)
+                                                        }
+                                                    } else {
+                                                        enterprise.license.renew_in()
+                                                    };
+
+                                                queue.schedule(
+                                                    Instant::now() + renew_in,
+                                                    ActionClass::RenewLicense,
+                                                );
+                                            }
+
+                                            // Update core
+                                            server.inner.shared_core.store(new_core.into());
+
+                                            // Increment version counter
+                                            server.increment_config_version();
+                                        }
+                                    }
+                                    Err(err) => {
+                                        trc::error!(err.details("Failed to reload configuration."));
+                                    }
+                                }
+                            } // SPDX-SnippetEnd
                         }
                     }
                 }
@@ -353,9 +586,164 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
     });
 }
 
+pub trait Purge: Sync + Send {
+    fn purge(&self, purge: PurgeType, store_idx: u32) -> impl Future<Output = ()> + Send;
+}
+
+impl Purge for Server {
+    async fn purge(&self, purge: PurgeType, store_idx: u32) {
+        // Lock task
+        let (lock_type, lock_name) = match &purge {
+            PurgeType::Data(_) => (
+                "data",
+                [0u8]
+                    .into_iter()
+                    .chain(store_idx.to_be_bytes().into_iter())
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            PurgeType::Blobs { .. } => (
+                "blob",
+                [1u8]
+                    .into_iter()
+                    .chain(store_idx.to_be_bytes().into_iter())
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            PurgeType::Lookup { prefix: None, .. } => (
+                "in-memory",
+                [2u8]
+                    .into_iter()
+                    .chain(store_idx.to_be_bytes().into_iter())
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            PurgeType::Lookup { .. } => ("in-memory-prefix", None),
+            PurgeType::Account(_) => ("account", None),
+        };
+        if let Some(lock_name) = &lock_name {
+            match self
+                .core
+                .storage
+                .lookup
+                .try_lock(KV_LOCK_HOUSEKEEPER, lock_name, 3600)
+                .await
+            {
+                Ok(true) => (),
+                Ok(false) => {
+                    trc::event!(Purge(PurgeEvent::InProgress), Details = lock_type);
+                    return;
+                }
+                Err(err) => {
+                    trc::error!(err.details("Failed to lock task.").details(lock_type));
+                    return;
+                }
+            }
+        }
+
+        trc::event!(Purge(PurgeEvent::Started), Type = lock_type, Id = store_idx);
+        let time = Instant::now();
+
+        match purge {
+            PurgeType::Data(store) => {
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+                #[cfg(feature = "enterprise")]
+                let trace_retention = self
+                    .core
+                    .enterprise
+                    .as_ref()
+                    .and_then(|e| e.trace_store.as_ref())
+                    .and_then(|t| t.retention);
+                #[cfg(feature = "enterprise")]
+                let metrics_retention = self
+                    .core
+                    .enterprise
+                    .as_ref()
+                    .and_then(|e| e.metrics_store.as_ref())
+                    .and_then(|m| m.retention);
+                // SPDX-SnippetEnd
+
+                if let Err(err) = store.purge_store().await {
+                    trc::error!(err.details("Failed to purge data store"));
+                }
+
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+                #[cfg(feature = "enterprise")]
+                if let Some(trace_retention) = trace_retention {
+                    if let Err(err) = store.purge_spans(trace_retention).await {
+                        trc::error!(err.details("Failed to purge tracing spans"));
+                    }
+                }
+
+                #[cfg(feature = "enterprise")]
+                if let Some(metrics_retention) = metrics_retention {
+                    if let Err(err) = store.purge_metrics(metrics_retention).await {
+                        trc::error!(err.details("Failed to purge metrics"));
+                    }
+                }
+                // SPDX-SnippetEnd
+            }
+            PurgeType::Blobs { store, blob_store } => {
+                if let Err(err) = store.purge_blobs(blob_store).await {
+                    trc::error!(err.details("Failed to purge blob store"));
+                }
+            }
+            PurgeType::Lookup { store, prefix } => {
+                if let Some(prefix) = prefix {
+                    if let Err(err) = store.key_delete_prefix(&prefix).await {
+                        trc::error!(err
+                            .details("Failed to delete key prefix")
+                            .ctx(trc::Key::Key, prefix));
+                    }
+                } else if let Err(err) = store.purge_in_memory_store().await {
+                    trc::error!(err.details("Failed to purge in-memory store"));
+                }
+            }
+            PurgeType::Account(account_id) => {
+                if let Some(account_id) = account_id {
+                    self.purge_account(account_id).await;
+                } else {
+                    self.purge_accounts().await;
+                }
+            }
+        }
+
+        trc::event!(
+            Purge(PurgeEvent::Finished),
+            Type = lock_type,
+            Id = store_idx,
+            Elapsed = time.elapsed()
+        );
+
+        // Remove lock
+        if let Some(lock_name) = &lock_name {
+            if let Err(err) = self
+                .in_memory_store()
+                .remove_lock(KV_LOCK_HOUSEKEEPER, lock_name)
+                .await
+            {
+                trc::error!(err
+                    .details("Failed to delete task lock.")
+                    .details(lock_type));
+            }
+        }
+    }
+}
+
 impl Queue {
     pub fn schedule(&mut self, due: Instant, event: ActionClass) {
-        tracing::debug!(due_in = due.saturating_duration_since(Instant::now()).as_secs(), event = ?event, "Scheduling housekeeper event.");
+        trc::event!(
+            Housekeeper(trc::HousekeeperEvent::Schedule),
+            Due = trc::Value::Timestamp(
+                now() + due.saturating_duration_since(Instant::now()).as_secs()
+            ),
+            Id = format!("{:?}", event)
+        );
+
         self.heap.push(Action { due, event });
     }
 
@@ -377,6 +765,10 @@ impl Queue {
             None
         }
     }
+
+    pub fn has_action(&self, event: &ActionClass) -> bool {
+        self.heap.iter().any(|e| &e.event == event)
+    }
 }
 
 impl Ord for Action {
@@ -389,17 +781,4 @@ impl PartialOrd for Action {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
-}
-
-impl Inner {
-    pub fn purge(&self) {
-        self.sessions.cleanup();
-        self.access_tokens.cleanup();
-        self.concurrency_limiter
-            .retain(|_, limiter| limiter.is_active());
-    }
-}
-
-pub fn init_housekeeper() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {
-    mpsc::channel::<Event>(IPC_CHANNEL_BUFFER)
 }

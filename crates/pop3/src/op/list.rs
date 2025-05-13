@@ -1,40 +1,50 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+use std::time::Instant;
 
 use common::listener::SessionStream;
+use directory::Permission;
 
 use crate::{protocol::response::Response, Session};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_list(&mut self, msg: Option<u32>) -> Result<(), ()> {
+    pub async fn handle_list(&mut self, msg: Option<u32>) -> trc::Result<()> {
+        // Validate access
+        self.state
+            .access_token()
+            .assert_has_permission(Permission::Pop3List)?;
+
+        let op_start = Instant::now();
         let mailbox = self.state.mailbox();
         if let Some(msg) = msg {
             if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
+                trc::event!(
+                    Pop3(trc::Pop3Event::ListMessage),
+                    SpanId = self.session_id,
+                    DocumentId = message.id,
+                    Size = message.size,
+                    Elapsed = op_start.elapsed()
+                );
+
                 self.write_ok(format!("{} {}", msg, message.size)).await
             } else {
-                self.write_err("No such message").await
+                Err(trc::Pop3Event::Error
+                    .into_err()
+                    .details("No such message.")
+                    .caused_by(trc::location!()))
             }
         } else {
+            trc::event!(
+                Pop3(trc::Pop3Event::List),
+                SpanId = self.session_id,
+                Total = mailbox.messages.len(),
+                Elapsed = op_start.elapsed()
+            );
+
             self.write_bytes(
                 Response::List(mailbox.messages.iter().map(|m| m.size).collect::<Vec<_>>())
                     .serialize(),
@@ -43,16 +53,41 @@ impl<T: SessionStream> Session<T> {
         }
     }
 
-    pub async fn handle_uidl(&mut self, msg: Option<u32>) -> Result<(), ()> {
+    pub async fn handle_uidl(&mut self, msg: Option<u32>) -> trc::Result<()> {
+        // Validate access
+        self.state
+            .access_token()
+            .assert_has_permission(Permission::Pop3Uidl)?;
+
+        let op_start = Instant::now();
         let mailbox = self.state.mailbox();
         if let Some(msg) = msg {
             if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
+                trc::event!(
+                    Pop3(trc::Pop3Event::UidlMessage),
+                    SpanId = self.session_id,
+                    DocumentId = message.id,
+                    Uid = message.uid,
+                    UidValidity = mailbox.uid_validity,
+                    Elapsed = op_start.elapsed()
+                );
+
                 self.write_ok(format!("{} {}{}", msg, mailbox.uid_validity, message.uid))
                     .await
             } else {
-                self.write_err("No such message").await
+                Err(trc::Pop3Event::Error
+                    .into_err()
+                    .details("No such message.")
+                    .caused_by(trc::location!()))
             }
         } else {
+            trc::event!(
+                Pop3(trc::Pop3Event::Uidl),
+                SpanId = self.session_id,
+                Total = mailbox.messages.len(),
+                Elapsed = op_start.elapsed()
+            );
+
             self.write_bytes(
                 Response::List(
                     mailbox
@@ -67,8 +102,23 @@ impl<T: SessionStream> Session<T> {
         }
     }
 
-    pub async fn handle_stat(&mut self) -> Result<(), ()> {
+    pub async fn handle_stat(&mut self) -> trc::Result<()> {
+        // Validate access
+        self.state
+            .access_token()
+            .assert_has_permission(Permission::Pop3Stat)?;
+
+        let op_start = Instant::now();
         let mailbox = self.state.mailbox();
+
+        trc::event!(
+            Pop3(trc::Pop3Event::Stat),
+            SpanId = self.session_id,
+            Total = mailbox.total,
+            Size = mailbox.size,
+            Elapsed = op_start.elapsed()
+        );
+
         self.write_ok(format!("{} {}", mailbox.total, mailbox.size))
             .await
     }

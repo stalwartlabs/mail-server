@@ -1,38 +1,25 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Instant};
 
-use common::{config::smtp::session::Milter, listener::SessionStream};
+use common::{
+    config::smtp::session::{Milter, Stage},
+    listener::SessionStream,
+    DAEMON_NAME,
+};
 use mail_auth::AuthenticatedMessage;
-use smtp_proto::request::parser::Rfc5321Parser;
+use smtp_proto::{request::parser::Rfc5321Parser, IntoString};
 use tokio::io::{AsyncRead, AsyncWrite};
+use trc::MilterEvent;
 
 use crate::{
     core::{Session, SessionAddress, SessionData},
-    inbound::milter::MilterClient,
+    inbound::{milter::MilterClient, FilterResponse},
     queue::DomainPart,
-    DAEMON_NAME,
 };
 
 use super::{Action, Error, Macros, Modification};
@@ -45,54 +32,73 @@ enum Rejection {
 impl<T: SessionStream> Session<T> {
     pub async fn run_milters(
         &self,
-        message: &AuthenticatedMessage<'_>,
-    ) -> Result<Vec<Modification>, Cow<'static, [u8]>> {
-        let milters = &self.core.core.smtp.session.data.milters;
+        stage: Stage,
+        message: Option<&AuthenticatedMessage<'_>>,
+    ) -> Result<Vec<Modification>, FilterResponse> {
+        let milters = &self.server.core.smtp.session.milters;
         if milters.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut modifications = Vec::new();
         for milter in milters {
-            if !self
-                .core
-                .core
-                .eval_if(&milter.enable, self)
-                .await
-                .unwrap_or(false)
+            if !milter.run_on_stage.contains(&stage)
+                || !self
+                    .server
+                    .eval_if(&milter.enable, self, self.data.session_id)
+                    .await
+                    .unwrap_or(false)
             {
                 continue;
             }
 
+            let time = Instant::now();
             match self.connect_and_run(milter, message).await {
                 Ok(new_modifications) => {
+                    trc::event!(
+                        Milter(MilterEvent::ActionAccept),
+                        SpanId = self.data.session_id,
+                        Id = milter.id.to_string(),
+                        Elapsed = time.elapsed(),
+                    );
+
                     if !modifications.is_empty() {
                         // The message body can only be replaced once, so we need to remove
                         // any previous replacements.
-                        modifications.retain(|m| !matches!(m, Modification::ReplaceBody { .. }));
+                        if new_modifications
+                            .iter()
+                            .any(|m| matches!(m, Modification::ReplaceBody { .. }))
+                        {
+                            modifications
+                                .retain(|m| !matches!(m, Modification::ReplaceBody { .. }));
+                        }
                         modifications.extend(new_modifications);
                     } else {
                         modifications = new_modifications;
                     }
                 }
                 Err(Rejection::Action(action)) => {
-                    tracing::info!(
-                        parent: &self.span,
-                        milter.host = &milter.hostname,
-                        milter.port = &milter.port,
-                        context = "milter",
-                        event = "reject",
-                        action = ?action,
-                        "Milter rejected message.");
+                    trc::event!(
+                        Milter(match &action {
+                            Action::Discard => MilterEvent::ActionDiscard,
+                            Action::Reject => MilterEvent::ActionReject,
+                            Action::TempFail => MilterEvent::ActionTempFail,
+                            Action::ReplyCode { .. } => {
+                                MilterEvent::ActionReplyCode
+                            }
+                            Action::Shutdown => MilterEvent::ActionShutdown,
+                            Action::ConnectionFailure => MilterEvent::ActionConnectionFailure,
+                            Action::Accept | Action::Continue => unreachable!(),
+                        }),
+                        SpanId = self.data.session_id,
+                        Id = milter.id.to_string(),
+                        Elapsed = time.elapsed(),
+                    );
 
                     return Err(match action {
-                        Action::Discard => {
-                            (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into()
-                        }
-                        Action::Reject => (b"503 5.5.3 Message rejected.\r\n"[..]).into(),
-                        Action::TempFail => {
-                            (b"451 4.3.5 Unable to accept message at this time.\r\n"[..]).into()
-                        }
+                        Action::Discard => FilterResponse::accept(),
+                        Action::Reject => FilterResponse::reject(),
+                        Action::TempFail => FilterResponse::temp_fail(),
                         Action::ReplyCode { code, text } => {
                             let mut response = Vec::with_capacity(text.len() + 6);
                             response.extend_from_slice(code.as_slice());
@@ -101,26 +107,46 @@ impl<T: SessionStream> Session<T> {
                             if !text.ends_with('\n') {
                                 response.extend_from_slice(b"\r\n");
                             }
-                            response.into()
+                            FilterResponse {
+                                message: response.into_string().into(),
+                                disconnect: false,
+                            }
                         }
-                        Action::Shutdown => (b"421 4.3.0 Server shutting down.\r\n"[..]).into(),
-                        Action::ConnectionFailure => (b""[..]).into(), // TODO: Not very elegant design, fix.
+                        Action::Shutdown => FilterResponse::shutdown(),
+                        Action::ConnectionFailure => FilterResponse::default().disconnect(),
                         Action::Accept | Action::Continue => unreachable!(),
                     });
                 }
                 Err(Rejection::Error(err)) => {
-                    tracing::warn!(
-                        parent: &self.span,
-                        milter.host = &milter.hostname,
-                        milter.port = &milter.port,
-                        context = "milter",
-                        event = "error",
-                        reason = ?err,
-                        "Milter filter failed");
+                    let (code, details) = match err {
+                        Error::Io(details) => {
+                            (MilterEvent::IoError, trc::Value::from(details.to_string()))
+                        }
+                        Error::FrameTooLarge(size) => {
+                            (MilterEvent::FrameTooLarge, trc::Value::from(size))
+                        }
+                        Error::FrameInvalid(bytes) => {
+                            (MilterEvent::FrameInvalid, trc::Value::from(bytes))
+                        }
+                        Error::Unexpected(response) => (
+                            MilterEvent::UnexpectedResponse,
+                            trc::Value::from(response.to_string()),
+                        ),
+                        Error::Timeout => (MilterEvent::Timeout, trc::Value::None),
+                        Error::TLSInvalidName => (MilterEvent::TlsInvalidName, trc::Value::None),
+                        Error::Disconnected => (MilterEvent::Disconnected, trc::Value::None),
+                    };
+
+                    trc::event!(
+                        Milter(code),
+                        SpanId = self.data.session_id,
+                        Id = milter.id.to_string(),
+                        Details = details,
+                        Elapsed = time.elapsed(),
+                    );
+
                     if milter.tempfail_on_error {
-                        return Err(
-                            (b"451 4.3.5 Unable to accept message at this time.\r\n"[..]).into(),
-                        );
+                        return Err(FilterResponse::server_failure());
                     }
                 }
             }
@@ -132,10 +158,10 @@ impl<T: SessionStream> Session<T> {
     async fn connect_and_run(
         &self,
         milter: &Milter,
-        message: &AuthenticatedMessage<'_>,
+        message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, Rejection> {
         // Build client
-        let client = MilterClient::connect(milter, self.span.clone()).await?;
+        let client = MilterClient::connect(milter, self.data.session_id).await?;
         if !milter.tls {
             self.run(client, message).await
         } else {
@@ -143,9 +169,9 @@ impl<T: SessionStream> Session<T> {
                 client
                     .into_tls(
                         if !milter.tls_allow_invalid_certs {
-                            &self.core.inner.connectors.pki_verify
+                            &self.server.inner.data.smtp_connectors.pki_verify
                         } else {
-                            &self.core.inner.connectors.dummy_verify
+                            &self.server.inner.data.smtp_connectors.dummy_verify
                         },
                         &milter.hostname,
                     )
@@ -159,7 +185,7 @@ impl<T: SessionStream> Session<T> {
     async fn run<S: AsyncRead + AsyncWrite + Unpin>(
         &self,
         mut client: MilterClient<S>,
-        message: &AuthenticatedMessage<'_>,
+        message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, Rejection> {
         // Option negotiation
         client.init().await?;
@@ -187,65 +213,78 @@ impl<T: SessionStream> Session<T> {
             .assert_continue()?;
 
         // EHLO/HELO
-        let (tls_version, tls_ciper) = self.stream.tls_version_and_cipher();
+        let (tls_version, tls_cipher) = self.stream.tls_version_and_cipher();
         client
             .helo(
                 &self.data.helo_domain,
                 Macros::new()
-                    .with_cipher(tls_ciper.as_ref())
+                    .with_cipher(tls_cipher.as_ref())
                     .with_tls_version(tls_version.as_ref()),
             )
             .await?
             .assert_continue()?;
 
         // Mail from
-        let addr = &self.data.mail_from.as_ref().unwrap().address_lcase;
-        client
-            .mail_from(
-                &format!("<{addr}>"),
-                None::<&[&str]>,
-                Macros::new()
-                    .with_mail_address(addr)
-                    .with_sasl_login_name(&self.data.authenticated_as),
-            )
-            .await?
-            .assert_continue()?;
-
-        // Rcpt to
-        for rcpt in &self.data.rcpt_to {
+        if let Some(mail_from) = &self.data.mail_from {
+            let addr = &mail_from.address_lcase;
             client
-                .rcpt_to(
-                    &format!("<{}>", rcpt.address_lcase),
+                .mail_from(
+                    &format!("<{addr}>"),
                     None::<&[&str]>,
-                    Macros::new().with_rcpt_address(&rcpt.address_lcase),
+                    if let Some(name) = self.authenticated_as() {
+                        Macros::new()
+                            .with_mail_address(addr)
+                            .with_sasl_login_name(name)
+                    } else {
+                        Macros::new().with_mail_address(addr)
+                    },
                 )
                 .await?
                 .assert_continue()?;
+
+            // Rcpt to
+            for rcpt in &self.data.rcpt_to {
+                client
+                    .rcpt_to(
+                        &format!("<{}>", rcpt.address_lcase),
+                        None::<&[&str]>,
+                        Macros::new().with_rcpt_address(&rcpt.address_lcase),
+                    )
+                    .await?
+                    .assert_continue()?;
+            }
         }
 
-        // Data
-        client.data().await?.assert_continue()?;
+        if let Some(message) = message {
+            // Data
+            client.data().await?.assert_continue()?;
 
-        // Headers
-        client
-            .headers(message.raw_parsed_headers().iter().map(|(k, v)| {
-                (
-                    std::str::from_utf8(k).unwrap_or_default(),
-                    std::str::from_utf8(v).unwrap_or_default(),
-                )
-            }))
-            .await?
-            .assert_continue()?;
+            // Headers
+            client
+                .headers(message.raw_parsed_headers().iter().map(|(k, v)| {
+                    (
+                        std::str::from_utf8(k).unwrap_or_default(),
+                        std::str::from_utf8(v).unwrap_or_default(),
+                    )
+                }))
+                .await?
+                .assert_continue()?;
 
-        // Message body
-        let (action, modifications) = client.body(message.raw_message()).await?;
-        action.assert_continue()?;
+            // Message body
+            let (action, modifications) = client.body(message.raw_message()).await?;
+            action.assert_continue()?;
 
-        // Quit
-        let _ = client.quit().await;
+            // Quit
+            let _ = client.quit().await;
 
-        // Return modifications
-        Ok(modifications)
+            // Return modifications
+            Ok(modifications)
+        } else {
+            // Quit
+            let _ = client.quit().await;
+
+            Ok(Vec::new())
+        }
     }
 }
 
@@ -282,11 +321,12 @@ impl SessionData {
                                 mail_from.dsn_info = addr.env_id;
                             }
                             Err(err) => {
-                                tracing::debug!(
-                                    context = "milter",
-                                    event = "error",
-                                    reason = ?err,
-                                    "Failed to parse milter mailFrom parameters.");
+                                trc::event!(
+                                    Milter(MilterEvent::ParseError),
+                                    SpanId = self.session_id,
+                                    Details = "Failed to parse milter mailFrom parameters",
+                                    Reason = err.to_string(),
+                                );
                             }
                         }
                     }
@@ -317,11 +357,12 @@ impl SessionData {
                                     rcpt.dsn_info = addr.orcpt;
                                 }
                                 Err(err) => {
-                                    tracing::debug!(
-                                    context = "milter",
-                                    event = "error",
-                                    reason = ?err,
-                                    "Failed to parse milter rcptTo parameters.");
+                                    trc::event!(
+                                        Milter(MilterEvent::ParseError),
+                                        SpanId = self.session_id,
+                                        Details = "Failed to parse milter rcptTo parameters",
+                                        Reason = err.to_string(),
+                                    );
                                 }
                             }
                         }
@@ -442,13 +483,13 @@ impl SessionData {
             );
             for (header, value) in headers {
                 new_message.extend_from_slice(header.as_ref());
-                if value.first().map_or(false, |c| c.is_ascii_whitespace()) {
+                if value.first().is_some_and(|c| c.is_ascii_whitespace()) {
                     new_message.extend_from_slice(b":");
                 } else {
                     new_message.extend_from_slice(b": ");
                 }
                 new_message.extend_from_slice(value.as_ref());
-                if !value.last().map_or(false, |c| *c == b'\n') {
+                if value.last().is_none_or(|c| *c != b'\n') {
                     new_message.extend_from_slice(b"\r\n");
                 }
             }

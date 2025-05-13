@@ -1,29 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use base64::{engine::general_purpose, Engine};
+use base64::{Engine, engine::general_purpose};
+use common::{Server, auth::AccessToken};
 use jmap_proto::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::Object,
     response::references::EvalObjectReferences,
@@ -35,22 +19,33 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
+use rand::distr::Alphanumeric;
+use std::future::Future;
 use store::{
-    rand::{distributions::Alphanumeric, thread_rng, Rng},
-    write::{now, BatchBuilder, F_CLEAR, F_VALUE},
+    rand::{Rng, rng},
+    write::{BatchBuilder, F_CLEAR, F_VALUE, now},
 };
+use trc::AddContext;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::services::state::StateManager;
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
 const VERIFICATION_CODE_LEN: usize = 32;
 
-impl JMAP {
-    pub async fn push_subscription_set(
+pub trait PushSubscriptionSet: Sync + Send {
+    fn push_subscription_set(
+        &self,
+        request: SetRequest<RequestArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+}
+
+impl PushSubscriptionSet for Server {
+    async fn push_subscription_set(
         &self,
         mut request: SetRequest<RequestArguments>,
         access_token: &AccessToken,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         let account_id = access_token.primary_id();
         let mut push_ids = self
             .get_document_ids(account_id, Collection::PushSubscription)
@@ -111,7 +106,7 @@ impl JMAP {
             push.append(
                 Property::Value,
                 Value::Text(
-                    thread_rng()
+                    rng()
                         .sample_iter(Alphanumeric)
                         .take(VERIFICATION_CODE_LEN)
                         .map(char::from)
@@ -126,7 +121,11 @@ impl JMAP {
                 .with_collection(Collection::PushSubscription)
                 .create_document()
                 .value(Property::Value, push, F_VALUE);
-            let document_id = self.write_batch_expect_id(batch).await?;
+            let document_id = self
+                .store()
+                .write_expect_id(batch)
+                .await
+                .caused_by(trc::location!())?;
             push_ids.insert(document_id);
             response.created.insert(
                 id,
@@ -187,7 +186,10 @@ impl JMAP {
                 .with_collection(Collection::PushSubscription)
                 .update_document(document_id)
                 .value(Property::Value, push, F_VALUE);
-            self.write_batch(batch).await?;
+            self.store()
+                .write(batch)
+                .await
+                .caused_by(trc::location!())?;
             response.updated.append(id, None);
         }
 
@@ -202,7 +204,10 @@ impl JMAP {
                     .with_collection(Collection::PushSubscription)
                     .delete_document(document_id)
                     .value(Property::Value, (), F_VALUE | F_CLEAR);
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 response.destroyed.push(id);
             } else {
                 response.not_destroyed.append(id, SetError::not_found());
@@ -276,7 +281,7 @@ fn validate_push_value(
                 .unwrap()
                 .properties
                 .get(&Property::Value)
-                .map_or(false, |v| matches!(v, Value::Text(v) if v == &value))
+                .is_some_and(|v| matches!(v, Value::Text(v) if v == &value))
             {
                 Value::Text(value)
             } else {

@@ -1,29 +1,13 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
-use common::listener::SessionStream;
+use common::{listener::SessionStream, ImapId};
+use directory::Permission;
 use imap_proto::{
     protocol::{
         search::{self, Arguments, Filter, Response, ResultOption},
@@ -32,6 +16,7 @@ use imap_proto::{
     receiver::Request,
     Command, StatusResponse,
 };
+use jmap::{changes::get::ChangesLookup, JmapMethods};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::HeaderName;
 use nlp::language::Language;
@@ -42,8 +27,12 @@ use store::{
     write::now,
 };
 use tokio::sync::watch;
+use trc::AddContext;
 
-use crate::core::{ImapId, MailboxState, SavedSearch, SelectedMailbox, Session, SessionData};
+use crate::{
+    core::{SavedSearch, SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
 
 use super::{FromModSeq, ToModSeq};
 
@@ -53,64 +42,66 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_sort: bool,
         is_uid: bool,
-    ) -> crate::OpResult {
-        match if !is_sort {
+    ) -> trc::Result<()> {
+        let op_start = Instant::now();
+        let mut arguments = if !is_sort {
+            // Validate access
+            self.assert_has_permission(Permission::ImapSearch)?;
+
             request.parse_search(self.version)
         } else {
+            // Validate access
+            self.assert_has_permission(Permission::ImapSort)?;
+
             request.parse_sort()
-        } {
-            Ok(mut arguments) => {
-                let (data, mailbox) = self.state.mailbox_state();
+        }?;
 
-                // Create channel for results
-                let (results_tx, prev_saved_search) =
-                    if arguments.result_options.contains(&ResultOption::Save) {
-                        let prev_saved_search = Some(mailbox.get_saved_search().await);
-                        let (tx, rx) = watch::channel(Arc::new(Vec::new()));
-                        *mailbox.saved_search.lock() = SavedSearch::InFlight { rx };
-                        (tx.into(), prev_saved_search)
+        let (data, mailbox) = self.state.mailbox_state();
+
+        // Create channel for results
+        let (results_tx, prev_saved_search) =
+            if arguments.result_options.contains(&ResultOption::Save) {
+                let prev_saved_search = Some(mailbox.get_saved_search().await);
+                let (tx, rx) = watch::channel(Arc::new(Vec::new()));
+                *mailbox.saved_search.lock() = SavedSearch::InFlight { rx };
+                (tx.into(), prev_saved_search)
+            } else {
+                (None, None)
+            };
+
+        spawn_op!(data, {
+            let tag = std::mem::take(&mut arguments.tag);
+            let bytes = match data
+                .search(
+                    arguments,
+                    mailbox.clone(),
+                    results_tx,
+                    prev_saved_search.clone(),
+                    is_uid,
+                    op_start,
+                )
+                .await
+            {
+                Ok(response) => {
+                    let response = response.serialize(&tag);
+                    StatusResponse::completed(if !is_sort {
+                        Command::Search(is_uid)
                     } else {
-                        (None, None)
-                    };
-
-                tokio::spawn(async move {
-                    let tag = std::mem::take(&mut arguments.tag);
-                    let bytes = match data
-                        .search(
-                            arguments,
-                            mailbox.clone(),
-                            results_tx,
-                            prev_saved_search.clone(),
-                            is_uid,
-                        )
-                        .await
-                    {
-                        Ok(response) => {
-                            let response = response.serialize(&tag);
-                            StatusResponse::completed(if !is_sort {
-                                Command::Search(is_uid)
-                            } else {
-                                Command::Sort(is_uid)
-                            })
-                            .with_tag(tag)
-                            .serialize(response)
-                        }
-                        Err(response) => {
-                            if let Some(prev_saved_search) = prev_saved_search {
-                                *mailbox.saved_search.lock() = prev_saved_search
-                                    .map_or(SavedSearch::None, |s| SavedSearch::Results {
-                                        items: s,
-                                    });
-                            }
-                            response.with_tag(tag).into_bytes()
-                        }
-                    };
-                    data.write_bytes(bytes).await;
-                });
-                Ok(())
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+                        Command::Sort(is_uid)
+                    })
+                    .with_tag(tag)
+                    .serialize(response)
+                }
+                Err(err) => {
+                    if let Some(prev_saved_search) = prev_saved_search {
+                        *mailbox.saved_search.lock() = prev_saved_search
+                            .map_or(SavedSearch::None, |s| SavedSearch::Results { items: s });
+                    }
+                    return Err(err.id(tag));
+                }
+            };
+            data.write_bytes(bytes).await
+        })
     }
 }
 
@@ -122,7 +113,8 @@ impl<T: SessionStream> SessionData<T> {
         results_tx: Option<watch::Sender<Arc<Vec<ImapId>>>>,
         prev_saved_search: Option<Option<Arc<Vec<ImapId>>>>,
         is_uid: bool,
-    ) -> Result<search::Response, StatusResponse> {
+        op_start: Instant,
+    ) -> trc::Result<search::Response> {
         // Run query
         let (result_set, include_highest_modseq) = self
             .query(arguments.filter, &mailbox, &prev_saved_search)
@@ -151,7 +143,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut imap_ids = Vec::with_capacity(results_len);
         let is_sort = if let Some(sort) = arguments.sort {
             mailbox.map_search_results(
-                self.jmap
+                self.server
                     .core
                     .storage
                     .data
@@ -185,7 +177,7 @@ impl<T: SessionStream> SessionData<T> {
                         Pagination::new(results_len, 0, None, 0),
                     )
                     .await
-                    .map_err(|_| StatusResponse::database_failure())?
+                    .caused_by(trc::location!())?
                     .ids
                     .into_iter()
                     .map(|id| id as u32),
@@ -224,6 +216,19 @@ impl<T: SessionStream> SessionData<T> {
             results_tx.send(saved_results).ok();
         }
 
+        trc::event!(
+            Imap(if !is_sort {
+                trc::ImapEvent::Search
+            } else {
+                trc::ImapEvent::Sort
+            }),
+            SpanId = self.session_id,
+            AccountId = mailbox.id.account_id,
+            MailboxId = mailbox.id.mailbox_id,
+            Total = total,
+            Elapsed = op_start.elapsed()
+        );
+
         // Build response
         Ok(Response {
             is_uid,
@@ -252,11 +257,11 @@ impl<T: SessionStream> SessionData<T> {
         imap_filter: Vec<Filter>,
         mailbox: &SelectedMailbox,
         prev_saved_search: &Option<Option<Arc<Vec<ImapId>>>>,
-    ) -> Result<(ResultSet, bool), StatusResponse> {
+    ) -> trc::Result<(ResultSet, bool)> {
         // Obtain message ids
         let mut filters = Vec::with_capacity(imap_filter.len() + 1);
         let message_ids = self
-            .jmap
+            .server
             .get_tag(
                 mailbox.id.account_id,
                 Collection::Email,
@@ -286,7 +291,7 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Body,
                                     text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                             }
                             search::Filter::Cc(text) => {
@@ -306,9 +311,11 @@ impl<T: SessionStream> SessionData<T> {
                             search::Filter::Header(header, value) => {
                                 match HeaderName::parse(header) {
                                     Some(HeaderName::Other(header_name)) => {
-                                        return Err(StatusResponse::no(format!(
-                                            "Querying header '{header_name}' is not supported.",
-                                        )));
+                                        return Err(trc::ImapEvent::Error.into_err().details(
+                                            format!(
+                                                "Querying header '{header_name}' is not supported.",
+                                            ),
+                                        ));
                                     }
                                     Some(header_name) => {
                                         if !value.is_empty() {
@@ -344,7 +351,7 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Header(HeaderName::Subject),
                                     text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                             }
                             search::Filter::Text(text) => {
@@ -372,17 +379,17 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Header(HeaderName::Subject),
                                     &text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Body,
                                     &text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Attachment,
                                     text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::End);
                             }
@@ -410,7 +417,7 @@ impl<T: SessionStream> SessionData<T> {
                     }
 
                     filters.push(query::Filter::is_in_set(
-                        self.jmap
+                        self.server
                             .fts_filter(mailbox.id.account_id, Collection::Email, fts_filters)
                             .await?,
                     ));
@@ -429,7 +436,9 @@ impl<T: SessionStream> SessionData<T> {
                                     }
                                 }
                             } else {
-                                return Err(StatusResponse::no("No saved search found."));
+                                return Err(trc::ImapEvent::Error
+                                    .into_err()
+                                    .details("No saved search found."));
                             }
                         } else {
                             for id in mailbox.sequence_to_ids(&sequence, uid_filter).await?.keys() {
@@ -604,7 +613,7 @@ impl<T: SessionStream> SessionData<T> {
                     search::Filter::ModSeq((modseq, _)) => {
                         let mut set = RoaringBitmap::new();
                         for change in self
-                            .jmap
+                            .server
                             .changes_(
                                 mailbox.id.account_id,
                                 Collection::Email,
@@ -627,9 +636,9 @@ impl<T: SessionStream> SessionData<T> {
                                 RoaringBitmap::from_sorted_iter([id.document_id()]).unwrap(),
                             ));
                         } else {
-                            return Err(StatusResponse::no(format!(
-                                "Failed to parse email id '{id}'.",
-                            )));
+                            return Err(trc::ImapEvent::Error
+                                .into_err()
+                                .details(format!("Failed to parse email id '{id}'.",)));
                         }
                     }
                     search::Filter::ThreadId(id) => {
@@ -639,9 +648,9 @@ impl<T: SessionStream> SessionData<T> {
                                 id.document_id(),
                             ));
                         } else {
-                            return Err(StatusResponse::no(format!(
-                                "Failed to parse thread id '{id}'.",
-                            )));
+                            return Err(trc::ImapEvent::Error
+                                .into_err()
+                                .details(format!("Failed to parse thread id '{id}'.",)));
                         }
                     }
                     _ => (),
@@ -650,11 +659,11 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Run query
-        self.jmap
+        self.server
             .filter(mailbox.id.account_id, Collection::Email, filters)
             .await
             .map(|res| (res, include_highest_modseq))
-            .map_err(|err| err.into())
+            .caused_by(trc::location!())
     }
 }
 
@@ -726,23 +735,6 @@ impl SelectedMailbox {
                     r.push(*imap_id)
                 }
             }
-        }
-    }
-}
-
-impl MailboxState {
-    pub fn map_result_id(&self, document_id: u32, is_uid: bool) -> Option<(u32, ImapId)> {
-        if let Some(imap_id) = self.id_to_imap.get(&document_id) {
-            Some((if is_uid { imap_id.uid } else { imap_id.seqnum }, *imap_id))
-        } else if is_uid {
-            self.next_state.as_ref().and_then(|s| {
-                s.next_state
-                    .id_to_imap
-                    .get(&document_id)
-                    .map(|imap_id| (imap_id.uid, *imap_id))
-            })
-        } else {
-            None
         }
     }
 }

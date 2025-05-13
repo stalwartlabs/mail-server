@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
 use std::{sync::Arc, time::Duration};
 
 use ahash::AHashMap;
@@ -7,13 +13,13 @@ use mail_auth::{
 };
 use mail_parser::decoders::base64::base64_decode;
 use utils::config::{
-    utils::{AsKey, ParseValue},
     Config,
+    utils::{AsKey, ParseValue},
 };
 
 use crate::{
     config::CONNECTION_VARS,
-    expr::{self, if_block::IfBlock, tokenizer::TokenMap, Constant, ConstantValue},
+    expr::{self, Constant, ConstantValue, if_block::IfBlock, tokenizer::TokenMap},
 };
 
 use super::*;
@@ -25,9 +31,20 @@ pub struct MailAuthConfig {
     pub spf: SpfAuthConfig,
     pub dmarc: DmarcAuthConfig,
     pub iprev: IpRevAuthConfig,
+    pub signatures: AHashMap<String, Arc<ArcSwap<LazySignature>>>,
+}
 
-    pub signers: AHashMap<String, Arc<DkimSigner>>,
-    pub sealers: AHashMap<String, Arc<ArcSealer>>,
+#[allow(clippy::large_enum_variant)]
+pub enum LazySignature {
+    Resolved(ResolvedSignature),
+    Pending(Config),
+    Failed,
+}
+
+#[derive(Clone)]
+pub struct ResolvedSignature {
+    pub signer: Arc<DkimSigner>,
+    pub sealer: Arc<ArcSealer>,
 }
 
 #[derive(Clone)]
@@ -103,7 +120,7 @@ impl Default for MailAuthConfig {
                 seal: IfBlock::new::<()>(
                     "auth.arc.seal",
                     [],
-                    "'rsa-' + key_get('default', 'domain')",
+                    "'rsa-' + config_get('report.domain')",
                 ),
             },
             spf: SpfAuthConfig {
@@ -136,7 +153,7 @@ impl Default for MailAuthConfig {
             },
             iprev: IpRevAuthConfig {
                 verify: IfBlock::new::<VerifyStrategy>(
-                    "auth.ipref.verify",
+                    "auth.iprev.verify",
                     [("local_port == 25", "relaxed")],
                     #[cfg(not(feature = "test_mode"))]
                     "disable",
@@ -144,8 +161,7 @@ impl Default for MailAuthConfig {
                     "relaxed",
                 ),
             },
-            signers: Default::default(),
-            sealers: Default::default(),
+            signatures: Default::default(),
         }
     }
 }
@@ -187,27 +203,45 @@ impl MailAuthConfig {
             .unwrap_or(true);
 
         // Parse signatures
-        for id in config
-            .sub_keys("signature", ".algorithm")
-            .map(|k| k.to_string())
-            .collect::<Vec<_>>()
-        {
-            let id = id.to_string();
-            if let Some((signer, sealer)) = build_signature(config, &id) {
-                mail_auth.signers.insert(id.clone(), Arc::new(signer));
-                mail_auth.sealers.insert(id, Arc::new(sealer));
+        let mut signatures: AHashMap<&str, Config> = AHashMap::new();
+        let mut current_id = None;
+        for (k, v) in config.keys.iter() {
+            if let Some(prefix) = k.strip_prefix("signature.") {
+                if let Some(id) = prefix.strip_suffix(".algorithm") {
+                    current_id = Some(id);
+                }
+                #[allow(clippy::unwrap_or_default)]
+                if let Some(current_id) = current_id {
+                    signatures
+                        .entry(current_id)
+                        .or_insert_with(Config::default)
+                        .keys
+                        .insert(k.to_string(), v.to_string());
+                }
+            } else if !signatures.is_empty() {
+                break;
             }
         }
+        mail_auth.signatures = signatures
+            .into_iter()
+            .map(|(id, config)| {
+                (
+                    id.to_string(),
+                    Arc::new(ArcSwap::from_pointee(LazySignature::Pending(config))),
+                )
+            })
+            .collect();
 
         mail_auth
     }
 }
 
-fn build_signature(config: &mut Config, id: &str) -> Option<(DkimSigner, ArcSealer)> {
+pub fn build_signature(config: &mut Config, id: &str) -> Option<(DkimSigner, ArcSealer)> {
     match config.property_require::<Algorithm>(("signature", id, "algorithm"))? {
         Algorithm::RsaSha256 => {
             let pk = config
                 .value_require(("signature", id, "private-key"))?
+                .trim()
                 .to_string();
             let key = RsaKey::<Sha256>::from_rsa_pem(&pk)
                 .or_else(|_| RsaKey::<Sha256>::from_pkcs8_pem(&pk))
@@ -450,7 +484,7 @@ impl ConstantValue for VerifyStrategy {
 }
 
 impl ParseValue for DkimCanonicalization {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         if let Some((headers, body)) = value.split_once('/') {
             Ok(DkimCanonicalization {
                 headers: Canonicalization::parse_value(headers.trim())?,

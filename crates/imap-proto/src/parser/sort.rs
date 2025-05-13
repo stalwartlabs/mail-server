@@ -1,39 +1,22 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use mail_parser::decoders::charsets::map::charset_decoder;
 
 use crate::{
-    protocol::search::{Arguments, Comparator, Sort},
-    receiver::{Request, Token},
     Command,
+    protocol::search::{Arguments, Comparator, Sort},
+    receiver::{Request, Token, bad},
 };
 
 use super::search::{parse_filters, parse_result_options};
 
 impl Request<Command> {
     #[allow(clippy::while_let_on_iterator)]
-    pub fn parse_sort(self) -> crate::Result<Arguments> {
+    pub fn parse_sort(self) -> trc::Result<Arguments> {
         if self.tokens.is_empty() {
             return Err(self.into_error("Missing sort criteria."));
         }
@@ -45,7 +28,7 @@ impl Request<Command> {
             Some(Token::Argument(value)) if value.eq_ignore_ascii_case(b"return") => {
                 tokens.next();
                 (
-                    parse_result_options(&mut tokens).map_err(|v| (self.tag.as_str(), v))?,
+                    parse_result_options(&mut tokens).map_err(|v| bad(self.tag.to_string(), v))?,
                     true,
                 )
             }
@@ -54,13 +37,12 @@ impl Request<Command> {
 
         if tokens
             .next()
-            .map_or(true, |token| !token.is_parenthesis_open())
+            .is_none_or(|token| !token.is_parenthesis_open())
         {
-            return Err((
-                self.tag.as_str(),
+            return Err(bad(
+                self.tag.to_string(),
                 "Expected sort criteria between parentheses.",
-            )
-                .into());
+            ));
         }
 
         let mut is_ascending = true;
@@ -72,30 +54,31 @@ impl Request<Command> {
                         is_ascending = false;
                     } else {
                         sort.push(Comparator {
-                            sort: Sort::parse(&value).map_err(|v| (self.tag.as_str(), v))?,
+                            sort: Sort::parse(&value).map_err(|v| bad(self.tag.to_string(), v))?,
                             ascending: is_ascending,
                         });
                         is_ascending = true;
                     }
                 }
-                _ => return Err((self.tag.as_str(), "Invalid result option argument.").into()),
+                _ => return Err(bad(self.tag.to_string(), "Invalid result option argument.")),
             }
         }
 
         if sort.is_empty() {
-            return Err((self.tag.as_str(), "Missing sort criteria.").into());
+            return Err(bad(self.tag.to_string(), "Missing sort criteria."));
         }
 
         let decoder = charset_decoder(
             &tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing charset."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing charset."))?
                 .unwrap_bytes(),
         );
 
-        let filter = parse_filters(&mut tokens, decoder).map_err(|v| (self.tag.as_str(), v))?;
+        let filter =
+            parse_filters(&mut tokens, decoder).map_err(|v| bad(self.tag.to_string(), v))?;
         match filter.len() {
-            0 => Err((self.tag.as_str(), "No filters found in command.").into()),
+            0 => Err(bad(self.tag.to_string(), "No filters found in command.")),
             _ => Ok(Arguments {
                 sort: sort.into(),
                 result_options,
@@ -109,27 +92,18 @@ impl Request<Command> {
 
 impl Sort {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"ARRIVAL") {
-            Ok(Self::Arrival)
-        } else if value.eq_ignore_ascii_case(b"CC") {
-            Ok(Self::Cc)
-        } else if value.eq_ignore_ascii_case(b"DATE") {
-            Ok(Self::Date)
-        } else if value.eq_ignore_ascii_case(b"FROM") {
-            Ok(Self::From)
-        } else if value.eq_ignore_ascii_case(b"SIZE") {
-            Ok(Self::Size)
-        } else if value.eq_ignore_ascii_case(b"SUBJECT") {
-            Ok(Self::Subject)
-        } else if value.eq_ignore_ascii_case(b"TO") {
-            Ok(Self::To)
-        } else if value.eq_ignore_ascii_case(b"DISPLAYFROM") {
-            Ok(Self::DisplayFrom)
-        } else if value.eq_ignore_ascii_case(b"DISPLAYTO") {
-            Ok(Self::DisplayTo)
-        } else {
-            Err(format!("Invalid sort criteria {:?}", String::from_utf8_lossy(value)).into())
-        }
+        hashify::tiny_map_ignore_case!(value,
+            "ARRIVAL" => Self::Arrival,
+            "CC" => Self::Cc,
+            "DATE" => Self::Date,
+            "FROM" => Self::From,
+            "SIZE" => Self::Size,
+            "SUBJECT" => Self::Subject,
+            "TO" => Self::To,
+            "DISPLAYFROM" => Self::DisplayFrom,
+            "DISPLAYTO" => Self::DisplayTo,
+        )
+        .ok_or_else(|| format!("Invalid sort criteria {:?}", String::from_utf8_lossy(value)).into())
     }
 }
 
@@ -138,8 +112,8 @@ mod tests {
 
     use crate::{
         protocol::{
-            search::{Arguments, Comparator, Filter, ResultOption, Sort},
             Flag,
+            search::{Arguments, Comparator, Filter, ResultOption, Sort},
         },
         receiver::Receiver,
     };

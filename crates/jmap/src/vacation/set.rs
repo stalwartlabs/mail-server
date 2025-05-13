@@ -1,33 +1,14 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::borrow::Cow;
 
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::{index::ObjectIndexBuilder, Object},
     response::references::EvalObjectReferences,
@@ -41,36 +22,52 @@ use jmap_proto::{
 };
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
+use std::future::Future;
 use store::write::{
     assert::HashedValue,
     log::{Changes, LogInsert},
     BatchBuilder, BlobOp, DirectoryClass, F_CLEAR, F_VALUE,
 };
+use trc::AddContext;
 
 use crate::{
-    sieve::set::{ObjectBlobId, SCHEMA},
-    JMAP,
+    sieve::set::{ObjectBlobId, SieveScriptSet, SCHEMA},
+    JmapMethods,
 };
 
-impl JMAP {
-    pub async fn vacation_response_set(
+use super::get::VacationResponseGet;
+
+pub trait VacationResponseSet: Sync + Send {
+    fn vacation_response_set(
+        &self,
+        request: SetRequest<RequestArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+
+    fn build_script(&self, obj: &mut ObjectIndexBuilder) -> trc::Result<Vec<u8>>;
+}
+
+impl VacationResponseSet for Server {
+    async fn vacation_response_set(
         &self,
         mut request: SetRequest<RequestArguments>,
-    ) -> Result<SetResponse, MethodError> {
+        access_token: &AccessToken,
+    ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut response = self
             .prepare_set_response(&request, Collection::SieveScript)
             .await?;
         let will_destroy = request.unwrap_destroy();
+        let resource_token = self.get_resource_token(access_token, account_id).await?;
 
         // Process set or update requests
         let mut create_id = None;
         let mut changes = None;
         match (request.create, request.update) {
             (Some(create), Some(update)) if !create.is_empty() && !update.is_empty() => {
-                return Err(MethodError::InvalidArguments(
-                    "Creating and updating on the same request is not allowed.".into(),
-                ));
+                return Err(trc::JmapEvent::InvalidArguments
+                    .into_err()
+                    .details("Creating and updating on the same request is not allowed."));
             }
             (Some(create), _) if !create.is_empty() => {
                 for (id, obj) in create {
@@ -121,7 +118,7 @@ impl JMAP {
 
         // Prepare write batch
         let mut batch = BatchBuilder::new();
-        let change_id = self.assign_change_id(account_id).await?;
+        let change_id = self.assign_change_id(account_id)?;
         batch
             .with_change_id(change_id)
             .with_account_id(account_id)
@@ -217,12 +214,15 @@ impl JMAP {
                         Property::Value,
                     )
                     .await?
-                    .map(|value| {
+                    .inspect(|value| {
                         was_active = value.inner.properties.get(&Property::IsActive)
                             == Some(&Value::Bool(true));
-                        value
                     })
-                    .ok_or(MethodError::ServerPartialFail)?
+                    .ok_or_else(|| {
+                        trc::StoreEvent::NotFound
+                            .into_err()
+                            .caused_by(trc::location!())
+                    })?
                     .into()
                 } else {
                     None
@@ -248,11 +248,6 @@ impl JMAP {
                     .hash;
                 let blob_id = obj.changes_mut().unwrap().blob_id_mut().unwrap();
                 blob_id.hash = hash;
-                /*blob_id.class = BlobClass::Linked {
-                    account_id,
-                    collection: Collection::SieveScript.into(),
-                    document_id: u32::MAX,
-                };*/
 
                 // Link blob
                 batch.set(
@@ -266,14 +261,10 @@ impl JMAP {
 
                 if let Some(current) = obj.current() {
                     let current_blob_id = current.inner.blob_id().ok_or_else(|| {
-                        tracing::warn!(
-                            event = "error",
-                            context = "vacation_response_set",
-                            account_id = account_id,
-                            document_id = document_id,
-                            "Sieve object does not contain a blobId."
-                        );
-                        MethodError::ServerPartialFail
+                        trc::StoreEvent::NotFound
+                            .into_err()
+                            .caused_by(trc::location!())
+                            .document_id(document_id.unwrap_or(u32::MAX))
                     })?;
 
                     // Unlink previous blob
@@ -290,22 +281,40 @@ impl JMAP {
                     };
                     if quota != 0 {
                         batch.add(DirectoryClass::UsedQuota(account_id), quota);
+
+                        // Update tenant quota
+                        #[cfg(feature = "enterprise")]
+                        if self.core.is_enterprise_edition() {
+                            if let Some(tenant) = resource_token.tenant {
+                                batch.add(DirectoryClass::UsedQuota(tenant.id), quota);
+                            }
+                        }
                     }
                 } else {
                     batch.add(DirectoryClass::UsedQuota(account_id), script_size);
+
+                    // Update tenant quota
+                    #[cfg(feature = "enterprise")]
+                    if self.core.is_enterprise_edition() {
+                        if let Some(tenant) = resource_token.tenant {
+                            batch.add(DirectoryClass::UsedQuota(tenant.id), script_size);
+                        }
+                    }
                 }
             };
 
             // Write changes
             batch.custom(obj);
             let document_id = if !batch.is_empty() {
-                let ids = self.write_batch(batch).await?;
+                let ids = self
+                    .store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 response.new_state = Some(change_id.into());
                 match document_id {
                     Some(document_id) => document_id,
-                    None => ids
-                        .last_document_id()
-                        .map_err(|_| MethodError::ServerPartialFail)?,
+                    None => ids.last_document_id()?,
                 }
             } else {
                 document_id.unwrap_or(u32::MAX)
@@ -331,7 +340,7 @@ impl JMAP {
                 if id.is_singleton() {
                     if let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await?
                     {
-                        self.sieve_script_delete(account_id, document_id, false)
+                        self.sieve_script_delete(&resource_token, document_id, false)
                             .await?;
                         batch.log(Changes::delete([document_id]));
                         response.destroyed.push(id);
@@ -344,7 +353,10 @@ impl JMAP {
 
             // Write changes
             if !batch.is_empty() {
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 response.new_state = Some(change_id.into());
             }
         }
@@ -352,7 +364,7 @@ impl JMAP {
         Ok(response)
     }
 
-    fn build_script(&self, obj: &mut ObjectIndexBuilder) -> Result<Vec<u8>, MethodError> {
+    fn build_script(&self, obj: &mut ObjectIndexBuilder) -> trc::Result<Vec<u8>> {
         // Build Sieve script
         let mut script = Vec::with_capacity(1024);
         script.extend_from_slice(b"require [\"vacation\", \"relational\", \"date\"];\r\n\r\n");
@@ -452,10 +464,10 @@ impl JMAP {
 
                 Ok(script)
             }
-            Err(err) => {
-                tracing::error!("Vacation Sieve Script failed to compile: {}", err);
-                Err(MethodError::ServerPartialFail)
-            }
+            Err(err) => Err(trc::StoreEvent::UnexpectedError
+                .caused_by(trc::location!())
+                .reason(err)
+                .details("Vacation Sieve Script failed to compile.")),
         }
     }
 }

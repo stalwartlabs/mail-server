@@ -1,37 +1,18 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::collections::HashMap;
-
-use hyper::{header::CONTENT_TYPE, StatusCode};
+use hyper::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
+use utils::map::vec_map::VecMap;
 
-use crate::api::{
-    http::{fetch_body, ToHttpResponse},
-    HtmlResponse, HttpRequest, HttpResponse,
-};
+use crate::api::{http::fetch_body, HttpRequest};
 
 pub mod auth;
+pub mod openid;
+pub mod registration;
 pub mod token;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -41,14 +22,7 @@ pub enum OAuthStatus {
     Pending,
 }
 
-const DEVICE_CODE_LEN: usize = 40;
-const USER_CODE_LEN: usize = 8;
-const RANDOM_CODE_LEN: usize = 32;
-const CLIENT_ID_MAX_LEN: usize = 20;
-
 const MAX_POST_LEN: usize = 2048;
-
-const USER_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No 0, O, I, 1
 
 pub struct OAuth {
     pub key: String,
@@ -66,6 +40,7 @@ pub struct OAuthCode {
     pub status: OAuthStatus,
     pub account_id: u32,
     pub client_id: String,
+    pub nonce: Option<String>,
     pub params: String,
 }
 
@@ -138,6 +113,8 @@ pub struct OAuthResponse {
     pub refresh_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -165,41 +142,14 @@ pub enum ErrorType {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct OAuthMetadata {
-    pub issuer: String,
-    pub token_endpoint: String,
-    pub grant_types_supported: Vec<String>,
-    pub device_authorization_endpoint: String,
-    pub response_types_supported: Vec<String>,
-    pub scopes_supported: Vec<String>,
-    pub authorization_endpoint: String,
-}
-
-impl OAuthMetadata {
-    pub fn new(base_url: impl AsRef<str>) -> Self {
-        let base_url = base_url.as_ref();
-        OAuthMetadata {
-            issuer: base_url.into(),
-            authorization_endpoint: format!("{}/authorize/code", base_url),
-            token_endpoint: format!("{}/auth/token", base_url),
-            grant_types_supported: vec![
-                "authorization_code".to_string(),
-                "implicit".to_string(),
-                "urn:ietf:params:oauth:grant-type:device_code".to_string(),
-            ],
-            device_authorization_endpoint: format!("{}/auth/device", base_url),
-            response_types_supported: vec!["code".to_string(), "code token".to_string()],
-            scopes_supported: vec!["offline_access".to_string()],
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum OAuthCodeRequest {
     Code {
         client_id: String,
         redirect_uri: Option<String>,
+        #[serde(default)]
+        nonce: Option<String>,
     },
     Device {
         code: String,
@@ -218,59 +168,58 @@ impl TokenResponse {
 
 #[derive(Debug)]
 pub struct FormData {
-    fields: HashMap<String, Vec<u8>>,
+    fields: VecMap<String, String>,
 }
 
 impl FormData {
-    pub async fn from_request(req: &mut HttpRequest, max_len: usize) -> Result<Self, HttpResponse> {
+    pub async fn from_request(
+        req: &mut HttpRequest,
+        max_len: usize,
+        session_id: u64,
+    ) -> trc::Result<Self> {
         match (
             req.headers()
                 .get(CONTENT_TYPE)
                 .and_then(|h| h.to_str().ok())
                 .and_then(|val| val.parse::<mime::Mime>().ok()),
-            fetch_body(req, max_len).await,
+            fetch_body(req, max_len, session_id).await,
         ) {
             (Some(content_type), Some(body)) => {
-                let mut fields = HashMap::new();
+                let mut fields = VecMap::new();
                 if let Some(boundary) = content_type.get_param(mime::BOUNDARY) {
                     for mut field in
                         form_data::FormData::new(&body[..], boundary.as_str()).flatten()
                     {
-                        let value = field.bytes().unwrap_or_default().to_vec();
-                        fields.insert(field.name, value);
+                        let value = String::from_utf8_lossy(&field.bytes().unwrap_or_default())
+                            .into_owned();
+                        fields.append(field.name, value);
                     }
                 } else {
                     for (key, value) in form_urlencoded::parse(&body) {
-                        fields.insert(key.into_owned(), value.into_owned().into_bytes());
+                        fields.append(key.into_owned(), value.into_owned());
                     }
                 }
                 Ok(FormData { fields })
             }
-            _ => Err(HtmlResponse::with_status(
-                StatusCode::BAD_REQUEST,
-                "Invalid post request".to_string(),
-            )
-            .into_http_response()),
+            _ => Err(trc::ResourceEvent::BadParameters
+                .into_err()
+                .details("Invalid post request")),
         }
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.fields
-            .get(key)
-            .and_then(|v| std::str::from_utf8(v).ok())
+        self.fields.get(key).map(|v| v.as_str())
     }
 
     pub fn remove(&mut self, key: &str) -> Option<String> {
-        self.fields
-            .remove(key)
-            .and_then(|v| String::from_utf8(v).ok())
-    }
-
-    pub fn get_bytes(&self, key: &str) -> Option<&[u8]> {
-        self.fields.get(key).map(|v| v.as_slice())
-    }
-
-    pub fn remove_bytes(&mut self, key: &str) -> Option<Vec<u8>> {
         self.fields.remove(key)
+    }
+
+    pub fn has_field(&self, key: &str) -> bool {
+        self.fields.get(key).is_some_and(|v| !v.is_empty())
+    }
+
+    pub fn fields(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.fields.iter()
     }
 }

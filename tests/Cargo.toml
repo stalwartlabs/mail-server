@@ -1,43 +1,48 @@
 [package]
 name = "tests"
-version = "0.1.0"
-edition = "2021"
+version = "0.11.8"
+edition = "2024"
 resolver = "2"
 
 [features]
-default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis"]
-#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "foundationdb"]
+#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
+default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis"]
+#default = ["rocks", "redis", "s3"]
 sqlite = ["store/sqlite"]
-foundationdb = ["store/foundation"]
+foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres"]
 mysql = ["store/mysql"]
 rocks = ["store/rocks"]
 elastic = ["store/elastic"]
 s3 = ["store/s3"]
 redis = ["store/redis"]
+azure = ["store/azure"]
 
 [dev-dependencies]
-store = { path = "../crates/store", features = ["test_mode"] }
+store = { path = "../crates/store", features = ["test_mode", "enterprise"] }
 nlp = { path = "../crates/nlp" }
-directory = { path = "../crates/directory", features = ["test_mode"] }
-jmap = { path = "../crates/jmap", features = ["test_mode"] }
+directory = { path = "../crates/directory", features = ["test_mode", "enterprise"] }
+jmap = { path = "../crates/jmap", features = ["test_mode", "enterprise"] }
 jmap_proto = { path = "../crates/jmap-proto" }
 imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }
 pop3 = { path = "../crates/pop3", features = ["test_mode"] }
-smtp = { path = "../crates/smtp", features = ["test_mode", "local_delivery"] }
-common = { path = "../crates/common", features = ["test_mode"] }
-managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
+smtp = { path = "../crates/smtp", features = ["test_mode", "enterprise"] }
+common = { path = "../crates/common", features = ["test_mode", "enterprise"] }
+email = { path = "../crates/email", features = ["test_mode"] }
+spam-filter = { path = "../crates/spam-filter", features = ["test_mode", "enterprise"] }
+trc = { path = "../crates/trc" }
+managesieve = { path = "../crates/managesieve", features = ["test_mode", "enterprise"] }
 smtp-proto = { version = "0.1" }
-mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
-mail-auth = { version = "0.4", features = ["test"] }
-sieve-rs = { version = "0.5" } 
+mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
+mail-auth = { version = "0.6", features = ["test"] }
+sieve-rs = { version = "0.6" } 
 utils = { path = "../crates/utils", features = ["test_mode"] }
 jmap-client = { version = "0.3", features = ["websockets", "debug", "async"] } 
-mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
+mail-parser = { version = "0.10", features = ["full_encoding", "serde_support"] } 
 tokio = { version = "1.23", features = ["full"] }
-tokio-rustls = { version = "0.25.0"}
-rustls = "0.22"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23.5", default-features = false, features = ["std", "ring", "tls12"] }
 rustls-pemfile = "2.0"
 rustls-pki-types = { version = "1" }
 csv = "1.1"
@@ -45,8 +50,6 @@ rayon = { version = "1.5.1" }
 flate2 = { version = "1.0.17", features = ["zlib"], default-features = false }
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "multipart", "http2"]}
 bytes = "1.4.0"
 futures = "0.3"
@@ -55,12 +58,14 @@ hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.1", features = ["tokio"] }
 http-body-util = "0.1.0"
 base64 = "0.22"
-dashmap = "5.4"
 ahash = { version = "0.8" }
 serial_test = "3.0.0"
 num_cpus = "1.15.0"
 async-trait = "0.1.68"
 chrono = "0.4"
+ring = { version = "0.17" }
+biscuit = "0.7.0"
+form_urlencoded = "1.1.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"

@@ -1,29 +1,12 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use utils::codec::{base32_custom::BASE32_INVERSE, leb128::Leb128Iterator};
 
-use super::{json::Parser, Error};
+use super::json::Parser;
 
 #[derive(Debug)]
 pub struct JsonBase32Reader<'x, 'y> {
@@ -55,12 +38,12 @@ impl<'x, 'y> JsonBase32Reader<'x, 'y> {
         }
     }
 
-    pub fn error(&mut self) -> Error {
+    pub fn error(&mut self) -> trc::Error {
         self.bytes.error_value()
     }
 }
 
-impl<'x, 'y> Iterator for JsonBase32Reader<'x, 'y> {
+impl Iterator for JsonBase32Reader<'_, '_> {
     type Item = u8;
     fn next(&mut self) -> Option<Self::Item> {
         let pos = self.pos % 5;
@@ -79,4 +62,4 @@ impl<'x, 'y> Iterator for JsonBase32Reader<'x, 'y> {
     }
 }
 
-impl<'x, 'y> Leb128Iterator<u8> for JsonBase32Reader<'x, 'y> {}
+impl Leb128Iterator<u8> for JsonBase32Reader<'_, '_> {}

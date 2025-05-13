@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
 
@@ -29,23 +12,22 @@ use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
 use store::Stores;
 use utils::config::Config;
 
-use smtp::core::{Inner, Session, State};
+use smtp::core::{Session, State};
 
 use crate::smtp::{
-    build_smtp,
     session::{TestSession, VerifyResponse},
-    TempDir,
+    TempDir, TestSMTP,
 };
 
 const CONFIG: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/queue.db"
 
 [directory."local"]
@@ -92,7 +74,7 @@ wait = [{if = "remote_ip = '10.0.0.1'", then = '5ms'},
 dsn = [{if = "remote_ip = '10.0.0.1'", then = false},
        {else = true}]
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 match = "remote_ip = '10.0.0.1' && !is_empty(rcpt)"
 key = 'sender'
 rate = '2/1s'
@@ -103,20 +85,15 @@ enable = true
 #[tokio::test]
 async fn rcpt() {
     // Enable logging
-    /*
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    crate::enable_logging();
+
     let tmp_dir = TempDir::new("smtp_rcpt_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
 
     // RCPT without MAIL FROM
-    let mut session = Session::test(build_smtp(core, Inner::default()));
+    let mut session = Session::test(TestSMTP::from_core(core).server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx1.foobar.org").await;
@@ -141,19 +118,19 @@ async fn rcpt() {
         .ingest(b"RCPT TO:<sam@foobar.org>\r\n")
         .await
         .unwrap_err();
-    session.response().assert_code("421 4.3.0");
+    session.response().assert_code("451 4.3.0");
 
     // Rate limit
     session.data.rcpt_errors = 0;
     session.state = State::default();
     session.rcpt_to("Jane@FooBar.org", "250").await;
     session.rcpt_to("Bill@FooBar.org", "250").await;
-    session.rcpt_to("Mike@FooBar.org", "451 4.4.5").await;
+    session.rcpt_to("Mike@FooBar.org", "452 4.4.5").await;
 
     // Restore rate limit
     tokio::time::sleep(Duration::from_millis(1100)).await;
     session.rcpt_to("Mike@FooBar.org", "250").await;
-    session.rcpt_to("john@foobar.org", "451 4.5.3").await;
+    session.rcpt_to("john@foobar.org", "455 4.5.3").await;
 
     // Check recipients
     assert_eq!(session.data.rcpt_to.len(), 3);

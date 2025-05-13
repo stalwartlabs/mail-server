@@ -1,35 +1,18 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use aes_gcm::{
-    aead::{generic_array::GenericArray, Aead},
     Aes128Gcm, Nonce,
+    aead::{Aead, generic_array::GenericArray},
 };
 use hkdf::Hkdf;
 use p256::{
+    PublicKey,
     ecdh::EphemeralSecret,
     elliptic_curve::{rand_core::OsRng, sec1::ToEncodedPoint},
-    PublicKey,
 };
 use sha2::Sha256;
 use store::rand::Rng;
@@ -62,7 +45,7 @@ pub fn ece_encrypt(
     client_auth_secret: &[u8],
     mut data: &[u8],
 ) -> Result<Vec<u8>, String> {
-    let salt = store::rand::thread_rng().gen::<[u8; 16]>();
+    let salt = store::rand::rng().random::<[u8; 16]>();
     let server_secret = EphemeralSecret::random(&mut OsRng);
     let server_public_key = server_secret.public_key();
     let server_public_key_bytes = server_public_key.to_encoded_point(false);

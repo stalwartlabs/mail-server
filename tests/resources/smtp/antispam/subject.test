@@ -27,7 +27,7 @@ Subject: thís líné shóúld bé éncódéd
 
 Test
 <!-- NEXT TEST -->
-param.body 8bitmime
+param.8bitmime 1
 expect 
 
 Subject: thís líné shóúld bé éncódéd
@@ -103,15 +103,36 @@ Subject: =?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche_?=
 Test
 <!-- NEXT TEST -->
 param.smtputf8 1
-expect SUBJECT_HAS_CURRENCY SUBJECT_ENDS_EXCLAIM SUBJECT_HAS_EXCLAIM
+expect SUBJECT_HAS_CURRENCY SUBJECT_ENDS_EXCLAIM
 
 Subject: You have won £200!
 
 Test
 <!-- NEXT TEST -->
 param.smtputf8 1
-expect SUBJECT_HAS_CURRENCY SUBJECT_HAS_QUESTION SUBJECT_ENDS_QUESTION
+expect SUBJECT_HAS_CURRENCY SUBJECT_ENDS_QUESTION
 
 Subject: Have you won $200?
+
+Test
+<!-- NEXT TEST -->
+expect RCPT_IN_SUBJECT
+
+To: hello@world.org
+Subject: Great offers for hello@world.org
+
+Test
+<!-- NEXT TEST -->
+expect RCPT_DOMAIN_IN_SUBJECT
+
+To: hello@world.org
+Subject: Great offers for world.org
+
+Test
+<!-- NEXT TEST -->
+expect 
+
+To: hello@world.org
+Subject: Question about other@domain.net
 
 Test

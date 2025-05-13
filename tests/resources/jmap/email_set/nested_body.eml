@@ -2,6 +2,7 @@ Date: Tue, 10 Jul 2018 01:03:11 +0000
 From: "Joe Bloggs" <joe@example.com>
 Message-ID: <my-message-id>
 Subject: RFC 8621 Section 4.1.4 test
+MIME-Version: 1.0
 Content-Type: multipart/mixed; 
 	boundary="boundary_0"
 

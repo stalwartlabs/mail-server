@@ -1,6 +1,6 @@
 name: I think I found a bug
-description: File a bug report issue
-title: "[bug]: "
+description: File a bug report issue. If you have a question or are experiencing a problem, please start a [new discussion](https://github.com/stalwartlabs/mail-server/discussions/new?category=q-a) instead.
+title: "🐛: "
 labels: ["bug"]
 body:
   - type: markdown
@@ -31,10 +31,9 @@ body:
       label: Version
       description: What version of our software are you running?
       options:
-        - v0.8.x
-        - v0.7.x
-        - v0.6.x
-        - v0.5.x or lower
+        - v0.11.x
+        - v0.10.x
+        - v0.9.x or lower
     validations:
       required: true
   - type: dropdown
@@ -59,6 +58,7 @@ body:
         - SQLite
         - Filesystem
         - S3-compatible
+        - Azure
   - type: dropdown
     id: directory
     attributes:
@@ -75,6 +75,7 @@ body:
         - Linux
         - Docker
         - MacOS
+        - FreeBSD
         - Windows
   - type: textarea
     id: logs

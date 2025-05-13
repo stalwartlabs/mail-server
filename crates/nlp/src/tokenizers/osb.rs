@@ -1,27 +1,10 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{borrow::Cow, iter::Peekable};
+use std::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct OsbToken<T> {
@@ -31,26 +14,26 @@ pub struct OsbToken<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Gram<'x> {
-    Uni { t1: &'x str },
-    Bi { t1: &'x str, t2: &'x str },
+    Uni { t1: &'x [u8] },
+    Bi { t1: &'x [u8], t2: &'x [u8] },
 }
 
-pub struct OsbTokenizer<'x, I, R>
+pub struct OsbTokenizer<I, R>
 where
-    I: Iterator<Item = Cow<'x, str>>,
+    I: Iterator<Item = Vec<u8>>,
     R: for<'y> From<Gram<'y>> + 'static,
 {
     iter: Peekable<I>,
-    buf: Vec<Option<Cow<'x, str>>>,
+    buf: Vec<Option<Vec<u8>>>,
     window_size: usize,
     window_pos: usize,
     window_idx: usize,
     phantom: std::marker::PhantomData<R>,
 }
 
-impl<'x, I, R> OsbTokenizer<'x, I, R>
+impl<I, R> OsbTokenizer<I, R>
 where
-    I: Iterator<Item = Cow<'x, str>>,
+    I: Iterator<Item = Vec<u8>>,
     R: for<'y> From<Gram<'y>> + 'static,
 {
     pub fn new(iter: I, window_size: usize) -> Self {
@@ -65,9 +48,9 @@ where
     }
 }
 
-impl<'x, I, R> Iterator for OsbTokenizer<'x, I, R>
+impl<I, R> Iterator for OsbTokenizer<I, R>
 where
-    I: Iterator<Item = Cow<'x, str>>,
+    I: Iterator<Item = Vec<u8>>,
     R: for<'y> From<Gram<'y>> + 'static,
 {
     type Item = OsbToken<R>;
@@ -108,15 +91,17 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::borrow::Cow;
-
     use crate::tokenizers::osb::{Gram, OsbToken};
 
     impl From<Gram<'_>> for String {
         fn from(value: Gram<'_>) -> Self {
             match value {
-                Gram::Uni { t1 } => t1.to_string(),
-                Gram::Bi { t1, t2 } => format!("{t1} {t2}"),
+                Gram::Uni { t1 } => std::str::from_utf8(t1).unwrap().to_string(),
+                Gram::Bi { t1, t2 } => format!(
+                    "{} {}",
+                    std::str::from_utf8(t1).unwrap(),
+                    std::str::from_utf8(t2).unwrap()
+                ),
             }
         }
     }
@@ -127,7 +112,7 @@ mod test {
             super::OsbTokenizer::new(
                 "The quick brown fox jumps over the lazy dog and the lazy cat"
                     .split_ascii_whitespace()
-                    .map(Cow::from),
+                    .map(|b| b.as_bytes().to_vec()),
                 5,
             )
             .collect::<Vec<_>>(),

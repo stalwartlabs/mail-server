@@ -1,31 +1,19 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
-use crate::core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData};
+use crate::{
+    core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
 use ahash::AHashSet;
 use common::listener::SessionStream;
+use directory::Permission;
+use email::{ingest::EmailIngest, mailbox::UidMailbox};
 use imap_proto::{
     protocol::{
         fetch::{DataItem, FetchItem},
@@ -35,43 +23,43 @@ use imap_proto::{
     receiver::Request,
     Command, ResponseCode, ResponseType, StatusResponse,
 };
-use jmap::{email::set::TagManager, mailbox::UidMailbox};
-use jmap_proto::{
-    error::method::MethodError,
-    types::{
-        acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
-        state::StateChange, type_state::DataType,
-    },
+use jmap::{
+    changes::get::ChangesLookup,
+    email::{bayes::EmailBayesTrain, set::TagManager},
+};
+use jmap_proto::types::{
+    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
+    state::StateChange, type_state::DataType,
 };
 use store::{
     query::log::{Change, Query},
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
+    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, ValueClass, F_VALUE},
 };
+use trc::AddContext;
 
-use super::FromModSeq;
+use super::{FromModSeq, ImapContext};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_store(
         &mut self,
         request: Request<Command>,
         is_uid: bool,
-    ) -> crate::OpResult {
-        match request.parse_store() {
-            Ok(arguments) => {
-                let (data, mailbox) = self.state.select_data();
-                let is_condstore = self.is_condstore || mailbox.is_condstore;
+    ) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapStore)?;
 
-                tokio::spawn(async move {
-                    let bytes = match data.store(arguments, mailbox, is_uid, is_condstore).await {
-                        Ok(response) => response,
-                        Err(response) => response.into_bytes(),
-                    };
-                    data.write_bytes(bytes).await;
-                });
-                Ok(())
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+        let op_start = Instant::now();
+        let arguments = request.parse_store()?;
+        let (data, mailbox) = self.state.select_data();
+        let is_condstore = self.is_condstore || mailbox.is_condstore;
+
+        spawn_op!(data, {
+            let response = data
+                .store(arguments, mailbox, is_uid, is_condstore, op_start)
+                .await?;
+
+            data.write_bytes(response).await
+        })
     }
 }
 
@@ -82,30 +70,24 @@ impl<T: SessionStream> SessionData<T> {
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
         is_condstore: bool,
-    ) -> Result<Vec<u8>, StatusResponse> {
+        op_start: Instant,
+    ) -> trc::Result<Vec<u8>> {
         // Resync messages if needed
         let account_id = mailbox.id.account_id;
         self.synchronize_messages(&mailbox)
             .await
-            .map_err(|r| r.with_tag(&arguments.tag))?;
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Convert IMAP ids to JMAP ids.
-        let mut ids = match mailbox
+        let mut ids = mailbox
             .sequence_to_ids(&arguments.sequence_set, is_uid)
             .await
-        {
-            Ok(ids) => {
-                if ids.is_empty() {
-                    return Err(
-                        StatusResponse::completed(Command::Store(is_uid)).with_tag(arguments.tag)
-                    );
-                }
-                ids
-            }
-            Err(response) => {
-                return Err(response.with_tag(arguments.tag));
-            }
-        };
+            .imap_ctx(&arguments.tag, trc::location!())?;
+        if ids.is_empty() {
+            return Ok(StatusResponse::completed(Command::Store(is_uid))
+                .with_tag(arguments.tag)
+                .into_bytes());
+        }
 
         // Verify that the user can modify messages in this mailbox.
         if !self
@@ -115,13 +97,16 @@ impl<T: SessionStream> SessionData<T> {
                 Acl::ModifyItems,
             )
             .await
-            .map_err(|_| StatusResponse::database_failure().with_tag(&arguments.tag))?
+            .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Err(StatusResponse::no(
-                "You do not have the required permissions to modify messages in this mailbox.",
-            )
-            .with_tag(arguments.tag)
-            .with_code(ResponseCode::NoPerm));
+            return Err(trc::ImapEvent::Error
+                .into_err()
+                .details(
+                    "You do not have the required permissions to modify messages in this mailbox.",
+                )
+                .id(arguments.tag)
+                .code(ResponseCode::NoPerm)
+                .caused_by(trc::location!()));
         }
 
         // Filter out unchanged since ids
@@ -129,18 +114,15 @@ impl<T: SessionStream> SessionData<T> {
         let mut unchanged_failed = false;
         if let Some(unchanged_since) = arguments.unchanged_since {
             // Obtain changes since the modseq.
-            let changelog = match self
-                .jmap
+            let changelog = self
+                .server
                 .changes_(
                     account_id,
                     Collection::Email,
                     Query::from_modseq(unchanged_since),
                 )
                 .await
-            {
-                Ok(changelog) => changelog,
-                Err(_) => return Err(StatusResponse::database_failure().with_tag(arguments.tag)),
-            };
+                .imap_ctx(&arguments.tag, trc::location!())?;
 
             let mut modified = mailbox
                 .sequence_expand_missing(&arguments.sequence_set, is_uid)
@@ -182,7 +164,21 @@ impl<T: SessionStream> SessionData<T> {
             response = response.with_code(response_code)
         }
         if ids.is_empty() {
-            return Err(response);
+            trc::event!(
+                Imap(trc::ImapEvent::Store),
+                SpanId = self.session_id,
+                AccountId = mailbox.id.account_id,
+                MailboxId = mailbox.id.mailbox_id,
+                Type = format!("{:?}", arguments.operation),
+                Details = arguments
+                    .keywords
+                    .iter()
+                    .map(|c| trc::Value::from(format!("{c:?}")))
+                    .collect::<Vec<_>>(),
+                Elapsed = op_start.elapsed()
+            );
+
+            return Ok(response.into_bytes());
         }
         let mut items = Response {
             items: Vec::with_capacity(ids.len()),
@@ -191,35 +187,37 @@ impl<T: SessionStream> SessionData<T> {
         // Process each change
         let set_keywords = arguments
             .keywords
-            .into_iter()
-            .map(Keyword::from)
+            .iter()
+            .map(|k| Keyword::from(k.clone()))
             .collect::<Vec<_>>();
         let mut changelog = ChangeLogBuilder::new();
         let mut changed_mailboxes = AHashSet::new();
-        'outer: for (id, imap_id) in ids {
+        let access_token = self
+            .server
+            .get_access_token(account_id)
+            .await
+            .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
+        let can_spam_train = self.server.email_bayes_can_train(&access_token);
+        let mut has_spam_train_tasks = false;
+
+        'outer: for (id, imap_id) in &ids {
             let mut try_count = 0;
             loop {
                 // Obtain current keywords
                 let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
-                    self.jmap
+                    self.server
                         .get_property::<HashedValue<Vec<Keyword>>>(
                             account_id,
                             Collection::Email,
-                            id,
+                            *id,
                             Property::Keywords,
                         )
                         .await
-                        .map_err(|_| {
-                            StatusResponse::database_failure()
-                                .with_tag(response.tag.as_ref().unwrap())
-                        })?,
-                    self.jmap
-                        .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
+                        .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
+                    self.server
+                        .get_property::<u32>(account_id, Collection::Email, *id, Property::ThreadId)
                         .await
-                        .map_err(|_| {
-                            StatusResponse::database_failure()
-                                .with_tag(response.tag.as_ref().unwrap())
-                        })?,
+                        .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
                 ) {
                     (TagManager::new(keywords), thread_id)
                 } else {
@@ -244,6 +242,28 @@ impl<T: SessionStream> SessionData<T> {
                 }
 
                 if keywords.has_changes() {
+                    // Train spam filter
+                    let mut train_spam = None;
+                    if can_spam_train {
+                        for keyword in keywords.added() {
+                            if keyword == &Keyword::Junk {
+                                train_spam = Some(true);
+                                break;
+                            } else if keyword == &Keyword::NotJunk {
+                                train_spam = Some(false);
+                                break;
+                            }
+                        }
+                        if train_spam.is_none() {
+                            for keyword in keywords.removed() {
+                                if keyword == &Keyword::Junk {
+                                    train_spam = Some(false);
+                                    break;
+                                }
+                            }
+                        }
+                    };
+
                     // Convert keywords to flags
                     let seen_changed = keywords
                         .changed_tags()
@@ -264,40 +284,59 @@ impl<T: SessionStream> SessionData<T> {
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::Email)
-                        .update_document(id);
+                        .update_document(*id);
                     keywords.update_batch(&mut batch, Property::Keywords);
                     if changelog.change_id == u64::MAX {
-                        changelog.change_id =
-                            self.jmap.assign_change_id(account_id).await.map_err(|_| {
-                                StatusResponse::database_failure()
-                                    .with_tag(response.tag.as_ref().unwrap())
-                            })?
+                        changelog.change_id = self
+                            .server
+                            .assign_change_id(account_id)
+                            .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                     }
                     batch.value(Property::Cid, changelog.change_id, F_VALUE);
-                    match self.jmap.write_batch(batch).await {
+
+                    // Add spam train task
+                    if let Some(learn_spam) = train_spam {
+                        batch.set(
+                            ValueClass::TaskQueue(
+                                self.server
+                                    .email_bayes_queue_task_build(account_id, *id, learn_spam)
+                                    .await
+                                    .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
+                            ),
+                            vec![],
+                        );
+                        has_spam_train_tasks = true;
+                    }
+
+                    match self
+                        .server
+                        .store()
+                        .write(batch)
+                        .await
+                        .caused_by(trc::location!())
+                    {
                         Ok(_) => {
                             // Set all current mailboxes as changed if the Seen tag changed
                             if seen_changed {
                                 if let Some(mailboxes) = self
-                                    .jmap
+                                    .server
                                     .get_property::<Vec<UidMailbox>>(
                                         account_id,
                                         Collection::Email,
-                                        id,
+                                        *id,
                                         Property::MailboxIds,
                                     )
                                     .await
-                                    .map_err(|_| {
-                                        StatusResponse::database_failure()
-                                            .with_tag(response.tag.as_ref().unwrap())
-                                    })?
+                                    .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                                 {
                                     for mailbox_id in mailboxes {
                                         changed_mailboxes.insert(mailbox_id.mailbox_id);
                                     }
                                 }
                             }
-                            changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
+
+                            // Update changelog
+                            changelog.log_update(Collection::Email, Id::from_parts(thread_id, *id));
 
                             // Add item to response
                             let modseq = changelog.change_id + 1;
@@ -327,7 +366,7 @@ impl<T: SessionStream> SessionData<T> {
                                 });
                             }
                         }
-                        Err(MethodError::ServerUnavailable) => {
+                        Err(err) if err.is_assertion_failure() => {
                             if try_count < MAX_RETRIES {
                                 try_count += 1;
                                 continue;
@@ -336,9 +375,8 @@ impl<T: SessionStream> SessionData<T> {
                                 response.message = "Some messages could not be updated.".into();
                             }
                         }
-                        Err(_) => {
-                            return Err(StatusResponse::database_failure()
-                                .with_tag(response.tag.as_ref().unwrap()));
+                        Err(err) => {
+                            return Err(err.id(response.tag.unwrap()));
                         }
                     }
                 }
@@ -351,16 +389,19 @@ impl<T: SessionStream> SessionData<T> {
             changelog.log_child_update(Collection::Mailbox, *mailbox_id);
         }
 
+        // Trigger Bayes training
+        if has_spam_train_tasks {
+            self.server.notify_task_queue();
+        }
+
         // Write changes
         if !changelog.is_empty() {
             let change_id = self
-                .jmap
+                .server
                 .commit_changes(account_id, changelog)
                 .await
-                .map_err(|_| {
-                    StatusResponse::database_failure().with_tag(response.tag.as_ref().unwrap())
-                })?;
-            self.jmap
+                .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
+            self.server
                 .broadcast_state_change(if !changed_mailboxes.is_empty() {
                     StateChange::new(account_id)
                         .with_change(DataType::Email, change_id)
@@ -370,6 +411,24 @@ impl<T: SessionStream> SessionData<T> {
                 })
                 .await;
         }
+
+        trc::event!(
+            Imap(trc::ImapEvent::Store),
+            SpanId = self.session_id,
+            AccountId = mailbox.id.account_id,
+            MailboxId = mailbox.id.mailbox_id,
+            DocumentId = ids
+                .iter()
+                .map(|id| trc::Value::from(*id.0))
+                .collect::<Vec<_>>(),
+            Type = format!("{:?}", arguments.operation),
+            Details = arguments
+                .keywords
+                .iter()
+                .map(|c| trc::Value::from(format!("{c:?}")))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         // Send response
         Ok(response.serialize(items.serialize()))

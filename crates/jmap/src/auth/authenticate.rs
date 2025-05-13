@@ -1,199 +1,167 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{net::IpAddr, sync::Arc, time::Instant};
+use std::sync::Arc;
 
-use common::{listener::limiter::InFlight, AuthResult};
-use directory::{Principal, QueryBy};
+use common::{auth::AuthRequest, listener::limiter::InFlight, HttpAuthCache, Server};
 use hyper::header;
-use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use utils::map::ttl_dashmap::TtlMap;
 
-use crate::JMAP;
+use crate::api::{http::HttpSessionData, HttpRequest};
 
-use super::AccessToken;
+use common::auth::AccessToken;
+use std::future::Future;
 
-impl JMAP {
-    pub async fn authenticate_headers(
+use super::rate_limit::RateLimiter;
+
+pub trait Authenticator: Sync + Send {
+    fn authenticate_headers(
         &self,
-        req: &hyper::Request<hyper::body::Incoming>,
-        remote_ip: IpAddr,
-    ) -> Result<Option<(InFlight, Arc<AccessToken>)>, RequestError> {
-        if let Some((mechanism, token)) = req
-            .headers()
-            .get(header::AUTHORIZATION)
-            .and_then(|h| h.to_str().ok())
-            .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim().to_string())))
-        {
-            let session = if let Some(account_id) = self.inner.sessions.get_with_ttl(&token) {
-                self.get_cached_access_token(account_id).await
-            } else {
-                if mechanism.eq_ignore_ascii_case("basic") {
-                    // Enforce rate limit for authentication requests
-                    self.is_auth_allowed_soft(&remote_ip).await?;
+        req: &HttpRequest,
+        session: &HttpSessionData,
+        allow_api_access: bool,
+    ) -> impl Future<Output = trc::Result<(Option<InFlight>, Arc<AccessToken>)>> + Send;
+}
 
-                    // Decode the base64 encoded credentials
-                    if let Some((account, secret)) = base64_decode(token.as_bytes())
-                        .and_then(|token| String::from_utf8(token).ok())
-                        .and_then(|token| {
-                            token.split_once(':').map(|(login, secret)| {
-                                (login.trim().to_lowercase(), secret.to_string())
-                            })
-                        })
-                    {
-                        if let AuthResult::Success(access_token) =
-                            self.authenticate_plain(&account, &secret, remote_ip).await
-                        {
-                            Some(access_token)
-                        } else {
-                            None
-                        }
-                    } else {
-                        tracing::debug!(
-                            context = "authenticate_headers",
-                            token = token,
-                            "Failed to decode Basic auth request.",
-                        );
-                        None
-                    }
-                } else if mechanism.eq_ignore_ascii_case("bearer") {
-                    // Enforce anonymous rate limit for bearer auth requests
-                    self.is_anonymous_allowed(&remote_ip).await?;
+impl Authenticator for Server {
+    async fn authenticate_headers(
+        &self,
+        req: &HttpRequest,
+        session: &HttpSessionData,
+        allow_api_access: bool,
+    ) -> trc::Result<(Option<InFlight>, Arc<AccessToken>)> {
+        if let Some((mechanism, token)) = req.authorization() {
+            // Check if the credentials are cached
+            if let Some(http_cache) = self.inner.cache.http_auth.get(token) {
+                let access_token = self.get_access_token(http_cache.account_id).await?;
 
-                    match self.validate_access_token("access_token", &token).await {
-                        Ok((account_id, _, _)) => self.get_access_token(account_id).await,
-                        Err(err) => {
-                            tracing::debug!(
-                                context = "authenticate_headers",
-                                err = err,
-                                "Failed to validate access token."
-                            );
-                            None
-                        }
-                    }
-                } else {
-                    // Enforce anonymous rate limit
-                    self.is_anonymous_allowed(&remote_ip).await?;
-                    None
+                // Make sure the revision is still valid
+                if access_token.revision == http_cache.revision {
+                    // Enforce authenticated rate limit
+                    return self
+                        .is_http_authenticated_request_allowed(&access_token)
+                        .await
+                        .map(|in_flight| (in_flight, access_token));
                 }
-                .map(|access_token| {
-                    let access_token = Arc::new(access_token);
-                    self.cache_session(token, &access_token);
-                    self.cache_access_token(access_token.clone());
-                    access_token
-                })
+            }
+
+            let credentials = if mechanism.eq_ignore_ascii_case("basic") {
+                // Decode the base64 encoded credentials
+                decode_plain_auth(token).ok_or_else(|| {
+                    trc::AuthEvent::Error
+                        .into_err()
+                        .details("Failed to decode Basic auth request.")
+                        .id(token.to_string())
+                        .caused_by(trc::location!())
+                })?
+            } else if mechanism.eq_ignore_ascii_case("bearer") {
+                // Enforce anonymous rate limit
+                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    .await?;
+
+                decode_bearer_token(token, allow_api_access).ok_or_else(|| {
+                    trc::AuthEvent::Error
+                        .into_err()
+                        .details("Failed to decode Bearer token.")
+                        .id(token.to_string())
+                        .caused_by(trc::location!())
+                })?
+            } else {
+                // Enforce anonymous rate limit
+                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    .await?;
+
+                return Err(trc::AuthEvent::Error
+                    .into_err()
+                    .reason("Unsupported authentication mechanism.")
+                    .details(token.to_string())
+                    .caused_by(trc::location!()));
             };
 
-            if let Some(session) = session {
-                // Enforce authenticated rate limit
-                Ok(Some((self.is_account_allowed(&session).await?, session)))
-            } else {
-                Ok(None)
-            }
+            // Authenticate
+            let access_token = self
+                .authenticate(&AuthRequest::from_credentials(
+                    credentials,
+                    session.session_id,
+                    session.remote_ip,
+                ))
+                .await?;
+
+            // Cache credentials
+            self.inner.cache.http_auth.insert(
+                token.to_string(),
+                HttpAuthCache {
+                    account_id: access_token.primary_id(),
+                    revision: access_token.revision,
+                },
+            );
+
+            // Enforce authenticated rate limit
+            self.is_http_authenticated_request_allowed(&access_token)
+                .await
+                .map(|in_flight| (in_flight, access_token))
         } else {
             // Enforce anonymous rate limit
-            self.is_anonymous_allowed(&remote_ip).await?;
+            self.is_http_anonymous_request_allowed(&session.remote_ip)
+                .await?;
 
-            Ok(None)
+            Err(trc::AuthEvent::Failed
+                .into_err()
+                .details("Missing Authorization header.")
+                .caused_by(trc::location!()))
         }
     }
+}
 
-    pub fn cache_session(&self, session_id: String, access_token: &AccessToken) {
-        self.inner.sessions.insert_with_ttl(
-            session_id,
-            access_token.primary_id(),
-            Instant::now() + self.core.jmap.session_cache_ttl,
-        );
+pub trait HttpHeaders {
+    fn authorization(&self) -> Option<(&str, &str)>;
+    fn authorization_basic(&self) -> Option<&str>;
+}
+
+impl HttpHeaders for HttpRequest {
+    fn authorization(&self) -> Option<(&str, &str)> {
+        self.headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim())))
     }
 
-    pub fn cache_access_token(&self, access_token: Arc<AccessToken>) {
-        self.inner.access_tokens.insert_with_ttl(
-            access_token.primary_id(),
-            access_token,
-            Instant::now() + self.core.jmap.session_cache_ttl,
-        );
-    }
-
-    pub async fn get_cached_access_token(&self, primary_id: u32) -> Option<Arc<AccessToken>> {
-        if let Some(access_token) = self.inner.access_tokens.get_with_ttl(&primary_id) {
-            access_token.into()
-        } else {
-            // Refresh ACL token
-            self.get_access_token(primary_id).await.map(|access_token| {
-                let access_token = Arc::new(access_token);
-                self.cache_access_token(access_token.clone());
-                access_token
-            })
-        }
-    }
-
-    pub async fn authenticate_plain(
-        &self,
-        username: &str,
-        secret: &str,
-        remote_ip: IpAddr,
-    ) -> AuthResult<AccessToken> {
-        match self
-            .core
-            .authenticate(
-                &self.core.storage.directory,
-                &Credentials::Plain {
-                    username: username.to_string(),
-                    secret: secret.to_string(),
-                },
-                remote_ip,
-                true,
-            )
-            .await
-        {
-            Ok(AuthResult::Success(principal)) => AuthResult::Success(AccessToken::new(principal)),
-            Ok(AuthResult::Failure) => {
-                let _ = self.is_auth_allowed_hard(&remote_ip).await;
-                AuthResult::Failure
+    fn authorization_basic(&self) -> Option<&str> {
+        self.authorization().and_then(|(l, t)| {
+            if l.eq_ignore_ascii_case("basic") {
+                Some(t)
+            } else {
+                None
             }
-            Ok(AuthResult::Banned) => AuthResult::Banned,
-            Err(_) => AuthResult::Failure,
+        })
+    }
+}
+
+fn decode_plain_auth(token: &str) -> Option<Credentials<String>> {
+    base64_decode(token.as_bytes())
+        .and_then(|token| String::from_utf8(token).ok())
+        .and_then(|token| {
+            token
+                .split_once(':')
+                .map(|(login, secret)| Credentials::Plain {
+                    username: login.trim().to_lowercase(),
+                    secret: secret.to_string(),
+                })
+        })
+}
+
+fn decode_bearer_token(token: &str, allow_api_access: bool) -> Option<Credentials<String>> {
+    if allow_api_access {
+        if let Some(token) = token.strip_prefix("api_") {
+            return decode_plain_auth(token);
         }
     }
 
-    pub async fn get_access_token(&self, account_id: u32) -> Option<AccessToken> {
-        match self
-            .core
-            .storage
-            .directory
-            .query(QueryBy::Id(account_id), true)
-            .await
-        {
-            Ok(Some(principal)) => self.update_access_token(AccessToken::new(principal)).await,
-            _ => match &self.core.jmap.fallback_admin {
-                Some((_, secret)) if account_id == u32::MAX => {
-                    self.update_access_token(AccessToken::new(Principal::fallback_admin(secret)))
-                        .await
-                }
-                _ => None,
-            },
-        }
-    }
+    Some(Credentials::OAuthBearer {
+        token: token.to_string(),
+    })
 }

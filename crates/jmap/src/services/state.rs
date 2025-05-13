@@ -1,59 +1,27 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::time::{Duration, Instant, SystemTime};
-
-use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
-use store::ahash::AHashMap;
-use tokio::sync::mpsc;
-use utils::map::bitmap::Bitmap;
-
-use crate::{
-    push::{manager::spawn_push_manager, UpdateSubscription},
-    JmapInstance, JMAP,
+use std::{
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
 };
 
-use super::IPC_CHANNEL_BUFFER;
+use common::{
+    core::BuildServer,
+    ipc::{PushSubscription, StateEvent, UpdateSubscription},
+    Inner, Server, IPC_CHANNEL_BUFFER,
+};
+use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
+use std::future::Future;
+use store::ahash::AHashMap;
+use tokio::sync::mpsc;
+use trc::ServerEvent;
+use utils::map::bitmap::Bitmap;
 
-#[derive(Debug)]
-pub enum Event {
-    Subscribe {
-        account_id: u32,
-        types: Bitmap<DataType>,
-        tx: mpsc::Sender<StateChange>,
-    },
-    Publish {
-        state_change: StateChange,
-    },
-    UpdateSharedAccounts {
-        account_id: u32,
-    },
-    UpdateSubscriptions {
-        account_id: u32,
-        subscriptions: Vec<UpdateSubscription>,
-    },
-    Stop,
-}
+use crate::push::{get::PushSubscriptionFetch, manager::spawn_push_manager};
 
 #[derive(Debug)]
 struct Subscriber {
@@ -79,10 +47,6 @@ impl Subscriber {
 const PURGE_EVERY: Duration = Duration::from_secs(3600);
 const SEND_TIMEOUT: Duration = Duration::from_millis(500);
 
-pub fn init_state_manager() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {
-    mpsc::channel::<Event>(IPC_CHANNEL_BUFFER)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum SubscriberId {
     Ipc(u32),
@@ -90,8 +54,8 @@ enum SubscriberId {
 }
 
 #[allow(clippy::unwrap_or_default)]
-pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Event>) {
-    let push_tx = spawn_push_manager(core.clone());
+pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<StateEvent>) {
+    let push_tx = spawn_push_manager(inner.clone());
 
     tokio::spawn(async move {
         let mut subscribers: AHashMap<u32, AHashMap<SubscriberId, Subscriber>> =
@@ -106,17 +70,25 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
             let mut purge_needed = last_purge.elapsed() >= PURGE_EVERY;
 
             match event {
-                Event::Stop => {
-                    if let Err(err) = push_tx.send(crate::push::Event::Reset).await {
-                        tracing::debug!("Error sending push reset: {}", err);
+                StateEvent::Stop => {
+                    if push_tx.send(crate::push::Event::Reset).await.is_err() {
+                        trc::event!(
+                            Server(ServerEvent::ThreadError),
+                            Details = "Error sending push reset.",
+                            CausedBy = trc::location!()
+                        );
                     }
                     break;
                 }
-                Event::UpdateSharedAccounts { account_id } => {
+                StateEvent::UpdateSharedAccounts { account_id } => {
                     // Obtain account membership and shared mailboxes
-                    let acl = match JMAP::from(core.clone()).get_access_token(account_id).await {
-                        Some(result) => result,
-                        None => {
+                    let acl = match inner.build_server().get_access_token(account_id).await {
+                        Ok(result) => result,
+                        Err(err) => {
+                            trc::error!(err
+                                .account_id(account_id)
+                                .details("Failed to obtain access token."));
+
                             continue;
                         }
                     };
@@ -174,7 +146,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                     }
                     shared_accounts.insert(account_id, shared_account_ids);
                 }
-                Event::Subscribe {
+                StateEvent::Subscribe {
                     account_id,
                     types,
                     tx,
@@ -190,7 +162,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                             },
                         );
                 }
-                Event::Publish { state_change } => {
+                StateEvent::Publish { state_change } => {
                     if let Some(shared_accounts) = shared_accounts_map.get(&state_change.account_id)
                     {
                         let current_time = SystemTime::now()
@@ -218,7 +190,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
 
                                                 tokio::spawn(async move {
                                                     // Timeout after 500ms in case there is a blocked client
-                                                    if let Err(err) = subscriber_tx
+                                                    if subscriber_tx
                                                         .send_timeout(
                                                             StateChange {
                                                                 account_id: state_change.account_id,
@@ -227,11 +199,13 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                                                             SEND_TIMEOUT,
                                                         )
                                                         .await
+                                                        .is_err()
                                                     {
-                                                        tracing::debug!(
-                                                        "Error sending state change to subscriber: {}",
-                                                        err
-                                                    );
+                                                        trc::event!(
+                                                            Server(ServerEvent::ThreadError),
+                                                            Details = "Error sending state change to subscriber.",
+                                                            CausedBy = trc::location!()
+                                                        );
                                                     }
                                                 });
                                             }
@@ -252,20 +226,24 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                             }
                         }
 
-                        if !push_ids.is_empty() {
-                            if let Err(err) = push_tx
+                        if !push_ids.is_empty()
+                            && push_tx
                                 .send(crate::push::Event::Push {
                                     ids: push_ids,
                                     state_change,
                                 })
                                 .await
-                            {
-                                tracing::debug!("Error sending push updates: {}", err);
-                            }
+                                .is_err()
+                        {
+                            trc::event!(
+                                Server(ServerEvent::ThreadError),
+                                Details = "Error sending push updates.",
+                                CausedBy = trc::location!()
+                            );
                         }
                     }
                 }
-                Event::UpdateSubscriptions {
+                StateEvent::UpdateSubscriptions {
                     account_id,
                     subscriptions,
                 } => {
@@ -279,7 +257,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                             if let SubscriberId::Push(push_id) = subscriber_id {
                                 if !subscriptions.iter().any(|s| {
                                     matches!(s, UpdateSubscription::Verified(
-                                        crate::push::PushSubscription { id, .. }
+                                        PushSubscription { id, .. }
                                     ) if id == push_id)
                                 }) {
                                     remove_ids.push(*subscriber_id);
@@ -335,15 +313,19 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                         }
                     }
 
-                    if !push_updates.is_empty() {
-                        if let Err(err) = push_tx
+                    if !push_updates.is_empty()
+                        && push_tx
                             .send(crate::push::Event::Update {
                                 updates: push_updates,
                             })
                             .await
-                        {
-                            tracing::debug!("Error sending push updates: {}", err);
-                        }
+                            .is_err()
+                    {
+                        trc::event!(
+                            Server(ServerEvent::ThreadError),
+                            Details = "Error sending push updates.",
+                            CausedBy = trc::location!()
+                        );
                     }
                 }
             }
@@ -383,67 +365,63 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
     });
 }
 
-impl JMAP {
-    pub async fn subscribe_state_manager(
+pub trait StateManager: Sync + Send {
+    fn subscribe_state_manager(
         &self,
         account_id: u32,
         types: Bitmap<DataType>,
-    ) -> Option<mpsc::Receiver<StateChange>> {
+    ) -> impl Future<Output = trc::Result<mpsc::Receiver<StateChange>>> + Send;
+
+    fn update_push_subscriptions(&self, account_id: u32) -> impl Future<Output = bool> + Send;
+}
+
+impl StateManager for Server {
+    async fn subscribe_state_manager(
+        &self,
+        account_id: u32,
+        types: Bitmap<DataType>,
+    ) -> trc::Result<mpsc::Receiver<StateChange>> {
         let (change_tx, change_rx) = mpsc::channel::<StateChange>(IPC_CHANNEL_BUFFER);
-        let state_tx = self.inner.state_tx.clone();
+        let state_tx = self.inner.ipc.state_tx.clone();
 
         for event in [
-            Event::UpdateSharedAccounts { account_id },
-            Event::Subscribe {
+            StateEvent::UpdateSharedAccounts { account_id },
+            StateEvent::Subscribe {
                 account_id,
                 types,
                 tx: change_tx,
             },
         ] {
-            if let Err(err) = state_tx.send(event).await {
-                tracing::error!(
-                    "Channel failure while subscribing to state manager: {}",
-                    err
-                );
-                return None;
-            }
+            state_tx.send(event).await.map_err(|err| {
+                trc::EventType::Server(trc::ServerEvent::ThreadError)
+                    .reason(err)
+                    .caused_by(trc::location!())
+            })?;
         }
 
-        change_rx.into()
+        Ok(change_rx)
     }
 
-    pub async fn broadcast_state_change(&self, state_change: StateChange) -> bool {
-        match self
-            .inner
-            .state_tx
-            .clone()
-            .send(Event::Publish { state_change })
-            .await
-        {
-            Ok(_) => true,
-            Err(err) => {
-                tracing::error!("Channel failure while publishing state change: {}", err);
-                false
-            }
-        }
-    }
-
-    pub async fn update_push_subscriptions(&self, account_id: u32) -> bool {
+    async fn update_push_subscriptions(&self, account_id: u32) -> bool {
         let push_subs = match self.fetch_push_subscriptions(account_id).await {
             Ok(push_subs) => push_subs,
             Err(err) => {
-                tracing::error!(context = "update_push_subscriptions",
-                                event = "error",
-                                reason = %err,
-                                "Error fetching push subscriptions.");
+                trc::error!(err
+                    .account_id(account_id)
+                    .details("Failed to fetch push subscriptions"));
                 return false;
             }
         };
 
-        let state_tx = self.inner.state_tx.clone();
-        for event in [Event::UpdateSharedAccounts { account_id }, push_subs] {
-            if let Err(err) = state_tx.send(event).await {
-                tracing::error!("Channel failure while publishing state change: {}", err);
+        let state_tx = self.inner.ipc.state_tx.clone();
+        for event in [StateEvent::UpdateSharedAccounts { account_id }, push_subs] {
+            if state_tx.send(event).await.is_err() {
+                trc::event!(
+                    Server(ServerEvent::ThreadError),
+                    Details = "Error sending state change.",
+                    CausedBy = trc::location!()
+                );
+
                 return false;
             }
         }

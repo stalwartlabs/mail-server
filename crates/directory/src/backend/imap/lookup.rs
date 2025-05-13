@@ -1,37 +1,24 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use mail_send::Credentials;
 use smtp_proto::{AUTH_CRAM_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 
-use crate::{DirectoryError, Principal, QueryBy};
+use crate::{backend::RcptType, IntoError, Principal, QueryBy};
 
 use super::{ImapDirectory, ImapError};
 
 impl ImapDirectory {
-    pub async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+    pub async fn query(&self, query: QueryBy<'_>) -> trc::Result<Option<Principal>> {
         if let QueryBy::Credentials(credentials) = query {
-            let mut client = self.pool.get().await?;
+            let mut client = self
+                .pool
+                .get()
+                .await
+                .map_err(|err| err.into_error().caused_by(trc::location!()))?;
             let mechanism = match credentials {
                 Credentials::Plain { .. }
                     if (client.mechanisms & (AUTH_PLAIN | AUTH_LOGIN | AUTH_CRAM_MD5)) != 0 =>
@@ -51,13 +38,10 @@ impl ImapDirectory {
                     AUTH_XOAUTH2
                 }
                 _ => {
-                    tracing::warn!(
-                        context = "remote",
-                        event = "error",
-                        protocol = "imap",
-                        "IMAP server does not offer any supported auth mechanisms.",
-                    );
-                    return Ok(None);
+                    trc::bail!(trc::StoreEvent::NotSupported.ctx(
+                        trc::Key::Reason,
+                        "IMAP server does not offer any supported auth mechanisms."
+                    ));
                 }
             };
 
@@ -68,31 +52,31 @@ impl ImapDirectory {
                 }
                 Err(err) => match &err {
                     ImapError::AuthenticationFailed => Ok(None),
-                    _ => Err(err.into()),
+                    _ => Err(err.into_error()),
                 },
             }
         } else {
-            Err(DirectoryError::unsupported("imap", "query"))
+            Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
         }
     }
 
-    pub async fn email_to_ids(&self, _address: &str) -> crate::Result<Vec<u32>> {
-        Err(DirectoryError::unsupported("imap", "email_to_ids"))
+    pub async fn email_to_id(&self, _address: &str) -> trc::Result<Option<u32>> {
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
-    pub async fn rcpt(&self, _address: &str) -> crate::Result<bool> {
-        Err(DirectoryError::unsupported("imap", "rcpt"))
+    pub async fn rcpt(&self, _address: &str) -> trc::Result<RcptType> {
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
-    pub async fn vrfy(&self, _address: &str) -> crate::Result<Vec<String>> {
-        Err(DirectoryError::unsupported("imap", "vrfy"))
+    pub async fn vrfy(&self, _address: &str) -> trc::Result<Vec<String>> {
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
-    pub async fn expn(&self, _address: &str) -> crate::Result<Vec<String>> {
-        Err(DirectoryError::unsupported("imap", "expn"))
+    pub async fn expn(&self, _address: &str) -> trc::Result<Vec<String>> {
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
-    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
         Ok(self.domains.contains(domain))
     }
 }

@@ -1,36 +1,23 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
-use crate::core::{Session, SessionData};
+use crate::{
+    core::{Session, SessionData},
+    spawn_op,
+};
 use common::listener::SessionStream;
+use directory::Permission;
+use email::mailbox::SCHEMA;
 use imap_proto::{
     protocol::rename::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
 };
-use jmap::{auth::acl::EffectiveAcl, mailbox::set::SCHEMA};
+use jmap::auth::acl::EffectiveAcl;
 use jmap_proto::{
-    error::method::MethodError,
     object::{index::ObjectIndexBuilder, Object},
     types::{
         acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
@@ -38,43 +25,43 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, BatchBuilder};
+use trc::AddContext;
+
+use super::ImapContext;
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_rename(&mut self, request: Request<Command>) -> crate::OpResult {
-        match request.parse_rename(self.version) {
-            Ok(arguments) => {
-                let data = self.state.session_data();
-                tokio::spawn(async move {
-                    data.write_bytes(data.rename_folder(arguments).await.into_bytes())
-                        .await;
-                });
-                Ok(())
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+    pub async fn handle_rename(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapRename)?;
+
+        let op_start = Instant::now();
+        let arguments = request.parse_rename(self.version)?;
+        let data = self.state.session_data();
+
+        spawn_op!(data, {
+            let response = data.rename_folder(arguments, op_start).await?;
+            data.write_bytes(response.into_bytes()).await
+        })
     }
 }
 
 impl<T: SessionStream> SessionData<T> {
-    pub async fn rename_folder(&self, arguments: Arguments) -> StatusResponse {
+    pub async fn rename_folder(
+        &self,
+        arguments: Arguments,
+        op_start: Instant,
+    ) -> trc::Result<StatusResponse> {
         // Refresh mailboxes
-        if let Err(err) = self.synchronize_mailboxes(false).await {
-            return err.with_tag(arguments.tag);
-        }
+        self.synchronize_mailboxes(false)
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Validate mailbox name
-        let mut params = match self
+        let mut params = self
             .validate_mailbox_create(&arguments.new_mailbox_name, None)
             .await
-        {
-            Ok(mut params) => {
-                params.is_rename = true;
-                params
-            }
-            Err(response) => {
-                return response.with_tag(arguments.tag);
-            }
-        };
+            .add_context(|err| err.id(arguments.tag.clone()))?;
+        params.is_rename = true;
 
         // Validate source mailbox
         let mailbox_id = {
@@ -85,27 +72,28 @@ impl<T: SessionStream> SessionData<T> {
                         mailbox_id = (*mailbox_id_).into();
                         break;
                     } else {
-                        return StatusResponse::no("Cannot move mailboxes between accounts.")
-                            .with_tag(arguments.tag)
-                            .with_code(ResponseCode::Cannot);
+                        return Err(trc::ImapEvent::Error
+                            .into_err()
+                            .details("Cannot move mailboxes between accounts.")
+                            .code(ResponseCode::Cannot)
+                            .id(arguments.tag));
                     }
                 }
             }
             if let Some(mailbox_id) = mailbox_id {
                 mailbox_id
             } else {
-                return StatusResponse::no(format!(
-                    "Mailbox '{}' not found.",
-                    arguments.mailbox_name
-                ))
-                .with_tag(arguments.tag)
-                .with_code(ResponseCode::NonExistent);
+                return Err(trc::ImapEvent::Error
+                    .into_err()
+                    .details(format!("Mailbox '{}' not found.", arguments.mailbox_name))
+                    .code(ResponseCode::NonExistent)
+                    .id(arguments.tag));
             }
         };
 
         // Obtain mailbox
-        let mailbox = if let Ok(Some(mailbox)) = self
-            .jmap
+        let mailbox = self
+            .server
             .get_property::<HashedValue<Object<Value>>>(
                 params.account_id,
                 Collection::Mailbox,
@@ -113,38 +101,42 @@ impl<T: SessionStream> SessionData<T> {
                 Property::Value,
             )
             .await
-        {
-            mailbox
-        } else {
-            return StatusResponse::database_failure().with_tag(arguments.tag);
-        };
+            .imap_ctx(&arguments.tag, trc::location!())?
+            .ok_or_else(|| {
+                trc::ImapEvent::Error
+                    .into_err()
+                    .details(format!("Mailbox '{}' not found.", arguments.mailbox_name))
+                    .caused_by(trc::location!())
+                    .code(ResponseCode::NonExistent)
+                    .id(arguments.tag.clone())
+            })?;
 
         // Validate ACL
-        let access_token = match self.get_access_token().await {
-            Ok(access_token) => access_token,
-            Err(response) => return response.with_tag(arguments.tag),
-        };
+        let access_token = self
+            .get_access_token()
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
         if access_token.is_shared(params.account_id)
             && !mailbox
                 .inner
                 .effective_acl(&access_token)
                 .contains(Acl::Modify)
         {
-            return StatusResponse::no("You are not allowed to rename this mailbox.")
-                .with_tag(arguments.tag)
-                .with_code(ResponseCode::NoPerm);
+            return Err(trc::ImapEvent::Error
+                .into_err()
+                .details("You are not allowed to rename this mailbox.")
+                .code(ResponseCode::NoPerm)
+                .id(arguments.tag));
         }
 
         // Get new mailbox name from path
         let new_mailbox_name = params.path.pop().unwrap();
 
         // Build batch
-        let mut changes = match self.jmap.begin_changes(params.account_id).await {
-            Ok(changes) => changes,
-            Err(_) => {
-                return StatusResponse::database_failure().with_tag(arguments.tag);
-            }
-        };
+        let mut changes = self
+            .server
+            .begin_changes(params.account_id)
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         let mut parent_id = params.parent_mailbox_id.map(|id| id + 1).unwrap_or(0);
         let mut create_ids = Vec::with_capacity(params.path.len());
@@ -166,12 +158,12 @@ impl<T: SessionStream> SessionData<T> {
                     ),
                 );
 
-            let mailbox_id = match self.jmap.write_batch_expect_id(batch).await {
-                Ok(mailbox_id) => mailbox_id,
-                Err(_) => {
-                    return StatusResponse::database_failure().with_tag(arguments.tag);
-                }
-            };
+            let mailbox_id = self
+                .server
+                .store()
+                .write_expect_id(batch)
+                .await
+                .imap_ctx(&arguments.tag, trc::location!())?;
 
             changes.log_insert(Collection::Mailbox, mailbox_id);
             parent_id = mailbox_id + 1;
@@ -200,33 +192,22 @@ impl<T: SessionStream> SessionData<T> {
 
         let change_id = changes.change_id;
         batch.custom(changes);
-        match self.jmap.write_batch(batch).await {
-            Ok(_) => (),
-            Err(MethodError::ServerUnavailable) => {
-                return StatusResponse::no(
-                    "Another process modified this mailbox, please try again.",
-                )
-                .with_tag(arguments.tag);
-            }
-            Err(_) => {
-                return StatusResponse::database_failure().with_tag(arguments.tag);
-            }
-        }
+        self.server
+            .store()
+            .write(batch)
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Broadcast changes
-        self.jmap
+        self.server
             .broadcast_state_change(
                 StateChange::new(params.account_id).with_change(DataType::Mailbox, change_id),
             )
             .await;
 
         let mut mailboxes = if !create_ids.is_empty() {
-            match self.add_created_mailboxes(&mut params, change_id, create_ids) {
-                Ok(mailboxes) => mailboxes,
-                Err(response) => {
-                    return response.with_tag(arguments.tag);
-                }
-            }
+            self.add_created_mailboxes(&mut params, change_id, create_ids)
+                .add_context(|err| err.id(arguments.tag.clone()))?
         } else {
             self.mailboxes.lock()
         };
@@ -276,6 +257,15 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
 
-        StatusResponse::completed(Command::Rename).with_tag(arguments.tag)
+        trc::event!(
+            Imap(trc::ImapEvent::RenameMailbox),
+            SpanId = self.session_id,
+            AccountId = params.account_id,
+            MailboxName = arguments.new_mailbox_name,
+            MailboxId = mailbox_id,
+            Elapsed = op_start.elapsed()
+        );
+
+        Ok(StatusResponse::completed(Command::Rename).with_tag(arguments.tag))
     }
 }

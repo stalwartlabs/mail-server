@@ -1,36 +1,16 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use ahash::AHashMap;
 use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 use crate::{
-    error::{
-        method::MethodError,
-        set::{InvalidProperty, SetError},
-    },
+    error::set::{InvalidProperty, SetError},
     object::{email_submission, mailbox, sieve, Object},
-    parser::{json::Parser, Error, JsonObjectParser, Token},
+    parser::{json::Parser, JsonObjectParser, Token},
     request::{
         method::MethodObject,
         reference::{MaybeReference, ResultReference},
@@ -116,7 +96,7 @@ pub struct SetResponse {
 }
 
 impl JsonObjectParser for SetRequest<RequestArguments> {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -132,10 +112,9 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                 MethodObject::VacationResponse => RequestArguments::VacationResponse,
                 MethodObject::SieveScript => RequestArguments::SieveScript(Default::default()),
                 _ => {
-                    return Err(Error::Method(MethodError::UnknownMethod(format!(
-                        "{}/set",
-                        parser.ctx
-                    ))))
+                    return Err(trc::JmapEvent::UnknownMethod
+                        .into_err()
+                        .details(format!("{}/set", parser.ctx)))
                 }
             },
             account_id: Id::default(),
@@ -185,7 +164,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
 }
 
 impl JsonObjectParser for Object<SetValue> {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -402,11 +381,7 @@ impl<T: Into<AnyId>> From<Vec<MaybeReference<T, String>>> for SetValue {
 }
 
 impl RequestPropertyParser for RequestArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> crate::parser::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         match self {
             RequestArguments::Mailbox(args) => args.parse(parser, property),
             RequestArguments::EmailSubmission(args) => args.parse(parser, property),
@@ -417,7 +392,7 @@ impl RequestPropertyParser for RequestArguments {
 }
 
 impl<T> SetRequest<T> {
-    pub fn validate(&self, max_objects_in_set: usize) -> Result<(), MethodError> {
+    pub fn validate(&self, max_objects_in_set: usize) -> trc::Result<()> {
         if self.create.as_ref().map_or(0, |objs| objs.len())
             + self.update.as_ref().map_or(0, |objs| objs.len())
             + self.destroy.as_ref().map_or(0, |objs| {
@@ -429,18 +404,18 @@ impl<T> SetRequest<T> {
             })
             > max_objects_in_set
         {
-            Err(MethodError::RequestTooLarge)
+            Err(trc::JmapEvent::RequestTooLarge.into_err())
         } else {
             Ok(())
         }
     }
 
     pub fn has_updates(&self) -> bool {
-        self.update.as_ref().map_or(false, |objs| !objs.is_empty())
+        self.update.as_ref().is_some_and(|objs| !objs.is_empty())
     }
 
     pub fn has_creates(&self) -> bool {
-        self.create.as_ref().map_or(false, |objs| !objs.is_empty())
+        self.create.as_ref().is_some_and(|objs| !objs.is_empty())
     }
 
     pub fn unwrap_create(&mut self) -> VecMap<String, Object<SetValue>> {
@@ -477,10 +452,7 @@ impl SetRequest<RequestArguments> {
 }
 
 impl SetResponse {
-    pub fn from_request<T>(
-        request: &SetRequest<T>,
-        max_objects: usize,
-    ) -> Result<Self, MethodError> {
+    pub fn from_request<T>(request: &SetRequest<T>, max_objects: usize) -> trc::Result<Self> {
         let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
         let n_update = request.update.as_ref().map_or(0, |objs| objs.len());
         let n_destroy = request.destroy.as_ref().map_or(0, |objs| {
@@ -508,7 +480,7 @@ impl SetResponse {
                 state_change: None,
             })
         } else {
-            Err(MethodError::RequestTooLarge)
+            Err(trc::JmapEvent::RequestTooLarge.into_err())
         }
     }
 

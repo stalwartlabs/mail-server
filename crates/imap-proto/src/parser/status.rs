@@ -1,34 +1,17 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use crate::protocol::status::Status;
-use crate::protocol::{status, ProtocolVersion};
-use crate::receiver::{Request, Token};
-use crate::utf7::utf7_maybe_decode;
 use crate::Command;
+use crate::protocol::status::Status;
+use crate::protocol::{ProtocolVersion, status};
+use crate::receiver::{Request, Token, bad};
+use crate::utf7::utf7_maybe_decode;
 
 impl Request<Command> {
-    pub fn parse_status(self, version: ProtocolVersion) -> crate::Result<status::Arguments> {
+    pub fn parse_status(self, version: ProtocolVersion) -> trc::Result<status::Arguments> {
         match self.tokens.len() {
             0..=3 => Err(self.into_error("Missing arguments.")),
             len => {
@@ -38,20 +21,19 @@ impl Request<Command> {
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_ref(), v))?,
+                        .map_err(|v| bad(self.tag.clone(), v))?,
                     version,
                 );
                 let mut items = Vec::with_capacity(len - 2);
 
                 if tokens
                     .next()
-                    .map_or(true, |token| !token.is_parenthesis_open())
+                    .is_none_or(|token| !token.is_parenthesis_open())
                 {
-                    return Err((
-                        self.tag.as_str(),
+                    return Err(bad(
+                        self.tag.to_string(),
                         "Expected parenthesis after mailbox name.",
-                    )
-                        .into());
+                    ));
                 }
 
                 #[allow(clippy::while_let_on_iterator)]
@@ -59,14 +41,15 @@ impl Request<Command> {
                     match token {
                         Token::ParenthesisClose => break,
                         Token::Argument(value) => {
-                            items.push(Status::parse(&value).map_err(|v| (self.tag.as_str(), v))?);
+                            items.push(
+                                Status::parse(&value).map_err(|v| bad(self.tag.to_string(), v))?,
+                            );
                         }
                         _ => {
-                            return Err((
-                                self.tag.as_str(),
+                            return Err(bad(
+                                self.tag.to_string(),
                                 "Invalid status return option argument.",
-                            )
-                                .into())
+                            ));
                         }
                     }
                 }
@@ -78,7 +61,7 @@ impl Request<Command> {
                         items,
                     })
                 } else {
-                    Err((self.tag, "At least one status item is required.").into())
+                    Err(bad(self.tag, "At least one status item is required."))
                 }
             }
         }
@@ -87,38 +70,32 @@ impl Request<Command> {
 
 impl Status {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"messages") {
-            Ok(Self::Messages)
-        } else if value.eq_ignore_ascii_case(b"uidnext") {
-            Ok(Self::UidNext)
-        } else if value.eq_ignore_ascii_case(b"uidvalidity") {
-            Ok(Self::UidValidity)
-        } else if value.eq_ignore_ascii_case(b"unseen") {
-            Ok(Self::Unseen)
-        } else if value.eq_ignore_ascii_case(b"deleted") {
-            Ok(Self::Deleted)
-        } else if value.eq_ignore_ascii_case(b"size") {
-            Ok(Self::Size)
-        } else if value.eq_ignore_ascii_case(b"highestmodseq") {
-            Ok(Self::HighestModSeq)
-        } else if value.eq_ignore_ascii_case(b"mailboxid") {
-            Ok(Self::MailboxId)
-        } else if value.eq_ignore_ascii_case(b"recent") {
-            Ok(Self::Recent)
-        } else {
-            Err(format!(
+        hashify::tiny_map_ignore_case!(value,
+            "MESSAGES" => Self::Messages,
+            "UIDNEXT" => Self::UidNext,
+            "UIDVALIDITY" => Self::UidValidity,
+            "UNSEEN" => Self::Unseen,
+            "DELETED" => Self::Deleted,
+            "SIZE" => Self::Size,
+            "HIGHESTMODSEQ" => Self::HighestModSeq,
+            "MAILBOXID" => Self::MailboxId,
+            "RECENT" => Self::Recent,
+            "DELETED-STORAGE" => Self::DeletedStorage
+        )
+        .ok_or_else(|| {
+            format!(
                 "Invalid status option '{}'.",
                 String::from_utf8_lossy(value)
             )
-            .into())
-        }
+            .into()
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        protocol::{status, ProtocolVersion},
+        protocol::{ProtocolVersion, status},
         receiver::Receiver,
     };
 

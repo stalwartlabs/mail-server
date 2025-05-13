@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{borrow::Cow, fmt::Display};
 
@@ -29,7 +12,7 @@ use serde_json::{json, Value};
 
 use crate::fts::{Field, FtsFilter};
 
-use super::{ElasticSearchStore, INDEX_NAMES};
+use super::{assert_success, ElasticSearchStore, INDEX_NAMES};
 
 impl ElasticSearchStore {
     pub async fn fts_query<T: Into<u8> + Display + Clone + std::fmt::Debug>(
@@ -37,7 +20,7 @@ impl ElasticSearchStore {
         account_id: u32,
         collection: impl Into<u8>,
         filters: Vec<FtsFilter<T>>,
-    ) -> crate::Result<RoaringBitmap> {
+    ) -> trc::Result<RoaringBitmap> {
         let mut stack: Vec<(FtsFilter<T>, Vec<Value>)> = vec![];
         let mut conditions = vec![json!({ "match": { "account_id": account_id } })];
         let mut logical_op = FtsFilter::And;
@@ -102,32 +85,36 @@ impl ElasticSearchStore {
         }
 
         // TODO implement pagination
-        let response = self
-            .index
-            .search(SearchParts::Index(&[
-                INDEX_NAMES[collection.into() as usize]
-            ]))
-            .body(json!({
-                "query": {
-                    "bool": {
-                        "must": conditions,
-                    }
-                },
-                "size": 10000,
-                "_source": ["document_id"]
-            }))
-            .send()
-            .await?
-            .error_for_status_code()?;
+        let response = assert_success(
+            self.index
+                .search(SearchParts::Index(&[
+                    INDEX_NAMES[collection.into() as usize]
+                ]))
+                .body(json!({
+                    "query": {
+                        "bool": {
+                            "must": conditions,
+                        }
+                    },
+                    "size": 10000,
+                    "_source": ["document_id"]
+                }))
+                .send()
+                .await,
+        )
+        .await?;
 
-        let json: Value = response.json().await?;
+        let json: Value = response
+            .json()
+            .await
+            .map_err(|err| trc::StoreEvent::ElasticsearchError.reason(err))?;
         let mut results = RoaringBitmap::new();
 
         for hit in json["hits"]["hits"].as_array().ok_or_else(|| {
-            crate::Error::InternalError("Invalid response from ElasticSearch".to_string())
+            trc::StoreEvent::ElasticsearchError.reason("Invalid response from ElasticSearch")
         })? {
             results.insert(hit["_source"]["document_id"].as_u64().ok_or_else(|| {
-                crate::Error::InternalError("Invalid response from ElasticSearch".to_string())
+                trc::StoreEvent::ElasticsearchError.reason("Invalid response from ElasticSearch")
             })? as u32);
         }
 

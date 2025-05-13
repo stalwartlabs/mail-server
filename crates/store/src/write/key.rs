@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::convert::TryInto;
 use utils::{codec::leb128::Leb128_, BLOB_HASH_LEN};
@@ -28,14 +11,16 @@ use crate::{
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, SUBSPACE_ACL,
     SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_BLOB_LINK,
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
-    SUBSPACE_FTS_QUEUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
-    SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_OUT,
-    SUBSPACE_SETTINGS, U32_LEN, U64_LEN, WITH_SUBSPACE,
+    SUBSPACE_INDEXES, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_IN_MEMORY_VALUE, SUBSPACE_LOGS,
+    SUBSPACE_PROPERTY, SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA,
+    SUBSPACE_REPORT_IN, SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE,
+    SUBSPACE_TELEMETRY_INDEX, SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U32_LEN, U64_LEN,
+    WITH_SUBSPACE,
 };
 
 use super::{
-    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportClass,
-    ReportEvent, ResolveId, TagValue, ValueClass,
+    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, InMemoryClass, QueueClass,
+    ReportClass, ReportEvent, ResolveId, TagValue, TaskQueueClass, TelemetryClass, ValueClass,
 };
 
 pub struct KeySerializer {
@@ -47,8 +32,8 @@ pub trait KeySerialize {
 }
 
 pub trait DeserializeBigEndian {
-    fn deserialize_be_u32(&self, index: usize) -> crate::Result<u32>;
-    fn deserialize_be_u64(&self, index: usize) -> crate::Result<u64>;
+    fn deserialize_be_u32(&self, index: usize) -> trc::Result<u32>;
+    fn deserialize_be_u64(&self, index: usize) -> trc::Result<u64>;
 }
 
 impl KeySerializer {
@@ -116,35 +101,35 @@ impl KeySerialize for u64 {
 }
 
 impl DeserializeBigEndian for &[u8] {
-    fn deserialize_be_u32(&self, index: usize) -> crate::Result<u32> {
+    fn deserialize_be_u32(&self, index: usize) -> trc::Result<u32> {
         self.get(index..index + U32_LEN)
             .ok_or_else(|| {
-                crate::Error::InternalError(
-                    "Index out of range while deserializing u32.".to_string(),
-                )
+                trc::StoreEvent::DataCorruption
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, *self)
             })
             .and_then(|bytes| {
                 bytes.try_into().map_err(|_| {
-                    crate::Error::InternalError(
-                        "Index out of range while deserializing u32.".to_string(),
-                    )
+                    trc::StoreEvent::DataCorruption
+                        .caused_by(trc::location!())
+                        .ctx(trc::Key::Value, *self)
                 })
             })
             .map(u32::from_be_bytes)
     }
 
-    fn deserialize_be_u64(&self, index: usize) -> crate::Result<u64> {
+    fn deserialize_be_u64(&self, index: usize) -> trc::Result<u64> {
         self.get(index..index + U64_LEN)
             .ok_or_else(|| {
-                crate::Error::InternalError(
-                    "Index out of range while deserializing u64.".to_string(),
-                )
+                trc::StoreEvent::DataCorruption
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, *self)
             })
             .and_then(|bytes| {
                 bytes.try_into().map_err(|_| {
-                    crate::Error::InternalError(
-                        "Index out of range while deserializing u64.".to_string(),
-                    )
+                    trc::StoreEvent::DataCorruption
+                        .caused_by(trc::location!())
+                        .ctx(trc::Key::Value, *self)
                 })
             })
             .map(u64::from_be_bytes)
@@ -225,7 +210,7 @@ impl Key for LogKey {
     }
 }
 
-impl<T: AsRef<ValueClass<u32>> + Sync + Send> Key for ValueKey<T> {
+impl<T: AsRef<ValueClass<u32>> + Sync + Send + Clone> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
         self.class.as_ref().subspace(self.collection)
     }
@@ -266,7 +251,7 @@ impl<T: ResolveId> ValueClass<T> {
                 let serializer = serializer.write(account_id).write(
                     hash.hash
                         .get(0..std::cmp::min(hash.len as usize, 8))
-                        .unwrap(),
+                        .unwrap_or_default(),
                 );
 
                 if hash.len >= 8 {
@@ -282,12 +267,24 @@ impl<T: ResolveId> ValueClass<T> {
                 .write(account_id)
                 .write(collection)
                 .write(document_id),
-            ValueClass::FtsQueue(queue) => serializer
-                .write(queue.seq)
-                .write(account_id)
-                .write(collection)
-                .write(document_id)
-                .write::<&[u8]>(queue.hash.as_ref()),
+            ValueClass::TaskQueue(task) => match task {
+                TaskQueueClass::IndexEmail { seq, hash } => serializer
+                    .write(*seq)
+                    .write(account_id)
+                    .write(0u8)
+                    .write(document_id)
+                    .write::<&[u8]>(hash.as_ref()),
+                TaskQueueClass::BayesTrain {
+                    seq,
+                    hash,
+                    learn_spam,
+                } => serializer
+                    .write(*seq)
+                    .write(account_id)
+                    .write(if *learn_spam { 1u8 } else { 2u8 })
+                    .write(document_id)
+                    .write::<&[u8]>(hash.as_ref()),
+            },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { hash, until } => serializer
                     .write(account_id)
@@ -310,9 +307,9 @@ impl<T: ResolveId> ValueClass<T> {
                     .write(*id as u32),
             },
             ValueClass::Config(key) => serializer.write(key.as_slice()),
-            ValueClass::Lookup(lookup) => match lookup {
-                LookupClass::Key(key) => serializer.write(key.as_slice()),
-                LookupClass::Counter(key) => serializer.write(key.as_slice()),
+            ValueClass::InMemory(lookup) => match lookup {
+                InMemoryClass::Key(key) => serializer.write(key.as_slice()),
+                InMemoryClass::Counter(key) => serializer.write(key.as_slice()),
             },
             ValueClass::Directory(directory) => match directory {
                 DirectoryClass::NameToId(name) => serializer.write(0u8).write(name.as_slice()),
@@ -320,7 +317,6 @@ impl<T: ResolveId> ValueClass<T> {
                 DirectoryClass::Principal(uid) => serializer
                     .write(2u8)
                     .write_leb128(uid.resolve_id(assigned_ids)),
-                DirectoryClass::Domain(name) => serializer.write(3u8).write(name.as_slice()),
                 DirectoryClass::UsedQuota(uid) => serializer.write(4u8).write_leb128(*uid),
                 DirectoryClass::MemberOf {
                     principal_id,
@@ -382,13 +378,27 @@ impl<T: ResolveId> ValueClass<T> {
                     serializer.write(2u8).write(*expires).write(*id)
                 }
             },
+            ValueClass::Telemetry(telemetry) => match telemetry {
+                TelemetryClass::Span { span_id } => serializer.write(*span_id),
+                TelemetryClass::Index { span_id, value } => {
+                    serializer.write(value.as_slice()).write(*span_id)
+                }
+                TelemetryClass::Metric {
+                    timestamp,
+                    metric_id,
+                    node_id,
+                } => serializer
+                    .write(*timestamp)
+                    .write_leb128(*metric_id)
+                    .write_leb128(*node_id),
+            },
             ValueClass::Any(any) => serializer.write(any.key.as_slice()),
         }
         .finalize()
     }
 }
 
-impl<T: AsRef<[u8]> + Sync + Send> Key for IndexKey<T> {
+impl<T: AsRef<[u8]> + Sync + Send + Clone> Key for IndexKey<T> {
     fn subspace(&self) -> u8 {
         SUBSPACE_INDEXES
     }
@@ -412,7 +422,7 @@ impl<T: AsRef<[u8]> + Sync + Send> Key for IndexKey<T> {
     }
 }
 
-impl<T: AsRef<BitmapClass<u32>> + Sync + Send> Key for BitmapKey<T> {
+impl<T: AsRef<BitmapClass<u32>> + Sync + Send + Clone> Key for BitmapKey<T> {
     fn subspace(&self) -> u8 {
         self.class.as_ref().subspace()
     }
@@ -503,7 +513,7 @@ impl<T: ResolveId> BitmapClass<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + Sync + Send> Key for AnyKey<T> {
+impl<T: AsRef<[u8]> + Sync + Send + Clone> Key for AnyKey<T> {
     fn serialize(&self, flags: u32) -> Vec<u8> {
         let key = self.key.as_ref();
         if (flags & WITH_SUBSPACE) != 0 {
@@ -532,12 +542,10 @@ impl<T> ValueClass<T> {
                 }
             }
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
-            ValueClass::Lookup(LookupClass::Counter(v) | LookupClass::Key(v))
+            ValueClass::InMemory(InMemoryClass::Counter(v) | InMemoryClass::Key(v))
             | ValueClass::Config(v) => v.len(),
             ValueClass::Directory(d) => match d {
-                DirectoryClass::NameToId(v)
-                | DirectoryClass::EmailToId(v)
-                | DirectoryClass::Domain(v) => v.len(),
+                DirectoryClass::NameToId(v) | DirectoryClass::EmailToId(v) => v.len(),
                 DirectoryClass::Principal(_) | DirectoryClass::UsedQuota(_) => U32_LEN,
                 DirectoryClass::Members { .. } | DirectoryClass::MemberOf { .. } => U32_LEN * 2,
             },
@@ -547,7 +555,7 @@ impl<T> ValueClass<T> {
                     BLOB_HASH_LEN + U32_LEN * 2 + 2
                 }
             },
-            ValueClass::FtsQueue { .. } => BLOB_HASH_LEN + U64_LEN * 2,
+            ValueClass::TaskQueue { .. } => BLOB_HASH_LEN + U64_LEN * 2,
             ValueClass::Queue(q) => match q {
                 QueueClass::Message(_) => U64_LEN,
                 QueueClass::MessageEvent(_) => U64_LEN * 2,
@@ -560,6 +568,11 @@ impl<T> ValueClass<T> {
                 QueueClass::QuotaCount(v) | QueueClass::QuotaSize(v) => v.len(),
             },
             ValueClass::Report(_) => U64_LEN * 2 + 1,
+            ValueClass::Telemetry(telemetry) => match telemetry {
+                TelemetryClass::Span { .. } => U64_LEN + 1,
+                TelemetryClass::Index { value, .. } => U64_LEN + value.len() + 1,
+                TelemetryClass::Metric { .. } => U64_LEN * 2 + 1,
+            },
             ValueClass::Any(v) => v.key.len(),
         }
     }
@@ -575,7 +588,7 @@ impl<T> ValueClass<T> {
             }
             ValueClass::Acl(_) => SUBSPACE_ACL,
             ValueClass::FtsIndex(_) => SUBSPACE_FTS_INDEX,
-            ValueClass::FtsQueue { .. } => SUBSPACE_FTS_QUEUE,
+            ValueClass::TaskQueue { .. } => SUBSPACE_TASK_QUEUE,
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => SUBSPACE_BLOB_RESERVE,
                 BlobOp::Commit { .. } | BlobOp::Link { .. } | BlobOp::LinkId { .. } => {
@@ -583,9 +596,9 @@ impl<T> ValueClass<T> {
                 }
             },
             ValueClass::Config(_) => SUBSPACE_SETTINGS,
-            ValueClass::Lookup(lookup) => match lookup {
-                LookupClass::Key(_) => SUBSPACE_LOOKUP_VALUE,
-                LookupClass::Counter(_) => SUBSPACE_COUNTER,
+            ValueClass::InMemory(lookup) => match lookup {
+                InMemoryClass::Key(_) => SUBSPACE_IN_MEMORY_VALUE,
+                InMemoryClass::Counter(_) => SUBSPACE_IN_MEMORY_COUNTER,
             },
             ValueClass::Directory(directory) => match directory {
                 DirectoryClass::UsedQuota(_) => SUBSPACE_QUOTA,
@@ -600,7 +613,12 @@ impl<T> ValueClass<T> {
                 | QueueClass::TlsReportEvent(_) => SUBSPACE_REPORT_OUT,
                 QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_) => SUBSPACE_QUOTA,
             },
-            ValueClass::Report(_) => SUBSPACE_REPORT_OUT,
+            ValueClass::Report(_) => SUBSPACE_REPORT_IN,
+            ValueClass::Telemetry(telemetry) => match telemetry {
+                TelemetryClass::Span { .. } => SUBSPACE_TELEMETRY_SPAN,
+                TelemetryClass::Index { .. } => SUBSPACE_TELEMETRY_INDEX,
+                TelemetryClass::Metric { .. } => SUBSPACE_TELEMETRY_METRIC,
+            },
             ValueClass::Any(any) => any.subspace,
         }
     }
@@ -608,7 +626,7 @@ impl<T> ValueClass<T> {
     pub fn is_counter(&self, collection: u8) -> bool {
         match self {
             ValueClass::Directory(DirectoryClass::UsedQuota(_))
-            | ValueClass::Lookup(LookupClass::Counter(_))
+            | ValueClass::InMemory(InMemoryClass::Counter(_))
             | ValueClass::Queue(QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_)) => true,
             ValueClass::Property(84) if collection == 1 => true, // TODO: Find a more elegant way to do this
             _ => false,
@@ -651,7 +669,7 @@ impl<U> From<BlobOp> for ValueClass<U> {
 }
 
 impl Deserialize for ReportEvent {
-    fn deserialize(key: &[u8]) -> crate::Result<Self> {
+    fn deserialize(key: &[u8]) -> trc::Result<Self> {
         Ok(ReportEvent {
             due: key.deserialize_be_u64(1)?,
             policy_hash: key.deserialize_be_u64(key.len() - (U64_LEN * 2 + 1))?,
@@ -661,9 +679,9 @@ impl Deserialize for ReportEvent {
                 .and_then(|domain| std::str::from_utf8(domain).ok())
                 .map(|s| s.to_string())
                 .ok_or_else(|| {
-                    crate::Error::InternalError(format!(
-                        "Failed to deserialize report domain: {key:?}"
-                    ))
+                    trc::StoreEvent::DataCorruption
+                        .caused_by(trc::location!())
+                        .ctx(trc::Key::Key, key)
                 })?,
         })
     }

@@ -1,31 +1,15 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use common::listener::SessionStream;
 use mail_auth::{report::AuthFailureType, AuthenticationResults, SpfOutput};
+use trc::OutgoingReportEvent;
 use utils::config::Rate;
 
-use crate::core::Session;
+use crate::{core::Session, reporting::SmtpReporting};
 
 impl<T: SessionStream> Session<T> {
     pub async fn send_spf_report(
@@ -37,22 +21,24 @@ impl<T: SessionStream> Session<T> {
     ) {
         // Throttle recipient
         if !self.throttle_rcpt(rcpt, rate, "spf").await {
-            tracing::debug!(
-                parent: &self.span,
-                context = "report",
-                report = "spf",
-                event = "throttle",
-                rcpt = rcpt,
+            trc::event!(
+                OutgoingReport(OutgoingReportEvent::SpfRateLimited),
+                SpanId = self.data.session_id,
+                To = rcpt.to_string(),
+                Limit = vec![
+                    trc::Value::from(rate.requests),
+                    trc::Value::from(rate.period)
+                ],
             );
+
             return;
         }
 
         // Generate report
-        let config = &self.core.core.smtp.report.spf;
+        let config = &self.server.core.smtp.report.spf;
         let from_addr = self
-            .core
-            .core
-            .eval_if(&config.address, self)
+            .server
+            .eval_if(&config.address, self, self.data.session_id)
             .await
             .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
         let mut report = Vec::with_capacity(128);
@@ -77,9 +63,8 @@ impl<T: SessionStream> Session<T> {
             .with_spf_dns(format!("txt : {} : v=SPF1", output.domain())) // TODO use DNS record
             .write_rfc5322(
                 (
-                    self.core
-                        .core
-                        .eval_if(&config.name, self)
+                    self.server
+                        .eval_if(&config.name, self, self.data.session_id)
                         .await
                         .unwrap_or_else(|| "Mailer Daemon".to_string())
                         .as_str(),
@@ -87,33 +72,30 @@ impl<T: SessionStream> Session<T> {
                 ),
                 rcpt,
                 &self
-                    .core
-                    .core
-                    .eval_if(&config.subject, self)
+                    .server
+                    .eval_if(&config.subject, self, self.data.session_id)
                     .await
                     .unwrap_or_else(|| "SPF Report".to_string()),
                 &mut report,
             )
             .ok();
 
-        tracing::info!(
-            parent: &self.span,
-            context = "report",
-            report = "spf",
-            event = "queue",
-            rcpt = rcpt,
-            "Queueing SPF authentication failure report."
+        trc::event!(
+            OutgoingReport(OutgoingReportEvent::SpfReport),
+            SpanId = self.data.session_id,
+            To = rcpt.to_string(),
+            From = from_addr.to_string(),
         );
 
         // Send report
-        self.core
+        self.server
             .send_report(
                 &from_addr,
                 [rcpt].into_iter(),
                 report,
                 &config.sign,
-                &self.span,
                 true,
+                self.data.session_id,
             )
             .await;
     }

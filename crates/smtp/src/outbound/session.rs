@@ -1,53 +1,31 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use common::config::smtp::queue::RequireOptional;
-use mail_send::{smtp::AssertReply, Credentials, SmtpClient};
+use common::Server;
+use mail_send::Credentials;
 use smtp_proto::{
-    EhloResponse, Response, Severity, EXT_CHUNKING, EXT_DSN, EXT_REQUIRE_TLS, EXT_SIZE,
-    EXT_SMTP_UTF8, EXT_START_TLS, MAIL_REQUIRETLS, MAIL_RET_FULL, MAIL_RET_HDRS, MAIL_SMTPUTF8,
-    RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
+    EhloResponse, Severity, EXT_CHUNKING, EXT_DSN, EXT_REQUIRE_TLS, EXT_SIZE, EXT_SMTP_UTF8,
+    MAIL_REQUIRETLS, MAIL_RET_FULL, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_DELAY,
+    RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use std::fmt::Write;
 use std::time::Duration;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    net::TcpStream,
-};
-use tokio_rustls::{client::TlsStream, TlsConnector};
+use std::{fmt::Write, time::Instant};
+use tokio::io::{AsyncRead, AsyncWrite};
+use trc::DeliveryEvent;
 
-use crate::{
-    core::SMTP,
-    queue::{ErrorDetails, HostResponse, RCPT_STATUS_CHANGED},
-};
+use crate::outbound::client::{from_error_status, from_mail_send_error};
+use crate::queue::{ErrorDetails, HostResponse, RCPT_STATUS_CHANGED};
 
 use crate::queue::{Error, Message, Recipient, Status};
 
-use super::TlsStrategy;
+use super::{client::SmtpClient, TlsStrategy};
 
 pub struct SessionParams<'x> {
-    pub span: &'x tracing::Span,
-    pub core: &'x SMTP,
+    pub server: &'x Server,
     pub hostname: &'x str,
     pub credentials: Option<&'x Credentials<String>>,
     pub is_smtp: bool,
@@ -56,6 +34,7 @@ pub struct SessionParams<'x> {
     pub timeout_mail: Duration,
     pub timeout_rcpt: Duration,
     pub timeout_data: Duration,
+    pub session_id: u64,
 }
 
 impl Message {
@@ -66,70 +45,107 @@ impl Message {
         params: SessionParams<'_>,
     ) -> Status<(), Error> {
         // Obtain capabilities
-        let capabilities = match say_helo(&mut smtp_client, &params).await {
-            Ok(capabilities) => capabilities,
-            Err(status) => {
-                tracing::info!(
-                    parent: params.span,
-                    context = "ehlo",
-                    event = "rejected",
-                    mx = &params.hostname,
-                    reason = %status,
+        let time = Instant::now();
+        let capabilities = match smtp_client.say_helo(&params).await {
+            Ok(capabilities) => {
+                trc::event!(
+                    Delivery(DeliveryEvent::Ehlo),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    Details = capabilities.capabilities(),
+                    Elapsed = time.elapsed(),
                 );
-                quit(smtp_client).await;
+
+                capabilities
+            }
+            Err(status) => {
+                trc::event!(
+                    Delivery(DeliveryEvent::EhloRejected),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    CausedBy = from_error_status(&status),
+                    Elapsed = time.elapsed(),
+                );
+                smtp_client.quit().await;
                 return status;
             }
         };
 
         // Authenticate
         if let Some(credentials) = params.credentials {
+            let time = Instant::now();
             if let Err(err) = smtp_client.authenticate(credentials, &capabilities).await {
-                tracing::info!(
-                    parent: params.span,
-                    context = "auth",
-                    event = "failed",
-                    mx = &params.hostname,
-                    reason = %err,
+                trc::event!(
+                    Delivery(DeliveryEvent::AuthFailed),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    CausedBy = from_mail_send_error(&err),
+                    Elapsed = time.elapsed(),
                 );
-                quit(smtp_client).await;
+
+                smtp_client.quit().await;
                 return Status::from_smtp_error(params.hostname, "AUTH ...", err);
             }
+
+            trc::event!(
+                Delivery(DeliveryEvent::Auth),
+                SpanId = params.session_id,
+                Hostname = params.hostname.to_string(),
+                Elapsed = time.elapsed(),
+            );
 
             // Refresh capabilities
             // Disabled as some SMTP servers deauthenticate after EHLO
             /*capabilities = match say_helo(&mut smtp_client, &params).await {
                 Ok(capabilities) => capabilities,
                 Err(status) => {
-                    tracing::info!(
-                        parent: params.span,
+                    trc::event!(
+
                         context = "ehlo",
                         event = "rejected",
                         mx = &params.hostname,
                         reason = %status,
                     );
-                    quit(smtp_client).await;
+                    smtp_client.quit().await;
                     return status;
                 }
             };*/
         }
 
         // MAIL FROM
+        let time = Instant::now();
         smtp_client.timeout = params.timeout_mail;
         let cmd = self.build_mail_from(&capabilities);
-        if let Err(err) = smtp_client
-            .cmd(cmd.as_bytes())
-            .await
-            .and_then(|r| r.assert_positive_completion())
-        {
-            tracing::info!(
-                parent: params.span,
-                context = "sender",
-                event = "rejected",
-                mx = &params.hostname,
-                reason = %err,
-            );
-            quit(smtp_client).await;
-            return Status::from_smtp_error(params.hostname, &cmd, err);
+        match smtp_client.cmd(cmd.as_bytes()).await.and_then(|r| {
+            if r.is_positive_completion() {
+                Ok(r)
+            } else {
+                Err(mail_send::Error::UnexpectedReply(r))
+            }
+        }) {
+            Ok(response) => {
+                trc::event!(
+                    Delivery(DeliveryEvent::MailFrom),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    From = self.return_path.to_string(),
+                    Code = response.code,
+                    Details = response.message.to_string(),
+                    Elapsed = time.elapsed(),
+                );
+            }
+            Err(err) => {
+                trc::event!(
+                    Delivery(DeliveryEvent::MailFromRejected),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    CausedBy = from_mail_send_error(&err),
+                    Elapsed = time.elapsed(),
+                );
+
+                smtp_client.quit().await;
+                return Status::from_smtp_error(params.hostname, &cmd, err);
+            }
         }
 
         // RCPT TO
@@ -138,6 +154,7 @@ impl Message {
         let mut accepted_rcpts = Vec::new();
         smtp_client.timeout = params.timeout_rcpt;
         for rcpt in recipients {
+            let time = Instant::now();
             total_rcpt += 1;
             if matches!(
                 &rcpt.status,
@@ -151,6 +168,16 @@ impl Message {
             match smtp_client.cmd(cmd.as_bytes()).await {
                 Ok(response) => match response.severity() {
                     Severity::PositiveCompletion => {
+                        trc::event!(
+                            Delivery(DeliveryEvent::RcptTo),
+                            SpanId = params.session_id,
+                            Hostname = params.hostname.to_string(),
+                            To = rcpt.address.to_string(),
+                            Code = response.code,
+                            Details = response.message.to_string(),
+                            Elapsed = time.elapsed(),
+                        );
+
                         accepted_rcpts.push((
                             rcpt,
                             Status::Completed(HostResponse {
@@ -160,13 +187,14 @@ impl Message {
                         ));
                     }
                     severity => {
-                        tracing::info!(
-                            parent: params.span,
-                            context = "rcpt",
-                            event = "rejected",
-                            rcpt = rcpt.address,
-                            mx = &params.hostname,
-                            reason = %response,
+                        trc::event!(
+                            Delivery(DeliveryEvent::RcptToRejected),
+                            SpanId = params.session_id,
+                            Hostname = params.hostname.to_string(),
+                            To = rcpt.address.to_string(),
+                            Code = response.code,
+                            Details = response.message.to_string(),
+                            Elapsed = time.elapsed(),
                         );
 
                         let response = HostResponse {
@@ -186,17 +214,17 @@ impl Message {
                     }
                 },
                 Err(err) => {
-                    tracing::info!(
-                        parent: params.span,
-                        context = "rcpt",
-                        event = "failed",
-                        mx = &params.hostname,
-                        rcpt = rcpt.address,
-                        reason = %err,
+                    trc::event!(
+                        Delivery(DeliveryEvent::RcptToFailed),
+                        SpanId = params.session_id,
+                        Hostname = params.hostname.to_string(),
+                        To = rcpt.address.to_string(),
+                        CausedBy = from_mail_send_error(&err),
+                        Elapsed = time.elapsed(),
                     );
 
                     // Something went wrong, abort.
-                    quit(smtp_client).await;
+                    smtp_client.quit().await;
                     return Status::from_smtp_error(params.hostname, "", err);
                 }
             }
@@ -204,39 +232,42 @@ impl Message {
 
         // Send message
         if !accepted_rcpts.is_empty() {
-            let bdat_cmd = if capabilities.has_capability(EXT_CHUNKING) {
-                format!("BDAT {} LAST\r\n", self.size).into()
-            } else {
-                None
-            };
+            let time = Instant::now();
+            let bdat_cmd = capabilities
+                .has_capability(EXT_CHUNKING)
+                .then(|| format!("BDAT {} LAST\r\n", self.size));
 
-            if let Err(status) = send_message(&mut smtp_client, self, &bdat_cmd, &params).await {
-                tracing::info!(
-                    parent: params.span,
-                    context = "message",
-                    event = "rejected",
-                    mx = &params.hostname,
-                    reason = %status,
+            if let Err(status) = smtp_client.send_message(self, &bdat_cmd, &params).await {
+                trc::event!(
+                    Delivery(DeliveryEvent::MessageRejected),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    CausedBy = from_error_status(&status),
+                    Elapsed = time.elapsed(),
                 );
 
-                quit(smtp_client).await;
+                smtp_client.quit().await;
                 return status;
             }
 
             if params.is_smtp {
                 // Handle SMTP response
-                match read_smtp_data_response(&mut smtp_client, params.hostname, &bdat_cmd).await {
+                match smtp_client
+                    .read_smtp_data_response(params.hostname, &bdat_cmd)
+                    .await
+                {
                     Ok(response) => {
                         // Mark recipients as delivered
                         if response.code() == 250 {
                             for (rcpt, status) in accepted_rcpts {
-                                tracing::info!(
-                                    parent: params.span,
-                                    context = "rcpt",
-                                    event = "delivered",
-                                    rcpt = rcpt.address,
-                                    mx = &params.hostname,
-                                    response = %status,
+                                trc::event!(
+                                    Delivery(DeliveryEvent::Delivered),
+                                    SpanId = params.session_id,
+                                    Hostname = params.hostname.to_string(),
+                                    To = rcpt.address.to_string(),
+                                    Code = response.code,
+                                    Details = response.message.to_string(),
+                                    Elapsed = time.elapsed(),
                                 );
 
                                 rcpt.status = status;
@@ -244,15 +275,16 @@ impl Message {
                                 total_completed += 1;
                             }
                         } else {
-                            tracing::info!(
-                                parent: params.span,
-                                context = "message",
-                                event = "rejected",
-                                mx = &params.hostname,
-                                reason = %response,
+                            trc::event!(
+                                Delivery(DeliveryEvent::MessageRejected),
+                                SpanId = params.session_id,
+                                Hostname = params.hostname.to_string(),
+                                Code = response.code,
+                                Details = response.message.to_string(),
+                                Elapsed = time.elapsed(),
                             );
 
-                            quit(smtp_client).await;
+                            smtp_client.quit().await;
                             return Status::from_smtp_error(
                                 params.hostname,
                                 bdat_cmd.as_deref().unwrap_or("DATA"),
@@ -261,39 +293,37 @@ impl Message {
                         }
                     }
                     Err(status) => {
-                        tracing::info!(
-                            parent: params.span,
-                            context = "message",
-                            event = "failed",
-                            mx = &params.hostname,
-                            reason = %status,
+                        trc::event!(
+                            Delivery(DeliveryEvent::MessageRejected),
+                            SpanId = params.session_id,
+                            Hostname = params.hostname.to_string(),
+                            CausedBy = from_error_status(&status),
+                            Elapsed = time.elapsed(),
                         );
 
-                        quit(smtp_client).await;
+                        smtp_client.quit().await;
                         return status;
                     }
                 }
             } else {
                 // Handle LMTP responses
-                match read_lmtp_data_respone(
-                    &mut smtp_client,
-                    params.hostname,
-                    accepted_rcpts.len(),
-                )
-                .await
+                match smtp_client
+                    .read_lmtp_data_response(params.hostname, accepted_rcpts.len())
+                    .await
                 {
                     Ok(responses) => {
                         for ((rcpt, _), response) in accepted_rcpts.into_iter().zip(responses) {
                             rcpt.flags |= RCPT_STATUS_CHANGED;
                             rcpt.status = match response.severity() {
                                 Severity::PositiveCompletion => {
-                                    tracing::info!(
-                                        parent: params.span,
-                                        context = "rcpt",
-                                        event = "delivered",
-                                        rcpt = rcpt.address,
-                                        mx = &params.hostname,
-                                        response = %response,
+                                    trc::event!(
+                                        Delivery(DeliveryEvent::Delivered),
+                                        SpanId = params.session_id,
+                                        Hostname = params.hostname.to_string(),
+                                        To = rcpt.address.to_string(),
+                                        Code = response.code,
+                                        Details = response.message.to_string(),
+                                        Elapsed = time.elapsed(),
                                     );
 
                                     total_completed += 1;
@@ -303,13 +333,14 @@ impl Message {
                                     })
                                 }
                                 severity => {
-                                    tracing::info!(
-                                        parent: params.span,
-                                        context = "rcpt",
-                                        event = "rejected",
-                                        rcpt = rcpt.address,
-                                        mx = &params.hostname,
-                                        reason = %response,
+                                    trc::event!(
+                                        Delivery(DeliveryEvent::RcptToRejected),
+                                        SpanId = params.session_id,
+                                        Hostname = params.hostname.to_string(),
+                                        To = rcpt.address.to_string(),
+                                        Code = response.code,
+                                        Details = response.message.to_string(),
+                                        Elapsed = time.elapsed(),
                                     );
 
                                     let response = HostResponse {
@@ -333,22 +364,22 @@ impl Message {
                         }
                     }
                     Err(status) => {
-                        tracing::info!(
-                            parent: params.span,
-                            context = "message",
-                            event = "rejected",
-                            mx = &params.hostname,
-                            reason = %status,
+                        trc::event!(
+                            Delivery(DeliveryEvent::MessageRejected),
+                            SpanId = params.session_id,
+                            Hostname = params.hostname.to_string(),
+                            CausedBy = from_error_status(&status),
+                            Elapsed = time.elapsed(),
                         );
 
-                        quit(smtp_client).await;
+                        smtp_client.quit().await;
                         return status;
                     }
                 }
             }
         }
 
-        quit(smtp_client).await;
+        smtp_client.quit().await;
         if total_completed == total_rcpt {
             Status::Completed(())
         } else {
@@ -428,192 +459,6 @@ impl Recipient {
     pub fn has_flag(&self, flag: u64) -> bool {
         (self.flags & flag) != 0
     }
-}
-
-pub enum StartTlsResult {
-    Success {
-        smtp_client: SmtpClient<TlsStream<TcpStream>>,
-    },
-    Error {
-        error: mail_send::Error,
-    },
-    Unavailable {
-        response: Option<Response<String>>,
-        smtp_client: SmtpClient<TcpStream>,
-    },
-}
-
-pub async fn try_start_tls(
-    mut smtp_client: SmtpClient<TcpStream>,
-    tls_connector: &TlsConnector,
-    hostname: &str,
-    capabilities: &EhloResponse<String>,
-) -> StartTlsResult {
-    if capabilities.has_capability(EXT_START_TLS) {
-        match smtp_client.cmd("STARTTLS\r\n").await {
-            Ok(response) => {
-                if response.code() == 220 {
-                    match smtp_client.into_tls(tls_connector, hostname).await {
-                        Ok(smtp_client) => StartTlsResult::Success { smtp_client },
-                        Err(error) => StartTlsResult::Error { error },
-                    }
-                } else {
-                    StartTlsResult::Unavailable {
-                        response: response.into(),
-                        smtp_client,
-                    }
-                }
-            }
-            Err(error) => StartTlsResult::Error { error },
-        }
-    } else {
-        StartTlsResult::Unavailable {
-            smtp_client,
-            response: None,
-        }
-    }
-}
-
-pub async fn read_greeting<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    hostname: &str,
-) -> Result<(), Status<(), Error>> {
-    tokio::time::timeout(smtp_client.timeout, smtp_client.read())
-        .await
-        .map_err(|_| Status::timeout(hostname, "reading greeting"))?
-        .and_then(|r| r.assert_code(220))
-        .map_err(|err| Status::from_smtp_error(hostname, "", err))
-}
-
-pub async fn read_smtp_data_response<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    hostname: &str,
-    bdat_cmd: &Option<String>,
-) -> Result<Response<String>, Status<(), Error>> {
-    tokio::time::timeout(smtp_client.timeout, smtp_client.read())
-        .await
-        .map_err(|_| Status::timeout(hostname, "reading SMTP DATA response"))?
-        .map_err(|err| {
-            Status::from_smtp_error(hostname, bdat_cmd.as_deref().unwrap_or("DATA"), err)
-        })
-}
-
-pub async fn read_lmtp_data_respone<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    hostname: &str,
-    num_responses: usize,
-) -> Result<Vec<Response<String>>, Status<(), Error>> {
-    tokio::time::timeout(smtp_client.timeout, async {
-        smtp_client.read_many(num_responses).await
-    })
-    .await
-    .map_err(|_| Status::timeout(hostname, "reading LMTP DATA responses"))?
-    .map_err(|err| Status::from_smtp_error(hostname, "", err))
-}
-
-pub async fn write_chunks<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    chunks: &[&[u8]],
-) -> Result<(), mail_send::Error> {
-    for chunk in chunks {
-        smtp_client
-            .stream
-            .write_all(chunk)
-            .await
-            .map_err(mail_send::Error::from)?;
-    }
-    smtp_client
-        .stream
-        .flush()
-        .await
-        .map_err(mail_send::Error::from)
-}
-
-pub async fn send_message<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    message: &Message,
-    bdat_cmd: &Option<String>,
-    params: &SessionParams<'_>,
-) -> Result<(), Status<(), Error>> {
-    match params
-        .core
-        .core
-        .storage
-        .blob
-        .get_blob(message.blob_hash.as_slice(), 0..usize::MAX)
-        .await
-    {
-        Ok(Some(raw_message)) => tokio::time::timeout(params.timeout_data, async {
-            if let Some(bdat_cmd) = bdat_cmd {
-                write_chunks(smtp_client, &[bdat_cmd.as_bytes(), &raw_message]).await
-            } else {
-                write_chunks(smtp_client, &[b"DATA\r\n"]).await?;
-                smtp_client.read().await?.assert_code(354)?;
-                smtp_client
-                    .write_message(&raw_message)
-                    .await
-                    .map_err(mail_send::Error::from)
-            }
-        })
-        .await
-        .map_err(|_| Status::timeout(params.hostname, "sending message"))?
-        .map_err(|err| {
-            Status::from_smtp_error(params.hostname, bdat_cmd.as_deref().unwrap_or("DATA"), err)
-        }),
-        Ok(None) => {
-            tracing::error!(parent: params.span,
-            context = "queue",
-            event = "error",
-            "BlobHash {:?} does not exist.",
-            message.blob_hash,
-            );
-            Err(Status::TemporaryFailure(Error::Io(
-                "Queue system error.".to_string(),
-            )))
-        }
-        Err(err) => {
-            tracing::error!(parent: params.span,
-                context = "queue", 
-                event = "error", 
-                "Failed to fetch blobId {:?}: {}", 
-                message.blob_hash,
-                err);
-            Err(Status::TemporaryFailure(Error::Io(
-                "Queue system error.".to_string(),
-            )))
-        }
-    }
-}
-
-pub async fn say_helo<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    params: &SessionParams<'_>,
-) -> Result<EhloResponse<String>, Status<(), Error>> {
-    let cmd = if params.is_smtp {
-        format!("EHLO {}\r\n", params.local_hostname)
-    } else {
-        format!("LHLO {}\r\n", params.local_hostname)
-    };
-    tokio::time::timeout(params.timeout_ehlo, async {
-        smtp_client.stream.write_all(cmd.as_bytes()).await?;
-        smtp_client.stream.flush().await?;
-        smtp_client.read_ehlo().await
-    })
-    .await
-    .map_err(|_| Status::timeout(params.hostname, "reading EHLO response"))?
-    .map_err(|err| Status::from_smtp_error(params.hostname, &cmd, err))
-}
-
-pub async fn quit<T: AsyncRead + AsyncWrite + Unpin>(mut smtp_client: SmtpClient<T>) {
-    let _ = tokio::time::timeout(Duration::from_secs(10), async {
-        if smtp_client.stream.write_all(b"QUIT\r\n").await.is_ok()
-            && smtp_client.stream.flush().await.is_ok()
-        {
-            let mut buf = [0u8; 128];
-            let _ = smtp_client.stream.read(&mut buf).await;
-        }
-    })
-    .await;
 }
 
 impl TlsStrategy {

@@ -1,34 +1,19 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
-    outbound::TestServer,
     session::{TestSession, VerifyResponse},
+    TestSMTP,
 };
-use smtp::queue::{DeliveryAttempt, Event};
+use ahash::AHashSet;
+use common::ipc::{QueueEvent, QueueEventStatus};
+use smtp::queue::spool::SmtpSpool;
 use store::write::now;
 
 const CONFIG: &str = r#"
@@ -52,20 +37,16 @@ expire = [{if = "sender_domain = 'test.org'", then = "6s"},
 
 #[tokio::test]
 async fn queue_retry() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Create temp dir for queue
-    let mut local = TestServer::new("smtp_queue_retry_test", CONFIG, true).await;
+    let mut local = TestSMTP::new("smtp_queue_retry_test", CONFIG).await;
 
     // Create test message
     let core = local.build_smtp();
     let mut session = local.new_session();
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
 
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -76,7 +57,7 @@ async fn queue_retry() {
     let attempt = qr.expect_message_then_deliver().await;
 
     // Expect a failed DSN
-    attempt.try_deliver(core.clone()).await;
+    attempt.try_deliver(core.clone());
     let message = qr.expect_message().await;
     assert_eq!(message.return_path, "");
     assert_eq!(message.domains.first().unwrap().domain, "test.org");
@@ -87,7 +68,7 @@ async fn queue_retry() {
         .assert_contains("Content-Type: multipart/report")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: failed");
-    qr.read_event().await.assert_reload();
+    qr.read_event().await.assert_done();
     qr.clear_queue(&core).await;
 
     // Expect a failed DSN for foobar.org, followed by two delayed DSN and
@@ -100,23 +81,36 @@ async fn queue_retry() {
             "250",
         )
         .await;
+    let mut in_fight = AHashSet::new();
     let attempt = qr.expect_message_then_deliver().await;
     let mut dsn = Vec::new();
     let mut retries = Vec::new();
-    attempt.try_deliver(core.clone()).await;
+    in_fight.insert(attempt.queue_id);
+    attempt.try_deliver(core.clone());
+
     loop {
         match qr.try_read_event().await {
-            Some(Event::Reload) => {}
-            Some(Event::OnHold(_)) => unreachable!(),
-            None | Some(Event::Stop) => break,
+            Some(QueueEvent::WorkerDone { queue_id, status }) => {
+                in_fight.remove(&queue_id);
+                match &status {
+                    QueueEventStatus::Completed | QueueEventStatus::Deferred => (),
+                    _ => panic!("unexpected status {queue_id}: {status:?}"),
+                }
+            }
+            Some(QueueEvent::Refresh) => (),
+            None | Some(QueueEvent::Stop) | Some(QueueEvent::Paused(_)) => break,
         }
 
         let now = now();
         let events = core.next_event().await;
-        if events.is_empty() {
+
+        if events.is_empty() && in_fight.is_empty() {
             break;
         }
         for event in events {
+            if in_fight.contains(&event.queue_id) {
+                continue;
+            }
             if event.due > now {
                 tokio::time::sleep(Duration::from_secs(event.due - now)).await;
             }
@@ -126,8 +120,9 @@ async fn queue_retry() {
                 message.clone().remove(&core, event.due).await;
                 dsn.push(message);
             } else {
-                retries.push(event.due - now);
-                DeliveryAttempt::new(event).try_deliver(core.clone()).await;
+                retries.push(event.due.saturating_sub(now));
+                in_fight.insert(event.queue_id);
+                event.try_deliver(core.clone());
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
@@ -182,7 +177,7 @@ async fn queue_retry() {
         .await;
     let now_ = now();
     let message = qr.expect_message().await;
-    assert!([59, 60].contains(&(qr.message_due(message.id).await - now_)));
+    assert!([59, 60].contains(&(qr.message_due(message.queue_id).await - now_)));
     assert!([59, 60].contains(&(message.next_delivery_event() - now_)));
     assert!([3599, 3600].contains(&(message.domains.first().unwrap().expires - now_)));
     assert!([54059, 54060].contains(&(message.domains.first().unwrap().notify.due - now_)));

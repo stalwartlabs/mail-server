@@ -1,38 +1,24 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use mail_send::Credentials;
 
-use crate::{Principal, QueryBy};
+use crate::{
+    backend::{internal::PrincipalField, RcptType},
+    Principal, QueryBy,
+};
 
 use super::{EmailType, MemoryDirectory};
 
 impl MemoryDirectory {
-    pub async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+    pub async fn query(&self, by: QueryBy<'_>) -> trc::Result<Option<Principal>> {
         match by {
             QueryBy::Name(name) => {
                 for principal in &self.principals {
-                    if principal.name == name {
+                    if principal.name() == name {
                         return Ok(Some(principal.clone()));
                     }
                 }
@@ -52,8 +38,8 @@ impl MemoryDirectory {
                 };
 
                 for principal in &self.principals {
-                    if &principal.name == username {
-                        return if principal.verify_secret(secret).await {
+                    if principal.name() == username {
+                        return if principal.verify_secret(secret).await? {
                             Ok(Some(principal.clone()))
                         } else {
                             Ok(None)
@@ -65,28 +51,22 @@ impl MemoryDirectory {
         Ok(None)
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
-        Ok(self
-            .emails_to_ids
-            .get(address)
-            .map(|names| {
-                names
-                    .iter()
-                    .map(|t| match t {
-                        EmailType::Primary(uid) | EmailType::Alias(uid) | EmailType::List(uid) => {
-                            *uid
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default())
+    pub async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
+        Ok(self.emails_to_ids.get(address).and_then(|names| {
+            names
+                .iter()
+                .map(|t| match t {
+                    EmailType::Primary(uid) | EmailType::Alias(uid) | EmailType::List(uid) => *uid,
+                })
+                .next()
+        }))
     }
 
-    pub async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        Ok(self.emails_to_ids.contains_key(address))
+    pub async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
+        Ok(self.emails_to_ids.contains_key(address).into())
     }
 
-    pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut result = Vec::new();
         for (key, value) in &self.emails_to_ids {
             if key.contains(address) && value.iter().any(|t| matches!(t, EmailType::Primary(_))) {
@@ -96,7 +76,7 @@ impl MemoryDirectory {
         Ok(result)
     }
 
-    pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut result = Vec::new();
         for (key, value) in &self.emails_to_ids {
             if key == address {
@@ -104,8 +84,10 @@ impl MemoryDirectory {
                     if let EmailType::List(uid) = item {
                         for principal in &self.principals {
                             if principal.id == *uid {
-                                if let Some(addr) = principal.emails.first() {
-                                    result.push(addr.clone())
+                                if let Some(addr) =
+                                    principal.iter_str(PrincipalField::Emails).next()
+                                {
+                                    result.push(addr.to_string())
                                 }
                                 break;
                             }
@@ -117,7 +99,7 @@ impl MemoryDirectory {
         Ok(result)
     }
 
-    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
         Ok(self.domains.contains(domain))
     }
 }

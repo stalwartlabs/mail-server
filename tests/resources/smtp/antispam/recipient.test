@@ -1,18 +1,21 @@
 expect MISSING_TO RCPT_COUNT_ZERO
 
 X-To: hello@world.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
 expect RCPT_COUNT_ONE TO_DN_ALL
 
 To: "Hello World" <hello@world.com>
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
 expect RCPT_COUNT_ONE TO_DN_NONE TAGGED_RCPT
 
 To: hello+there@world.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -21,10 +24,11 @@ expect TO_DN_RECIPIENTS RCPT_COUNT_TWO TO_DN_SOME
 
 To: "recipients" <user@domain.org>
 Cc: other@user.org
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
-expect RCPT_ADDR_IN_SUBJECT TO_DN_NONE RCPT_COUNT_ONE
+expect RCPT_IN_SUBJECT TO_DN_NONE RCPT_COUNT_ONE
 
 To: hello@world.com
 Subject: Special offer for HELLO@world.com
@@ -45,6 +49,7 @@ expect RCPT_BOUNCEMOREONE TO_MATCH_ENVRCPT_ALL TO_DN_NONE RCPT_COUNT_TWO
 
 To: hello@world.com
 Cc: goodbye@world.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -55,12 +60,14 @@ expect RCPT_BOUNCEMOREONE TO_MATCH_ENVRCPT_SOME TO_DN_NONE RCPT_COUNT_THREE
 
 To: hello@world.com, test@domain.com
 Cc: goodbye@world.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
-expect RCPT_COUNT_ZERO R_UNDISC_RCPT
+expect RCPT_COUNT_ZERO UNDISC_RCPT
 
 To: Undisclosed recipients:;
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -70,6 +77,7 @@ expect TO_DN_ALL RCPT_COUNT_ONE
 
 List-Id: <list.domain.org>
 To: "Mailing List" <list@domain.org>
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -78,6 +86,7 @@ envelope_to hello@world.com
 expect FORGED_RECIPIENTS TO_NEEDS_ENCODING TO_DN_ALL RCPT_COUNT_ONE
 
 To: "Thé Spámmer" <spammer@domain.org>
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -87,6 +96,7 @@ envelope_to user@domain.org
 expect TO_DN_ALL TO_MATCH_ENVRCPT_ALL RCPT_COUNT_ONE
 
 To: "Hello World" <hello@world.com>
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -96,6 +106,7 @@ envelope_to user@domain.org
 expect TO_EXCESS_QP TO_DN_ALL TO_MATCH_ENVRCPT_ALL RCPT_COUNT_ONE
 
 To: "=?iso-8859-1?Q?Die_Hasen_und_die_Froesche?=" <hello@world.com>
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -105,6 +116,7 @@ envelope_to user@domain.org
 expect TO_EXCESS_BASE64 TO_DN_ALL TO_MATCH_ENVRCPT_ALL RCPT_COUNT_ONE
 
 To: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <hello@world.com>
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -113,15 +125,17 @@ expect FREEMAIL_TO DISPOSABLE_CC RCPT_COUNT_TWO TO_DN_NONE
 
 To: user@gmail.com
 Cc: otheruser@guerrillamail.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
 envelope_from test@test.com
-expect FREEMAIL_CC DISPOSABLE_TO RCPT_COUNT_THREE TO_DN_NONE
+expect FREEMAIL_CC DISPOSABLE_TO DISPOSABLE_BCC RCPT_COUNT_THREE TO_DN_NONE
 
 To: otheruser@guerrillamail.com
 Cc: user@gmail.com
 Bcc: some@guerrillamail.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -130,6 +144,7 @@ expect SORTED_RECIPS RCPT_COUNT_SEVEN TO_DN_NONE
 
 To: a@domain.com, b@domain.com, c@domain.com, d@domain.com
 Cc: e@domain.com, f@domain.com, g@domain.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -138,6 +153,7 @@ expect RCPT_COUNT_SEVEN TO_DN_NONE
 
 To: tom@domain.com, mark@domain.com, bill@domain.com, peter@domain.com
 Cc: jane@domain.com, mary@domain.com, lucy@domain.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -146,6 +162,7 @@ expect SUSPICIOUS_RECIPS RCPT_COUNT_SEVEN TO_DN_NONE
 
 To: tim@domain.com, tom@domain.com, tum@domain.com, tem@domain.com
 Cc: tam@domain.com, tron@domain.com, tym@domain.com
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -156,6 +173,7 @@ expect INFO_TO_INFO_LU RCPT_COUNT_ONE TO_MATCH_ENVRCPT_ALL TO_DN_NONE
 From: info@notalist.org
 To: info@notalist.org
 List-Unsubscribe: <info@notalist.org>
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -165,6 +183,7 @@ expect RCPT_COUNT_ONE TO_MATCH_ENVRCPT_ALL TO_DN_NONE
 
 From: info@notalist.org
 To: info@notalist.org
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -176,6 +195,7 @@ expect TO_WRAPPED_IN_SPACES RCPT_COUNT_TWO TO_MATCH_ENVRCPT_ALL TO_DN_NONE
 From: hello@test.org
 To: < user@test.org >
 Cc: test@test.org
+Subject: Hi
 
 Test
 <!-- NEXT TEST -->
@@ -187,5 +207,29 @@ expect TO_WRAPPED_IN_SPACES RCPT_COUNT_TWO TO_MATCH_ENVRCPT_ALL TO_DN_SOME
 From: hello@test.org
 To: user@test.org
 Cc: "Test" <test@test.org >
+Subject: Hi
 
 Test
+<!-- NEXT TEST -->
+expect RCPT_IN_BODY TO_DN_NONE RCPT_COUNT_ONE
+
+To: hello@world.com
+Subject: Special offer 
+
+An offer for hello@world.com
+<!-- NEXT TEST -->
+expect RCPT_DOMAIN_IN_MESSAGE RCPT_IN_BODY RCPT_DOMAIN_IN_SUBJECT RCPT_COUNT_ONE TO_DN_NONE
+
+To: hello@world.com
+Subject: Message for world.com
+
+An offer for hello@world.com
+
+<!-- NEXT TEST -->
+expect RCPT_DOMAIN_IN_MESSAGE RCPT_DOMAIN_IN_BODY RCPT_DOMAIN_IN_SUBJECT RCPT_COUNT_ONE TO_DN_NONE
+
+To: hello@world.com
+Subject: Message for world.com
+
+An offer for world.com
+

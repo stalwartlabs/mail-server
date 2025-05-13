@@ -1,4 +1,4 @@
-expect MIME_HTML_ONLY
+expect MIME_HTML_ONLY HTML_SHORT_1
 
 Message-Id: <4.2.0.58.20000519002557.00a88870@pop.example.com>
 X-Sender: dwsauder@pop.example.com (Unverified)
@@ -36,7 +36,7 @@ wir.&quot; <br>
 <br>
 </font></html>
 <!-- NEXT TEST -->
-expect HTTP_TO_HTTPS
+expect HTTP_TO_HTTPS HTML_SHORT_1
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -56,7 +56,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect HTTP_TO_IP
+expect HTTP_TO_IP HTML_SHORT_1
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -79,7 +79,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect EXT_CSS
+expect EXT_CSS HTML_SHORT_1
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -100,7 +100,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect EXT_CSS
+expect EXT_CSS HTML_SHORT_1
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -121,7 +121,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect HTML_UNBALANCED_TAG
+expect HTML_UNBALANCED_TAG HTML_SHORT_1
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -142,7 +142,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect HTML_UNBALANCED_TAG
+expect HTML_UNBALANCED_TAG HTML_SHORT_1
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -163,7 +163,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect HTML_SHORT_LINK_IMG_1
+expect HTML_SHORT_LINK_IMG_1 HTML_SHORT_1 HAS_LINK_TO_LARGE_IMG
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -188,7 +188,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect BODY_URI_ONLY
+expect BODY_URI_ONLY HTML_SHORT_1
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -212,7 +212,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect HTML_TEXT_IMG_RATIO
+expect HTML_TEXT_IMG_RATIO HTML_SHORT_1
 
 Content-Type: multipart/alternative;
 	boundary="=====================_714967308==_.ALT"
@@ -238,7 +238,7 @@ Content-Transfer-Encoding: 8bit
 
 --=====================_714967308==_.ALT--
 <!-- NEXT TEST -->
-expect HTML_META_REFRESH_URL MIME_HTML_ONLY
+expect HTML_META_REFRESH_URL MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit
@@ -250,7 +250,7 @@ Content-Transfer-Encoding: 8bit
 <p>some text</p>
 </body>
 <!-- NEXT TEST -->
-expect MIME_HTML_ONLY
+expect MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit
@@ -262,7 +262,7 @@ Content-Transfer-Encoding: 8bit
 <p>some text</p>
 </body>
 <!-- NEXT TEST -->
-expect HAS_DATA_URI DATA_URI_OBFU MIME_HTML_ONLY
+expect HAS_DATA_URI DATA_URI_OBFU MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit
@@ -275,7 +275,7 @@ Content-Transfer-Encoding: 8bit
 <a href="data:text/plain;base64,SGVsbG8sIHdvcmxkIQ==">Click me for a hello message</a>
 </body>
 <!-- NEXT TEST -->
-expect HAS_DATA_URI MIME_HTML_ONLY
+expect HAS_DATA_URI MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit
@@ -284,12 +284,12 @@ Content-Transfer-Encoding: 8bit
 <meta http-equiv="refresh" content="5">
 </head>
 <body>
-<p>some text</p>
+<p>some text and a lovely explanation to avoid the text to image ratio tag</p>
 <img src="data:image/png;base64,iVBORw0KGg...." alt="Red dot" />
 <a href="data:other">Click me for a hello message</a>
 </body>
 <!-- NEXT TEST -->
-expect PHISHING MIME_HTML_ONLY
+expect PHISHING MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit
@@ -298,7 +298,7 @@ Content-Transfer-Encoding: 8bit
 <a href="https://domain1.com/query">https://domain2.com/otherquery</a>
 </body>
 <!-- NEXT TEST -->
-expect MIME_HTML_ONLY
+expect MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit
@@ -307,7 +307,7 @@ Content-Transfer-Encoding: 8bit
 <a href="https://domain1.co.uk/query">https://subdomain.domain1.co.uk/otherquery</a>
 </body>
 <!-- NEXT TEST -->
-expect PHISHING MIME_HTML_ONLY
+expect PHISHING MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit
@@ -316,7 +316,7 @@ Content-Transfer-Encoding: 8bit
 <a href="https://domain1.com/query">domain2.com/otherquery</a>
 </body>
 <!-- NEXT TEST -->
-expect MIME_HTML_ONLY
+expect MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit
@@ -325,7 +325,7 @@ Content-Transfer-Encoding: 8bit
 <a href="https://domain1.co.uk/query">subdomain.domain1.co.uk/otherquery</a>
 </body>
 <!-- NEXT TEST -->
-expect MIME_HTML_ONLY
+expect MIME_HTML_ONLY HTML_SHORT_1
 
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: 8bit

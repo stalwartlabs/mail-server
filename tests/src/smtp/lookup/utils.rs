@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::{Duration, Instant};
 
@@ -35,14 +18,16 @@ use mail_auth::MX;
 use ::smtp::outbound::NextHop;
 use mail_parser::DateTime;
 use smtp::{
-    core::Inner,
-    outbound::{lookup::ToNextHop, mta_sts::parse::ParsePolicy},
+    outbound::{
+        lookup::{DnsLookup, ToNextHop},
+        mta_sts::parse::ParsePolicy,
+    },
     queue::RecipientDomain,
     reporting::AggregateTimestamp,
 };
 use utils::config::Config;
 
-use crate::smtp::build_smtp;
+use crate::smtp::{DnsCache, TestSMTP};
 
 const CONFIG_V4: &str = r#"
 [queue.outbound.source-ip]
@@ -66,6 +51,9 @@ ip-strategy = "ipv6_then_ipv4"
 
 #[tokio::test]
 async fn lookup_ip() {
+    // Enable logging
+    crate::enable_logging();
+
     let ipv6 = [
         "a:b::1".parse().unwrap(),
         "a:b::2".parse().unwrap(),
@@ -79,11 +67,9 @@ async fn lookup_ip() {
         "10.0.0.4".parse().unwrap(),
     ];
     let mut config = Config::new(CONFIG_V4).unwrap();
-    let core = build_smtp(
-        Core::parse(&mut config, Default::default(), Default::default()).await,
-        Inner::default(),
-    );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    let test =
+        TestSMTP::from_core(Core::parse(&mut config, Default::default(), Default::default()).await);
+    test.server.ipv4_add(
         "mx.foobar.org",
         vec![
             "172.168.0.100".parse().unwrap(),
@@ -91,18 +77,20 @@ async fn lookup_ip() {
         ],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv6_add(
+    test.server.ipv6_add(
         "mx.foobar.org",
         vec!["e:f::a".parse().unwrap(), "e:f::b".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
 
     // Ipv4 strategy
-    let resolve_result = core
+    let resolve_result = test
+        .server
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),
             &RecipientDomain::new("envelope"),
             2,
+            0,
         )
         .await
         .unwrap();
@@ -116,11 +104,9 @@ async fn lookup_ip() {
 
     // Ipv6 strategy
     let mut config = Config::new(CONFIG_V6).unwrap();
-    let core = build_smtp(
-        Core::parse(&mut config, Default::default(), Default::default()).await,
-        Inner::default(),
-    );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    let test =
+        TestSMTP::from_core(Core::parse(&mut config, Default::default(), Default::default()).await);
+    test.server.ipv4_add(
         "mx.foobar.org",
         vec![
             "172.168.0.100".parse().unwrap(),
@@ -128,16 +114,18 @@ async fn lookup_ip() {
         ],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv6_add(
+    test.server.ipv6_add(
         "mx.foobar.org",
         vec!["e:f::a".parse().unwrap(), "e:f::b".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    let resolve_result = core
+    let resolve_result = test
+        .server
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),
             &RecipientDomain::new("envelope"),
             2,
+            0,
         )
         .await
         .unwrap();

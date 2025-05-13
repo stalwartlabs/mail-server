@@ -1,53 +1,36 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
-use common::listener::SessionStream;
-use imap_proto::{
-    protocol::{expunge, select::Exists, Sequence},
-    StatusResponse,
-};
-use jmap::mailbox::UidMailbox;
+use common::{NextMailboxState, listener::SessionStream};
+use email::mailbox::UidMailbox;
+use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
-use store::write::assert::HashedValue;
-use utils::lru_cache::LruCached;
+use store::{
+    ValueKey,
+    write::{ValueClass, assert::HashedValue},
+};
+use trc::AddContext;
 
 use crate::core::ImapId;
 
-use super::{ImapUidToId, MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
+use super::{ImapUidToId, MailboxId, MailboxState, SelectedMailbox, SessionData};
 
 pub(crate) const MAX_RETRIES: usize = 10;
 
 impl<T: SessionStream> SessionData<T> {
-    pub async fn fetch_messages(&self, mailbox: &MailboxId) -> crate::op::Result<MailboxState> {
+    pub async fn fetch_messages(&self, mailbox: &MailboxId) -> trc::Result<MailboxState> {
         // Obtain message ids
         let message_ids = self
-            .jmap
+            .server
             .get_tag(
                 mailbox.account_id,
                 Collection::Email,
@@ -57,31 +40,24 @@ impl<T: SessionStream> SessionData<T> {
             .await?
             .unwrap_or_default();
 
-        // Obtain UID validity
+        // Obtain UID validity and UID next
         let uid_validity = self.get_uid_validity(mailbox).await?;
+        let uid_next = self.get_uid_next(mailbox).await?;
 
         // Obtain current state
         let modseq = self
-            .jmap
+            .server
             .core
             .storage
             .data
             .get_last_change_id(mailbox.account_id, Collection::Email)
             .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-                    context = "store",
-                    account_id = mailbox.account_id,
-                    collection = ?Collection::Email,
-                    error = ?err,
-                    "Failed to obtain state");
-                StatusResponse::database_failure()
-            })?;
+            .add_context(|e| e.caused_by(trc::location!()).account_id(mailbox.account_id))?;
 
         // Obtain all message ids
         let mut uid_map = BTreeMap::new();
         for (message_id, uid_mailbox) in self
-            .jmap
+            .server
             .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
                 mailbox.account_id,
                 Collection::Email,
@@ -99,13 +75,15 @@ impl<T: SessionStream> SessionData<T> {
             {
                 debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
                 if uid_map.insert(item.uid, message_id).is_some() {
-                    tracing::warn!(event = "error",
-                            context = "store",
-                            account_id = mailbox.account_id,
-                            collection = ?Collection::Mailbox,
-                            mailbox_id = mailbox.mailbox_id,
-                            message_id = message_id,
-                            "Duplicate UID");
+                    trc::event!(
+                        Store(trc::StoreEvent::UnexpectedError),
+                        AccountId = mailbox.account_id,
+                        Collection = Collection::Mailbox,
+                        MailboxId = mailbox.mailbox_id,
+                        MessageId = message_id,
+                        SpanId = self.session_id,
+                        Details = "Duplicate IMAP UID"
+                    );
                 }
             }
         }
@@ -129,8 +107,8 @@ impl<T: SessionStream> SessionData<T> {
             uid_to_id.insert(uid, message_id);
         }
 
-        Ok(MailboxState {
-            uid_next: uid_max + 1,
+        let mut state = MailboxState {
+            uid_next,
             uid_validity,
             total_messages: id_to_imap.len(),
             id_to_imap,
@@ -138,13 +116,17 @@ impl<T: SessionStream> SessionData<T> {
             uid_max,
             modseq,
             next_state: None,
-        })
+            obj_size: 0,
+        };
+        state.obj_size = state.calculate_weight();
+
+        Ok(state)
     }
 
     pub async fn synchronize_messages(
         &self,
         mailbox: &SelectedMailbox,
-    ) -> crate::op::Result<Option<u64>> {
+    ) -> trc::Result<Option<u64>> {
         // Obtain current modseq
         let modseq = self.get_modseq(mailbox.id.account_id).await?;
         if mailbox.state.lock().modseq != modseq {
@@ -173,8 +155,10 @@ impl<T: SessionStream> SessionData<T> {
             current_state.id_to_imap = id_to_imap;
 
             // Update cache
-            self.imap
-                .cache_mailbox
+            self.server
+                .inner
+                .cache
+                .mailbox
                 .insert(mailbox.id, Arc::new(new_state.clone()));
 
             // Update state
@@ -192,7 +176,7 @@ impl<T: SessionStream> SessionData<T> {
         &self,
         mailbox: &SelectedMailbox,
         is_qresync: bool,
-    ) -> crate::op::Result<Option<u64>> {
+    ) -> trc::Result<Option<u64>> {
         // Resync mailbox
         let modseq = self.synchronize_messages(mailbox).await?;
         let mut buf = Vec::new();
@@ -224,36 +208,29 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
         if !buf.is_empty() {
-            self.write_bytes(buf).await;
+            self.write_bytes(buf).await?;
         }
 
         Ok(modseq)
     }
 
-    pub async fn get_modseq(&self, account_id: u32) -> crate::op::Result<Option<u64>> {
+    pub async fn get_modseq(&self, account_id: u32) -> trc::Result<Option<u64>> {
         // Obtain current modseq
-        if let Ok(modseq) = self
-            .jmap
+        self.server
             .core
             .storage
             .data
             .get_last_change_id(account_id, Collection::Email)
             .await
-        {
-            Ok(modseq)
-        } else {
-            tracing::error!(parent: &self.span,
-                event = "error",
-                context = "store",
-                account_id = account_id,
-                collection = ?Collection::Email,
-                "Failed to obtain modseq");
-            Err(StatusResponse::database_failure())
-        }
+            .add_context(|e| {
+                e.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(Collection::Email)
+            })
     }
 
-    pub async fn get_uid_validity(&self, mailbox: &MailboxId) -> crate::op::Result<u32> {
-        self.jmap
+    pub async fn get_uid_validity(&self, mailbox: &MailboxId) -> trc::Result<u32> {
+        self.server
             .get_property::<Object<Value>>(
                 mailbox.account_id,
                 Collection::Mailbox,
@@ -263,15 +240,29 @@ impl<T: SessionStream> SessionData<T> {
             .await?
             .and_then(|obj| obj.get(&Property::Cid).as_uint())
             .ok_or_else(|| {
-                tracing::debug!(event = "error",
-                context = "store",
-                account_id = mailbox.account_id,
-                collection = ?Collection::Mailbox,
-                mailbox_id = mailbox.mailbox_id,
-                "Failed to obtain uid validity");
-                StatusResponse::no("Mailbox unavailable.")
+                trc::ImapEvent::Error
+                    .caused_by(trc::location!())
+                    .details("Mailbox unavailable")
+                    .account_id(mailbox.account_id)
+                    .collection(Collection::Mailbox)
+                    .document_id(mailbox.mailbox_id)
             })
             .map(|v| v as u32)
+    }
+
+    pub async fn get_uid_next(&self, mailbox: &MailboxId) -> trc::Result<u32> {
+        self.server
+            .core
+            .storage
+            .data
+            .get_counter(ValueKey {
+                account_id: mailbox.account_id,
+                collection: Collection::Mailbox.into(),
+                document_id: mailbox.mailbox_id,
+                class: ValueClass::Property(Property::EmailIds.into()),
+            })
+            .await
+            .map(|v| (v + 1) as u32)
     }
 }
 
@@ -280,21 +271,25 @@ impl SelectedMailbox {
         &self,
         sequence: &Sequence,
         is_uid: bool,
-    ) -> crate::op::Result<AHashMap<u32, ImapId>> {
+    ) -> trc::Result<AHashMap<u32, ImapId>> {
         if !sequence.is_saved_search() {
             let mut ids = AHashMap::new();
             let state = self.state.lock();
-            if state.id_to_imap.is_empty() {
-                return Ok(ids);
-            }
 
             if is_uid {
-                for (id, imap_id) in &state.id_to_imap {
-                    if sequence.contains(imap_id.uid, state.uid_max) {
-                        ids.insert(*id, *imap_id);
+                let id_to_imap = state
+                    .next_state
+                    .as_ref()
+                    .map(|s| &s.next_state.id_to_imap)
+                    .unwrap_or(&state.id_to_imap);
+                if !state.id_to_imap.is_empty() {
+                    for (id, imap_id) in id_to_imap {
+                        if sequence.contains(imap_id.uid, state.uid_max) {
+                            ids.insert(*id, *imap_id);
+                        }
                     }
                 }
-            } else {
+            } else if !state.id_to_imap.is_empty() {
                 for (id, imap_id) in &state.id_to_imap {
                     if sequence.contains(imap_id.seqnum, state.total_messages as u32) {
                         ids.insert(*id, *imap_id);
@@ -304,10 +299,11 @@ impl SelectedMailbox {
 
             Ok(ids)
         } else {
-            let saved_ids = self
-                .get_saved_search()
-                .await
-                .ok_or_else(|| StatusResponse::no("No saved search found."))?;
+            let saved_ids = self.get_saved_search().await.ok_or_else(|| {
+                trc::ImapEvent::Error
+                    .into_err()
+                    .details("No saved search found.")
+            })?;
             let mut ids = AHashMap::with_capacity(saved_ids.len());
             let state = self.state.lock();
 

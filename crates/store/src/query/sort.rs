@@ -1,29 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::cmp::Ordering;
 
 use ahash::{AHashMap, AHashSet};
+use trc::AddContext;
 
 use crate::{
     write::{key::DeserializeBigEndian, ValueClass},
@@ -51,7 +35,7 @@ impl Store {
         result_set: ResultSet,
         mut comparators: Vec<Comparator>,
         mut paginate: Pagination,
-    ) -> crate::Result<SortedResultSet> {
+    ) -> trc::Result<SortedResultSet> {
         paginate.limit = match (result_set.results.len(), paginate.limit) {
             (0, _) => {
                 return Ok(SortedResultSet {
@@ -90,7 +74,8 @@ impl Store {
                             Ok(!results.remove(document_id) || paginate.add(0, document_id))
                         },
                     )
-                    .await?;
+                    .await
+                    .caused_by(trc::location!())?;
 
                     // Add remaining items not present in the index
                     if !results.is_empty() && !paginate.is_full() {
@@ -126,7 +111,8 @@ impl Store {
                 for id in sorted_results.ids.iter_mut() {
                     if let Some(prefix_id) = self
                         .get_value::<u32>(prefix_key.clone().with_document_id(*id as u32))
-                        .await?
+                        .await
+                        .caused_by(trc::location!())?
                     {
                         *id |= (prefix_id as u64) << 32;
                     }
@@ -167,11 +153,7 @@ impl Store {
 
                                 Ok(if results.remove(document_id) {
                                     let data = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(
-                                        || {
-                                            crate::Error::InternalError(
-                                                "Invalid key found in index".to_string(),
-                                            )
-                                        },
+                                        || trc::Error::corrupted_key(key, None, trc::location!()),
                                     )?;
                                     debug_assert!(!data.is_empty());
 
@@ -190,7 +172,8 @@ impl Store {
                                 })
                             },
                         )
-                        .await?;
+                        .await
+                        .caused_by(trc::location!())?;
 
                         // Add remaining items not present in the index
                         if !results.is_empty() {
@@ -233,7 +216,8 @@ impl Store {
                 let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
                     if let Some(prefix_id) = self
                         .get_value(prefix_key.clone().with_document_id(document_id))
-                        .await?
+                        .await
+                        .caused_by(trc::location!())?
                     {
                         if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
                             continue;
@@ -261,7 +245,8 @@ impl Store {
                 let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
                     if let Some(prefix_id) = self
                         .get_value(prefix_key.clone().with_document_id(document_id))
-                        .await?
+                        .await
+                        .caused_by(trc::location!())?
                     {
                         if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
                             continue;

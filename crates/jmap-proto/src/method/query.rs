@@ -1,34 +1,16 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::fmt::Display;
 
 use store::fts::{FilterItem, FilterType, FtsFilter};
 
 use crate::{
-    error::method::MethodError,
     object::{email, mailbox},
-    parser::{json::Parser, Error, Ignore, JsonObjectParser, Token},
+    parser::{json::Parser, Ignore, JsonObjectParser, Token},
     request::{method::MethodObject, RequestProperty, RequestPropertyParser},
     types::{date::UTCDate, id::Id, keyword::Keyword, state::State},
 };
@@ -168,7 +150,7 @@ pub enum RequestArguments {
 }
 
 impl JsonObjectParser for QueryRequest<RequestArguments> {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -181,10 +163,9 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                 MethodObject::Principal => RequestArguments::Principal,
                 MethodObject::Quota => RequestArguments::Quota,
                 _ => {
-                    return Err(Error::Method(MethodError::UnknownMethod(format!(
-                        "{}/query",
-                        parser.ctx
-                    ))))
+                    return Err(trc::JmapEvent::UnknownMethod
+                        .into_err()
+                        .details(format!("{}/query", parser.ctx)))
                 }
             },
             filter: vec![],
@@ -260,7 +241,7 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
     }
 }
 
-pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
+pub fn parse_filter(parser: &mut Parser) -> trc::Result<Vec<Filter>> {
     let mut filter = vec![Filter::Close];
     let mut pos_stack = vec![0];
 
@@ -470,9 +451,9 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                         break;
                     }
                 } else {
-                    return Err(Error::Method(MethodError::InvalidArguments(
-                        "Malformed filter".to_string(),
-                    )));
+                    return Err(trc::JmapEvent::InvalidArguments
+                        .into_err()
+                        .details("Malformed filter"));
                 }
             }
             Token::ArrayEnd => {
@@ -488,7 +469,7 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
     Ok(filter)
 }
 
-pub fn parse_sort(parser: &mut Parser) -> crate::parser::Result<Vec<Comparator>> {
+pub fn parse_sort(parser: &mut Parser) -> trc::Result<Vec<Comparator>> {
     let mut sort = vec![];
 
     loop {
@@ -544,7 +525,7 @@ pub fn parse_sort(parser: &mut Parser) -> crate::parser::Result<Vec<Comparator>>
 }
 
 impl JsonObjectParser for SortProperty {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -684,11 +665,7 @@ impl Display for SortProperty {
 }
 
 impl RequestPropertyParser for RequestArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> crate::parser::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         match self {
             RequestArguments::Email(args) => args.parse(parser, property),
             RequestArguments::Mailbox(args) => args.parse(parser, property),

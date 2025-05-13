@@ -1,40 +1,25 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
 
 use crate::{backend::postgres::tls::MakeRustlsConnect, *};
 
-use super::PostgresStore;
+use super::{into_error, PostgresStore};
 
-use deadpool_postgres::{
-    Config, CreatePoolError, ManagerConfig, PoolConfig, RecyclingMethod, Runtime,
-};
+use deadpool_postgres::{Config, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 use utils::{config::utils::AsKey, rustls_client_config};
 
 impl PostgresStore {
-    pub async fn open(config: &mut utils::config::Config, prefix: impl AsKey) -> Option<Self> {
+    pub async fn open(
+        config: &mut utils::config::Config,
+        prefix: impl AsKey,
+        create_tables: bool,
+    ) -> Option<Self> {
         let prefix = prefix.as_key();
         let mut cfg = Config::new();
         cfg.dbname = config
@@ -48,6 +33,7 @@ impl PostgresStore {
         cfg.connect_timeout = config
             .property::<Option<Duration>>((&prefix, "timeout"))
             .unwrap_or_default();
+        cfg.options = config.value((&prefix, "options")).map(|s| s.to_string());
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         });
@@ -79,23 +65,25 @@ impl PostgresStore {
             .ok()?,
         };
 
-        if let Err(err) = db.create_tables().await {
-            config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+        if create_tables {
+            if let Err(err) = db.create_tables().await {
+                config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+            }
         }
 
         Some(db)
     }
 
-    pub(super) async fn create_tables(&self) -> crate::Result<()> {
-        let conn = self.conn_pool.get().await?;
+    pub(crate) async fn create_tables(&self) -> trc::Result<()> {
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
 
         for table in [
             SUBSPACE_ACL,
             SUBSPACE_DIRECTORY,
-            SUBSPACE_FTS_QUEUE,
+            SUBSPACE_TASK_QUEUE,
             SUBSPACE_BLOB_RESERVE,
             SUBSPACE_BLOB_LINK,
-            SUBSPACE_LOOKUP_VALUE,
+            SUBSPACE_IN_MEMORY_VALUE,
             SUBSPACE_PROPERTY,
             SUBSPACE_SETTINGS,
             SUBSPACE_QUEUE_MESSAGE,
@@ -105,6 +93,9 @@ impl PostgresStore {
             SUBSPACE_FTS_INDEX,
             SUBSPACE_LOGS,
             SUBSPACE_BLOBS,
+            SUBSPACE_TELEMETRY_SPAN,
+            SUBSPACE_TELEMETRY_METRIC,
+            SUBSPACE_TELEMETRY_INDEX,
         ] {
             let table = char::from(table);
             conn.execute(
@@ -116,7 +107,8 @@ impl PostgresStore {
                 ),
                 &[],
             )
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
         for table in [
@@ -134,10 +126,11 @@ impl PostgresStore {
                 ),
                 &[],
             )
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
-        for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
+        for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA, SUBSPACE_IN_MEMORY_COUNTER] {
             conn.execute(
                 &format!(
                     "CREATE TABLE IF NOT EXISTS {} (
@@ -148,15 +141,10 @@ impl PostgresStore {
                 ),
                 &[],
             )
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
         Ok(())
-    }
-}
-
-impl From<CreatePoolError> for crate::Error {
-    fn from(err: CreatePoolError) -> Self {
-        crate::Error::InternalError(format!("Failed to create connection pool: {}", err))
     }
 }

@@ -5,7 +5,7 @@ X-From: hello@domain.org
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect MULTIPLE_FROM FROM_EQ_ENVFROM FROM_NO_DN
+expect MULTIPLE_FROM FROM_EQ_ENV_FROM FROM_NO_DN
 
 From: hello@domain.org
 From: hello@domain.org
@@ -13,70 +13,70 @@ From: hello@domain.org
 Test
 <!-- NEXT TEST -->
 envelope_from test
-expect FROM_INVALID ENVFROM_INVALID
+expect FROM_INVALID ENV_FROM_INVALID
 
 From: test
 
 Test
 <!-- NEXT TEST -->
 envelope_from www-data@domain.org
-expect FROM_SERVICE_ACCT ENVFROM_SERVICE_ACCT FROM_HAS_DN FROM_EQ_ENVFROM
+expect FROM_SERVICE_ACCT FROM_HAS_DN FROM_EQ_ENV_FROM
 
 From: "WWW DATA" <www-data@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect FROM_DN_EQ_ADDR FROM_EQ_ENVFROM
+expect FROM_DN_EQ_ADDR FROM_EQ_ENV_FROM
 
 From: "hello@domain.org" <hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect SPOOF_DISPLAY_NAME FROM_EQ_ENVFROM FROM_HAS_DN
+expect SPOOF_DISPLAY_NAME FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "hello@otherdomain.org" <hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.co.uk
-expect FROM_NEQ_DISPLAY_NAME FROM_EQ_ENVFROM FROM_HAS_DN
+expect FROM_NEQ_DISPLAY_NAME FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "hello@other.domain.co.uk" <hello@domain.co.uk>
 
 Test
 <!-- NEXT TEST -->
 helo_domain mx.domain.co.uk
-expect FROM_EQ_ENVFROM FROM_NEQ_DISPLAY_NAME FROM_HAS_DN FROM_BOUNCE
+expect FROMTLD_EQ_ENV_FROMTLD FROM_NEQ_DISPLAY_NAME FROM_HAS_DN FROM_BOUNCE
 
 From: "postmaster@mx.domain.co.uk" <postmaster@domain.co.uk>
 
 Test
 <!-- NEXT TEST -->
 helo_domain mx.domain.co.uk
-expect FROM_EQ_ENVFROM FROM_HAS_DN FROM_BOUNCE
+expect FROMTLD_EQ_ENV_FROMTLD FROM_HAS_DN FROM_BOUNCE
 
 From: "Mailer Daemon" <MAILER-DAEMON@domain.co.uk>
 
 Test
 <!-- NEXT TEST -->
 envelope_from mrspammer@domain.org
-expect FROM_NAME_HAS_TITLE FROM_NAME_EXCESS_SPACE FROM_EQ_ENVFROM FROM_HAS_DN
+expect FROM_NAME_HAS_TITLE FROM_NAME_EXCESS_SPACE FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "Mr. Money   Maker" <mrspammer@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello+world@domain.org
-expect TAGGED_FROM FROM_EQ_ENVFROM FROM_NO_DN
+expect TAGGED_FROM FROM_EQ_ENV_FROM FROM_NO_DN
 
 From: hello+world@domain.org
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect TO_EQ_FROM FROM_EQ_ENVFROM FROM_NO_DN
+expect TO_EQ_FROM FROM_EQ_ENV_FROM FROM_NO_DN
 
 From: hello@domain.org
 To: hello@domain.org
@@ -84,7 +84,7 @@ To: hello@domain.org
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect FROM_EQ_ENVFROM FROM_NO_DN
+expect FROM_EQ_ENV_FROM FROM_NO_DN
 
 From: hello@domain.org
 To: hello@domain.org, bye@domain.org
@@ -92,7 +92,7 @@ To: hello@domain.org, bye@domain.org
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect FROM_NEEDS_ENCODING FROM_EQ_ENVFROM FROM_HAS_DN
+expect FROM_NEEDS_ENCODING FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "Hélló" <hello@domain.org>
 
@@ -100,42 +100,42 @@ Test
 <!-- NEXT TEST -->
 param.smtputf8 1
 envelope_from hello@domain.org
-expect FROM_EQ_ENVFROM FROM_HAS_DN
+expect FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "Hélló" <hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect FROM_EXCESS_QP FROM_EQ_ENVFROM FROM_HAS_DN
+expect FROM_EXCESS_QP FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: =?iso-8859-1?Q?Die_Hasen_und_die_Froesche?= <hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect FROM_EXCESS_BASE64 FROM_EQ_ENVFROM FROM_HAS_DN
+expect FROM_EXCESS_BASE64 FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect FROM_EQ_ENVFROM FROM_HAS_DN
+expect FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "=?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche?=" <hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect R_NO_SPACE_IN_FROM FROM_EQ_ENVFROM FROM_HAS_DN
+expect NO_SPACE_IN_FROM FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "Hello"<hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect HEADER_RCONFIRM_MISMATCH FROM_EQ_ENVFROM FROM_HAS_DN
+expect HEADER_RCONFIRM_MISMATCH FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "Hello" <hello@domain.org>
 X-Confirm-Reading-To: <bye@domain.org>
@@ -143,39 +143,66 @@ X-Confirm-Reading-To: <bye@domain.org>
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect HEADER_FORGED_MDN FROM_EQ_ENVFROM FROM_HAS_DN
+expect HEADER_FORGED_MDN FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "Hello" <hello@domain.org>
 Disposition-Notification-To: <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@domain.org
-expect FROM_SERVICE_ACCT WWW_DOT_DOMAIN FROM_EQ_ENVFROM FROM_HAS_DN
+envelope_from anonymous@domain.org
+expect FROM_SERVICE_ACCT WWW_DOT_DOMAIN FROM_EQ_ENV_FROM FROM_HAS_DN
 
-From: "Hello" <hello@domain.org>
-Sender: <info@www.domain.org>
-Reply-to: <guest@domain.org>
+From: "Hello" <anonymous@domain.org>
+Reply-to: <info@www.domain.org>
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@gmail.com
-expect FREEMAIL_ENVFROM FREEMAIL_FROM FROM_EQ_ENVFROM FROM_NO_DN
+envelope_from hello@custom.disposable.org
+expect FREEMAIL_FROM DISPOSABLE_ENV_FROM FROM_NEQ_ENV_FROM FROM_NO_DN FORGED_SENDER
 
 From: hello@gmail.com
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@custom.disposable.org
-expect DISPOSABLE_ENVFROM DISPOSABLE_FROM FROM_EQ_ENVFROM FROM_NO_DN
+envelope_from hello@gmail.com
+expect DISPOSABLE_FROM FREEMAIL_ENV_FROM FROM_NEQ_ENV_FROM FROM_NO_DN FORGED_SENDER
 
 From: hello@custom.disposable.org
 
 Test
 <!-- NEXT TEST -->
 envelope_from hello@nomx.org
-expect FROMHOST_NORES_A_OR_MX FROM_EQ_ENVFROM FROM_NO_DN
+expect FROMHOST_NORES_A_OR_MX FROM_EQ_ENV_FROM FROM_NO_DN
 
 From: hello@nomx.org
+
+Test
+<!-- NEXT TEST -->
+envelope_from baz@domain.org
+expect SPOOF_DISPLAY_NAME FROM_HAS_DN FROM_EQ_ENV_FROM
+
+From: "Foo (foo@bar.com)" <baz@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from baz@domain.org
+expect SPOOF_DISPLAY_NAME FROM_HAS_DN FROM_EQ_ENV_FROM
+
+From: Foo (foo@bar.com) <baz@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from baz@domain.org
+expect SPOOF_DISPLAY_NAME FROM_HAS_DN FROM_EQ_ENV_FROM
+
+From: "Foo foo@bar.com" <baz@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from baz@domain.org
+expect SPOOF_DISPLAY_NAME FROM_HAS_DN FROM_EQ_ENV_FROM
+
+From: "Foo 'foo@bar.com'" <baz@domain.org>
 
 Test

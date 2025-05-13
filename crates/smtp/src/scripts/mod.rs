@@ -1,30 +1,16 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::borrow::Cow;
 
 use ahash::AHashMap;
-use common::{expr::functions::ResolveVariable, scripts::ScriptModification, Core};
+use common::{
+    auth::AccessToken, expr::functions::ResolveVariable, scripts::ScriptModification, Server,
+};
+use mail_parser::Message;
 use sieve::{runtime::Variable, Envelope};
 
 pub mod envelope;
@@ -45,7 +31,7 @@ pub enum ScriptResult {
 }
 
 pub struct ScriptParameters<'x> {
-    message: Option<&'x [u8]>,
+    message: Option<Message<'x>>,
     headers: Option<&'x [u8]>,
     variables: AHashMap<Cow<'static, str>, Variable>,
     envelope: Vec<(Envelope, Variable)>,
@@ -53,8 +39,8 @@ pub struct ScriptParameters<'x> {
     from_name: String,
     return_path: String,
     sign: Vec<String>,
-    #[cfg(feature = "test_mode")]
-    expected_variables: Option<AHashMap<String, Variable>>,
+    access_token: Option<&'x AccessToken>,
+    session_id: u64,
 }
 
 impl<'x> ScriptParameters<'x> {
@@ -64,32 +50,40 @@ impl<'x> ScriptParameters<'x> {
             envelope: Vec::with_capacity(6),
             message: None,
             headers: None,
-            #[cfg(feature = "test_mode")]
-            expected_variables: None,
             from_addr: Default::default(),
             from_name: Default::default(),
             return_path: Default::default(),
             sign: Default::default(),
+            access_token: None,
+            session_id: Default::default(),
         }
     }
 
-    pub async fn with_envelope(mut self, core: &Core, vars: &impl ResolveVariable) -> Self {
+    pub async fn with_envelope(
+        mut self,
+        server: &Server,
+        vars: &impl ResolveVariable,
+        session_id: u64,
+    ) -> Self {
         for (variable, expr) in [
-            (&mut self.from_addr, &core.sieve.from_addr),
-            (&mut self.from_name, &core.sieve.from_name),
-            (&mut self.return_path, &core.sieve.return_path),
+            (&mut self.from_addr, &server.core.sieve.from_addr),
+            (&mut self.from_name, &server.core.sieve.from_name),
+            (&mut self.return_path, &server.core.sieve.return_path),
         ] {
-            if let Some(value) = core.eval_if(expr, vars).await {
+            if let Some(value) = server.eval_if(expr, vars, session_id).await {
                 *variable = value;
             }
         }
-        if let Some(value) = core.eval_if(&core.sieve.sign, vars).await {
+        if let Some(value) = server
+            .eval_if(&server.core.sieve.sign, vars, session_id)
+            .await
+        {
             self.sign = value;
         }
         self
     }
 
-    pub fn with_message(self, message: &'x [u8]) -> Self {
+    pub fn with_message(self, message: Message<'x>) -> Self {
         Self {
             message: message.into(),
             ..self
@@ -117,12 +111,13 @@ impl<'x> ScriptParameters<'x> {
         self
     }
 
-    #[cfg(feature = "test_mode")]
-    pub fn with_expected_variables(
-        mut self,
-        expected_variables: AHashMap<String, Variable>,
-    ) -> Self {
-        self.expected_variables = expected_variables.into();
+    pub fn with_access_token(mut self, access_token: &'x AccessToken) -> Self {
+        self.access_token = Some(access_token);
+        self
+    }
+
+    pub fn with_session_id(mut self, session_id: u64) -> Self {
+        self.session_id = session_id;
         self
     }
 }

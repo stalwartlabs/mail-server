@@ -40,6 +40,10 @@
         "value": " World domination"
       },
       {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
         "name": "Content-Language",
         "value": " en"
       },
@@ -88,6 +92,10 @@
           "value": " World domination"
         },
         {
+          "name": "MIME-Version",
+          "value": " 1.0"
+        },
+        {
           "name": "Content-Language",
           "value": " en"
         },
@@ -128,6 +136,10 @@
         {
           "name": "Subject",
           "value": " World domination"
+        },
+        {
+          "name": "MIME-Version",
+          "value": " 1.0"
         },
         {
           "name": "Content-Language",

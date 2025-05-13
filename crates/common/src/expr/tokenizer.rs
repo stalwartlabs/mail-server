@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2020-2023, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{borrow::Cow, iter::Peekable, slice::Iter, time::Duration};
 
@@ -47,7 +30,7 @@ pub struct Tokenizer<'x> {
 
 #[derive(Debug, Default, Clone)]
 pub struct TokenMap {
-    pub tokens: AHashMap<&'static str, Token>,
+    pub tokens: AHashMap<Cow<'static, str>, Token>,
 }
 
 impl<'x> Tokenizer<'x> {
@@ -93,7 +76,7 @@ impl<'x> Tokenizer<'x> {
                     self.is_eof = true;
                     break;
                 }
-                b'-' if self.buf.last().map_or(false, |c| *c == b'[') => {
+                b'-' if self.buf.last().is_some_and(|c| *c == b'[') => {
                     self.buf.push(ch);
                 }
                 b':' if self.buf.contains(&b'.') => {
@@ -102,21 +85,28 @@ impl<'x> Tokenizer<'x> {
                 b']' if self.buf.contains(&b'[') => {
                     self.buf.push(b']');
                 }
-                b'*' if self.buf.last().map_or(false, |&c| c == b'[' || c == b'.') => {
+                b'*' if self.buf.last().is_some_and(|&c| c == b'[' || c == b'.') => {
                     self.buf.push(ch);
                 }
                 _ => {
                     let (prev_token, ch) = if ch == b'(' && self.buf.eq(b"matches") {
                         // Parse regular expressions
-                        let stop_ch = self.find_char(&[b'\"', b'\''])?;
+                        let stop_ch = self.find_char(b"\"'")?;
                         let regex_str = self.parse_string(stop_ch)?;
                         let regex = Regex::new(&regex_str).map_err(|e| {
                             format!("Invalid regular expression {:?}: {}", regex_str, e)
                         })?;
                         self.has_alpha = false;
                         self.buf.clear();
-                        self.find_char(&[b','])?;
+                        self.find_char(b",")?;
                         (Token::Regex(regex).into(), b'(')
+                    } else if ch == b'(' && self.buf.eq(b"config_get") {
+                        // Parse setting
+                        let stop_ch = self.find_char(b"\"'")?;
+                        let setting_str = self.parse_string(stop_ch)?;
+                        self.has_alpha = false;
+                        self.buf.clear();
+                        (Token::Setting(Setting::from(setting_str)).into(), b'(')
                     } else if !self.buf.is_empty() {
                         self.is_start = false;
                         (self.parse_buf()?.into(), ch)
@@ -314,8 +304,15 @@ impl<'x> Tokenizer<'x> {
                 }
             }
 
-            if let Some(regex_capture) = buf.strip_prefix('$').and_then(|v| v.parse::<u32>().ok()) {
-                Ok(Token::Capture(regex_capture))
+            if let Some(variable) = buf.strip_prefix('$').filter(|s| !s.is_empty()) {
+                if variable.chars().all(|c| c.is_ascii_digit()) {
+                    Ok(variable
+                        .parse::<u32>()
+                        .map(Token::Capture)
+                        .unwrap_or_else(|_| Token::Global(variable.into())))
+                } else {
+                    Ok(Token::Global(variable.into()))
+                }
             } else if let Some((idx, (name, _, num_args))) = FUNCTIONS
                 .iter()
                 .enumerate()
@@ -370,25 +367,29 @@ impl TokenMap {
             V_QUEUE_EXPIRES_IN,
             V_QUEUE_LAST_STATUS,
             V_QUEUE_LAST_ERROR,
+            V_ASN,
+            V_COUNTRY,
         ])
     }
 
     pub fn with_variables(mut self, variables: &[u32]) -> Self {
         for (name, idx) in VARIABLES_MAP {
             if variables.contains(idx) {
-                self.tokens.insert(name, Token::Variable(*idx));
+                self.tokens
+                    .insert(Cow::Borrowed(name), Token::Variable(*idx));
             }
         }
 
         self
     }
 
-    pub fn with_variables_map<I>(mut self, vars: I) -> Self
+    pub fn with_variables_map<I, V>(mut self, vars: I) -> Self
     where
-        I: IntoIterator<Item = (&'static str, u32)>,
+        I: IntoIterator<Item = (V, u32)>,
+        V: Into<Cow<'static, str>>,
     {
         for (name, idx) in vars {
-            self.tokens.insert(name, Token::Variable(idx));
+            self.tokens.insert(name.into(), Token::Variable(idx));
         }
 
         self
@@ -400,7 +401,8 @@ impl TokenMap {
         T: Into<Constant>,
     {
         for (name, constant) in consts {
-            self.tokens.insert(name, Token::Constant(constant.into()));
+            self.tokens
+                .insert(Cow::Borrowed(name), Token::Constant(constant.into()));
         }
 
         self
@@ -412,7 +414,8 @@ impl TokenMap {
     }
 
     pub fn add_constant(&mut self, name: &'static str, constant: impl Into<Constant>) -> &mut Self {
-        self.tokens.insert(name, Token::Constant(constant.into()));
+        self.tokens
+            .insert(Cow::Borrowed(name), Token::Constant(constant.into()));
         self
     }
 }

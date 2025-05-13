@@ -1,51 +1,36 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use common::{
-    listener::{limiter::ConcurrencyLimiter, SessionStream},
-    AuthResult,
+    auth::{
+        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
+        AuthRequest,
+    },
+    listener::{limiter::LimiterResult, SessionStream},
 };
-use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
+use directory::Permission;
 use imap_proto::{
     protocol::authenticate::Mechanism,
     receiver::{self, Request},
 };
-use jmap::auth::rate_limit::ConcurrencyLimiters;
 use mail_parser::decoders::base64::base64_decode;
-use mail_send::Credentials;
-use std::sync::Arc;
 
 use crate::core::{Command, Session, State, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_authenticate(&mut self, request: Request<Command>) -> crate::op::OpResult {
+    pub async fn handle_authenticate(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
         if request.tokens.is_empty() {
-            return Err(StatusResponse::no("Authentication mechanism missing."));
+            return Err(trc::AuthEvent::Error
+                .into_err()
+                .details("Authentication mechanism missing."));
         }
 
         let mut tokens = request.tokens.into_iter();
-        let mechanism =
-            Mechanism::parse(&tokens.next().unwrap().unwrap_bytes()).map_err(StatusResponse::no)?;
+        let mechanism = Mechanism::parse(&tokens.next().unwrap().unwrap_bytes())
+            .map_err(|err| trc::AuthEvent::Error.into_err().details(err))?;
         let mut params: Vec<String> = tokens
             .filter_map(|token| token.unwrap_string().ok())
             .collect();
@@ -53,14 +38,19 @@ impl<T: SessionStream> Session<T> {
         let credentials = match mechanism {
             Mechanism::Plain | Mechanism::OAuthBearer => {
                 if !params.is_empty() {
-                    let challenge = base64_decode(params.pop().unwrap().as_bytes())
-                        .ok_or_else(|| StatusResponse::no("Failed to decode challenge."))?;
-                    (if mechanism == Mechanism::Plain {
-                        decode_challenge_plain(&challenge)
-                    } else {
-                        decode_challenge_oauth(&challenge)
-                    }
-                    .map_err(StatusResponse::no))?
+                    base64_decode(params.pop().unwrap().as_bytes())
+                        .and_then(|challenge| {
+                            if mechanism == Mechanism::Plain {
+                                sasl_decode_challenge_plain(&challenge)
+                            } else {
+                                sasl_decode_challenge_oauth(&challenge)
+                            }
+                        })
+                        .ok_or_else(|| {
+                            trc::AuthEvent::Error
+                                .into_err()
+                                .details("Failed to decode challenge.")
+                        })?
                 } else {
                     self.receiver.request = receiver::Request {
                         tag: String::new(),
@@ -72,138 +62,72 @@ impl<T: SessionStream> Session<T> {
                 }
             }
             _ => {
-                return Err(StatusResponse::no(
-                    "Authentication mechanism not supported.",
-                ))
+                return Err(trc::AuthEvent::Error
+                    .into_err()
+                    .details("Authentication mechanism not supported."))
             }
         };
-
-        // Throttle authentication requests
-        if self
-            .jmap
-            .is_auth_allowed_soft(&self.remote_addr)
-            .await
-            .is_err()
-        {
-            tracing::debug!(parent: &self.span,
-                event = "disconnect",
-                "Too many authentication attempts, disconnecting.",
-            );
-            return Err(StatusResponse::bye(
-                "Too many authentication requests from this IP address.",
-            ));
-        }
 
         // Authenticate
-        let access_token = match credentials {
-            Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                match self
-                    .jmap
-                    .authenticate_plain(&username, &secret, self.remote_addr)
-                    .await
-                {
-                    AuthResult::Success(token) => Some(token),
-                    AuthResult::Failure => None,
-                    AuthResult::Banned => {
-                        return Err(StatusResponse::bye(
-                            "Too many authentication requests from this IP address.",
-                        ))
+        let access_token = self
+            .server
+            .authenticate(&AuthRequest::from_credentials(
+                credentials,
+                self.session_id,
+                self.remote_addr,
+            ))
+            .await
+            .map_err(|err| {
+                if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
+                    match &self.state {
+                        State::NotAuthenticated { auth_failures }
+                            if *auth_failures < self.server.core.imap.max_auth_failures =>
+                        {
+                            self.state = State::NotAuthenticated {
+                                auth_failures: auth_failures + 1,
+                            };
+                        }
+                        _ => {
+                            return trc::AuthEvent::TooManyAttempts.into_err().caused_by(err);
+                        }
                     }
                 }
+
+                err
+            })
+            .and_then(|token| {
+                token
+                    .assert_has_permission(Permission::SieveAuthenticate)
+                    .map(|_| token)
+            })?;
+
+        // Enforce concurrency limits
+        let in_flight = match access_token.is_imap_request_allowed() {
+            LimiterResult::Allowed(in_flight) => Some(in_flight),
+            LimiterResult::Forbidden => {
+                return Err(trc::LimitEvent::ConcurrentRequest.into_err());
             }
-            Credentials::OAuthBearer { token } => {
-                match self
-                    .jmap
-                    .validate_access_token("access_token", &token)
-                    .await
-                {
-                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
-                    Err(err) => {
-                        tracing::debug!(
-                            parent: &self.span,
-                            context = "authenticate",
-                            err = err,
-                            "Failed to validate access token."
-                        );
-                        None
-                    }
-                }
-            }
+            LimiterResult::Disabled => None,
         };
 
-        if let Some(access_token) = access_token {
-            // Enforce concurrency limits
-            let in_flight = match self
-                .get_concurrency_limiter(access_token.primary_id())
-                .map(|limiter| limiter.concurrent_requests.is_allowed())
-            {
-                Some(Some(limiter)) => Some(limiter),
-                None => None,
-                Some(None) => {
-                    tracing::debug!(parent: &self.span,
-                        event = "disconnect",
-                        "Too many concurrent connection.",
-                    );
-                    return Err(StatusResponse::bye("Too many concurrent connections."));
-                }
-            };
+        // Create session
+        self.state = State::Authenticated {
+            access_token,
+            in_flight,
+        };
 
-            // Cache access token
-            let access_token = Arc::new(access_token);
-            self.jmap.cache_access_token(access_token.clone());
-
-            // Create session
-            self.state = State::Authenticated {
-                access_token,
-                in_flight,
-            };
-
-            let _ = self
-                .write(&StatusResponse::ok("Authentication successful").into_bytes())
-                .await;
-            self.handle_capability("Authentication successful").await
-        } else {
-            match &self.state {
-                State::NotAuthenticated { auth_failures }
-                    if *auth_failures < self.jmap.core.imap.max_auth_failures =>
-                {
-                    self.state = State::NotAuthenticated {
-                        auth_failures: auth_failures + 1,
-                    };
-                    Ok(StatusResponse::no("Authentication failed").into_bytes())
-                }
-                _ => {
-                    tracing::debug!(
-                        parent: &self.span,
-                        event = "disconnect",
-                        "Too many authentication failures, disconnecting.",
-                    );
-                    Err(StatusResponse::bye("Too many authentication failures"))
-                }
-            }
-        }
+        Ok(StatusResponse::ok("Authentication successful").into_bytes())
     }
 
-    pub async fn handle_unauthenticate(&mut self) -> super::OpResult {
+    pub async fn handle_unauthenticate(&mut self) -> trc::Result<Vec<u8>> {
         self.state = State::NotAuthenticated { auth_failures: 0 };
 
-        Ok(StatusResponse::ok("Unauthenticate successful.").into_bytes())
-    }
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::Unauthenticate),
+            SpanId = self.session_id,
+            Elapsed = trc::Value::Duration(0)
+        );
 
-    pub fn get_concurrency_limiter(&self, account_id: u32) -> Option<Arc<ConcurrencyLimiters>> {
-        let rate = self.jmap.core.imap.rate_concurrent?;
-        self.imap
-            .rate_limiter
-            .get(&account_id)
-            .map(|limiter| limiter.clone())
-            .unwrap_or_else(|| {
-                let limiter = Arc::new(ConcurrencyLimiters {
-                    concurrent_requests: ConcurrencyLimiter::new(rate),
-                    concurrent_uploads: ConcurrencyLimiter::new(rate),
-                });
-                self.imap.rate_limiter.insert(account_id, limiter.clone());
-                limiter
-            })
-            .into()
+        Ok(StatusResponse::ok("Unauthenticate successful.").into_bytes())
     }
 }

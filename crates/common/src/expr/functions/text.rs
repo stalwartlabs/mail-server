@@ -1,27 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::borrow::Cow;
+
+use sha1::Sha1;
+use sha2::{Sha256, Sha512};
 
 use crate::expr::Variable;
 
@@ -256,6 +242,36 @@ pub(crate) fn fn_rsplit(v: Vec<Variable>) -> Variable {
     }
 }
 
+pub(crate) fn fn_split_n(v: Vec<Variable>) -> Variable {
+    let mut v = v.into_iter();
+    let value = v.next().unwrap().into_string();
+    let arg = v.next().unwrap().into_string();
+    let num = v.next().unwrap().to_integer().unwrap_or_default() as usize;
+
+    fn split_n<'x, 'y>(s: &'x str, arg: &'y str, num: usize, mut f: impl FnMut(&'x str)) {
+        let mut s = s;
+        for _ in 0..num {
+            if let Some((a, b)) = s.split_once(arg) {
+                f(a);
+                s = b;
+            } else {
+                break;
+            }
+        }
+        f(s);
+    }
+
+    let mut result = Vec::new();
+    match value {
+        Cow::Borrowed(s) => split_n(s, arg.as_ref(), num, |s| result.push(Variable::from(s))),
+        Cow::Owned(s) => split_n(&s, arg.as_ref(), num, |s| {
+            result.push(Variable::from(s.to_string()))
+        }),
+    }
+
+    result.into()
+}
+
 pub(crate) fn fn_split_once(v: Vec<Variable>) -> Variable {
     let mut v = v.into_iter();
     let value = v.next().unwrap().into_string();
@@ -297,5 +313,32 @@ pub(crate) fn fn_rsplit_once(v: Vec<Variable>) -> Variable {
                 ])
             })
             .unwrap_or_default(),
+    }
+}
+
+pub(crate) fn fn_hash(v: Vec<Variable>) -> Variable {
+    use sha1::Digest;
+    let mut v = v.into_iter();
+    let value = v.next().unwrap().into_string();
+    let algo = v.next().unwrap().into_string();
+
+    match algo.as_ref() {
+        "md5" => format!("{:x}", md5::compute(value.as_bytes())).into(),
+        "sha1" => {
+            let mut hasher = Sha1::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        "sha256" => {
+            let mut hasher = Sha256::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        "sha512" => {
+            let mut hasher = Sha512::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        _ => Variable::default(),
     }
 }

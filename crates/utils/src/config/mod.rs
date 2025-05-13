@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 pub mod cron;
 pub mod ipmask;
@@ -44,15 +27,18 @@ pub struct Config {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum ConfigWarning {
     Missing,
     AppliedDefault { default: String },
     Unread { value: String },
     Build { error: String },
+    Parse { error: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum ConfigError {
     Parse { error: String },
     Build { error: String },
@@ -187,49 +173,56 @@ impl Config {
         self.keys.extend(settings);
     }
 
-    pub fn log_errors(&self, use_stderr: bool) {
+    pub fn log_errors(&self) {
         for (key, err) in &self.errors {
-            let message = match err {
-                ConfigError::Parse { error } => {
-                    format!("Failed to parse setting {key:?}: {error}")
-                }
-                ConfigError::Build { error } => {
-                    format!("Build error for key {key:?}: {error}")
-                }
-                ConfigError::Macro { error } => {
-                    format!("Macro expansion error for setting {key:?}: {error}")
-                }
+            let (cause, message) = match err {
+                ConfigError::Parse { error } => (
+                    trc::ConfigEvent::ParseError,
+                    format!("Failed to parse setting {key:?}: {error}"),
+                ),
+                ConfigError::Build { error } => (
+                    trc::ConfigEvent::BuildError,
+                    format!("Build error for key {key:?}: {error}"),
+                ),
+                ConfigError::Macro { error } => (
+                    trc::ConfigEvent::MacroError,
+                    format!("Macro expansion error for setting {key:?}: {error}"),
+                ),
             };
-            if !use_stderr {
-                tracing::error!("{}", message);
-            } else {
-                eprintln!("ERROR: {message}");
-            }
+
+            trc::error!(trc::EventType::Config(cause).into_err().details(message));
         }
     }
 
-    pub fn log_warnings(&mut self, use_stderr: bool) {
+    pub fn log_warnings(&mut self) {
         #[cfg(debug_assertions)]
         self.warn_unread_keys();
 
         for (key, warn) in &self.warnings {
-            let message = match warn {
-                ConfigWarning::AppliedDefault { default } => {
-                    format!("WARNING: Missing setting {key:?}, applied default {default:?}")
-                }
-                ConfigWarning::Missing => {
-                    format!("WARNING: Missing setting {key:?}")
-                }
-                ConfigWarning::Unread { value } => {
-                    format!("WARNING: Unused setting {key:?} with value {value:?}")
-                }
-                ConfigWarning::Build { error } => format!("WARNING for {key:?}: {error}"),
+            let (cause, message) = match warn {
+                ConfigWarning::AppliedDefault { default } => (
+                    trc::ConfigEvent::DefaultApplied,
+                    format!("WARNING: Missing setting {key:?}, applied default {default:?}"),
+                ),
+                ConfigWarning::Missing => (
+                    trc::ConfigEvent::MissingSetting,
+                    format!("WARNING: Missing setting {key:?}"),
+                ),
+                ConfigWarning::Unread { value } => (
+                    trc::ConfigEvent::UnusedSetting,
+                    format!("WARNING: Unused setting {key:?} with value {value:?}"),
+                ),
+                ConfigWarning::Parse { error } => (
+                    trc::ConfigEvent::ParseWarning,
+                    format!("WARNING: Failed to parse {key:?}: {error}"),
+                ),
+                ConfigWarning::Build { error } => (
+                    trc::ConfigEvent::BuildWarning,
+                    format!("WARNING for {key:?}: {error}"),
+                ),
             };
-            if !use_stderr {
-                tracing::debug!("{}", message);
-            } else {
-                eprintln!("{}", message);
-            }
+
+            trc::error!(trc::EventType::Config(cause).into_err().details(message));
         }
     }
 }

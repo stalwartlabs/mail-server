@@ -1,29 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+use trc::AddContext;
 use utils::codec::leb128::Leb128Iterator;
 
-use crate::{write::key::DeserializeBigEndian, Error, IterateParams, LogKey, Store, U64_LEN};
+use crate::{write::key::DeserializeBigEndian, IterateParams, LogKey, Store, U64_LEN};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Change {
@@ -64,7 +48,7 @@ impl Store {
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
         query: Query,
-    ) -> crate::Result<Changes> {
+    ) -> trc::Result<Changes> {
         let collection = collection.into();
         let (is_inclusive, from_change_id, to_change_id) = match query {
             Query::All => (true, 0, u64::MAX),
@@ -97,16 +81,14 @@ impl Store {
                     }
                     changelog.to_change_id = change_id;
                     changelog.deserialize(value).ok_or_else(|| {
-                        Error::InternalError(format!(
-                            "Failed to deserialize changelog for [{}/{:?}]: [{:?}]",
-                            account_id, collection, query
-                        ))
+                        trc::Error::corrupted_key(key, value.into(), trc::location!())
                     })?;
                 }
                 Ok(true)
             },
         )
-        .await?;
+        .await
+        .caused_by(trc::location!())?;
 
         if changelog.changes.is_empty() {
             changelog.from_change_id = from_change_id;
@@ -124,7 +106,7 @@ impl Store {
         &self,
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
-    ) -> crate::Result<Option<u64>> {
+    ) -> trc::Result<Option<u64>> {
         let collection = collection.into();
 
         let from_key = LogKey {
@@ -150,7 +132,8 @@ impl Store {
                 Ok(false)
             },
         )
-        .await?;
+        .await
+        .caused_by(trc::location!())?;
 
         Ok(last_change_id)
     }

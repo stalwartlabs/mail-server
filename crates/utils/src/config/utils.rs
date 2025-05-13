@@ -1,29 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::PathBuf,
+    str::FromStr,
     time::Duration,
 };
 
@@ -124,7 +108,7 @@ impl Config {
         &'y self,
         prefix: impl AsKey,
         suffix: &'y str,
-    ) -> impl Iterator<Item = &str> + 'x {
+    ) -> impl Iterator<Item = &'x str> + 'x {
         let mut last_key = "";
         let prefix = prefix.as_prefix();
 
@@ -146,7 +130,17 @@ impl Config {
         })
     }
 
-    pub fn set_values<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &str> + 'x {
+    pub fn prefix<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &'x str> + 'x {
+        let prefix = prefix.as_prefix();
+        self.keys
+            .keys()
+            .filter_map(move |key| key.strip_prefix(&prefix))
+    }
+
+    pub fn set_values<'x, 'y: 'x>(
+        &'y self,
+        prefix: impl AsKey,
+    ) -> impl Iterator<Item = &'x str> + 'x {
         let prefix = prefix.as_prefix();
 
         #[cfg(debug_assertions)]
@@ -203,6 +197,32 @@ impl Config {
 
         if let Some(value) = self.keys.get(&key) {
             Some(value.as_str())
+        } else {
+            self.errors.insert(
+                key,
+                ConfigError::Parse {
+                    error: "Missing property".to_string(),
+                },
+            );
+            None
+        }
+    }
+
+    pub fn value_require_non_empty(&mut self, key: impl AsKey) -> Option<&str> {
+        let key = key.as_key();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(key.clone());
+
+        if let Some(value) = self.keys.get(&key).and_then(|v| {
+            let v = v.trim();
+            if !v.is_empty() {
+                Some(v)
+            } else {
+                None
+            }
+        }) {
+            Some(value)
         } else {
             self.errors.insert(
                 key,
@@ -306,6 +326,15 @@ impl Config {
         self.errors.insert(
             key.as_key(),
             ConfigError::Build {
+                error: details.into(),
+            },
+        );
+    }
+
+    pub fn new_parse_warning(&mut self, key: impl AsKey, details: impl Into<String>) {
+        self.warnings.insert(
+            key.as_key(),
+            ConfigWarning::Parse {
                 error: details.into(),
             },
         );
@@ -577,6 +606,18 @@ impl ParseValue for Rate {
         } else {
             Err(format!("Invalid rate value {:?}.", value))
         }
+    }
+}
+
+impl ParseValue for trc::Level {
+    fn parse_value(value: &str) -> super::Result<Self> {
+        trc::Level::from_str(value).map_err(|err| format!("Invalid log level: {err}"))
+    }
+}
+
+impl ParseValue for trc::EventType {
+    fn parse_value(value: &str) -> super::Result<Self> {
+        trc::EventType::try_parse(value).ok_or_else(|| format!("Unknown event type: {value}"))
     }
 }
 

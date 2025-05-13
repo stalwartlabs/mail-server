@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::fmt::Display;
 
@@ -46,6 +29,15 @@ pub enum MethodError {
     NotFound,
     CannotCalculateChanges,
     UnknownDataType,
+}
+
+#[derive(Debug)]
+pub struct MethodErrorWrapper(trc::Error);
+
+impl From<trc::Error> for MethodErrorWrapper {
+    fn from(value: trc::Error) -> Self {
+        MethodErrorWrapper(value)
+    }
 }
 
 impl Display for MethodError {
@@ -77,101 +69,107 @@ impl Display for MethodError {
     }
 }
 
-impl Serialize for MethodError {
+impl Serialize for MethodErrorWrapper {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         let mut map = serializer.serialize_map(2.into())?;
 
-        let (error_type, description) = match self {
-            MethodError::InvalidArguments(description) => {
-                ("invalidArguments", description.as_str())
-            }
-            MethodError::RequestTooLarge => (
-                "requestTooLarge",
-                concat!(
-                    "The number of ids requested by the client exceeds the maximum number ",
-                    "the server is willing to process in a single method call."
+        let description = self.0.value(trc::Key::Details).and_then(|v| v.as_str());
+
+        let (error_type, description) = match self.0.as_ref() {
+            trc::EventType::Jmap(cause) => match cause {
+                trc::JmapEvent::InvalidArguments => {
+                    ("invalidArguments", description.unwrap_or_default())
+                }
+                trc::JmapEvent::RequestTooLarge => (
+                    "requestTooLarge",
+                    concat!(
+                        "The number of ids requested by the client exceeds the maximum number ",
+                        "the server is willing to process in a single method call."
+                    ),
                 ),
-            ),
-            MethodError::StateMismatch => (
-                "stateMismatch",
-                concat!(
-                    "An \"ifInState\" argument was supplied, but ",
-                    "it does not match the current state."
+                trc::JmapEvent::StateMismatch => (
+                    "stateMismatch",
+                    concat!(
+                        "An \"ifInState\" argument was supplied, but ",
+                        "it does not match the current state."
+                    ),
                 ),
-            ),
-            MethodError::AnchorNotFound => (
-                "anchorNotFound",
-                concat!(
-                    "An anchor argument was supplied, but it ",
-                    "cannot be found in the results of the query."
+                trc::JmapEvent::AnchorNotFound => (
+                    "anchorNotFound",
+                    concat!(
+                        "An anchor argument was supplied, but it ",
+                        "cannot be found in the results of the query."
+                    ),
                 ),
-            ),
-            MethodError::UnsupportedFilter(description) => {
-                ("unsupportedFilter", description.as_str())
-            }
-            MethodError::UnsupportedSort(description) => ("unsupportedSort", description.as_str()),
-            MethodError::ServerFail(_) => ("serverFail", {
-                concat!(
-                    "An unexpected error occurred while processing ",
-                    "this call, please contact the system administrator."
-                )
-            }),
-            MethodError::NotFound => ("serverPartialFail", {
-                concat!(
-                    "One or more items are no longer available on the ",
-                    "server, please try again."
-                )
-            }),
-            MethodError::UnknownMethod(description) => ("unknownMethod", description.as_str()),
-            MethodError::ServerUnavailable => (
+                trc::JmapEvent::UnsupportedFilter => {
+                    ("unsupportedFilter", description.unwrap_or_default())
+                }
+                trc::JmapEvent::UnsupportedSort => {
+                    ("unsupportedSort", description.unwrap_or_default())
+                }
+                trc::JmapEvent::NotFound => ("serverPartialFail", {
+                    concat!(
+                        "One or more items are no longer available on the ",
+                        "server, please try again."
+                    )
+                }),
+                trc::JmapEvent::UnknownMethod => ("unknownMethod", description.unwrap_or_default()),
+                trc::JmapEvent::InvalidResultReference => {
+                    ("invalidResultReference", description.unwrap_or_default())
+                }
+                trc::JmapEvent::Forbidden => ("forbidden", description.unwrap_or_default()),
+                trc::JmapEvent::AccountNotFound => (
+                    "accountNotFound",
+                    "The accountId does not correspond to a valid account",
+                ),
+                trc::JmapEvent::AccountNotSupportedByMethod => (
+                    "accountNotSupportedByMethod",
+                    concat!(
+                        "The accountId given corresponds to a valid account, ",
+                        "but the account does not support this method or data type."
+                    ),
+                ),
+                trc::JmapEvent::AccountReadOnly => (
+                    "accountReadOnly",
+                    "This method modifies state, but the account is read-only.",
+                ),
+                trc::JmapEvent::UnknownDataType => (
+                    "unknownDataType",
+                    concat!(
+                        "The server does not recognise this data type, ",
+                        "or the capability to enable it is not present ",
+                        "in the current Request Object."
+                    ),
+                ),
+                trc::JmapEvent::CannotCalculateChanges => (
+                    "cannotCalculateChanges",
+                    concat!(
+                        "The server cannot calculate the changes ",
+                        "between the old and new states."
+                    ),
+                ),
+                trc::JmapEvent::UnknownCapability
+                | trc::JmapEvent::NotJson
+                | trc::JmapEvent::NotRequest => (
+                    "serverUnavailable",
+                    concat!(
+                        "This server is temporarily unavailable. ",
+                        "Attempting this same operation later may succeed."
+                    ),
+                ),
+                _ => (
+                    "serverUnavailable",
+                    "This server is temporarily unavailable.",
+                ),
+            },
+            _ => (
                 "serverUnavailable",
                 concat!(
                     "This server is temporarily unavailable. ",
                     "Attempting this same operation later may succeed."
-                ),
-            ),
-            MethodError::ServerPartialFail => (
-                "serverPartialFail",
-                concat!(
-                    "Some, but not all, expected changes described by the method ",
-                    "occurred. Please resynchronize to determine server state."
-                ),
-            ),
-            MethodError::InvalidResultReference(description) => {
-                ("invalidResultReference", description.as_str())
-            }
-            MethodError::Forbidden(description) => ("forbidden", description.as_str()),
-            MethodError::AccountNotFound => (
-                "accountNotFound",
-                "The accountId does not correspond to a valid account",
-            ),
-            MethodError::AccountNotSupportedByMethod => (
-                "accountNotSupportedByMethod",
-                concat!(
-                    "The accountId given corresponds to a valid account, ",
-                    "but the account does not support this method or data type."
-                ),
-            ),
-            MethodError::AccountReadOnly => (
-                "accountReadOnly",
-                "This method modifies state, but the account is read-only.",
-            ),
-            MethodError::UnknownDataType => (
-                "unknownDataType",
-                concat!(
-                    "The server does not recognise this data type, ",
-                    "or the capability to enable it is not present ",
-                    "in the current Request Object."
-                ),
-            ),
-            MethodError::CannotCalculateChanges => (
-                "cannotCalculateChanges",
-                concat!(
-                    "The server cannot calculate the changes ",
-                    "between the old and new states."
                 ),
             ),
         };

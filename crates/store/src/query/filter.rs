@@ -1,31 +1,15 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
 
 use ahash::HashSet;
 use nlp::tokenizers::word::WordTokenizer;
 use roaring::RoaringBitmap;
+use trc::AddContext;
 
 use crate::{
     backend::MAX_TOKEN_LENGTH, write::key::DeserializeBigEndian, BitmapKey, IndexKey,
@@ -45,7 +29,7 @@ impl Store {
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
         filters: Vec<Filter>,
-    ) -> crate::Result<ResultSet> {
+    ) -> trc::Result<ResultSet> {
         let collection = collection.into();
         if filters.is_empty() {
             return Ok(ResultSet {
@@ -53,7 +37,8 @@ impl Store {
                 collection,
                 results: self
                     .get_bitmap(BitmapKey::document_ids(account_id, collection))
-                    .await?
+                    .await
+                    .caused_by(trc::location!())?
                     .unwrap_or_else(RoaringBitmap::new),
             });
         }
@@ -67,10 +52,10 @@ impl Store {
 
         while let Some(filter) = filters.next() {
             let mut result = match filter {
-                Filter::MatchValue { field, op, value } => {
-                    self.range_to_bitmap(account_id, collection, field, &value, op)
-                        .await?
-                }
+                Filter::MatchValue { field, op, value } => self
+                    .range_to_bitmap(account_id, collection, field, &value, op)
+                    .await
+                    .caused_by(trc::location!())?,
                 Filter::HasText {
                     field,
                     text,
@@ -87,21 +72,23 @@ impl Store {
                                 })
                                 .collect(),
                         )
-                        .await?
+                        .await
+                        .caused_by(trc::location!())?
                     } else {
                         self.get_bitmap(BitmapKey::text_token(account_id, collection, field, text))
-                            .await?
+                            .await
+                            .caused_by(trc::location!())?
                     }
                 }
-                Filter::InBitmap(class) => {
-                    self.get_bitmap(BitmapKey {
+                Filter::InBitmap(class) => self
+                    .get_bitmap(BitmapKey {
                         account_id,
                         collection,
                         class,
                         document_id: 0,
                     })
-                    .await?
-                }
+                    .await
+                    .caused_by(trc::location!())?,
                 Filter::DocumentSet(set) => Some(set),
                 op @ (Filter::And | Filter::Or | Filter::Not) => {
                     stack.push(state);
@@ -123,7 +110,8 @@ impl Store {
             if matches!(state.op, Filter::Not) && !not_fetch {
                 not_mask = self
                     .get_bitmap(BitmapKey::document_ids(account_id, collection))
-                    .await?
+                    .await
+                    .caused_by(trc::location!())?
                     .unwrap_or_else(RoaringBitmap::new);
                 not_fetch = true;
             }
@@ -188,7 +176,7 @@ impl Store {
         field: u8,
         match_value: &[u8],
         op: Operator,
-    ) -> crate::Result<Option<RoaringBitmap>> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         let (begin, end) = match op {
             Operator::LowerThan => (
                 IndexKey {
@@ -288,9 +276,9 @@ impl Store {
                 }
 
                 let id_pos = key.len() - U32_LEN;
-                let value = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
-                    crate::Error::InternalError("Invalid key found in index".to_string())
-                })?;
+                let value = key
+                    .get(IndexKeyPrefix::len()..id_pos)
+                    .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
 
                 let matches = match op {
                     Operator::LowerThan => value < match_value,
@@ -307,7 +295,8 @@ impl Store {
                 Ok(true)
             },
         )
-        .await?;
+        .await
+        .caused_by(trc::location!())?;
 
         if !bm.is_empty() {
             Ok(Some(bm))

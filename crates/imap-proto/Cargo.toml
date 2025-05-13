@@ -1,15 +1,17 @@
 [package]
 name = "imap_proto"
-version = "0.1.0"
-edition = "2021"
+version = "0.11.8"
+edition = "2024"
 resolver = "2"
 
 [dependencies]
 jmap_proto = { path = "../jmap-proto" }
-store = { path = "../store", features = ["sqlite"] }
-mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
+store = { path = "../store" }
+mail-parser = { version = "0.10", features = ["full_encoding", "serde_support"] } 
 ahash = { version = "0.8" }
 chrono = { version = "0.4"}
+trc = { path = "../trc" }
+hashify = { version = "0.2" }
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

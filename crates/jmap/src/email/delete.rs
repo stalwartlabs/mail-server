@@ -1,60 +1,65 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::Duration;
 
-use jmap_proto::{
-    error::method::MethodError,
-    types::{
-        collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
-        type_state::DataType,
-    },
+use common::{KV_LOCK_PURGE_ACCOUNT, Server};
+use email::{
+    index::EmailIndexBuilder,
+    mailbox::{JUNK_ID, TOMBSTONE_ID, TRASH_ID, UidMailbox},
+    metadata::MessageMetadata,
+};
+use jmap_proto::types::{
+    collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
+    type_state::DataType,
 };
 use store::{
+    BitmapKey, IterateParams, U32_LEN, ValueKey,
     ahash::AHashMap,
     roaring::RoaringBitmap,
     write::{
-        log::ChangeLogBuilder, BatchBuilder, Bincode, BitmapClass, MaybeDynamicId, TagValue,
-        ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
+        BatchBuilder, Bincode, BitmapClass, F_BITMAP, F_CLEAR, F_VALUE, MaybeDynamicId, TagValue,
+        ValueClass, log::ChangeLogBuilder,
     },
-    BitmapKey, IterateParams, ValueKey, U32_LEN,
 };
+use trc::{AddContext, StoreEvent};
 use utils::codec::leb128::Leb128Reader;
 
-use crate::{
-    mailbox::{UidMailbox, JUNK_ID, TOMBSTONE_ID, TRASH_ID},
-    JMAP,
-};
-
-use super::{index::EmailIndexBuilder, metadata::MessageMetadata};
 use rand::prelude::SliceRandom;
+use std::future::Future;
 
-impl JMAP {
-    pub async fn emails_tombstone(
+pub trait EmailDeletion: Sync + Send {
+    fn emails_tombstone(
+        &self,
+        account_id: u32,
+        document_ids: RoaringBitmap,
+    ) -> impl Future<Output = trc::Result<(ChangeLogBuilder, RoaringBitmap)>> + Send;
+
+    fn purge_accounts(&self) -> impl Future<Output = ()> + Send;
+
+    fn purge_account(&self, account_id: u32) -> impl Future<Output = ()> + Send;
+
+    fn emails_auto_expunge(
+        &self,
+        account_id: u32,
+        period: Duration,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+
+    fn emails_purge_tombstoned(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+}
+
+impl EmailDeletion for Server {
+    async fn emails_tombstone(
         &self,
         account_id: u32,
         mut document_ids: RoaringBitmap,
-    ) -> Result<(ChangeLogBuilder, RoaringBitmap), MethodError> {
+    ) -> trc::Result<(ChangeLogBuilder, RoaringBitmap)> {
         // Create batch
         let mut changes = ChangeLogBuilder::with_change_id(0);
         let mut delete_properties = AHashMap::new();
@@ -124,9 +129,7 @@ impl JMAP {
                     let (thread_id, _) = key
                         .get(U32_LEN + 2..)
                         .and_then(|bytes| bytes.read_leb128::<u32>())
-                        .ok_or_else(|| {
-                            store::Error::InternalError("Failed to read threadId.".to_string())
-                        })?;
+                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
                     if let Some(thread_count) = thread_ids.get_mut(&thread_id) {
                         *thread_count -= 1;
                     }
@@ -135,15 +138,7 @@ impl JMAP {
                 },
             )
             .await
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "email_delete",
-                    error = ?err,
-                    "Failed to iterate threadIds."
-                );
-                MethodError::ServerPartialFail
-            })?;
+            .caused_by(trc::location!())?;
 
         // Tombstone message and untag it from the mailboxes
         let mut batch = BatchBuilder::new();
@@ -166,12 +161,12 @@ impl JMAP {
                     F_VALUE | F_BITMAP | F_CLEAR,
                 );
             } else {
-                tracing::debug!(
-                    event = "error",
-                    context = "email_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to fetch mailboxIds.",
+                trc::event!(
+                    Store(StoreEvent::NotFound),
+                    AccountId = account_id,
+                    DocumentId = document_id,
+                    Details = "Failed to fetch mailboxIds.",
+                    CausedBy = trc::location!(),
                 );
             }
             if let Some(thread_id) = delete_properties.thread_id {
@@ -185,12 +180,12 @@ impl JMAP {
                     changes.log_child_update(Collection::Thread, thread_id);
                 }
             } else {
-                tracing::debug!(
-                    event = "error",
-                    context = "email_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to fetch threadId.",
+                trc::event!(
+                    Store(StoreEvent::NotFound),
+                    AccountId = account_id,
+                    DocumentId = document_id,
+                    Details = "Failed to fetch threadId.",
+                    CausedBy = trc::location!(),
                 );
             }
             batch.tag(
@@ -206,14 +201,7 @@ impl JMAP {
                     .data
                     .write(batch.build())
                     .await
-                    .map_err(|err| {
-                        tracing::error!(
-                        event = "error",
-                        context = "email_delete",
-                        error = ?err,
-                        "Failed to commit batch.");
-                        MethodError::ServerPartialFail
-                    })?;
+                    .caused_by(trc::location!())?;
 
                 batch = BatchBuilder::new();
                 batch
@@ -238,26 +226,19 @@ impl JMAP {
                 .data
                 .write(batch.build())
                 .await
-                .map_err(|err| {
-                    tracing::error!(
-                    event = "error",
-                    context = "email_delete",
-                    error = ?err,
-                    "Failed to commit batch.");
-                    MethodError::ServerPartialFail
-                })?;
+                .caused_by(trc::location!())?;
         }
 
         Ok((changes, document_ids))
     }
 
-    pub async fn purge_accounts(&self) {
+    async fn purge_accounts(&self) {
         if let Ok(Some(account_ids)) = self.get_document_ids(u32::MAX, Collection::Principal).await
         {
             let mut account_ids: Vec<u32> = account_ids.into_iter().collect();
 
             // Shuffle account ids
-            account_ids.shuffle(&mut rand::thread_rng());
+            account_ids.shuffle(&mut rand::rng());
 
             for account_id in account_ids {
                 self.purge_account(account_id).await;
@@ -265,38 +246,24 @@ impl JMAP {
         }
     }
 
-    pub async fn purge_account(&self, account_id: u32) {
+    async fn purge_account(&self, account_id: u32) {
         // Lock account
         match self
             .core
             .storage
             .lookup
-            .counter_incr(
-                format!("purge:{account_id}").into_bytes(),
-                1,
-                Some(3600),
-                true,
-            )
+            .try_lock(KV_LOCK_PURGE_ACCOUNT, &account_id.to_be_bytes(), 3600)
             .await
         {
-            Ok(1) => (),
-            Ok(count) => {
-                tracing::debug!(
-                    event = "skipped",
-                    context = "email_purge_account",
-                    account_id = account_id,
-                    count,
-                    "Account is already being purged."
-                );
+            Ok(true) => (),
+            Ok(false) => {
+                trc::event!(Purge(trc::PurgeEvent::InProgress), AccountId = account_id,);
                 return;
             }
             Err(err) => {
-                tracing::error!(
-                    event = "error",
-                    context = "email_purge_account",
-                    account_id = account_id,
-                    error = ?err,
-                    "Failed to lock account."
+                trc::error!(
+                    err.details("Failed to lock account.")
+                        .account_id(account_id)
                 );
                 return;
             }
@@ -304,46 +271,43 @@ impl JMAP {
 
         // Auto-expunge deleted and junk messages
         if let Some(period) = self.core.jmap.mail_autoexpunge_after {
-            if self.emails_auto_expunge(account_id, period).await.is_err() {
-                tracing::error!(
-                    event = "error",
-                    context = "email_auto_expunge",
-                    account_id = account_id,
-                    "Failed to auto-expunge messages."
+            if let Err(err) = self.emails_auto_expunge(account_id, period).await {
+                trc::error!(
+                    err.details("Failed to auto-expunge messages.")
+                        .account_id(account_id)
                 );
             }
         }
 
         // Purge tombstoned messages
         if let Err(err) = self.emails_purge_tombstoned(account_id).await {
-            tracing::error!(
-                event = "error",
-                context = "email_purge_tombstoned",
-                account_id = account_id,
-                error = ?err,
-                "Failed to purge tombstoned messages."
+            trc::error!(
+                err.details("Failed to purge tombstoned messages.")
+                    .account_id(account_id)
             );
         }
 
         // Purge changelogs
         if let Some(history) = self.core.jmap.changes_max_history {
             if let Err(err) = self.delete_changes(account_id, history).await {
-                tracing::error!(
-                    event = "error",
-                    context = "email_purge_account",
-                    account_id = account_id,
-                    error = ?err,
-                    "Failed to purge changes."
+                trc::error!(
+                    err.details("Failed to purge changes.")
+                        .account_id(account_id)
                 );
             }
         }
+
+        // Delete lock
+        if let Err(err) = self
+            .in_memory_store()
+            .remove_lock(KV_LOCK_PURGE_ACCOUNT, &account_id.to_be_bytes())
+            .await
+        {
+            trc::error!(err.details("Failed to delete lock.").account_id(account_id));
+        }
     }
 
-    pub async fn emails_auto_expunge(
-        &self,
-        account_id: u32,
-        period: Duration,
-    ) -> Result<(), MethodError> {
+    async fn emails_auto_expunge(&self, account_id: u32, period: Duration) -> trc::Result<()> {
         let deletion_candidates = self
             .get_tag(
                 account_id,
@@ -366,14 +330,11 @@ impl JMAP {
         if deletion_candidates.is_empty() {
             return Ok(());
         }
-        let reference_cid = self.inner.snowflake_id.past_id(period).ok_or_else(|| {
-            tracing::error!(
-                event = "error",
-                context = "email_auto_expunge",
-                account_id = account_id,
-                "Failed to generate reference cid."
-            );
-            MethodError::ServerPartialFail
+        let reference_cid = self.inner.data.jmap_id_gen.past_id(period).ok_or_else(|| {
+            trc::StoreEvent::UnexpectedError
+                .into_err()
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Reason, "Failed to generate reference cid.")
         })?;
 
         // Find messages to destroy
@@ -396,12 +357,10 @@ impl JMAP {
             return Ok(());
         }
 
-        tracing::debug!(
-            event = "info",
-            context = "email_auto_expunge",
-            account_id = account_id,
-            count = destroy_ids.len(),
-            "Auto-expunging messages."
+        trc::event!(
+            Purge(trc::PurgeEvent::AutoExpunge),
+            AccountId = account_id,
+            Total = destroy_ids.len(),
         );
 
         // Tombstone messages
@@ -422,7 +381,7 @@ impl JMAP {
         Ok(())
     }
 
-    pub async fn emails_purge_tombstoned(&self, account_id: u32) -> store::Result<()> {
+    async fn emails_purge_tombstoned(&self, account_id: u32) -> trc::Result<()> {
         // Obtain tombstoned messages
         let tombstoned_ids = self
             .core
@@ -444,12 +403,10 @@ impl JMAP {
             return Ok(());
         }
 
-        tracing::debug!(
-            event = "info",
-            context = "email_purge_tombstoned",
-            account_id = account_id,
-            count = tombstoned_ids.len(),
-            "Purging tombstoned messages."
+        trc::event!(
+            Purge(trc::PurgeEvent::TombstoneCleanup),
+            AccountId = account_id,
+            Total = tombstoned_ids.len(),
         );
 
         // Delete full-text index
@@ -458,6 +415,14 @@ impl JMAP {
             .fts
             .remove(account_id, Collection::Email.into(), &tombstoned_ids)
             .await?;
+
+        // Obtain tenant id
+        let tenant_id = self
+            .get_access_token(account_id)
+            .await
+            .caused_by(trc::location!())?
+            .tenant
+            .map(|t| t.id);
 
         // Delete messages
         for document_id in tombstoned_ids {
@@ -488,12 +453,12 @@ impl JMAP {
             {
                 batch.value(Property::Keywords, keywords, F_VALUE | F_BITMAP | F_CLEAR);
             } else {
-                tracing::debug!(
-                    event = "error",
-                    context = "email_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to fetch keywords.",
+                trc::event!(
+                    Purge(trc::PurgeEvent::Error),
+                    AccountId = account_id,
+                    DocumentId = document_id,
+                    Reason = "Failed to fetch keywords.",
+                    CausedBy = trc::location!(),
                 );
             }
 
@@ -510,16 +475,33 @@ impl JMAP {
                 })
                 .await?
             {
-                batch.custom(EmailIndexBuilder::clear(metadata.inner));
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+
+                // Hold blob for undeletion
+                #[cfg(feature = "enterprise")]
+                self.core.hold_undelete(
+                    &mut batch,
+                    Collection::Email.into(),
+                    &metadata.inner.blob_hash,
+                    metadata.inner.size,
+                );
+
+                // SPDX-SnippetEnd
+
+                // Delete message
+                EmailIndexBuilder::clear(metadata.inner).build(&mut batch, account_id, tenant_id);
+
                 // Commit batch
                 self.core.storage.data.write(batch.build()).await?;
             } else {
-                tracing::debug!(
-                    event = "error",
-                    context = "email_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to fetch message metadata.",
+                trc::event!(
+                    Purge(trc::PurgeEvent::Error),
+                    AccountId = account_id,
+                    DocumentId = document_id,
+                    Reason = "Failed to fetch message metadata.",
+                    CausedBy = trc::location!(),
                 );
             }
         }

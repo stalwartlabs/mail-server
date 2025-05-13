@@ -1,36 +1,21 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::path::PathBuf;
 
-use directory::backend::internal::manage::ManageDirectory;
-use jmap::email::crypto::{
+use email::crypto::{
     try_parse_certs, Algorithm, EncryptMessage, EncryptionMethod, EncryptionParams, EncryptionType,
 };
 use jmap_proto::types::id::Id;
 use mail_parser::{MessageParser, MimeHeaders};
 
-use crate::jmap::{delivery::SmtpConnection, ManagementApi};
+use crate::{
+    directory::internal::TestInternalDirectory,
+    jmap::{delivery::SmtpConnection, ManagementApi},
+};
 
 use super::JMAPTest;
 
@@ -40,18 +25,18 @@ pub async fn test(params: &mut JMAPTest) {
     // Create test account
     let server = params.server.clone();
     let client = &mut params.client;
-    params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
-        .await;
     let account_id = Id::from(
         server
             .core
             .storage
             .data
-            .get_or_create_account_id("jdoe@example.com")
-            .await
-            .unwrap(),
+            .create_test_user(
+                "jdoe@example.com",
+                "12345",
+                "John Doe",
+                &["jdoe@example.com"],
+            )
+            .await,
     )
     .to_string();
 
@@ -84,7 +69,7 @@ pub async fn test(params: &mut JMAPTest) {
             };
 
             assert_eq!(
-                api.post::<u32>("/api/crypto", &request)
+                api.post::<u32>("/api/account/crypto", &request)
                     .await
                     .unwrap()
                     .unwrap_data(),
@@ -135,7 +120,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Disable encryption
     assert_eq!(
-        api.post::<Option<String>>("/api/crypto", &EncryptionType::Disabled)
+        api.post::<Option<String>>("/api/account/crypto", &EncryptionType::Disabled)
             .await
             .unwrap()
             .unwrap_data(),
@@ -256,7 +241,7 @@ pub fn check_is_encrypted() {
     )
     .unwrap();
 
-    for raw_message in messages.split("---") {
+    for raw_message in messages.split("!!!") {
         let is_encrypted = raw_message.contains("TRUE");
         let message = MessageParser::new()
             .parse(raw_message.trim().as_bytes())

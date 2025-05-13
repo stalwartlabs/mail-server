@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::{Duration, Instant};
 
@@ -36,22 +19,21 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    build_smtp,
     inbound::{sign::SIGNATURES, TestMessage, TestReportingEvent},
     session::{TestSession, VerifyResponse},
-    TempDir, TestSMTP,
+    DnsCache, TempDir, TestSMTP,
 };
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 
 const CONFIG: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/queue.db"
 
 [directory."local"]
@@ -109,32 +91,32 @@ verify = [{if = "sender_domain = 'test.net'", then = 'relaxed'},
 
 #[tokio::test]
 async fn dmarc() {
-    let mut inner = Inner::default();
+    // Enable logging
+    crate::enable_logging();
+
     let tmp_dir = TempDir::new("smtp_dmarc_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-
-    // Create temp dir for queue
-    let mut qr = inner.init_test_queue(&core);
+    let test = TestSMTP::from_core(core);
 
     // Add SPF, DKIM and DMARC records
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "mx.example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all ra=spf-failures rr=e:f:s:n").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "foobar.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "ed._domainkey.example.com",
         DomainKey::parse(
             concat!(
@@ -146,7 +128,7 @@ async fn dmarc() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "default._domainkey.example.com",
         DomainKey::parse(
             concat!(
@@ -161,12 +143,12 @@ async fn dmarc() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "_report._domainkey.example.com",
         DomainKeyReport::parse(b"ra=dkim-failures; rp=100; rr=d:o:p:s:u:v:x;").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "_dmarc.example.com",
         Dmarc::parse(
             concat!(
@@ -180,12 +162,10 @@ async fn dmarc() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    // Create report channels
-    let mut rr = inner.init_test_report();
-
     // SPF must pass
-    let core = build_smtp(core, inner);
-    let mut session = Session::test(core.clone());
+    let mut rr = test.report_receiver;
+    let mut qr = test.queue_receiver;
+    let mut session = Session::test(test.server.clone());
     session.data.remote_ip_str = "10.0.0.2".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
@@ -260,7 +240,7 @@ async fn dmarc() {
     qr.assert_no_events();
 
     // Unaligned DMARC should be rejected
-    core.core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "test.net",
         Spf::parse(b"v=spf1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
@@ -307,7 +287,7 @@ async fn dmarc() {
         .await;
     qr.assert_no_events();
 
-    // Messagess passing DMARC should be accepted
+    // Messages passing DMARC should be accepted
     session
         .send_message(
             "bill@example.com",

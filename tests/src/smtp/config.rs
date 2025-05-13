@@ -1,36 +1,20 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{fs, net::IpAddr, path::PathBuf, time::Duration};
+use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use common::{
     config::{
-        server::{Listener, Server, ServerProtocol, Servers},
-        smtp::{throttle::parse_throttle, *},
+        server::{Listener, Listeners, ServerProtocol, TcpListener},
+        smtp::*,
     },
     expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
-    Core,
+    Server,
 };
+use throttle::parse_queue_rate_limiter;
 use tokio::net::TcpSocket;
 
 use utils::config::{Config, Rate};
@@ -258,7 +242,7 @@ fn parse_throttles() {
     file.push("throttle.toml");
 
     let mut config = Config::new(fs::read_to_string(file).unwrap()).unwrap();
-    let throttle = parse_throttle(
+    let throttle = parse_queue_rate_limiter(
         &mut config,
         "throttle",
         &TokenMap::default().with_variables(&[
@@ -278,7 +262,8 @@ fn parse_throttles() {
     assert_eq!(
         throttle,
         vec![
-            Throttle {
+            QueueRateLimiter {
+                id: "0000".to_string(),
                 expr: Expression {
                     items: vec![
                         ExpressionItem::Variable(8),
@@ -287,18 +272,19 @@ fn parse_throttles() {
                     ]
                 },
                 keys: THROTTLE_REMOTE_IP | THROTTLE_AUTH_AS,
-                concurrency: 100.into(),
                 rate: Rate {
                     requests: 50,
                     period: Duration::from_secs(30)
                 }
-                .into()
             },
-            Throttle {
+            QueueRateLimiter {
+                id: "0001".to_string(),
                 expr: Expression::default(),
                 keys: THROTTLE_SENDER_DOMAIN,
-                concurrency: 10000.into(),
-                rate: None
+                rate: Rate {
+                    requests: 50,
+                    period: Duration::from_secs(30)
+                }
             }
         ]
     );
@@ -316,12 +302,13 @@ fn parse_servers() {
 
     // Parse servers
     let mut config = Config::new(toml).unwrap();
-    let servers = Servers::parse(&mut config).servers;
+    let servers = Listeners::parse(&mut config).servers;
+    let id_generator = Arc::new(utils::snowflake::SnowflakeIdGenerator::new());
     let expected_servers = vec![
-        Server {
+        Listener {
             id: "smtp".to_string(),
             protocol: ServerProtocol::Smtp,
-            listeners: vec![Listener {
+            listeners: vec![TcpListener {
                 socket: TcpSocket::new_v4().unwrap(),
                 addr: "127.0.0.1:9925".parse().unwrap(),
                 ttl: 3600.into(),
@@ -331,12 +318,13 @@ fn parse_servers() {
             }],
             max_connections: 8192,
             proxy_networks: vec![],
+            span_id_gen: id_generator.clone(),
         },
-        Server {
+        Listener {
             id: "smtps".to_string(),
             protocol: ServerProtocol::Smtp,
             listeners: vec![
-                Listener {
+                TcpListener {
                     socket: TcpSocket::new_v4().unwrap(),
                     addr: "127.0.0.1:9465".parse().unwrap(),
                     ttl: 4096.into(),
@@ -344,7 +332,7 @@ fn parse_servers() {
                     linger: None,
                     nodelay: true,
                 },
-                Listener {
+                TcpListener {
                     socket: TcpSocket::new_v4().unwrap(),
                     addr: "127.0.0.1:9466".parse().unwrap(),
                     ttl: 4096.into(),
@@ -355,11 +343,12 @@ fn parse_servers() {
             ],
             max_connections: 1024,
             proxy_networks: vec![],
+            span_id_gen: id_generator.clone(),
         },
-        Server {
+        Listener {
             id: "submission".to_string(),
             protocol: ServerProtocol::Smtp,
-            listeners: vec![Listener {
+            listeners: vec![TcpListener {
                 socket: TcpSocket::new_v4().unwrap(),
                 addr: "127.0.0.1:9991".parse().unwrap(),
                 ttl: 3600.into(),
@@ -369,6 +358,7 @@ fn parse_servers() {
             }],
             max_connections: 8192,
             proxy_networks: vec![],
+            span_id_gen: id_generator.clone(),
         },
     ];
 
@@ -427,7 +417,7 @@ async fn eval_if() {
         V_PRIORITY,
         V_MX,
     ]);
-    let core = Core::default();
+    let core = Server::default();
 
     for (key, _) in config.keys.clone() {
         if !key.starts_with("rule.") {
@@ -437,16 +427,20 @@ async fn eval_if() {
         //println!("============= Testing {:?} ==================", key);
         let (_, expected_result) = key.rsplit_once('-').unwrap();
         assert_eq!(
-            IfBlock {
-                key: key.to_string(),
-                if_then: vec![IfThen {
-                    expr: Expression::try_parse(&mut config, key.as_str(), &token_map).unwrap(),
-                    then: Expression::from(true),
-                }],
-                default: Expression::from(false),
-            }
-            .eval(&envelope, &core, &key)
+            core.eval_if::<Variable, _>(
+                &IfBlock {
+                    key: key.to_string(),
+                    if_then: vec![IfThen {
+                        expr: Expression::try_parse(&mut config, key.as_str(), &token_map).unwrap(),
+                        then: Expression::from(true),
+                    }],
+                    default: Expression::from(false),
+                },
+                &envelope,
+                0
+            )
             .await
+            .unwrap()
             .to_bool(),
             expected_result.parse::<bool>().unwrap(),
             "failed for {key:?}"
@@ -476,7 +470,7 @@ async fn eval_dynvalue() {
         V_PRIORITY,
         V_MX,
     ]);
-    let core = Core::default();
+    let core = Server::default();
 
     for test_name in config
         .sub_keys("eval", "")
@@ -495,7 +489,7 @@ async fn eval_dynvalue() {
             .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"));
 
         assert_eq!(
-            String::try_from(if_block.eval(&envelope, &core, test_name.as_str()).await).ok(),
+            core.eval_if::<String, _>(&if_block, &envelope, 0).await,
             expected,
             "failed for test {test_name:?}"
         );
@@ -518,6 +512,10 @@ impl ResolveVariable for TestEnvelope {
             V_HELO_DOMAIN => self.helo_domain.as_str().into(),
             _ => Default::default(),
         }
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
     }
 }
 

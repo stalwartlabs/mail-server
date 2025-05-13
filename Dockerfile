@@ -22,9 +22,10 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     g++-x86-64-linux-gnu binutils-x86-64-linux-gnu
 RUN rustup target add "$(cat /target.txt)"
 COPY --from=planner /recipe.json /recipe.json
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --target "$(cat /target.txt)" --release --recipe-path /recipe.json
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --target "$(cat /target.txt)" --release --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise" --recipe-path /recipe.json
 COPY . .
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release -p mail-server -p stalwart-cli
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise"
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release -p stalwart-cli
 RUN mv "/build/target/$(cat /target.txt)/release" "/output"
 
 FROM docker.io/debian:bookworm-slim
@@ -38,5 +39,5 @@ COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod -R 755 /usr/local/bin
 CMD ["/usr/local/bin/stalwart-mail"]
 VOLUME [ "/opt/stalwart-mail" ]
-EXPOSE	443 25 587 465 143 993 4190 8080
+EXPOSE	443 25 110 587 465 143 993 995 4190 8080
 ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]

@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use common::config::smtp::session::Milter;
 use rustls_pki_types::ServerName;
@@ -28,6 +11,7 @@ use tokio::{
     net::TcpStream,
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
+use trc::MilterEvent;
 
 use super::{
     protocol::{SMFIC_CONNECT, SMFIC_HELO, SMFIC_MAIL, SMFIC_RCPT},
@@ -38,7 +22,7 @@ use super::{
 const MILTER_CHUNK_SIZE: usize = 65535;
 
 impl MilterClient<TcpStream> {
-    pub async fn connect(config: &Milter, span: tracing::Span) -> Result<Self> {
+    pub async fn connect(config: &Milter, session_id: u64) -> Result<Self> {
         tokio::time::timeout(config.timeout_command, async {
             let mut last_err = Error::Disconnected;
             for addr in &config.addrs {
@@ -53,7 +37,7 @@ impl MilterClient<TcpStream> {
                             receiver: Receiver::with_max_frame_len(config.max_frame_len),
                             options: 0,
                             version: config.protocol_version,
-                            span,
+                            session_id,
                             flags_actions: config.flags_actions.unwrap_or(
                                 SMFIF_ADDHDRS
                                     | SMFIF_CHGBODY
@@ -65,6 +49,7 @@ impl MilterClient<TcpStream> {
                                     | SMFIF_ADDRCPT_PAR,
                             ),
                             flags_protocol: config.flags_protocol.unwrap_or(0x42),
+                            id: config.id.clone(),
                         });
                     }
                     Err(err) => {
@@ -100,9 +85,10 @@ impl MilterClient<TcpStream> {
                 bytes_read: self.bytes_read,
                 options: self.options,
                 version: self.version,
-                span: self.span,
+                session_id: self.session_id,
                 flags_actions: self.flags_actions,
                 flags_protocol: self.flags_protocol,
+                id: self.id,
             })
         })
         .await
@@ -323,8 +309,12 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
     }
 
     async fn write(&mut self, action: Command<'_>) -> super::Result<()> {
-        //let p = println!("Action: {}", action);
-        tracing::trace!(parent: &self.span, context = "milter", event = "write", "action" = action.to_string());
+        trc::event!(
+            Milter(MilterEvent::Write),
+            SpanId = self.session_id,
+            Id = self.id.to_string(),
+            Contents = action.to_string(),
+        );
 
         tokio::time::timeout(self.timeout_cmd, async {
             self.stream.write_all(action.serialize().as_ref()).await?;
@@ -339,8 +329,13 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
             match self.receiver.read_frame(&self.buf[..self.bytes_read]) {
                 FrameResult::Frame(frame) => {
                     if let Some(response) = Response::deserialize(&frame) {
-                        tracing::trace!(parent: &self.span, context = "milter", event = "read", "action" = response.to_string());
-                        //let p = println!("Response: {}", response);
+                        trc::event!(
+                            Milter(MilterEvent::Read),
+                            SpanId = self.session_id,
+                            Id = self.id.to_string(),
+                            Contents = response.to_string(),
+                        );
+
                         return Ok(response);
                     } else {
                         return Err(Error::FrameInvalid(frame.into_owned()));

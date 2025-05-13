@@ -1,34 +1,18 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{collections::HashMap, sync::Arc};
 
-use common::listener::{stream::NullIo, ServerInstance};
+use common::{
+    listener::{stream::NullIo, ServerInstance},
+    Server,
+};
+use email::metadata::MessageMetadata;
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{self, SetRequest, SetResponse},
     object::{
         email_submission::SetArguments,
@@ -49,12 +33,17 @@ use jmap_proto::{
     },
 };
 use mail_parser::{HeaderName, HeaderValue};
-use smtp::core::{Session, SessionData, State};
+use smtp::{
+    core::{Session, SessionData, State},
+    queue::spool::SmtpSpool,
+};
 use smtp_proto::{request::parser::Rfc5321Parser, MailFrom, RcptTo};
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder, Bincode};
-use utils::map::vec_map::VecMap;
+use trc::AddContext;
+use utils::{map::vec_map::VecMap, sanitize_email};
 
-use crate::{email::metadata::MessageMetadata, identity::set::sanitize_email, JMAP};
+use crate::blob::download::BlobDownload;
+use std::future::Future;
 
 pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::UndoStatus).index_as(IndexAs::Text {
@@ -67,13 +56,30 @@ pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::SendAt).index_as(IndexAs::LongInteger),
 ];
 
-impl JMAP {
-    pub async fn email_submission_set(
+pub trait EmailSubmissionSet: Sync + Send {
+    fn email_submission_set(
+        &self,
+        request: SetRequest<SetArguments>,
+        instance: &Arc<ServerInstance>,
+        next_call: &mut Option<Call<RequestMethod>>,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+
+    fn send_message(
+        &self,
+        account_id: u32,
+        response: &SetResponse,
+        instance: &Arc<ServerInstance>,
+        object: Object<SetValue>,
+    ) -> impl Future<Output = trc::Result<Result<Object<Value>, SetError>>> + Send;
+}
+
+impl EmailSubmissionSet for Server {
+    async fn email_submission_set(
         &self,
         mut request: SetRequest<SetArguments>,
         instance: &Arc<ServerInstance>,
         next_call: &mut Option<Call<RequestMethod>>,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
         let will_destroy = request.unwrap_destroy();
@@ -100,7 +106,11 @@ impl JMAP {
                         .with_collection(Collection::EmailSubmission)
                         .create_document()
                         .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(submission));
-                    let document_id = self.write_batch_expect_id(batch).await?;
+                    let document_id = self
+                        .store()
+                        .write_expect_id(batch)
+                        .await
+                        .caused_by(trc::location!())?;
                     changes.log_insert(Collection::EmailSubmission, document_id);
                     response.created(id, document_id);
                 }
@@ -167,10 +177,10 @@ impl JMAP {
 
             match undo_status {
                 Some(undo_status) if undo_status == "canceled" => {
-                    if let Some(queue_message) = self.smtp.read_message(queue_id).await {
+                    if let Some(queue_message) = self.read_message(queue_id).await {
                         // Delete message from queue
                         let message_due = queue_message.next_event().unwrap_or_default();
-                        queue_message.remove(&self.smtp, message_due).await;
+                        queue_message.remove(self, message_due).await;
 
                         // Update record
                         let mut batch = BatchBuilder::new();
@@ -186,7 +196,10 @@ impl JMAP {
                                             .with_property(Property::UndoStatus, undo_status),
                                     ),
                             );
-                        self.write_batch(batch).await?;
+                        self.store()
+                            .write(batch)
+                            .await
+                            .caused_by(trc::location!())?;
                         changes.log_update(Collection::EmailSubmission, document_id);
                         response.updated.append(id, None);
                     } else {
@@ -235,7 +248,10 @@ impl JMAP {
                     .with_collection(Collection::EmailSubmission)
                     .delete_document(document_id)
                     .custom(ObjectIndexBuilder::new(SCHEMA).with_current(submission));
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 changes.log_delete(Collection::EmailSubmission, document_id);
                 response.destroyed.push(id);
             } else {
@@ -253,12 +269,12 @@ impl JMAP {
             .arguments
             .on_success_destroy_email
             .as_ref()
-            .map_or(false, |p| !p.is_empty())
+            .is_some_and(|p| !p.is_empty())
             || request
                 .arguments
                 .on_success_update_email
                 .as_ref()
-                .map_or(false, |p| !p.is_empty()))
+                .is_some_and(|p| !p.is_empty()))
             && response.has_changes()
         {
             *next_call = Call {
@@ -312,7 +328,7 @@ impl JMAP {
         response: &SetResponse,
         instance: &Arc<ServerInstance>,
         object: Object<SetValue>,
-    ) -> Result<Result<Object<Value>, SetError>, MethodError> {
+    ) -> trc::Result<Result<Object<Value>, SetError>> {
         let mut submission = Object::with_capacity(object.properties.len());
         let mut email_id = u32::MAX;
         let mut identity_id = u32::MAX;
@@ -500,6 +516,7 @@ impl JMAP {
         };
 
         // Add recipients to envelope if missing
+        let mut bcc_header = None;
         if rcpt_to.is_empty() {
             let mut envelope_values = Vec::new();
             for header in &metadata.contents.parts[0].headers {
@@ -507,6 +524,9 @@ impl JMAP {
                     header.name,
                     HeaderName::To | HeaderName::Cc | HeaderName::Bcc
                 ) {
+                    if matches!(header.name, HeaderName::Bcc) {
+                        bcc_header = Some(header);
+                    }
                     if let HeaderValue::Address(addr) = &header.value {
                         for address in addr.iter() {
                             if let Some(address) = address.address().and_then(sanitize_email) {
@@ -539,6 +559,11 @@ impl JMAP {
                 return Ok(Err(SetError::new(SetErrorType::NoRecipients)
                     .with_description("No recipients found in email.")));
             }
+        } else {
+            bcc_header = metadata.contents.parts[0]
+                .headers
+                .iter()
+                .find(|header| matches!(header.name, HeaderName::Bcc));
         }
 
         // Update sendAt
@@ -554,7 +579,7 @@ impl JMAP {
         );
 
         // Obtain raw message
-        let message =
+        let mut message =
             if let Some(message) = self.get_blob(&metadata.blob_hash, 0..usize::MAX).await? {
                 if message.len() > self.core.jmap.mail_max_size {
                     return Ok(Err(SetError::new(SetErrorType::InvalidEmail)
@@ -571,9 +596,17 @@ impl JMAP {
                     .with_description("Blob for email not found.")));
             };
 
+        // Remove BCC header if present
+        if let Some(bcc_header) = bcc_header {
+            let mut new_message = Vec::with_capacity(message.len());
+            new_message.extend_from_slice(&message[..bcc_header.offset_field]);
+            new_message.extend_from_slice(&message[bcc_header.offset_end..]);
+            message = new_message;
+        }
+
         // Begin local SMTP session
         let mut session =
-            Session::<NullIo>::local(self.smtp.clone(), instance.clone(), SessionData::default());
+            Session::<NullIo>::local(self.clone(), instance.clone(), SessionData::default());
 
         // MAIL FROM
         let _ = session.handle_mail_from(mail_from).await;

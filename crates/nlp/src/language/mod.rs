@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 pub mod detect;
 pub mod search_snippet;
@@ -136,9 +119,58 @@ pub enum Language {
 
 impl Language {
     pub fn from_iso_639(code: &str) -> Option<Self> {
-        LANG_ISO
-            .get(code.split_once('-').map(|c| c.0).unwrap_or(code))
-            .copied()
+        hashify::map!(
+            code.split_once('-').map(|c| c.0).unwrap_or(code).as_bytes(),
+            Language,
+            "en" => Language::English,
+            "es" => Language::Spanish,
+            "pt" => Language::Portuguese,
+            "it" => Language::Italian,
+            "fr" => Language::French,
+            "de" => Language::German,
+            "ru" => Language::Russian,
+            "zh" => Language::Mandarin,
+            "ja" => Language::Japanese,
+            "ar" => Language::Arabic,
+            "hi" => Language::Hindi,
+            "ko" => Language::Korean,
+            "bn" => Language::Bengali,
+            "he" => Language::Hebrew,
+            "ur" => Language::Urdu,
+            "fa" => Language::Persian,
+            "ml" => Language::Malayalam,
+            "or" => Language::Oriya,
+            "my" => Language::Burmese,
+            "ne" => Language::Nepali,
+            "si" => Language::Sinhalese,
+            "km" => Language::Khmer,
+            "tk" => Language::Turkmen,
+            "am" => Language::Amharic,
+            "az" => Language::Azerbaijani,
+            "id" => Language::Indonesian,
+            "te" => Language::Telugu,
+            "ta" => Language::Tamil,
+            "vi" => Language::Vietnamese,
+            "gu" => Language::Gujarati,
+            "pa" => Language::Punjabi,
+            "uz" => Language::Uzbek,
+            "hy" => Language::Armenian,
+            "ka" => Language::Georgian,
+            "la" => Language::Latin,
+            "sl" => Language::Slovene,
+            "hr" => Language::Croatian,
+            "sr" => Language::Serbian,
+            "mk" => Language::Macedonian,
+            "lt" => Language::Lithuanian,
+            "lv" => Language::Latvian,
+            "et" => Language::Estonian,
+            "tl" => Language::Tagalog,
+            "af" => Language::Afrikaans,
+            "zu" => Language::Zulu,
+            "sn" => Language::Shona,
+            "ak" => Language::Akan,
+        )
+        .copied()
     }
 }
 
@@ -157,53 +189,3 @@ impl Language {
         }
     }
 }
-
-static LANG_ISO: phf::Map<&'static str, Language> = phf::phf_map! {
-    "en" => Language::English,
-    "es" => Language::Spanish,
-    "pt" => Language::Portuguese,
-    "it" => Language::Italian,
-    "fr" => Language::French,
-    "de" => Language::German,
-    "ru" => Language::Russian,
-    "zh" => Language::Mandarin,
-    "ja" => Language::Japanese,
-    "ar" => Language::Arabic,
-    "hi" => Language::Hindi,
-    "ko" => Language::Korean,
-    "bn" => Language::Bengali,
-    "he" => Language::Hebrew,
-    "ur" => Language::Urdu,
-    "fa" => Language::Persian,
-    "ml" => Language::Malayalam,
-    "or" => Language::Oriya,
-    "my" => Language::Burmese,
-    "ne" => Language::Nepali,
-    "si" => Language::Sinhalese,
-    "km" => Language::Khmer,
-    "tk" => Language::Turkmen,
-    "am" => Language::Amharic,
-    "az" => Language::Azerbaijani,
-    "id" => Language::Indonesian,
-    "te" => Language::Telugu,
-    "ta" => Language::Tamil,
-    "vi" => Language::Vietnamese,
-    "gu" => Language::Gujarati,
-    "pa" => Language::Punjabi,
-    "uz" => Language::Uzbek,
-    "hy" => Language::Armenian,
-    "ka" => Language::Georgian,
-    "la" => Language::Latin,
-    "sl" => Language::Slovene,
-    "hr" => Language::Croatian,
-    "sr" => Language::Serbian,
-    "mk" => Language::Macedonian,
-    "lt" => Language::Lithuanian,
-    "lv" => Language::Latvian,
-    "et" => Language::Estonian,
-    "tl" => Language::Tagalog,
-    "af" => Language::Afrikaans,
-    "zu" => Language::Zulu,
-    "sn" => Language::Shona,
-    "ak" => Language::Akan,
-};

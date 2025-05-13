@@ -1,0 +1,2622 @@
+# SPDX-FileCopyrightText: 2025 Stalwart Labs Ltd <hello@stalw.art>
+#
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+
+openapi: 3.0.0
+info:
+  title: Stalwart Mail Server API
+  version: 1.0.0
+servers:
+  - url: https://mail.example.org/api
+    description: Sample server
+paths:
+  /oauth:
+    post:
+      summary: Obtain OAuth token
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                      permissions:
+                        type: array
+                        items:
+                          type: string
+                      version:
+                        type: string
+                      isEnterprise:
+                        type: boolean
+              example:
+                data:
+                  code: 4YmRFLu9Df1t4JO7Iffnuney4B8tVLAxjimdRxEg
+                  permissions:
+                    - webadmin-update
+                    - spam-filter-update
+                    - dkim-signature-get
+                    - dkim-signature-create
+                    - undelete
+                    - fts-reindex
+                    - purge-account
+                    - purge-in-memory-store
+                    - purge-data-store
+                    - purge-blob-store
+                  version: 0.11.0
+                  isEnterprise: true
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  status:
+                    type: number
+                  title:
+                    type: string
+                  detail:
+                    type: string
+              example:
+                type: about:blank
+                status: 401
+                title: Unauthorized
+                detail: You have to authenticate first.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                client_id:
+                  type: string
+                redirect_uri:
+                  type: string
+                nonce:
+                  type: string
+            example:
+              type: code
+              client_id: webadmin
+              redirect_uri: stalwart://auth
+              nonce: ttsaXca3qx
+  /telemetry/metrics:
+    get:
+      summary: Fetch Telemetry Metrics
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  details:
+                    type: string
+                  reason:
+                    type: string
+              example:
+                error: other
+                details: No metrics store has been defined
+                reason:
+                  You need to configure a metrics store in order to use this
+                  feature.
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+  /telemetry/live/metrics-token:
+    get:
+      summary: Obtain Metrics Telemetry token
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: string
+              example:
+                data: 2GO4RahIkSAms6S00R9BRsroo97ZdYTz4QVxFCOwGrGkr7zguP0AVyTMA/iha3Vz/////w8DhZi1+ALBmLX4AndlYg==
+  /telemetry/metrics/live:
+    get:
+      summary: Live Metrics
+      responses:
+        "200":
+          description: OK
+          content: {}
+      parameters:
+        - name: metrics
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: interval
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+  /principal:
+    get:
+      summary: List Principals
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: {}
+                      total:
+                        type: number
+              example:
+                data:
+                  items: []
+                  total: 0
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: types
+          in: query
+          required: false
+          schema:
+            type: string
+    post:
+      summary: Create Principal
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: number
+              example:
+                data: 50
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                quota:
+                  type: number
+                name:
+                  type: string
+                description:
+                  type: string
+                secrets:
+                  type: array
+                  items: {}
+                emails:
+                  type: array
+                  items: {}
+                urls:
+                  type: array
+                  items: {}
+                memberOf:
+                  type: array
+                  items: {}
+                roles:
+                  type: array
+                  items: {}
+                lists:
+                  type: array
+                  items: {}
+                members:
+                  type: array
+                  items: {}
+                enabledPermissions:
+                  type: array
+                  items: {}
+                disabledPermissions:
+                  type: array
+                  items: {}
+                externalMembers:
+                  type: array
+                  items: {}
+            example:
+              type: domain
+              quota: 0
+              name: example.org
+              description: Example domain
+              secrets: []
+              emails: []
+              urls: []
+              memberOf: []
+              roles: []
+              lists: []
+              members: []
+              enabledPermissions: []
+              disabledPermissions: []
+              externalMembers: []
+  /dkim:
+    post:
+      summary: Create DKIM Signature
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: object
+                  nullable: true
+                algorithm:
+                  type: string
+                domain:
+                  type: string
+                selector:
+                  type: object
+                  nullable: true
+            example:
+              id:
+              algorithm: Ed25519
+              domain: example.org
+              selector:
+  /principal/{principal_id}:
+    get:
+      summary: Fetch Principal
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: number
+                      type:
+                        type: string
+                      secrets:
+                        type: string
+                      name:
+                        type: string
+                      quota:
+                        type: number
+                      description:
+                        type: string
+                      emails:
+                        type: string
+                      roles:
+                        type: array
+                        items:
+                          type: string
+                      lists:
+                        type: array
+                        items:
+                          type: string
+              example:
+                data:
+                  id: 90
+                  type: individual
+                  secrets: $6$ONjGT6nQtmPNaxw0$NNF5DXtPfOay2mfVnPJ0uQ77C.L3LNxXO/QMyphP/DzpODqbDBBGd4/gCnckYPQj3st6pqwY8/KeBsCJ.oe1Y1
+                  name: jane
+                  quota: 0
+                  description: Jane Doe
+                  emails: jane@example.org
+                  roles:
+                    - user
+                  lists:
+                    - all
+      parameters:
+        - name: principal_id
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      summary: Update Principal
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      parameters:
+        - name: principal_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  action:
+                    type: string
+                  field:
+                    type: string
+                  value:
+                    type: string
+            example:
+              - action: set
+                field: name
+                value: jane.doe
+              - action: set
+                field: description
+                value: Jane Mary Doe
+              - action: addItem
+                field: emails
+                value: jane-doe@example.org
+              - action: removeItem
+                field: emails
+                value: jane@example.org
+    delete:
+      summary: Delete Principal
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      parameters:
+        - name: principal_id
+          in: path
+          required: true
+          schema:
+            type: string
+  /queue/messages:
+    get:
+      summary: List Queued Messages
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: {}
+                      total:
+                        type: number
+                      status:
+                        type: boolean
+              example:
+                data:
+                  items: []
+                  total: 0
+                  status: true
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: max-total
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: values
+          in: query
+          required: false
+          schema:
+            type: number
+    patch:
+      summary: Reschedule Queued Messages
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: boolean
+              example:
+                data: true
+      parameters:
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+    delete:
+      summary: Delete Queued Messages
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: boolean
+              example:
+                data: true
+      parameters:
+        - name: text
+          in: query
+          required: false
+          schema:
+            type: string
+  /queue/reports:
+    get:
+      summary: List Queued Reports
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: {}
+                      total:
+                        type: number
+              example:
+                data:
+                  items: []
+                  total: 0
+      parameters:
+        - name: max-total
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+  /reports/dmarc:
+    get:
+      summary: List Incoming DMARC Reports
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: {}
+                      total:
+                        type: number
+              example:
+                data:
+                  items: []
+                  total: 0
+      parameters:
+        - name: max-total
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+  /reports/tls:
+    get:
+      summary: List Incoming TLS Reports
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: {}
+                      total:
+                        type: number
+              example:
+                data:
+                  items: []
+                  total: 0
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: max-total
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+  /reports/arf:
+    get:
+      summary: List Incoming ARF Reports
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: {}
+                      total:
+                        type: number
+              example:
+                data:
+                  items: []
+                  total: 0
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: max-total
+          in: query
+          required: false
+          schema:
+            type: number
+  /telemetry/traces:
+    get:
+      summary: List Stored Traces
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  details:
+                    type: string
+              example:
+                error: unsupported
+                details: No tracing store has been configured
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: values
+          in: query
+          required: false
+          schema:
+            type: number
+  /logs:
+    get:
+      summary: Quere Log Files
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            timestamp:
+                              type: string
+                            level:
+                              type: string
+                            event:
+                              type: string
+                            event_id:
+                              type: string
+                            details:
+                              type: string
+                      total:
+                        type: number
+              example:
+                data:
+                  items:
+                    - timestamp: "2025-01-05T14:06:29Z"
+                      level: TRACE
+                      event: HTTP request body
+                      event_id: http.request-body
+                      details:
+                        listenerId = "http", localPort = 1443, remoteIp = ::1,
+                        remotePort = 57223, contents = "", size = 0
+                    - timestamp: "2025-01-05T14:06:29Z"
+                      level: TRACE
+                      event: Write batch operation
+                      event_id: store.data-write
+                      details: elapsed = 0ms, total = 2
+                    - timestamp: "2025-01-05T14:06:29Z"
+                      level: TRACE
+                      event: Expression evaluation result
+                      event_id: eval.result
+                      details:
+                        listenerId = "http", localPort = 1443, remoteIp = ::1,
+                        remotePort = 57223, id = "server.http.allowed-endpoint", result
+                        = "Integer(200)"
+                    - timestamp: "2025-01-05T14:06:29Z"
+                      level: DEBUG
+                      event: HTTP request URL
+                      event_id: http.request-url
+                      details:
+                        listenerId = "http", localPort = 1443, remoteIp = ::1,
+                        remotePort = 57223, url = "/api/logs?page=1&limit=50&"
+                    - timestamp: "2025-01-05T14:06:23Z"
+                      level: TRACE
+                      event: HTTP response body
+                      event_id: http.response-body
+                      details:
+                        listenerId = "http", localPort = 1443, remoteIp = ::1,
+                        remotePort = 57223, contents = "{"error":"unsupported","details":"No
+                        tracing store has been configured"}", code = 200, size = 72
+                    - timestamp: "2025-01-05T14:06:23Z"
+                      level: DEBUG
+                      event: Management operation not supported
+                      event_id: manage.not-supported
+                      details:
+                        listenerId = "http", localPort = 1443, remoteIp = ::1,
+                        remotePort = 57223, details = No tracing store has been configured
+                    - timestamp: "2025-01-05T14:06:23Z"
+                      level: TRACE
+                      event: HTTP request body
+                      event_id: http.request-body
+                      details:
+                        listenerId = "http", localPort = 1443, remoteIp = ::1,
+                        remotePort = 57223, contents = "", size = 0
+                    - timestamp: "2025-01-05T14:06:23Z"
+                      level: TRACE
+                      event: Write batch operation
+                      event_id: store.data-write
+                      details: elapsed = 0ms, total = 2
+                    - timestamp: "2025-01-05T14:06:23Z"
+                      level: TRACE
+                      event: Expression evaluation result
+                      event_id: eval.result
+                      details:
+                        listenerId = "http", localPort = 1443, remoteIp = ::1,
+                        remotePort = 57223, id = "server.http.allowed-endpoint", result
+                        = "Integer(200)"
+                    - timestamp: "2025-01-05T14:06:23Z"
+                      level: DEBUG
+                      event: HTTP request URL
+                      event_id: http.request-url
+                      details:
+                        listenerId = "http", localPort = 1443, remoteIp = ::1,
+                        remotePort = 57223, url = "/api/telemetry/traces?page=1&type=delivery.attempt-start&limit=10&values=1&"
+                  total: 100
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+  /spam-filter/train/spam:
+    post:
+      summary: Train Spam Filter as Spam
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                ? "From: john@example.org\nTo: list@example.org\nSubject: Testing,
+                  please ignore\nContent-Type: text/plain; charset"
+                : type: string
+            example:
+              ? "From: john@example.org\nTo: list@example.org\nSubject: Testing, please
+                ignore\nContent-Type: text/plain; charset"
+              : "\"utf-8\"\nContent-Transfer-Encoding: 8bit\n\nTesting 1, 2, 3\n"
+  /spam-filter/train/ham:
+    post:
+      summary: Train Spam Filter as Ham
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                ? "From: john@example.org\nTo: list@example.org\nSubject: Testing,
+                  please ignore\nContent-Type: text/plain; charset"
+                : type: string
+            example:
+              ? "From: john@example.org\nTo: list@example.org\nSubject: Testing, please
+                ignore\nContent-Type: text/plain; charset"
+              : "\"utf-8\"\nContent-Transfer-Encoding: 8bit\n\nTesting 1, 2, 3\n"
+  /spam-filter/train/spam/{account_id}:
+    post:
+      summary: Train Account's Spam Filter as Spam
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                ? "From: john@example.org\nTo: list@example.org\nSubject: Testing,
+                  please ignore\nContent-Type: text/plain; charset"
+                : type: string
+            example:
+              ? "From: john@example.org\nTo: list@example.org\nSubject: Testing, please
+                ignore\nContent-Type: text/plain; charset"
+              : "\"utf-8\"\nContent-Transfer-Encoding: 8bit\n\nTesting 1, 2, 3\n"
+  /spam-filter/train/ham/{account_id}:
+    post:
+      summary: Train Account's Spam Filter as Ham
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                ? "From: john@example.org\nTo: list@example.org\nSubject: Testing,
+                  please ignore\nContent-Type: text/plain; charset"
+                : type: string
+            example:
+              ? "From: john@example.org\nTo: list@example.org\nSubject: Testing, please
+                ignore\nContent-Type: text/plain; charset"
+              : "\"utf-8\"\nContent-Transfer-Encoding: 8bit\n\nTesting 1, 2, 3\n"
+  /spam-filter/classify:
+    post:
+      summary: Test Spam Filter Classification
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      score:
+                        type: number
+                      tags:
+                        type: object
+                        properties:
+                          FROM_NO_DN:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          SOURCE_ASN_15169:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          SOURCE_COUNTRY_US:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          MISSING_DATE:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          FROMHOST_NORES_A_OR_MX:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          MISSING_MIME_VERSION:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          FORGED_SENDER:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          SPF_NA:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          X_HDR_TO:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          HELO_IPREV_MISMATCH:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          X_HDR_CONTENT_TYPE:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          AUTH_NA:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          FORGED_RECIPIENTS:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          RBL_SENDERSCORE_REPUT_BLOCKED:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          RCVD_COUNT_ZERO:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          X_HDR_SUBJECT:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          X_HDR_FROM:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          RCPT_COUNT_ONE:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          MISSING_MID:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          TO_DOM_EQ_FROM_DOM:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          ARC_NA:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          RCVD_TLS_LAST:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          X_HDR_CONTENT_TRANSFER_ENCODING:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          HELO_NORES_A_OR_MX:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          TO_DN_NONE:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          FROM_NEQ_ENV_FROM:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          DMARC_NA:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          SINGLE_SHORT_PART:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                          DKIM_NA:
+                            type: object
+                            properties:
+                              action:
+                                type: string
+                              value:
+                                type: number
+                      disposition:
+                        type: object
+                        properties:
+                          action:
+                            type: string
+                          value:
+                            type: string
+              example:
+                data:
+                  score: 12.7
+                  tags:
+                    FROM_NO_DN:
+                      action: allow
+                      value: 0.0
+                    SOURCE_ASN_15169:
+                      action: allow
+                      value: 0.0
+                    SOURCE_COUNTRY_US:
+                      action: allow
+                      value: 0.0
+                    MISSING_DATE:
+                      action: allow
+                      value: 1.0
+                    FROMHOST_NORES_A_OR_MX:
+                      action: allow
+                      value: 1.5
+                    MISSING_MIME_VERSION:
+                      action: allow
+                      value: 2.0
+                    FORGED_SENDER:
+                      action: allow
+                      value: 0.3
+                    SPF_NA:
+                      action: allow
+                      value: 0.0
+                    X_HDR_TO:
+                      action: allow
+                      value: 0.0
+                    HELO_IPREV_MISMATCH:
+                      action: allow
+                      value: 1.0
+                    X_HDR_CONTENT_TYPE:
+                      action: allow
+                      value: 0.0
+                    AUTH_NA:
+                      action: allow
+                      value: 1.0
+                    FORGED_RECIPIENTS:
+                      action: allow
+                      value: 2.0
+                    RBL_SENDERSCORE_REPUT_BLOCKED:
+                      action: allow
+                      value: 0.0
+                    RCVD_COUNT_ZERO:
+                      action: allow
+                      value: 0.1
+                    X_HDR_SUBJECT:
+                      action: allow
+                      value: 0.0
+                    X_HDR_FROM:
+                      action: allow
+                      value: 0.0
+                    RCPT_COUNT_ONE:
+                      action: allow
+                      value: 0.0
+                    MISSING_MID:
+                      action: allow
+                      value: 2.5
+                    TO_DOM_EQ_FROM_DOM:
+                      action: allow
+                      value: 0.0
+                    ARC_NA:
+                      action: allow
+                      value: 0.0
+                    RCVD_TLS_LAST:
+                      action: allow
+                      value: 0.0
+                    X_HDR_CONTENT_TRANSFER_ENCODING:
+                      action: allow
+                      value: 0.0
+                    HELO_NORES_A_OR_MX:
+                      action: allow
+                      value: 0.3
+                    TO_DN_NONE:
+                      action: allow
+                      value: 0.0
+                    FROM_NEQ_ENV_FROM:
+                      action: allow
+                      value: 0.0
+                    DMARC_NA:
+                      action: allow
+                      value: 1.0
+                    SINGLE_SHORT_PART:
+                      action: allow
+                      value: 0.0
+                    DKIM_NA:
+                      action: allow
+                      value: 0.0
+                  disposition:
+                    action: allow
+                    value:
+                      "X-Spam-Result: ARC_NA (0.00),\r\n\tDKIM_NA (0.00),\r\n
+                      \tFROM_NEQ_ENV_FROM (0.00),\r\n\tFROM_NO_DN (0.00),\r\n\tRBL_SENDERSCORE_REPUT_BLOCKED
+                      (0.00),\r\n\tRCPT_COUNT_ONE (0.00),\r\n\tRCVD_TLS_LAST (0.00),\r
+                      \n\tSINGLE_SHORT_PART (0.00),\r\n\tSPF_NA (0.00),\r\n\tTO_DN_NONE
+                      (0.00),\r\n\tTO_DOM_EQ_FROM_DOM (0.00),\r\n\tRCVD_COUNT_ZERO
+                      (0.10),\r\n\tFORGED_SENDER (0.30),\r\n\tHELO_NORES_A_OR_MX (0.30),\r
+                      \n\tAUTH_NA (1.00),\r\n\tDMARC_NA (1.00),\r\n\tHELO_IPREV_MISMATCH
+                      (1.00),\r\n\tMISSING_DATE (1.00),\r\n\tFROMHOST_NORES_A_OR_MX
+                      (1.50),\r\n\tFORGED_RECIPIENTS (2.00),\r\n\tMISSING_MIME_VERSION
+                      (2.00),\r\n\tMISSING_MID (2.50)\r\nX-Spam-Status: Yes, score=12.70\r\
+                      \n"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                remoteIp:
+                  type: string
+                ehloDomain:
+                  type: string
+                authenticatedAs:
+                  type: object
+                  nullable: true
+                isTls:
+                  type: boolean
+                envFrom:
+                  type: string
+                envFromFlags:
+                  type: number
+                envRcptTo:
+                  type: array
+                  items:
+                    type: string
+            example:
+              message:
+                "From: john@example.org\nTo: list@example.org\nSubject: Testing,
+                please ignore\nContent-Type: text/plain; charset=\"utf-8\"\nContent-Transfer-Encoding:
+                8bit\n\nTesting 1, 2, 3\n"
+              remoteIp: 8.8.8.8
+              ehloDomain: foo.org
+              authenticatedAs:
+              isTls: true
+              envFrom: bill@foo.org
+              envFromFlags: 0
+              envRcptTo:
+                - john@example.org
+  /troubleshoot/token:
+    get:
+      summary: Obtain a Troubleshooting Token
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: string
+              example:
+                data: +bS1rCUcrjoEtl9f7Vz1P6daqVs4nywxa56bHltPIASijRFrj1JrwvHxJCWphPKs/////w8E8p21+AKunrX4AndlYg==
+  /troubleshoot/delivery/{recipient}:
+    get:
+      summary: Run Delivery Troubleshooting
+      responses:
+        "200":
+          description: OK
+          content: {}
+      parameters:
+        - name: recipient
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+  /troubleshoot/dmarc:
+    post:
+      summary: Run DMARC Troubleshooting
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      spfEhloDomain:
+                        type: string
+                      spfEhloResult:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                      spfMailFromDomain:
+                        type: string
+                      spfMailFromResult:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                          details:
+                            type: object
+                            nullable: true
+                      ipRevResult:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                      ipRevPtr:
+                        type: array
+                        items:
+                          type: string
+                      dkimResults:
+                        type: array
+                        items: {}
+                      dkimPass:
+                        type: boolean
+                      arcResult:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                      dmarcResult:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                      dmarcPass:
+                        type: boolean
+                      dmarcPolicy:
+                        type: string
+                      elapsed:
+                        type: number
+              example:
+                data:
+                  spfEhloDomain: mx.google.com
+                  spfEhloResult:
+                    type: none
+                  spfMailFromDomain: google.com
+                  spfMailFromResult:
+                    type: softFail
+                    details:
+                  ipRevResult:
+                    type: pass
+                  ipRevPtr:
+                    - dns.google.
+                  dkimResults: []
+                  dkimPass: false
+                  arcResult:
+                    type: none
+                  dmarcResult:
+                    type: none
+                  dmarcPass: false
+                  dmarcPolicy: reject
+                  elapsed: 200
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remoteIp:
+                  type: string
+                ehloDomain:
+                  type: string
+                mailFrom:
+                  type: string
+                body:
+                  type: string
+            example:
+              remoteIp: 8.8.8.8
+              ehloDomain: mx.google.com
+              mailFrom: john@google.com
+              body:
+                "From: john@example.org\nTo: list@example.org\nSubject: Testing,
+                please ignore\nContent-Type: text/plain; charset=\"utf-8\"\nContent-Transfer-Encoding:
+                8bit\n\nTesting 1, 2, 3\n"
+  /reload:
+    get:
+      summary: Reload Settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      warnings:
+                        type: object
+                        properties: {}
+                      errors:
+                        type: object
+                        properties: {}
+              example:
+                data:
+                  warnings: {}
+                  errors: {}
+      parameters:
+        - name: dry-run
+          in: query
+          required: false
+          schema:
+            type: string
+  /update/spam-filter:
+    get:
+      summary: Update Spam Filter
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+  /update/webadmin:
+    get:
+      summary: Update WebAdmin
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+  /store/reindex:
+    get:
+      summary: Request FTS Reindex
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+  /store/purge/in-memory/default/bayes-global:
+    get:
+      summary: Delete Global Bayes Model
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+  /settings/keys:
+    get:
+      summary: List Settings by Key
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      lookup.default.hostname:
+                        type: string
+              example:
+                data:
+                  lookup.default.hostname: mx.fr.email
+      parameters:
+        - name: prefixes
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: keys
+          in: query
+          required: false
+          schema:
+            type: string
+  /settings/group:
+    get:
+      summary: List Settings by Group
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total:
+                        type: number
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            _id:
+                              type: string
+                            bind:
+                              type: string
+                            protocol:
+                              type: string
+              example:
+                data:
+                  total: 11
+                  items:
+                    - _id: http
+                      bind: "[::]:1443"
+                      protocol: http
+                    - bind: "[::]:443"
+                      _id: https
+                      protocol: http
+                      tls.implicit: "true"
+                    - protocol: imap
+                      bind: "[::]:143"
+                      _id: imap
+                    - bind: "[::]:1143"
+                      tls.implicit: "false"
+                      _id: imapnotls
+                      protocol: imap
+                      proxy.override: "false"
+                      tls.override: "false"
+                      tls.enable: "false"
+                      socket.override: "false"
+                    - bind: "[::]:993"
+                      tls.implicit: "true"
+                      protocol: imap
+                      _id: imaptls
+                    - bind: "[::]:110"
+                      protocol: pop3
+                      _id: pop3
+                    - tls.implicit: "true"
+                      _id: pop3s
+                      protocol: pop3
+                      bind: "[::]:995"
+                    - protocol: managesieve
+                      _id: sieve
+                      bind: "[::]:4190"
+                    - bind: "[::]:25"
+                      _id: smtp
+                      protocol: smtp
+                    - _id: submission
+                      bind: "[::]:587"
+                      protocol: smtp
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: suffix
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: prefix
+          in: query
+          required: false
+          schema:
+            type: string
+  /settings/list:
+    get:
+      summary: List Settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total:
+                        type: number
+                      items:
+                        type: object
+                        properties:
+                          enable:
+                            type: string
+                          format:
+                            type: string
+                          limits.entries:
+                            type: string
+                          limits.entry-size:
+                            type: string
+                          limits.size:
+                            type: string
+                          refresh:
+                            type: string
+                          retry:
+                            type: string
+                          timeout:
+                            type: string
+                          url:
+                            type: string
+              example:
+                data:
+                  total: 9
+                  items:
+                    enable: "true"
+                    format: list
+                    limits.entries: "100000"
+                    limits.entry-size: "512"
+                    limits.size: "104857600"
+                    refresh: 12h
+                    retry: 1h
+                    timeout: 30s
+                    url: https://openphish.com/feed.txt
+      parameters:
+        - name: prefix
+          in: query
+          required: false
+          schema:
+            type: string
+  /settings:
+    post:
+      summary: Update Settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  prefix:
+                    type: string
+            example:
+              - type: clear
+                prefix: spam-filter.rule.stwt_arc_signed.
+  /account/crypto:
+    get:
+      summary: Obtain Encryption-at-Rest Settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+              example:
+                data:
+                  type: disabled
+    post:
+      summary: Update Encryption-at-Rest Settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: number
+              example:
+                data: 1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                algo:
+                  type: string
+                certs:
+                  type: string
+            example:
+              type: pGP
+              algo: Aes256
+              certs:
+                "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nxsFNBGTGHwkBEADRB5EEtfsnUwgF2ZRg6h1fp2E8LNhv4lb9AWersI8KNFoWM6qx\n
+                Bk/MfEpgILSPdW3g7PWHOxPV/hxjtStFHfbU/Ye5VvfbkU49faIPiw1V3MQJJ171\n
+                cN6kgMnABfdixNiutDkHP4f34ABrEqexX2myOP+btxL24gI/N9UpOD5PiKTyKR7i\n
+                GwNpi+O022rs/KvjlWR7iSJ4vk7bGFfTNHvWI6dZworey1tZoTIZ0CgvgMeB/F1q\n
+                OOa0FvrJdNYR227RpHmICqFqTptNZ2EfdkJ6QUXW7bZ9dWgL36ds9QPJOGcG3c5i\n
+                JebeX5YdJnniBefiWjfZElcqh/N6SqVuEwoTLyMCnMZ6gjNMn6tddwPH24kavZhT\n
+                p6+vhTHmyq8XBqK/XEt9r+clSfg2hi5s7GO7hQV+W26xRjX7sQJY41PfzkgYJ0BM\n
+                6+w09X1ZO/iMjEp44t2rd3xSudwGYhlbazXbdB+OJaa3RtyjOAeFgY8OyNlODx3V\n
+                xXLtF+104HGSL7nkpBsu6LLighSgEEF2Vok43grr0omyb1NPhWoAZhM8sT5iv5gW\n
+                fKvB1O13c+hDc/iGTAvcrtdLLnF2Cs+6HD7r7zPPM4L6DrD1+oQt510H/oOEE5NZ\n
+                wIS9CmBf0txqwk7n1U5V95lonaCK9nfoKeQ1fKl/tu01dCeERRbMXG2nCQARAQAB\n
+                zRtKb2huIERvZSA8am9obkBleGFtcGxlLm9yZz7CwYcEEwEIADEWIQQWwx1eM+Aa\n
+                o8okGzL45grMTSggxQUCZMYfCQIbAwQLCQgHBRUICQoLBRYCAwEAAAoJEPjmCsxN\n
+                KCDFWP4QAI3eS5nPxmU0AC9/h8jeKNgjgpENroNQZKeWZQ8x4PfncDRkcbsJfT7Y\n
+                IVZl4zw6gFKY5EoB1s1KkYJxPgYsqicmKNiR7Tnzabb3mzomU48FKaIyVCBzFUnJ\n
+                YMroL/rm7QhoW2WWLvT+CPCPway/tA3By8Be/YOjhavJ8mf1W3rPzt87/4Vo6erf\n
+                yzL0lN+FQmmhKfT4j42jF4SMSyyC2yzvfC7PT49u+KUKQm/LpQsfKHpwXZ/VI6+X\n
+                GtZjTqsc+uglJYRo69oosImLzieA/ST1ltjmUutZQOSvlQFpDUEFrMej8XZ0qsrf\n
+                0gP2iwxyl0vkhV8c6wO6CacDHPivvQEHed9H1PNGn3DBfKb7Mq/jado2DapRtJg3\n
+                2OH0F0HTvQ0uNKl30xMUcwGQB0cKOlaFtksZT1LsosQPhtPLpFy1TuWaXOInpQLq\n
+                JmNVcTbydOsCKq0mb6bgGcvhElC1q39tclKP3rOEDOnJ8hE6wYNaMGrt6WSKr3Tt\n
+                h52M6KwTXOuMAecMvpDBSS3UFEVQ+T5puzInDTkjINxmj23ip+swA1x3HH2IgNrO\n
+                VJ7O20oEf0+qC47R5rTRUxrvh/U0U3DRE5xt2J2T3xetFDT2mnQv0jcyMg/UlXXv\n
+                GpGVfwNkvN0Cxmb1tFiBNLKCcPVizxq4MLrwx+MVfQBaRCwjJrUszsFNBGTGHwoB\n
+                EACr5lA+j5pH0Er6Q76btbS4q9JgNjDNrjKJwX9brdBY1oXIUeBqCW9ekoqDTFpn\n
+                xA5EFGJvPO++/0ZCa+zXE4IAcXS9+I9HVBouenPYBLETnXK0Phws+OCLoe0cAIvG\n
+                e9Xo9VrHcGXCs9tJruVSAW3NF04YejHmnHNfEuD8mbaUdxVn5zc23w/2gLaY/ABL\n
+                ZfNV8XZw0jBVBm3YXS3Ob3uIO+RvsNqBgnhGYN/C51QI9hdxXWUDlD1vdRacXmcI\n
+                LDCYC3w6u8caxL0ktXTS4zwN+hEu7jHxBNiKcovCeIF5VZ5NcPpp6+6Y+vNdmmXw\n
+                +lWNwAzj3ah6iu+y25LKSsz+7IkCh5liOwwYohO+YI7SjtTD+gL9HiHYAIO+PtBh\n
+                7GudmUwFoARu/q54hE4ThpzkeOzJzPqGkM/CzmwdKKM3u81ze+72ptJOqVKbFEsQ\n
+                3+RURrIAfyYyeJj4VVCfHNzrRRVpARZc9hJm1AXefxPnDN9dxbikjQgbg5UxrKaJ\n
+                cjVU+go5CH5lg2D1LRGfKqTJtfiWFPjtztNgMp/SeslkhhFXsyJ0RJDcU8VfRBrO\n
+                DBnZvPnZi4nLaWCL1LdHA8Y9EJgSwVOsfdRqL/Xk9qxqgl5R8m8lsNKZN2EYkfMN\n
+                4Vd+/8UBbmibHYoGIQi7UlNSPthc0XQcRzFen+3H4sg5kQARAQABwsF2BBgBCAAg\n
+                FiEEFsMdXjPgGqPKJBsy+OYKzE0oIMUFAmTGHwsCGwwACgkQ+OYKzE0oIMXn4hAA\n
+                lUWeF7tDdyENsOYyhsbtLIuLipYe6orHFY5m68NNOoLWwqEeTvutJgFeDT4WxYi0\n
+                PJaNQYFPyGVyg7N0hCx5cGwajdnwGpb5zpSNyvG2Yes9I1O/u7+FFrbSwOuo61t1\n
+                scGa8YlgTKoyGc9cwxl5U8krrlEwXTWQ/qF1Gq2wHG23wm1D2d2PXFDRvw3gPxJn\n
+                yWkrx5k26ru1kguM7XFVyRi7B+uG4vdvMlxMBXM3jpH1CJRr82VvzYPv7f05Z5To\n
+                C7XDqHpWKx3+AQvh/ZsSBpBhzK8qaixysMwnawe05rOPydWvsLlnMCGManKVnq9Y\n
+                Wek1P2dwYT9zuroBR5nmrECY+xVWk7vhsDasKsYlQ/LdDyzSL7qh0Vq3DjcoHxLI\n
+                uL7qQ3O0YRcKGfmQibpKdDzvIqA+48Nfh2nDnTxvfuwOxb41zdLTZQftaSXc0Xwd\n
+                HgquBAFbRDr5TyWlUUc8iACowKkk01pEPc8coxPCp6F/hz6kgmebRevzs7sxwrS7\n
+                aUWycSls783JC7WO267DRD30FNx+9S7SY4ECzhDGjLdne6wIoib1L9SFkk1AAKb3\n
+                m2+6BB/HxCXtMqi95pFeCjV99bp+PBqoifx9SlFYZq9qcGDr/jyrdG8V2Wf/HF4n\n
+                K8RIPxB+daAPMLTpj4WBhNquSE6mRQvABEf0GPi2eLA=\n=0TDv\n-----END PGP
+                PUBLIC KEY BLOCK-----\n\n\n"
+  /account/auth:
+    get:
+      summary: Obtain Account Authentication Settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      otpEnabled:
+                        type: boolean
+                      appPasswords:
+                        type: array
+                        items: {}
+              example:
+                data:
+                  otpEnabled: false
+                  appPasswords: []
+    post:
+      summary: Update Account Authentication Settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  details:
+                    type: string
+                  reason:
+                    type: object
+                    nullable: true
+              example:
+                error: other
+                details: Fallback administrator accounts do not support 2FA or AppPasswords
+                reason:
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  status:
+                    type: number
+                  title:
+                    type: string
+                  detail:
+                    type: string
+              example:
+                type: about:blank
+                status: 401
+                title: Unauthorized
+                detail: You have to authenticate first.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  name:
+                    type: string
+                  password:
+                    type: string
+            example:
+              - type: addAppPassword
+                name: dGVzdCQyMDI1LTAxLTA1VDE0OjEyOjUxLjg0NyswMDowMA==
+                password: $6$4M/5LmG7b13r0cdE$6zb.i6wJ3pAQHA2MRHkKg0t8bgSYb2IeqiIU115t.NugwW6VXifE0VKI5n2BQUNwdeDMUzaX82TmhuVVgC0Gx1
+  /reload/:
+    get:
+      summary: Reload Settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      warnings:
+                        type: object
+                        properties: {}
+                      errors:
+                        type: object
+                        properties: {}
+              example:
+                data:
+                  warnings: {}
+                  errors: {}
+  /queue/status/stop:
+    patch:
+      summary: Stop Queue Processing
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: boolean
+              example:
+                data: true
+  /queue/status/start:
+    patch:
+      summary: Resume Queue Processing
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: boolean
+              example:
+                data: false
+  /queue/messages/{message_id}:
+    get:
+      summary: Obtain Queued Message Details
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: number
+                      return_path:
+                        type: string
+                      domains:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            status:
+                              type: string
+                            recipients:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  address:
+                                    type: string
+                                  status:
+                                    type: string
+                            retry_num:
+                              type: number
+                            next_retry:
+                              type: string
+                            next_notify:
+                              type: string
+                            expires:
+                              type: string
+                      created:
+                        type: string
+                      size:
+                        type: number
+                      blob_hash:
+                        type: string
+              example:
+                data:
+                  id: 217700302698266624
+                  return_path: pepe@pepe.com
+                  domains:
+                    - name: example.org
+                      status: scheduled
+                      recipients:
+                        - address: john@example.org
+                          status: scheduled
+                      retry_num: 0
+                      next_retry: "2025-01-05T14:33:15Z"
+                      next_notify: "2025-01-06T14:33:15Z"
+                      expires: "2025-01-10T14:33:15Z"
+                  created: "2025-01-05T14:33:15Z"
+                  size: 1451
+                  blob_hash: ykrZ_KghvdG2AdjH4AZajkSvZvcsxP_oI2HEZvw-tS0
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  status:
+                    type: number
+                  title:
+                    type: string
+                  detail:
+                    type: string
+              example:
+                type: about:blank
+                status: 404
+                title: Not Found
+                detail: The requested resource does not exist on this server.
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      summary: Reschedule Delivery of Queued Message
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: boolean
+              example:
+                data: true
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+    delete:
+      summary: Cancel Delivery of Queued Message
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: boolean
+              example:
+                data: true
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+  /store/blobs/{blob_id}:
+    get:
+      summary: Fetch Blob by ID
+      responses:
+        "200":
+          description: OK
+          content: {}
+      parameters:
+        - name: blob_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+  /telemetry/trace/{trace_id}:
+    get:
+      summary: Obtain Trace Details
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        text:
+                          type: string
+                        details:
+                          type: string
+                        createdAt:
+                          type: string
+                        type:
+                          type: string
+                        data:
+                          type: object
+                          properties:
+                            listenerId:
+                              type: string
+                            localPort:
+                              type: number
+                            remoteIp:
+                              type: string
+                            remotePort:
+                              type: number
+              example:
+                data:
+                  - text: SMTP connection started
+                    details: A new SMTP connection was started
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.connection-start
+                    data:
+                      listenerId: smtp
+                      localPort: 25
+                      remoteIp: ::1
+                      remotePort: 57513
+                  - text: SMTP EHLO command
+                    details: The remote server sent an EHLO command
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.ehlo
+                    data:
+                      domain: test.eml
+                  - text: SPF EHLO check failed
+                    details: EHLO identity failed SPF check
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.spf-ehlo-fail
+                    data:
+                      domain: test.eml
+                      result:
+                        type: spf.none
+                        text: No SPF record
+                        details: No SPF record was found
+                        data: {}
+                      elapsed: 24
+                  - text: IPREV check passed
+                    details: Reverse IP check passed
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.iprev-pass
+                    data:
+                      domain: test.eml
+                      result:
+                        type: iprev.pass
+                        text: IPREV check passed
+                        details: The IPREV check has passed
+                        data:
+                          details:
+                            - localhost.
+                      elapsed: 0
+                  - text: SPF From check failed
+                    details: MAIL FROM identity failed SPF check
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.spf-from-fail
+                    data:
+                      domain: test.eml
+                      from: pepe@pepe.com
+                      result:
+                        type: spf.none
+                        text: No SPF record
+                        details: No SPF record was found
+                        data: {}
+                      elapsed: 18
+                  - text: SMTP MAIL FROM command
+                    details: The remote client sent a MAIL FROM command
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.mail-from
+                    data:
+                      from: pepe@pepe.com
+                  - text: SMTP RCPT TO command
+                    details: The remote client sent an RCPT TO command
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.rcpt-to
+                    data:
+                      to: john@example.org
+                  - text: DKIM verification failed
+                    details: Failed to verify DKIM signature
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.dkim-fail
+                    data:
+                      strict: false
+                      result: []
+                      elapsed: 0
+                  - text: ARC verification passed
+                    details: Successful ARC verification
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.arc-pass
+                    data:
+                      strict: false
+                      result:
+                        type: dkim.none
+                        text: No DKIM signature
+                        details: No DKIM signature was found
+                        data: {}
+                      elapsed: 0
+                  - text: DMARC check failed
+                    details: Failed to verify DMARC policy
+                    createdAt: "2025-01-05T14:34:50Z"
+                    type: smtp.dmarc-fail
+                    data:
+                      strict: false
+                      domain: example.org
+                      policy: reject
+                      result:
+                        type: dmarc.none
+                        text: No DMARC record
+                        details: No DMARC record was found
+                        data: {}
+                      elapsed: 0
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+  /telemetry/live/tracing-token:
+    get:
+      summary: Request a Tracing Token
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: string
+              example:
+                data: VLxkixOwgDF8Frj0wi8kPhx3SpzKqtsDvbo25wgKw2tBIz/O8La0dwioQw9pN11c/////w8Ctau1+ALxq7X4AndlYg==
+  /telemetry/traces/live:
+    get:
+      summary: Start Live Tracing
+      responses:
+        "200":
+          description: OK
+          content: {}
+      parameters:
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+  /dns/records/{domain}:
+    get:
+      summary: Obtain DNS Records for Domain
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        name:
+                          type: string
+                        content:
+                          type: string
+              example:
+                data:
+                  - type: MX
+                    name: example.org.
+                    content: 10 mx.fr.email.
+                  - type: CNAME
+                    name: mail.example.org.
+                    content: mx.fr.email.
+                  - type: TXT
+                    name: 202501e._domainkey.example.org.
+                    content: v=DKIM1; k=ed25519; h=sha256; p=82LqzMGRHEBI2HGDogjojWGz+Crrv0TAi8pcaOBd1vw=
+                  - type: TXT
+                    name: 202501r._domainkey.example.org.
+                    content: v=DKIM1; k=rsa; h=sha256;
+                      p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1qtCbIlrZffIqm7gHqpihPUlxOq1zD6K3j1RO/enhkZRp5dEdCqcLbyFk5d+rqRsVIWwUZiU4HXHWqMTN1hlKojUlzmU1JYtlHRMwtM5vN4mzG4x1KA0i8ZHxkahE8ITsP+kPByDF9x0vAySHXpyErNXq3BeFyu/VW+6X+fmUW6x39PfWq7kQQTcwU0Ogo447oJfmAX9H4Z+/cD5WJVNiLgvLY6faVgoXm0mJJjRU5xoEStXoUcKwrwbl7G3K7JfxtmWsgEn97auV6v4he2LRRfTxbY9smkqUtcJs61E9iyyYroJv0iRda2pv71qg8e4wTb2sqBloZv/F2FZQhM+wIDAQAB
+                  - type: TXT
+                    name: example.org.
+                    content: v=spf1 mx ra=postmaster -all
+                  - type: SRV
+                    name: _jmap._tcp.example.org.
+                    content: 0 1 443 mx.fr.email.
+                  - type: SRV
+                    name: _imaps._tcp.example.org.
+                    content: 0 1 993 mx.fr.email.
+                  - type: SRV
+                    name: _imap._tcp.example.org.
+                    content: 0 1 143 mx.fr.email.
+                  - type: SRV
+                    name: _imap._tcp.example.org.
+                    content: 0 1 1143 mx.fr.email.
+                  - type: SRV
+                    name: _pop3s._tcp.example.org.
+                    content: 0 1 995 mx.fr.email.
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+  /store/purge/account/{account_id}:
+    get:
+      summary: Purge Account
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+  /store/purge/in-memory/default/bayes-account/{account_id}:
+    get:
+      summary: Delete Bayes Model for Account
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+  /store/undelete/{account_id}:
+    get:
+      summary: List Deleted Messages
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: {}
+                      total:
+                        type: number
+              example:
+                data:
+                  items: []
+                  total: 0
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: number
+    post:
+      summary: Undelete Messages
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+              example:
+                data:
+                  - type: success
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  hash:
+                    type: string
+                  collection:
+                    type: string
+                  restoreTime:
+                    type: string
+                  cancelDeletion:
+                    type: string
+            example:
+              - hash: 9pDYGrkDlLYuBNl062qhi0wStnDYyq4ZWalnj2vXbLY
+                collection: email
+                restoreTime: "2025-01-05T14:50:13Z"
+                cancelDeletion: "2025-02-04T14:50:13Z"
+  /queue/status:
+    get:
+      summary: Obtain Queue Status
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: boolean
+              example:
+                data: true
+  /store/purge/blob:
+    get:
+      summary: Purge Blob Store
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+  /store/purge/data:
+    get:
+      summary: Purge Data Store
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+  /store/purge/in-memory:
+    get:
+      summary: Purge In-Memory Store
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+  /store/purge/account:
+    get:
+      summary: Purge All Accounts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    nullable: true
+              example:
+                data:
+  /store/uids/{account_id}:
+    delete:
+      summary: Reset IMAP UIDs for Account
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: number
+              example:
+                data:
+                  - 0
+                  - 0
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string

@@ -1,41 +1,24 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::borrow::Cow;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::{
-    protocol::fetch::{self, Attribute, Section},
-    receiver::{Request, Token},
     Command,
+    protocol::fetch::{self, Attribute, Section},
+    receiver::{Request, Token, bad},
 };
 
-use super::{parse_number, parse_sequence_set, PushUnique};
+use super::{PushUnique, parse_number, parse_sequence_set};
 
 impl Request<Command> {
     #[allow(clippy::while_let_on_iterator)]
-    pub fn parse_fetch(self) -> crate::Result<fetch::Arguments> {
+    pub fn parse_fetch(self) -> trc::Result<fetch::Arguments> {
         if self.tokens.len() < 2 {
             return Err(self.into_error("Missing parameters."));
         }
@@ -45,304 +28,319 @@ impl Request<Command> {
         let sequence_set = parse_sequence_set(
             &tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing sequence set."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing sequence set."))?
                 .unwrap_bytes(),
         )
-        .map_err(|v| (self.tag.as_str(), v))?;
+        .map_err(|v| bad(self.tag.to_string(), v))?;
 
         let mut in_parentheses = false;
 
         while let Some(token) = tokens.next() {
             match token {
                 Token::Argument(value) => {
-                    if value.eq_ignore_ascii_case(b"ALL") {
-                        attributes = vec![
-                            Attribute::Flags,
-                            Attribute::InternalDate,
-                            Attribute::Rfc822Size,
-                            Attribute::Envelope,
-                        ];
-                        break;
-                    } else if value.eq_ignore_ascii_case(b"FULL") {
-                        attributes = vec![
-                            Attribute::Flags,
-                            Attribute::InternalDate,
-                            Attribute::Rfc822Size,
-                            Attribute::Envelope,
-                            Attribute::Body,
-                        ];
-                        break;
-                    } else if value.eq_ignore_ascii_case(b"FAST") {
-                        attributes = vec![
-                            Attribute::Flags,
-                            Attribute::InternalDate,
-                            Attribute::Rfc822Size,
-                        ];
-                        break;
-                    } else if value.eq_ignore_ascii_case(b"ENVELOPE") {
-                        attributes.push_unique(Attribute::Envelope);
-                    } else if value.eq_ignore_ascii_case(b"FLAGS") {
-                        attributes.push_unique(Attribute::Flags);
-                    } else if value.eq_ignore_ascii_case(b"INTERNALDATE") {
-                        attributes.push_unique(Attribute::InternalDate);
-                    } else if value.eq_ignore_ascii_case(b"BODYSTRUCTURE") {
-                        attributes.push_unique(Attribute::BodyStructure);
-                    } else if value.eq_ignore_ascii_case(b"UID") {
-                        attributes.push_unique(Attribute::Uid);
-                    } else if value.eq_ignore_ascii_case(b"RFC822") {
-                        attributes.push_unique(
-                            if tokens.peek().map_or(false, |token| token.is_dot()) {
-                                tokens.next();
-                                let rfc822 = tokens
-                                    .next()
-                                    .ok_or((self.tag.as_str(), "Missing RFC822 parameter."))?
-                                    .unwrap_bytes();
-                                if rfc822.eq_ignore_ascii_case(b"HEADER") {
-                                    Attribute::Rfc822Header
-                                } else if rfc822.eq_ignore_ascii_case(b"SIZE") {
-                                    Attribute::Rfc822Size
-                                } else if rfc822.eq_ignore_ascii_case(b"TEXT") {
-                                    Attribute::Rfc822Text
-                                } else {
-                                    return Err((
-                                        self.tag,
-                                        format!(
-                                            "Invalid RFC822 parameter {:?}.",
-                                            String::from_utf8_lossy(&rfc822)
-                                        ),
-                                    )
-                                        .into());
-                                }
-                            } else {
-                                Attribute::Rfc822
-                            },
-                        );
-                    } else if value.eq_ignore_ascii_case(b"BODY") {
-                        let is_peek = match tokens.peek() {
-                            Some(Token::BracketOpen) => {
-                                tokens.next();
-                                false
-                            }
-                            Some(Token::Dot) => {
-                                tokens.next();
-                                if tokens
-                                    .next()
-                                    .map_or(true, |token| !token.eq_ignore_ascii_case(b"PEEK"))
-                                {
-                                    return Err(
-                                        (self.tag.as_str(), "Expected 'PEEK' after '.'.").into()
-                                    );
-                                }
-                                if tokens.next().map_or(true, |token| !token.is_bracket_open()) {
-                                    return Err((
-                                        self.tag.as_str(),
-                                        "Expected '[' after 'BODY.PEEK'",
-                                    )
-                                        .into());
-                                }
-                                true
-                            }
-                            _ => {
-                                attributes.push_unique(Attribute::Body);
-                                continue;
-                            }
-                        };
-
-                        // Parse section-spect
-                        let mut sections = Vec::new();
-                        while let Some(token) = tokens.next() {
-                            match token {
-                                Token::BracketClose => break,
-                                Token::Argument(value) => {
-                                    let section = if value.eq_ignore_ascii_case(b"HEADER") {
-                                        if let Some(Token::Dot) = tokens.peek() {
-                                            tokens.next();
-                                            if tokens.next().map_or(true, |token| {
-                                                !token.eq_ignore_ascii_case(b"FIELDS")
-                                            }) {
-                                                return Err((
-                                                    self.tag,
-                                                    "Expected 'FIELDS' after 'HEADER.'.",
-                                                )
-                                                    .into());
-                                            }
-                                            let is_not = if let Some(Token::Dot) = tokens.peek() {
-                                                tokens.next();
-                                                if tokens.next().map_or(true, |token| {
-                                                    !token.eq_ignore_ascii_case(b"NOT")
-                                                }) {
-                                                    return Err((
-                                                        self.tag,
-                                                        "Expected 'NOT' after 'HEADER.FIELDS.'.",
-                                                    )
-                                                        .into());
-                                                }
-                                                true
-                                            } else {
-                                                false
-                                            };
-                                            if tokens
-                                                .next()
-                                                .map_or(true, |token| !token.is_parenthesis_open())
-                                            {
-                                                return Err((
-                                                    self.tag,
-                                                    "Expected '(' after 'HEADER.FIELDS'.",
-                                                )
-                                                    .into());
-                                            }
-                                            let mut fields = Vec::new();
-                                            while let Some(token) = tokens.next() {
-                                                match token {
-                                                    Token::ParenthesisClose => break,
-                                                    Token::Argument(value) => {
-                                                        fields.push(String::from_utf8(value).map_err(
-                                                        |_| (self.tag.as_str(), "Invalid UTF-8 in header field name."),
-                                                    )?);
-                                                    }
-                                                    _ => {
-                                                        return Err((
-                                                            self.tag,
-                                                            "Expected field name.",
-                                                        )
-                                                            .into())
-                                                    }
-                                                }
-                                            }
-                                            Section::HeaderFields {
-                                                not: is_not,
-                                                fields,
-                                            }
-                                        } else {
-                                            Section::Header
-                                        }
-                                    } else if value.eq_ignore_ascii_case(b"TEXT") {
-                                        Section::Text
-                                    } else if value.eq_ignore_ascii_case(b"MIME") {
-                                        Section::Mime
+                    hashify::fnc_map_ignore_case!(value.as_slice(),
+                        "ALL" => {
+                            attributes = vec![
+                                Attribute::Flags,
+                                Attribute::InternalDate,
+                                Attribute::Rfc822Size,
+                                Attribute::Envelope,
+                            ];
+                            break;
+                        },
+                        "FULL" => {
+                            attributes = vec![
+                                Attribute::Flags,
+                                Attribute::InternalDate,
+                                Attribute::Rfc822Size,
+                                Attribute::Envelope,
+                                Attribute::Body,
+                            ];
+                            break;
+                        },
+                        "FAST" => {
+                            attributes = vec![
+                                Attribute::Flags,
+                                Attribute::InternalDate,
+                                Attribute::Rfc822Size,
+                            ];
+                            break;
+                        },
+                        "ENVELOPE" => {
+                            attributes.push_unique(Attribute::Envelope);
+                        },
+                        "FLAGS" => {
+                            attributes.push_unique(Attribute::Flags);
+                        },
+                        "INTERNALDATE" => {
+                            attributes.push_unique(Attribute::InternalDate);
+                        },
+                        "BODYSTRUCTURE" => {
+                            attributes.push_unique(Attribute::BodyStructure);
+                        },
+                        "UID" => {
+                            attributes.push_unique(Attribute::Uid);
+                        },
+                        "RFC822" => {
+                            attributes.push_unique(
+                                if tokens.peek().is_some_and(|token| token.is_dot()) {
+                                    tokens.next();
+                                    let rfc822 = tokens
+                                        .next()
+                                        .ok_or_else(|| {
+                                            bad(self.tag.to_string(), "Missing RFC822 parameter.")
+                                        })?
+                                        .unwrap_bytes();
+                                    if rfc822.eq_ignore_ascii_case(b"HEADER") {
+                                        Attribute::Rfc822Header
+                                    } else if rfc822.eq_ignore_ascii_case(b"SIZE") {
+                                        Attribute::Rfc822Size
+                                    } else if rfc822.eq_ignore_ascii_case(b"TEXT") {
+                                        Attribute::Rfc822Text
                                     } else {
-                                        Section::Part {
-                                            num: parse_number::<u32>(&value)
-                                                .map_err(|v| (self.tag.as_str(), v))?,
-                                        }
-                                    };
-                                    sections.push(section);
+                                        return Err(bad(
+                                            self.tag,
+                                            format!(
+                                                "Invalid RFC822 parameter {:?}.",
+                                                String::from_utf8_lossy(&rfc822)
+                                            ),
+                                        ));
+                                    }
+                                } else {
+                                    Attribute::Rfc822
+                                },
+                            );
+                        },
+                        "BODY" => {
+                            let is_peek = match tokens.peek() {
+                                Some(Token::BracketOpen) => {
+                                    tokens.next();
+                                    false
                                 }
-                                Token::Dot => (),
+                                Some(Token::Dot) => {
+                                    tokens.next();
+                                    if tokens
+                                        .next()
+                                        .is_none_or( |token| !token.eq_ignore_ascii_case(b"PEEK"))
+                                    {
+                                        return Err(bad(
+                                            self.tag.clone(),
+                                            "Expected 'PEEK' after '.'.",
+                                        ));
+                                    }
+                                    if tokens.next().is_none_or( |token| !token.is_bracket_open()) {
+                                        return Err(bad(
+                                            self.tag.clone(),
+                                            "Expected '[' after 'BODY.PEEK'",
+                                        ));
+                                    }
+                                    true
+                                }
                                 _ => {
-                                    return Err((
-                                        self.tag,
-                                        format!(
-                                            "Invalid token {:?} found in section-spect.",
-                                            token
-                                        ),
-                                    )
-                                        .into())
-                                }
-                            }
-                        }
+                                    attributes.push_unique(Attribute::Body);
 
-                        attributes.push_unique(Attribute::BodySection {
-                            peek: is_peek,
-                            sections,
-                            partial: parse_partial(&mut tokens)
-                                .map_err(|v| (self.tag.as_str(), v))?,
-                        });
-                    } else if value.eq_ignore_ascii_case(b"BINARY") {
-                        let (is_peek, is_size) = if let Some(Token::Dot) = tokens.peek() {
-                            tokens.next();
-                            let param = tokens
-                                .next()
-                                .ok_or({
-                                    (self.tag.as_str(), "Missing parameter after 'BINARY.'.")
-                                })?
-                                .unwrap_bytes();
-                            if param.eq_ignore_ascii_case(b"PEEK") {
-                                (true, false)
-                            } else if param.eq_ignore_ascii_case(b"SIZE") {
-                                (false, true)
-                            } else {
-                                return Err((
-                                    self.tag,
-                                    "Expected 'PEEK' or 'SIZE' after 'BINARY.'.",
-                                )
-                                    .into());
-                            }
-                        } else {
-                            (false, false)
-                        };
+                                    if !in_parentheses {
+                                        break;
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                            };
 
-                        // Parse section-part
-                        if tokens.next().map_or(true, |token| !token.is_bracket_open()) {
-                            return Err((self.tag.as_str(), "Expected '[' after 'BINARY'.").into());
-                        }
-                        let mut sections = Vec::new();
-                        while let Some(token) = tokens.next() {
-                            match token {
-                                Token::Argument(value) => {
-                                    sections.push(
-                                        parse_number::<u32>(&value)
-                                            .map_err(|v| (self.tag.as_str(), v))?,
-                                    );
-                                }
-                                Token::Dot => (),
-                                Token::BracketClose => break,
-                                _ => {
-                                    return Err((
-                                        self.tag,
-                                        format!(
-                                            "Expected part section integer, got {:?}.",
-                                            token.to_string()
-                                        ),
-                                    )
-                                        .into())
+                            // Parse section-spect
+                            let mut sections = Vec::new();
+                            while let Some(token) = tokens.next() {
+                                match token {
+                                    Token::BracketClose => break,
+                                    Token::Argument(value) => {
+                                        let section = if value.eq_ignore_ascii_case(b"HEADER") {
+                                            if let Some(Token::Dot) = tokens.peek() {
+                                                tokens.next();
+                                                if tokens.next().is_none_or( |token| {
+                                                    !token.eq_ignore_ascii_case(b"FIELDS")
+                                                }) {
+                                                    return Err(bad(
+                                                        self.tag,
+                                                        "Expected 'FIELDS' after 'HEADER.'.",
+                                                    ));
+                                                }
+                                                let is_not = if let Some(Token::Dot) = tokens.peek() {
+                                                    tokens.next();
+                                                    if tokens.next().is_none_or( |token| {
+                                                        !token.eq_ignore_ascii_case(b"NOT")
+                                                    }) {
+                                                        return Err(bad(
+                                                            self.tag,
+                                                            "Expected 'NOT' after 'HEADER.FIELDS.'.",
+                                                        ));
+                                                    }
+                                                    true
+                                                } else {
+                                                    false
+                                                };
+                                                if tokens
+                                                    .next()
+                                                    .is_none_or( |token| !token.is_parenthesis_open())
+                                                {
+                                                    return Err(bad(
+                                                        self.tag,
+                                                        "Expected '(' after 'HEADER.FIELDS'.",
+                                                    ));
+                                                }
+                                                let mut fields = Vec::new();
+                                                while let Some(token) = tokens.next() {
+                                                    match token {
+                                                        Token::ParenthesisClose => break,
+                                                        Token::Argument(value) => {
+                                                            fields.push(String::from_utf8(value).map_err(
+                                                            |_| bad(self.tag.clone(), "Invalid UTF-8 in header field name."),
+                                                        )?);
+                                                        }
+                                                        _ => {
+                                                            return Err(bad(
+                                                                self.tag,
+                                                                "Expected field name.",
+                                                            ))
+                                                        }
+                                                    }
+                                                }
+                                                Section::HeaderFields {
+                                                    not: is_not,
+                                                    fields,
+                                                }
+                                            } else {
+                                                Section::Header
+                                            }
+                                        } else if value.eq_ignore_ascii_case(b"TEXT") {
+                                            Section::Text
+                                        } else if value.eq_ignore_ascii_case(b"MIME") {
+                                            Section::Mime
+                                        } else {
+                                            Section::Part {
+                                                num: parse_number::<u32>(&value)
+                                                    .map_err(|v| bad(self.tag.to_string(), v))?,
+                                            }
+                                        };
+                                        sections.push(section);
+                                    }
+                                    Token::Dot => (),
+                                    _ => {
+                                        return Err(bad(
+                                            self.tag,
+                                            format!(
+                                                "Invalid token {:?} found in section-spect.",
+                                                token
+                                            ),
+                                        ))
+                                    }
                                 }
                             }
-                        }
-                        attributes.push_unique(if !is_size {
-                            Attribute::Binary {
+
+                            attributes.push_unique(Attribute::BodySection {
                                 peek: is_peek,
                                 sections,
                                 partial: parse_partial(&mut tokens)
-                                    .map_err(|v| (self.tag.as_str(), v))?,
-                            }
-                        } else {
-                            Attribute::BinarySize { sections }
-                        });
-                    } else if value.eq_ignore_ascii_case(b"PREVIEW") {
-                        attributes.push_unique(Attribute::Preview {
-                            lazy: if let Some(Token::ParenthesisOpen) = tokens.peek() {
+                                    .map_err(|v| bad(self.tag.to_string(), v))?,
+                            });
+                        },
+                        "BINARY" => {
+                            let (is_peek, is_size) = if let Some(Token::Dot) = tokens.peek() {
                                 tokens.next();
-                                let mut is_lazy = false;
-                                while let Some(token) = tokens.next() {
-                                    match token {
-                                        Token::ParenthesisClose => break,
-                                        Token::Argument(value) => {
-                                            if value.eq_ignore_ascii_case(b"LAZY") {
-                                                is_lazy = true;
-                                            }
-                                        }
-                                        _ => (),
+                                let param = tokens
+                                    .next()
+                                    .ok_or({
+                                        bad(self.tag.clone(), "Missing parameter after 'BINARY.'.")
+                                    })?
+                                    .unwrap_bytes();
+                                if param.eq_ignore_ascii_case(b"PEEK") {
+                                    (true, false)
+                                } else if param.eq_ignore_ascii_case(b"SIZE") {
+                                    (false, true)
+                                } else {
+                                    return Err(bad(
+                                        self.tag,
+                                        "Expected 'PEEK' or 'SIZE' after 'BINARY.'.",
+                                    ));
+                                }
+                            } else {
+                                (false, false)
+                            };
+
+                            // Parse section-part
+                            if tokens.next().is_none_or( |token| !token.is_bracket_open()) {
+                                return Err(bad(self.tag.to_string(), "Expected '[' after 'BINARY'."));
+                            }
+                            let mut sections = Vec::new();
+                            while let Some(token) = tokens.next() {
+                                match token {
+                                    Token::Argument(value) => {
+                                        sections.push(
+                                            parse_number::<u32>(&value)
+                                                .map_err(|v| bad(self.tag.to_string(), v))?,
+                                        );
+                                    }
+                                    Token::Dot => (),
+                                    Token::BracketClose => break,
+                                    _ => {
+                                        return Err(bad(
+                                            self.tag,
+                                            format!(
+                                                "Expected part section integer, got {:?}.",
+                                                token.to_string()
+                                            ),
+                                        ))
                                     }
                                 }
-                                is_lazy
+                            }
+                            attributes.push_unique(if !is_size {
+                                Attribute::Binary {
+                                    peek: is_peek,
+                                    sections,
+                                    partial: parse_partial(&mut tokens)
+                                        .map_err(|v| bad(self.tag.to_string(), v))?,
+                                }
                             } else {
-                                false
-                            },
-                        });
-                    } else if value.eq_ignore_ascii_case(b"MODSEQ") {
-                        attributes.push_unique(Attribute::ModSeq);
-                    } else if value.eq_ignore_ascii_case(b"EMAILID") {
-                        attributes.push_unique(Attribute::EmailId);
-                    } else if value.eq_ignore_ascii_case(b"THREADID") {
-                        attributes.push_unique(Attribute::ThreadId);
-                    } else {
-                        return Err((
-                            self.tag,
-                            format!("Invalid attribute {:?}", String::from_utf8_lossy(&value)),
-                        )
-                            .into());
-                    }
+                                Attribute::BinarySize { sections }
+                            });
+                        },
+                        "PREVIEW" => {
+                            attributes.push_unique(Attribute::Preview {
+                                lazy: if let Some(Token::ParenthesisOpen) = tokens.peek() {
+                                    tokens.next();
+                                    let mut is_lazy = false;
+                                    while let Some(token) = tokens.next() {
+                                        match token {
+                                            Token::ParenthesisClose => break,
+                                            Token::Argument(value) => {
+                                                if value.eq_ignore_ascii_case(b"LAZY") {
+                                                    is_lazy = true;
+                                                }
+                                            }
+                                            _ => (),
+                                        }
+                                    }
+                                    is_lazy
+                                } else {
+                                    false
+                                },
+                            });
+                        },
+                        "MODSEQ" => {
+                            attributes.push_unique(Attribute::ModSeq);
+                        },
+                        "EMAILID" => {
+                            attributes.push_unique(Attribute::EmailId);
+                        },
+                        "THREADID" => {
+                            attributes.push_unique(Attribute::ThreadId);
+                        },
+                        _ => {
+                            return Err(bad(
+                                self.tag,
+                                format!("Invalid attribute {:?}", String::from_utf8_lossy(&value)),
+                            ));
+                        }
+                    );
 
                     if !in_parentheses {
                         break;
@@ -352,22 +350,21 @@ impl Request<Command> {
                     if !in_parentheses {
                         in_parentheses = true;
                     } else {
-                        return Err((self.tag.as_str(), "Unexpected parenthesis open.").into());
+                        return Err(bad(self.tag.to_string(), "Unexpected parenthesis open."));
                     }
                 }
                 Token::ParenthesisClose => {
                     if in_parentheses {
                         break;
                     } else {
-                        return Err((self.tag.as_str(), "Unexpected parenthesis close.").into());
+                        return Err(bad(self.tag.to_string(), "Unexpected parenthesis close."));
                     }
                 }
                 _ => {
-                    return Err((
+                    return Err(bad(
                         self.tag,
                         format!("Invalid fetch argument {:?}.", token.to_string()),
-                    )
-                        .into())
+                    ));
                 }
             }
         }
@@ -383,10 +380,12 @@ impl Request<Command> {
                         changed_since = parse_number::<u64>(
                             &tokens
                                 .next()
-                                .ok_or((self.tag.as_str(), "Missing CHANGEDSINCE parameter."))?
+                                .ok_or_else(|| {
+                                    bad(self.tag.to_string(), "Missing CHANGEDSINCE parameter.")
+                                })?
                                 .unwrap_bytes(),
                         )
-                        .map_err(|v| (self.tag.as_str(), v))?
+                        .map_err(|v| bad(self.tag.to_string(), v))?
                         .into();
                     }
                     Token::Argument(param) if param.eq_ignore_ascii_case(b"VANISHED") => {
@@ -396,11 +395,10 @@ impl Request<Command> {
                         break;
                     }
                     _ => {
-                        return Err((
-                            self.tag.as_str(),
-                            Cow::from(format!("Unsupported parameter '{}'.", token)),
-                        )
-                            .into());
+                        return Err(bad(
+                            self.tag.clone(),
+                            format!("Unsupported parameter '{}'.", token),
+                        ));
                     }
                 }
             }
@@ -415,13 +413,13 @@ impl Request<Command> {
                 include_vanished,
             })
         } else {
-            Err((self.tag, "No data items to fetch specified.").into())
+            Err(bad(self.tag, "No data items to fetch specified."))
         }
     }
 }
 
 pub fn parse_partial(tokens: &mut Peekable<IntoIter<Token>>) -> super::Result<Option<(u32, u32)>> {
-    if tokens.peek().map_or(true, |token| !token.is_lt()) {
+    if tokens.peek().is_none_or(|token| !token.is_lt()) {
         return Ok(None);
     }
     tokens.next();
@@ -433,7 +431,7 @@ pub fn parse_partial(tokens: &mut Peekable<IntoIter<Token>>) -> super::Result<Op
             .unwrap_bytes(),
     )?;
 
-    if tokens.next().map_or(true, |token| !token.is_dot()) {
+    if tokens.next().is_none_or(|token| !token.is_dot()) {
         return Err("Expected '.' after partial start.".into());
     }
 
@@ -448,7 +446,7 @@ pub fn parse_partial(tokens: &mut Peekable<IntoIter<Token>>) -> super::Result<Op
         return Err("Invalid partial range.".into());
     }
 
-    if tokens.next().map_or(true, |token| !token.is_gt()) {
+    if tokens.next().is_none_or(|token| !token.is_gt()) {
         return Err("Expected '>' after range.".into());
     }
 
@@ -501,8 +499,8 @@ pub fn parse_partial(tokens: &mut Peekable<IntoIter<Token>>) -> super::Result<Op
 mod tests {
     use crate::{
         protocol::{
-            fetch::{self, Attribute, Section},
             Sequence,
+            fetch::{self, Attribute, Section},
         },
         receiver::Receiver,
     };

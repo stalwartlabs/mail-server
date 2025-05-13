@@ -1,40 +1,26 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::ops::Range;
 
 use mysql_async::prelude::Queryable;
 
-use super::MysqlStore;
+use super::{into_error, MysqlStore};
 
 impl MysqlStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
         range: Range<usize>,
-    ) -> crate::Result<Option<Vec<u8>>> {
-        let mut conn = self.conn_pool.get_conn().await?;
-        let s = conn.prep("SELECT v FROM t WHERE k = ?").await?;
+    ) -> trc::Result<Option<Vec<u8>>> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
+        let s = conn
+            .prep("SELECT v FROM t WHERE k = ?")
+            .await
+            .map_err(into_error)?;
         conn.exec_first::<Vec<u8>, _, _>(&s, (key,))
             .await
             .map(|bytes| {
@@ -49,26 +35,30 @@ impl MysqlStore {
                     })
                 }
             })
-            .map_err(Into::into)
+            .map_err(into_error)
     }
 
-    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
-        let mut conn = self.conn_pool.get_conn().await?;
+    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         let s = conn
             .prep("INSERT INTO t (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")
-            .await?;
+            .await
+            .map_err(into_error)?;
         conn.exec_drop(&s, (key, data))
             .await
-            .map_err(|e| crate::Error::InternalError(format!("Failed to insert blob: {}", e)))
+            .map_err(into_error)
             .map(|_| ())
     }
 
-    pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
-        let mut conn = self.conn_pool.get_conn().await?;
-        let s = conn.prep("DELETE FROM t WHERE k = ?").await?;
+    pub(crate) async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
+        let s = conn
+            .prep("DELETE FROM t WHERE k = ?")
+            .await
+            .map_err(into_error)?;
         conn.exec_iter(&s, (key,))
             .await
-            .map_err(|e| crate::Error::InternalError(format!("Failed to delete blob: {}", e)))
+            .map_err(into_error)
             .map(|hits| hits.affected_rows() > 0)
     }
 }

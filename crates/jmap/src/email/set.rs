@@ -1,33 +1,18 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{borrow::Cow, collections::HashMap, slice::IterMut};
 
+use common::{auth::AccessToken, Server};
+use email::{
+    ingest::{EmailIngest, IngestEmail, IngestSource},
+    mailbox::{MailboxFnc, UidMailbox},
+};
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
     response::references::EvalObjectReferences,
     types::{
@@ -58,25 +43,41 @@ use store::{
     },
     Serialize,
 };
+use trc::AddContext;
 
-use crate::{auth::AccessToken, mailbox::UidMailbox, IngestError, JMAP};
+use crate::{
+    api::http::HttpSessionData, auth::acl::AclMethods, blob::download::BlobDownload,
+    changes::state::StateManager, JmapMethods,
+};
+use std::future::Future;
 
 use super::{
+    delete::EmailDeletion,
     headers::{BuildHeader, ValueToHeader},
-    ingest::IngestEmail,
 };
 
-impl JMAP {
-    pub async fn email_set(
+pub trait EmailSet: Sync + Send {
+    fn email_set(
+        &self,
+        request: SetRequest<RequestArguments>,
+        access_token: &AccessToken,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+}
+
+impl EmailSet for Server {
+    async fn email_set(
         &self,
         mut request: SetRequest<RequestArguments>,
         access_token: &AccessToken,
-    ) -> Result<SetResponse, MethodError> {
+        session: &HttpSessionData,
+    ) -> trc::Result<SetResponse> {
         // Prepare response
         let account_id = request.account_id.document_id();
         let mut response = self
             .prepare_set_response(&request, Collection::Email)
             .await?;
+        let can_train_spam = self.email_bayes_can_train(access_token);
 
         // Obtain mailboxIds
         let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
@@ -106,7 +107,7 @@ impl JMAP {
         let will_destroy = request.unwrap_destroy();
 
         // Obtain quota
-        let account_quota = self.get_quota(access_token, account_id).await?;
+        let resource_token = self.get_resource_token(access_token, account_id).await?;
 
         // Process creates
         'create: for (id, mut object) in request.unwrap_create() {
@@ -432,7 +433,7 @@ impl JMAP {
                                     }
                                 } else if expected_content_type
                                     .as_ref()
-                                    .map_or(false, |v| v != &content_type)
+                                    .is_some_and(|v| v != &content_type)
                                 {
                                     response.not_created.append(
                                         id,
@@ -732,27 +733,28 @@ impl JMAP {
                 .email_ingest(IngestEmail {
                     raw_message: &raw_message,
                     message: MessageParser::new().parse(&raw_message),
-                    account_id,
-                    account_quota,
+                    resource: resource_token.clone(),
                     mailbox_ids: mailboxes,
                     keywords,
                     received_at,
-                    skip_duplicates: false,
-                    encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
+                    source: IngestSource::Jmap,
+                    spam_classify: false,
+                    spam_train: can_train_spam,
+                    session_id: session.session_id,
                 })
                 .await
             {
                 Ok(message) => {
                     response.created.insert(id, message.into());
                 }
-                Err(IngestError::OverQuota) => {
+                Err(err) if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) => {
                     response.not_created.append(
                         id,
                         SetError::new(SetErrorType::OverQuota)
                             .with_description("You have exceeded your disk quota."),
                     );
                 }
-                Err(_) => return Err(MethodError::ServerPartialFail),
+                Err(err) => return Err(err),
             }
         }
 
@@ -888,7 +890,7 @@ impl JMAP {
 
                 // Update last change id
                 if changes.change_id == u64::MAX {
-                    changes.change_id = self.assign_change_id(account_id).await?;
+                    changes.change_id = self.assign_change_id(account_id)?;
                 }
                 batch.value(Property::Cid, changes.change_id, F_VALUE);
             }
@@ -961,14 +963,7 @@ impl JMAP {
                         uid_mailbox.uid = self
                             .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
                             .await
-                            .map_err(|err| {
-                                tracing::error!(
-                                    event = "error",
-                                    context = "email_copy",
-                                    error = ?err,
-                                    "Failed to assign IMAP UID.");
-                                MethodError::ServerPartialFail
-                            })?;
+                            .caused_by(trc::location!())?;
                     }
                 }
 
@@ -988,7 +983,7 @@ impl JMAP {
                         // Add to updated list
                         response.updated.append(id, None);
                     }
-                    Err(store::Error::AssertValueFailed) => {
+                    Err(err) if err.is_assertion_failure() => {
                         response.not_updated.append(
                             id,
                             SetError::forbidden().with_description(
@@ -997,12 +992,7 @@ impl JMAP {
                         );
                     }
                     Err(err) => {
-                        tracing::error!(
-                            event = "error",
-                            context = "email_set",
-                            error = ?err,
-                            "Failed to write message changes to database.");
-                        return Err(MethodError::ServerPartialFail);
+                        return Err(err.caused_by(trc::location!()));
                     }
                 }
             }

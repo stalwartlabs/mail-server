@@ -1,32 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
-
-use crate::auth::SymmetricEncrypt;
-use crate::services::IPC_CHANNEL_BUFFER;
-use crate::JmapInstance;
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use super::request::Request;
 use super::{Gossiper, Peer, UDP_MAX_PAYLOAD};
+use common::auth::oauth::crypto::SymmetricEncrypt;
+use common::{Inner, IPC_CHANNEL_BUFFER};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use std::{net::SocketAddr, sync::Arc};
@@ -81,13 +62,18 @@ impl GossiperBuilder {
         builder.into()
     }
 
-    pub async fn spawn(self, core: JmapInstance, mut shutdown_rx: watch::Receiver<bool>) {
+    pub async fn spawn(self, inner: Arc<Inner>, mut shutdown_rx: watch::Receiver<bool>) {
         // Bind port
         let quidnunc = Arc::new(Quidnunc {
             socket: match UdpSocket::bind(SocketAddr::new(self.bind_addr, self.port)).await {
                 Ok(socket) => socket,
                 Err(e) => {
-                    tracing::error!("Failed to bind UDP socket on '{}': {}", self.bind_addr, e);
+                    trc::event!(
+                        Network(trc::NetworkEvent::BindError),
+                        Details = "Failed to bind UDP socket",
+                        LocalIp = self.bind_addr,
+                        Reason = e.to_string()
+                    );
                     return;
                 }
             },
@@ -97,10 +83,11 @@ impl GossiperBuilder {
                 "gossipmonger context key",
             ),
         });
-        tracing::info!(
-            bind.ip = self.bind_addr.to_string().as_str(),
-            bind.port = self.port,
-            "Starting gossip service"
+
+        trc::event!(
+            Network(trc::NetworkEvent::ListenStart),
+            LocalIp = self.bind_addr,
+            LocalPort = self.port,
         );
 
         // Create gossiper
@@ -111,10 +98,12 @@ impl GossiperBuilder {
             epoch: 0,
             peers: self.peers,
             last_peer_pinged: u32::MAX as usize,
-            core,
+            inner,
             gossip_tx,
         };
         let quidnunc_ = quidnunc.clone();
+        let bind_addr = self.bind_addr;
+        let bind_port = self.port;
 
         // Spawn gossip sender
         tokio::spawn(async move {
@@ -127,15 +116,24 @@ impl GossiperBuilder {
                 {
                     Ok(_) => {
                         if let Err(err) = quidnunc_.socket.send_to(&bytes, &target_addr).await {
-                            tracing::error!(
-                                "Failed to send UDP packet to {}: {}",
-                                target_addr,
-                                err
+                            trc::event!(
+                                Network(trc::NetworkEvent::WriteError),
+                                RemoteIp = target_addr.ip(),
+                                RemotePort = target_addr.port(),
+                                LocalIp = bind_addr,
+                                LocalPort = bind_port,
+                                Reason = err.to_string()
                             );
                         }
                     }
                     Err(err) => {
-                        tracing::error!("Failed to encrypt UDP packet to {}: {}", target_addr, err);
+                        trc::event!(
+                            Cluster(trc::ClusterEvent::Error),
+                            RemoteIp = target_addr.ip(),
+                            RemotePort = target_addr.port(),
+                            Reason = err,
+                            Details = "Failed to encrypt UDP packet"
+                        );
                     }
                 }
             }
@@ -157,7 +155,6 @@ impl GossiperBuilder {
                                 match quidnunc.encryptor.decrypt(&buf[..size], &quidnunc.nonce) {
                                     Ok(bytes) => {
                                         if let Some(request) = Request::from_bytes(&bytes) {
-                                            //tracing::debug!("Received packet from {}", addr);
                                             match request {
                                                 Request::Ping(peers) => {
                                                     gossiper.handle_ping(peers, true).await;
@@ -170,16 +167,32 @@ impl GossiperBuilder {
                                                 },
                                             }
                                         } else {
-                                            tracing::debug!("Received invalid gossip message from {}", addr);
+                                            trc::event!(
+                                                Cluster(trc::ClusterEvent::InvalidPacket),
+                                                RemoteIp = addr.ip(),
+                                                RemotePort = addr.port(),
+                                                Contents = bytes,
+                                            );
                                         }
                                     },
                                     Err(err) => {
-                                        tracing::debug!("Failed to decrypt UDP packet from {}: {}", addr, err);
+                                        trc::event!(
+                                            Cluster(trc::ClusterEvent::DecryptionError),
+                                            RemoteIp = addr.ip(),
+                                            RemotePort = addr.port(),
+                                            Contents = (buf[..size]).to_vec(),
+                                            Reason = err,
+                                        );
                                     },
                                 }
                             }
-                            Err(e) => {
-                                tracing::error!("Gossip process ended, socket.recv_from() failed: {}", e);
+                            Err(err) => {
+                                trc::event!(
+                                    Network(trc::NetworkEvent::ReadError),
+                                    LocalIp = bind_addr,
+                                    LocalPort = bind_port,
+                                            Reason = err.to_string()
+                                );
                             }
                         }
                     },
@@ -189,7 +202,11 @@ impl GossiperBuilder {
                         last_ping = Instant::now();
                     },
                     _ = shutdown_rx.changed() => {
-                        tracing::debug!("Gossip listener shutting down.");
+                        trc::event!(
+                            Network(trc::NetworkEvent::ListenStop),
+                            LocalIp = bind_addr,
+                            LocalPort = bind_port,
+                        );
 
                         // Broadcast leave message
                         gossiper.broadcast_leave().await;

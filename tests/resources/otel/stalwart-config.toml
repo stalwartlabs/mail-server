@@ -1,0 +1,7 @@
+tracer.otel.type = "otel"
+tracer.otel.transport = "grpc"
+tracer.otel.endpoint = "http://127.0.0.1:4317"
+tracer.otel.level = "trace"
+metrics.open-telemetry.interval = "10s"
+metrics.open-telemetry.endpoint = "http://127.0.0.1:4317"
+metrics.open-telemetry.transport = "grpc"

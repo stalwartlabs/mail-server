@@ -1,31 +1,14 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{borrow::Cow, collections::HashMap};
 
 use crate::{
     error::request::{RequestError, RequestErrorType, RequestLimitError},
-    parser::{json::Parser, Error, JsonObjectParser, Token},
+    parser::{json::Parser, JsonObjectParser, Token},
     request::Call,
     response::{serialize::serialize_hex, Response, ResponseMethod},
     types::{any_id::AnyId, id::Id, state::State, type_state::DataType},
@@ -95,7 +78,7 @@ pub struct WebSocketStateChange {
 }
 
 #[derive(Debug, serde::Serialize)]
-pub struct WebSocketRequestError {
+pub struct WebSocketRequestError<'x> {
     #[serde(rename = "@type")]
     pub type_: WebSocketRequestErrorType,
 
@@ -105,7 +88,7 @@ pub struct WebSocketRequestError {
     #[serde(skip_serializing_if = "Option::is_none")]
     limit: Option<RequestLimitError>,
     status: u16,
-    detail: Cow<'static, str>,
+    detail: Cow<'x, str>,
 
     #[serde(rename = "requestId")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -125,11 +108,7 @@ enum MessageType {
 }
 
 impl WebSocketMessage {
-    pub fn parse(
-        json: &[u8],
-        max_calls: usize,
-        max_size: usize,
-    ) -> Result<Self, WebSocketRequestError> {
+    pub fn parse(json: &[u8], max_calls: usize, max_size: usize) -> trc::Result<Self> {
         if json.len() <= max_size {
             let mut message_type = MessageType::None;
             let mut request = WebSocketRequest {
@@ -191,16 +170,18 @@ impl WebSocketMessage {
                 MessageType::PushDisable if !found_request_keys && !found_push_keys => {
                     Ok(WebSocketMessage::PushDisable)
                 }
-                _ => Err(RequestError::not_request("Invalid WebSocket JMAP request").into()),
+                _ => Err(trc::JmapEvent::NotRequest
+                    .into_err()
+                    .details("Invalid WebSocket JMAP request")),
             }
         } else {
-            Err(RequestError::limit(RequestLimitError::SizeRequest).into())
+            Err(trc::LimitEvent::SizeRequest.into_err())
         }
     }
 }
 
-impl WebSocketRequestError {
-    pub fn from_error(error: RequestError, request_id: Option<String>) -> Self {
+impl<'x> WebSocketRequestError<'x> {
+    pub fn from_error(error: RequestError<'x>, request_id: Option<String>) -> Self {
         Self {
             type_: WebSocketRequestErrorType::RequestError,
             p_type: error.p_type,
@@ -216,15 +197,9 @@ impl WebSocketRequestError {
     }
 }
 
-impl From<RequestError> for WebSocketRequestError {
-    fn from(value: RequestError) -> Self {
+impl<'x> From<RequestError<'x>> for WebSocketRequestError<'x> {
+    fn from(value: RequestError<'x>) -> Self {
         Self::from_error(value, None)
-    }
-}
-
-impl From<Error> for WebSocketRequestError {
-    fn from(value: Error) -> Self {
-        RequestError::from(value).into()
     }
 }
 

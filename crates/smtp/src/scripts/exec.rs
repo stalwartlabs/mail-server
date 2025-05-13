@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{sync::Arc, time::SystemTime};
 
@@ -30,7 +13,7 @@ use smtp_proto::*;
 
 use crate::{core::Session, inbound::AuthResult};
 
-use super::{ScriptParameters, ScriptResult};
+use super::{event_loop::RunScript, ScriptParameters, ScriptResult};
 
 impl<T: SessionStream> Session<T> {
     pub fn build_script_parameters(&self, stage: &'static str) -> ScriptParameters<'_> {
@@ -39,12 +22,33 @@ impl<T: SessionStream> Session<T> {
             .set_variable("remote_ip", self.data.remote_ip.to_string())
             .set_variable("remote_ip.reverse", self.data.remote_ip.to_reverse_name())
             .set_variable("helo_domain", self.data.helo_domain.to_lowercase())
-            .set_variable("authenticated_as", self.data.authenticated_as.clone())
+            .set_variable(
+                "authenticated_as",
+                self.authenticated_as().unwrap_or_default().to_string(),
+            )
             .set_variable(
                 "now",
                 SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .map_or(0, |d| d.as_secs()),
+            )
+            .set_variable(
+                "asn",
+                self.data
+                    .asn_geo_data
+                    .asn
+                    .as_ref()
+                    .map(|r| r.id)
+                    .unwrap_or_default(),
+            )
+            .set_variable(
+                "country",
+                self.data
+                    .asn_geo_data
+                    .country
+                    .as_ref()
+                    .map(|r| r.as_str())
+                    .unwrap_or_default(),
             )
             .set_variable(
                 "spf.result",
@@ -137,14 +141,18 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn run_script(
         &self,
+        script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
     ) -> ScriptResult {
-        self.core
+        self.server
             .run_script(
+                script_id,
                 script,
-                params.with_envelope(&self.core.core, self).await,
-                self.span.clone(),
+                params
+                    .with_session_id(self.data.session_id)
+                    .with_envelope(&self.server, self, self.data.session_id)
+                    .await,
             )
             .await
     }

@@ -1,35 +1,18 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{borrow::Cow, fmt::Display};
+use std::fmt::Display;
 
-use super::{ResponseCode, ResponseType, StatusResponse};
+use super::{ResponseCode, ResponseType};
 
 #[derive(Debug, Clone)]
 pub enum Error {
     NeedsMoreData,
     NeedsLiteral { size: u32 },
-    Error { response: StatusResponse },
+    Error { response: trc::Error },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +92,7 @@ impl<T: CommandParser> Receiver<T> {
         }
     }
 
-    pub fn error_reset(&mut self, message: impl Into<Cow<'static, str>>) -> Error {
+    pub fn error_reset(&mut self, message: impl Into<trc::Value>) -> Error {
         let request = std::mem::take(&mut self.request);
         let err = Error::err(
             if !request.tag.is_empty() {
@@ -479,14 +462,13 @@ impl Display for Token {
 }
 
 impl Error {
-    pub fn err(tag: Option<String>, message: impl Into<Cow<'static, str>>) -> Self {
+    pub fn err(tag: Option<String>, message: impl Into<trc::Value>) -> Self {
         Error::Error {
-            response: StatusResponse {
-                tag,
-                code: ResponseCode::Parse.into(),
-                message: message.into(),
-                rtype: ResponseType::Bad,
-            },
+            response: trc::ImapEvent::Error
+                .ctx(trc::Key::Details, message)
+                .ctx_opt(trc::Key::Id, tag)
+                .ctx(trc::Key::Type, ResponseType::Bad)
+                .code(ResponseCode::Parse),
         }
     }
 }
@@ -505,78 +487,26 @@ impl<T: CommandParser> Default for Receiver<T> {
 }
 
 impl<T: CommandParser> Request<T> {
-    pub fn into_error(self, message: impl Into<Cow<'static, str>>) -> StatusResponse {
-        StatusResponse {
-            tag: self.tag.into(),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::No,
-        }
+    pub fn into_error(self, message: impl Into<trc::Value>) -> trc::Error {
+        trc::ImapEvent::Error
+            .ctx(trc::Key::Details, message)
+            .ctx(trc::Key::Id, self.tag)
     }
 
-    pub fn into_parse_error(self, message: impl Into<Cow<'static, str>>) -> StatusResponse {
-        StatusResponse {
-            tag: self.tag.into(),
-            code: ResponseCode::Parse.into(),
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
+    pub fn into_parse_error(self, message: impl Into<trc::Value>) -> trc::Error {
+        trc::ImapEvent::Error
+            .ctx(trc::Key::Details, message)
+            .ctx(trc::Key::Id, self.tag)
+            .ctx(trc::Key::Code, ResponseCode::Parse)
+            .ctx(trc::Key::Type, ResponseType::Bad)
     }
 }
 
-impl From<(String, &'static str)> for StatusResponse {
-    fn from((tag, message): (String, &'static str)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(&str, &'static str)> for StatusResponse {
-    fn from((tag, message): (&str, &'static str)) -> Self {
-        StatusResponse {
-            tag: Some(tag.to_string()),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(String, String)> for StatusResponse {
-    fn from((tag, message): (String, String)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(String, Cow<'static, str>)> for StatusResponse {
-    fn from((tag, message): (String, Cow<'static, str>)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message,
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(&str, Cow<'static, str>)> for StatusResponse {
-    fn from((tag, message): (&str, Cow<'static, str>)) -> Self {
-        StatusResponse {
-            tag: Some(tag.to_string()),
-            code: None,
-            message,
-            rtype: ResponseType::Bad,
-        }
-    }
+pub(crate) fn bad(tag: impl Into<trc::Value>, message: impl Into<trc::Value>) -> trc::Error {
+    trc::ImapEvent::Error
+        .ctx(trc::Key::Details, message)
+        .ctx(trc::Key::Id, tag)
+        .ctx(trc::Key::Type, ResponseType::Bad)
 }
 
 /*
@@ -933,6 +863,14 @@ mod tests {
                         Token::Argument(b"FRED FOOBAR".to_vec()),
                         Token::Argument(b"fat man".to_vec()),
                     ],
+                }],
+            ),
+            (
+                vec!["TAG3 CREATE \"Test-ąęć-Test\"\r\n"],
+                vec![Request {
+                    tag: "TAG3".to_string(),
+                    command: Command::Create,
+                    tokens: vec![Token::Argument("Test-ąęć-Test".as_bytes().to_vec())],
                 }],
             ),
             (

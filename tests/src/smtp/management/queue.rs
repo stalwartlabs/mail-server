@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::{Duration, Instant};
 
@@ -33,7 +16,7 @@ use reqwest::{header::AUTHORIZATION, Method, StatusCode};
 
 use crate::{
     jmap::ManagementApi,
-    smtp::{outbound::TestServer, session::TestSession},
+    smtp::{session::TestSession, DnsCache, TestSMTP},
 };
 use smtp::queue::{manager::SpawnQueue, QueueId, Status};
 
@@ -73,7 +56,7 @@ reject-non-fqdn = false
 relay = true
 "#;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 #[allow(dead_code)]
 pub(super) struct List<T> {
     pub items: Vec<T>,
@@ -83,24 +66,20 @@ pub(super) struct List<T> {
 #[tokio::test]
 #[serial_test::serial]
 async fn manage_queue() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Start remote test server
-    let mut remote = TestServer::new("smtp_manage_queue_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("smtp_manage_queue_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
     let remote_core = remote.build_smtp();
 
     // Start local management interface
-    let local = TestServer::new("smtp_manage_queue_local", LOCAL, true).await;
+    let local = TestSMTP::new("smtp_manage_queue_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx1.foobar.org".to_string()],
@@ -109,7 +88,7 @@ async fn manage_queue() {
         Instant::now() + Duration::from_secs(10),
     );
 
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx1.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -155,7 +134,10 @@ async fn manage_queue() {
         ("f", ("", vec!["success@foobar.org", "delay@foobar.org"])),
     ]);
     let mut session = local.new_session();
-    local.qr.queue_rx.spawn(local.instance.clone());
+    local
+        .queue_receiver
+        .queue_rx
+        .spawn(local.server.inner.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("foobar.net").await;
@@ -181,7 +163,7 @@ async fn manage_queue() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         remote
-            .qr
+            .queue_receiver
             .consume_message(&remote_core)
             .await
             .recipients
@@ -336,7 +318,7 @@ async fn manage_queue() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         remote
-            .qr
+            .queue_receiver
             .consume_message(&remote_core)
             .await
             .recipients
@@ -463,6 +445,47 @@ async fn manage_queue() {
             }
         }
     }
+
+    // Bulk cancel
+    assert_eq!(
+        api.request::<List<Message>>(Method::GET, "/api/queue/messages?values=1")
+            .await
+            .unwrap()
+            .unwrap_data()
+            .items
+            .len(),
+        3
+    );
+    assert!(api
+        .request::<bool>(Method::DELETE, "/api/queue/messages?text=example2.com")
+        .await
+        .unwrap()
+        .unwrap_data());
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        api.request::<List<QueueId>>(Method::GET, "/api/queue/messages")
+            .await
+            .unwrap()
+            .unwrap_data()
+            .items
+            .len(),
+        2
+    );
+    assert!(api
+        .request::<bool>(Method::DELETE, "/api/queue/messages")
+        .await
+        .unwrap()
+        .unwrap_data());
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        api.request::<List<QueueId>>(Method::GET, "/api/queue/messages")
+            .await
+            .unwrap()
+            .unwrap_data()
+            .items
+            .len(),
+        0
+    );
 
     // Test authentication error
     assert_eq!(

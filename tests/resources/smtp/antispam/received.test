@@ -38,6 +38,8 @@ Received: from Agni (localhost [::ffff:127.0.0.1]) (TLS: TLSv1/SSLv3, 168bits,DE
           with esmtp; Mon, 28 Oct 2002 14:48:52 -0800
 Received: from [10.231.252.223] (79.sub-174-252-72.myvzw.com [174.252.72.79]) by mx.google.com 
           with ESMTPS id m16sm345129qck.28.2011.06.15.07.42.02 (version=TLSv1/SSLv3 cipher=OTHER); Wed, 15 Jun 2011 07:42:08 -0700 (PDT)
+Received: from other.myvzw.com (79.sub-174-252-72.myvzw.com [174.252.72.79]) by mx.google.com 
+          with ESMTPS id m16sm345129qck.28.2011.06.15.07.42.02 (version=TLSv1/SSLv3 cipher=OTHER); Wed, 15 Jun 2011 07:42:08 -0700 (PDT)
 Received: from user (10.175.233.33) by DB6PR07MB3384.eurprd07.prod.outlook.com (10.175.234.11) 
           with Microsoft SMTP Server (version=TLS1_2, cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.1143.11; Thu, 13 Sep 2018 14:47:44 +0000
 Received: from [94.198.96.74] (using TLSv1.3 with cipher TLS_AES_256_GCM_SHA384 (256/256 bits) key-exchange ECDHE (P-256) server-signature RSA-PSS (2048 bits) server-digest SHA256) (No client certificate requested) 
@@ -48,10 +50,17 @@ Subject: test
 test
 
 <!-- NEXT TEST -->
-expect DIRECT_TO_MX ONCE_RECEIVED RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
+expect DIRECT_TO_MX RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
 
 To: user@domain.com
-X-Mailer: MUA
+X-Mailer: MUA 1.2
 Subject: test
+
+test
+<!-- NEXT TEST -->
+expect RCVD_UNPARSABLE RCVD_NO_TLS_LAST RCVD_COUNT_ONE
+
+To: user@domain.com
+Received: invalid
 
 test

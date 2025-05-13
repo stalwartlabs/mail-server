@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use common::Core;
 use store::Stores;
@@ -27,26 +10,28 @@ use utils::config::Config;
 
 use crate::{
     smtp::{
-        build_smtp,
         inbound::TestMessage,
         session::{load_test_message, TestSession, VerifyResponse},
         TempDir, TestSMTP,
     },
     AssertConfig,
 };
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 
 const CONFIG: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 directory = "local"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/queue.db"
+
+[spam-filter]
+enable = false
 
 [directory."local"]
 type = "memory"
@@ -119,26 +104,19 @@ enable = true
 #[tokio::test]
 async fn data() {
     // Enable logging
-    /*let disable = 1;
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    crate::enable_logging();
 
     // Create temp dir for queue
-    let mut inner = Inner::default();
     let tmp_dir = TempDir::new("smtp_data_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     config.assert_no_errors();
-    let mut qr = inner.init_test_queue(&core);
 
     // Test queue message builder
-    let core = build_smtp(core, inner);
-    let mut session = Session::test(core.clone());
+    let test = TestSMTP::from_core(core);
+    let mut qr = test.queue_receiver;
+    let mut session = Session::test(test.server.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.test_builder().await;
@@ -150,12 +128,7 @@ async fn data() {
 
     // Send broken message
     session
-        .send_message(
-            "john@doe.org",
-            &["bill@foobar.org"],
-            "From: john",
-            "550 5.7.7",
-        )
+        .send_message("john@doe.org", &["bill@foobar.org"], "invalid", "550 5.7.7")
         .await;
 
     // Naive Loop detection
@@ -181,7 +154,7 @@ async fn data() {
     session.mail_from("john@doe.org", "250").await;
     session.rcpt_to("bill@foobar.org", "250").await;
     session.ingest(b"DATA\r\n").await.unwrap();
-    session.response().assert_code("451 4.4.5");
+    session.response().assert_code("452 4.4.5");
     session.rset().await;
 
     // Headers should be added to messages from 10.0.0.3
@@ -220,7 +193,7 @@ async fn data() {
         .await;
 
     // Release quota
-    qr.clear_queue(&core).await;
+    qr.clear_queue(&test.server).await;
 
     // Only 1500 bytes are allowed in the queue to domain foobar.org
     session
@@ -259,10 +232,9 @@ async fn data() {
         .await;
 
     // Make sure store is empty
-    qr.clear_queue(&core).await;
-    core.core
-        .storage
-        .data
-        .assert_is_empty(core.core.storage.blob.clone())
+    qr.clear_queue(&test.server).await;
+    test.server
+        .store()
+        .assert_is_empty(test.server.blob_store().clone())
         .await;
 }

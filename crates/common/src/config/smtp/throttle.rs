@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use utils::config::{utils::AsKey, Config, Rate};
 
@@ -27,42 +10,44 @@ use crate::expr::{tokenizer::TokenMap, Expression};
 
 use super::*;
 
-pub fn parse_throttle(
+pub fn parse_queue_rate_limiter(
     config: &mut Config,
     prefix: impl AsKey,
     token_map: &TokenMap,
-    available_throttle_keys: u16,
-) -> Vec<Throttle> {
+    available_rate_limiter_keys: u16,
+) -> Vec<QueueRateLimiter> {
     let prefix_ = prefix.as_key();
-    let mut throttles = Vec::new();
-    for throttle_id in config
+    let mut rate_limiters = Vec::new();
+    for rate_limiter_id in config
         .sub_keys(prefix, "")
         .map(|s| s.to_string())
         .collect::<Vec<_>>()
     {
-        let throttle_id = throttle_id.as_str();
-        if let Some(throttle) = parse_throttle_item(
+        let rate_limiter_id = rate_limiter_id.as_str();
+        if let Some(rate_limiter) = parse_queue_rate_limiter_item(
             config,
-            (&prefix_, throttle_id),
+            (&prefix_, rate_limiter_id),
+            rate_limiter_id,
             token_map,
-            available_throttle_keys,
+            available_rate_limiter_keys,
         ) {
-            throttles.push(throttle);
+            rate_limiters.push(rate_limiter);
         }
     }
 
-    throttles
+    rate_limiters
 }
 
-fn parse_throttle_item(
+fn parse_queue_rate_limiter_item(
     config: &mut Config,
     prefix: impl AsKey,
+    rate_limiter_id: &str,
     token_map: &TokenMap,
-    available_throttle_keys: u16,
-) -> Option<Throttle> {
+    available_rate_limiter_keys: u16,
+) -> Option<QueueRateLimiter> {
     let prefix = prefix.as_key();
 
-    // Skip disabled throttles
+    // Skip disabled rate_limiters
     if !config
         .property::<bool>((prefix.as_str(), "enable"))
         .unwrap_or(true)
@@ -76,12 +61,13 @@ fn parse_throttle_item(
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect::<Vec<_>>()
     {
-        match parse_throttle_key(&value) {
+        match parse_queue_rate_limiter_key(&value) {
             Ok(key) => {
-                if (key & available_throttle_keys) != 0 {
+                if (key & available_rate_limiter_keys) != 0 {
                     keys |= key;
                 } else {
-                    let err = format!("Throttle key {value:?} is not available in this context");
+                    let err =
+                        format!("Rate limiter key {value:?} is not available in this context");
                     config.new_build_error(key_, err);
                 }
             }
@@ -91,37 +77,18 @@ fn parse_throttle_item(
         }
     }
 
-    let throttle = Throttle {
+    Some(QueueRateLimiter {
+        id: rate_limiter_id.to_string(),
         expr: Expression::try_parse(config, (prefix.as_str(), "match"), token_map)
             .unwrap_or_default(),
         keys,
-        concurrency: config
-            .property::<Option<u64>>((prefix.as_str(), "concurrency"))
-            .filter(|&v| v.as_ref().map_or(false, |v| *v > 0))
-            .unwrap_or_default(),
         rate: config
-            .property::<Option<Rate>>((prefix.as_str(), "rate"))
-            .filter(|v| v.as_ref().map_or(false, |r| r.requests > 0))
-            .unwrap_or_default(),
-    };
-
-    // Validate
-    if throttle.rate.is_none() && throttle.concurrency.is_none() {
-        config.new_parse_error(
-            prefix.as_str(),
-            concat!(
-                "Throttle needs to define a ",
-                "valid 'rate' and/or 'concurrency' property."
-            )
-            .to_string(),
-        );
-        None
-    } else {
-        Some(throttle)
-    }
+            .property_require::<Rate>((prefix.as_str(), "rate"))
+            .filter(|r| r.requests > 0)?,
+    })
 }
 
-pub(crate) fn parse_throttle_key(value: &str) -> utils::config::Result<u16> {
+pub(crate) fn parse_queue_rate_limiter_key(value: &str) -> Result<u16, String> {
     match value {
         "rcpt" => Ok(THROTTLE_RCPT),
         "rcpt_domain" => Ok(THROTTLE_RCPT_DOMAIN),
@@ -133,6 +100,6 @@ pub(crate) fn parse_throttle_key(value: &str) -> utils::config::Result<u16> {
         "remote_ip" => Ok(THROTTLE_REMOTE_IP),
         "local_ip" => Ok(THROTTLE_LOCAL_IP),
         "helo_domain" => Ok(THROTTLE_HELO_DOMAIN),
-        _ => Err(format!("Invalid throttle key {value:?}")),
+        _ => Err(format!("Invalid THROTTLE key {value:?}")),
     }
 }

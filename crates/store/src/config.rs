@@ -1,34 +1,14 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
-
-use std::sync::Arc;
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
 
 use crate::{
-    backend::fs::FsStore,
-    write::purge::{PurgeSchedule, PurgeStore},
-    BlobStore, CompressionAlgo, FtsStore, LookupStore, QueryStore, Store, Stores,
+    backend::fs::FsStore, BlobStore, CompressionAlgo, InMemoryStore, PurgeSchedule, PurgeStore,
+    Store, Stores,
 };
 
 #[cfg(feature = "s3")]
@@ -55,10 +35,21 @@ use crate::backend::elastic::ElasticSearchStore;
 #[cfg(feature = "redis")]
 use crate::backend::redis::RedisStore;
 
+#[cfg(feature = "azure")]
+use crate::backend::azure::AzureStore;
+
+#[cfg(feature = "enterprise")]
+enum CompositeStore {
+    #[cfg(any(feature = "postgres", feature = "mysql"))]
+    SQLReadReplica(String),
+    ShardedBlob(String),
+    ShardedInMemory(String),
+}
+
 impl Stores {
-    pub async fn parse_all(config: &mut Config) -> Self {
+    pub async fn parse_all(config: &mut Config, is_reload: bool) -> Self {
         let mut stores = Self::parse(config).await;
-        stores.parse_lookups(config).await;
+        stores.parse_in_memory(config, is_reload).await;
         stores
     }
 
@@ -70,13 +61,15 @@ impl Stores {
 
     pub async fn parse_stores(&mut self, config: &mut Config) {
         let is_reload = !self.stores.is_empty();
-
-        for id in config
+        #[cfg(feature = "enterprise")]
+        let mut composite_stores = Vec::new();
+        let store_ids = config
             .sub_keys("store", ".type")
             .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-        {
-            let id = id.as_str();
+            .collect::<Vec<_>>();
+
+        for store_id in store_ids {
+            let id = store_id.as_str();
             // Parse store
             #[cfg(feature = "test_mode")]
             {
@@ -84,7 +77,6 @@ impl Stores {
                     .property_or_default::<bool>(("store", id, "disable"), "false")
                     .unwrap_or(false)
                 {
-                    tracing::debug!("Skipping disabled store {id:?}.");
                     continue;
                 }
             }
@@ -94,7 +86,6 @@ impl Stores {
                 continue;
             };
             let prefix = ("store", id);
-            let store_id = id.to_string();
             let compression_algo = config
                 .property_or_default::<CompressionAlgo>(("store", id, "compression"), "none")
                 .unwrap_or(CompressionAlgo::None);
@@ -119,7 +110,7 @@ impl Stores {
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id, db.into());
+                        self.in_memory_stores.insert(store_id, db.into());
                     }
                 }
                 #[cfg(feature = "foundation")]
@@ -141,31 +132,38 @@ impl Stores {
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id, db.into());
+                        self.in_memory_stores.insert(store_id, db.into());
                     }
                 }
                 #[cfg(feature = "postgres")]
                 "postgresql" => {
-                    if let Some(db) = PostgresStore::open(config, prefix).await.map(Store::from) {
+                    if let Some(db) =
+                        PostgresStore::open(config, prefix, config.is_active_store(id))
+                            .await
+                            .map(Store::from)
+                    {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id.clone(), db.into());
+                        self.in_memory_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 #[cfg(feature = "mysql")]
                 "mysql" => {
-                    if let Some(db) = MysqlStore::open(config, prefix).await.map(Store::from) {
+                    if let Some(db) = MysqlStore::open(config, prefix, config.is_active_store(id))
+                        .await
+                        .map(Store::from)
+                    {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id.clone(), db.into());
+                        self.in_memory_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 #[cfg(feature = "sqlite")]
@@ -187,7 +185,7 @@ impl Stores {
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id.clone(), db.into());
+                        self.in_memory_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 "fs" => {
@@ -207,7 +205,7 @@ impl Stores {
                 "elasticsearch" => {
                     if let Some(db) = ElasticSearchStore::open(config, prefix)
                         .await
-                        .map(FtsStore::from)
+                        .map(crate::FtsStore::from)
                     {
                         self.fts_stores.insert(store_id, db);
                     }
@@ -216,58 +214,109 @@ impl Stores {
                 "redis" => {
                     if let Some(db) = RedisStore::open(config, prefix)
                         .await
-                        .map(LookupStore::from)
+                        .map(InMemoryStore::from)
                     {
-                        self.lookup_stores.insert(store_id, db);
+                        self.in_memory_stores.insert(store_id, db);
+                    }
+                }
+                #[cfg(feature = "enterprise")]
+                "sql-read-replica" => {
+                    #[cfg(any(feature = "postgres", feature = "mysql"))]
+                    composite_stores.push(CompositeStore::SQLReadReplica(store_id));
+                }
+                #[cfg(feature = "enterprise")]
+                "distributed-blob" | "sharded-blob" => {
+                    composite_stores.push(CompositeStore::ShardedBlob(store_id));
+                }
+                #[cfg(feature = "enterprise")]
+                "sharded-in-memory" => {
+                    composite_stores.push(CompositeStore::ShardedInMemory(store_id));
+                }
+                #[cfg(feature = "azure")]
+                "azure" => {
+                    if let Some(db) = AzureStore::open(config, prefix).await.map(BlobStore::from) {
+                        self.blob_stores
+                            .insert(store_id, db.with_compression(compression_algo));
                     }
                 }
                 unknown => {
-                    tracing::debug!("Unknown directory type: {unknown:?}");
+                    config.new_parse_warning(
+                        ("store", id, "type"),
+                        format!("Unknown directory type: {unknown:?}"),
+                    );
+                }
+            }
+        }
+
+        #[cfg(feature = "enterprise")]
+        for composite_store in composite_stores {
+            match composite_store {
+                #[cfg(any(feature = "postgres", feature = "mysql"))]
+                CompositeStore::SQLReadReplica(id) => {
+                    let prefix = ("store", id.as_str());
+                    if let Some(db) = crate::backend::composite::read_replica::SQLReadReplica::open(
+                        config,
+                        prefix,
+                        self,
+                        config.is_active_store(&id),
+                    )
+                    .await
+                    {
+                        let db = Store::SQLReadReplica(db.into());
+                        self.stores.insert(id.to_string(), db.clone());
+                        self.fts_stores.insert(id.to_string(), db.clone().into());
+                        self.blob_stores.insert(
+                            id.to_string(),
+                            BlobStore::from(db.clone()).with_compression(
+                                config
+                                    .property_or_default::<CompressionAlgo>(
+                                        ("store", id.as_str(), "compression"),
+                                        "none",
+                                    )
+                                    .unwrap_or(CompressionAlgo::None),
+                            ),
+                        );
+                        self.in_memory_stores.insert(id, db.into());
+                    }
+                }
+                CompositeStore::ShardedBlob(id) => {
+                    let prefix = ("store", id.as_str());
+                    if let Some(db) = crate::backend::composite::sharded_blob::ShardedBlob::open(
+                        config, prefix, self,
+                    ) {
+                        let store = BlobStore {
+                            backend: crate::BlobBackend::Sharded(db.into()),
+                            compression: config
+                                .property_or_default::<CompressionAlgo>(
+                                    ("store", id.as_str(), "compression"),
+                                    "none",
+                                )
+                                .unwrap_or(CompressionAlgo::None),
+                        };
+                        self.blob_stores.insert(id, store);
+                    }
+                }
+                CompositeStore::ShardedInMemory(id) => {
+                    let prefix = ("store", id.as_str());
+                    if let Some(db) =
+                        crate::backend::composite::sharded_lookup::ShardedInMemory::open(
+                            config, prefix, self,
+                        )
+                    {
+                        self.in_memory_stores
+                            .insert(id, InMemoryStore::Sharded(db.into()));
+                    }
                 }
             }
         }
     }
 
-    pub async fn parse_lookups(&mut self, config: &mut Config) {
+    pub async fn parse_in_memory(&mut self, config: &mut Config, is_reload: bool) {
         // Parse memory stores
-        self.parse_memory_stores(config);
+        self.parse_static_stores(config, is_reload);
 
-        // Add SQL queries as lookup stores
-        for (store_id, lookup_store) in self.stores.iter().filter_map(|(id, store)| {
-            if store.is_sql() {
-                Some((id.clone(), LookupStore::from(store.clone())))
-            } else {
-                None
-            }
-        }) {
-            // Add queries as lookup stores
-            for lookup_id in config.sub_keys(("store", store_id.as_str(), "query"), "") {
-                if let Some(query) = config.value(("store", store_id.as_str(), "query", lookup_id))
-                {
-                    self.lookup_stores.insert(
-                        format!("{store_id}/{lookup_id}"),
-                        LookupStore::Query(Arc::new(QueryStore {
-                            store: lookup_store.clone(),
-                            query: query.to_string(),
-                        })),
-                    );
-                }
-            }
-
-            // Run init queries on database
-            for query in config
-                .values(("store", store_id.as_str(), "init.execute"))
-                .map(|(_, s)| s.to_string())
-                .collect::<Vec<_>>()
-            {
-                if let Err(err) = lookup_store.query::<usize>(&query, Vec::new()).await {
-                    config.new_build_error(
-                        ("store", store_id.as_str()),
-                        format!("Failed to initialize store: {err}"),
-                    );
-                }
-            }
-        }
+        // Parse http stores
+        self.parse_http_stores(config, is_reload);
 
         // Parse purge schedules
         if let Some(store) = config
@@ -306,8 +355,10 @@ impl Stores {
                 });
             }
         }
-        for (store_id, store) in &self.lookup_stores {
-            if matches!(store, LookupStore::Store(_)) {
+        for (store_id, store) in &self.in_memory_stores {
+            if matches!(store, InMemoryStore::Store(_))
+                && config.is_active_in_memory_store(store_id)
+            {
                 self.purge_schedules.push(PurgeSchedule {
                     cron: config
                         .property_or_default::<SimpleCron>(
@@ -323,11 +374,34 @@ impl Stores {
     }
 }
 
-impl From<crate::Error> for String {
-    fn from(err: crate::Error) -> Self {
-        match err {
-            crate::Error::InternalError(err) => err,
-            crate::Error::AssertValueFailed => unimplemented!(),
+#[allow(dead_code)]
+trait IsActiveStore {
+    fn is_active_store(&self, id: &str) -> bool;
+    fn is_active_in_memory_store(&self, id: &str) -> bool;
+}
+
+impl IsActiveStore for Config {
+    fn is_active_store(&self, id: &str) -> bool {
+        for key in [
+            "storage.data",
+            "storage.blob",
+            "storage.lookup",
+            "storage.fts",
+            "tracing.history.store",
+            "metrics.history.store",
+        ] {
+            if let Some(store_id) = self.value(key) {
+                if store_id == id {
+                    return true;
+                }
+            }
         }
+
+        false
+    }
+
+    fn is_active_in_memory_store(&self, id: &str) -> bool {
+        self.value("storage.lookup")
+            .is_some_and(|store_id| store_id == id)
     }
 }

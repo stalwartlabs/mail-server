@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use crate::{QueryResult, QueryType};
 
@@ -29,16 +12,16 @@ use tokio_postgres::types::{FromSql, ToSql, Type};
 
 use crate::IntoRows;
 
-use super::PostgresStore;
+use super::{into_error, PostgresStore};
 
 impl PostgresStore {
     pub(crate) async fn query<T: QueryResult>(
         &self,
         query: &str,
-        params_: Vec<crate::Value<'_>>,
-    ) -> crate::Result<T> {
-        let conn = self.conn_pool.get().await?;
-        let s = conn.prepare_cached(query).await?;
+        params_: &[crate::Value<'_>],
+    ) -> trc::Result<T> {
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let s = conn.prepare_cached(query).await.map_err(into_error)?;
         let params = params_
             .iter()
             .map(|v| v as &(dyn tokio_postgres::types::ToSql + Sync))
@@ -48,22 +31,25 @@ impl PostgresStore {
             QueryType::Execute => conn
                 .execute(&s, params.as_slice())
                 .await
-                .map_or_else(|e| Err(e.into()), |r| Ok(T::from_exec(r as usize))),
+                .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_exec(r as usize))),
             QueryType::Exists => {
-                let rows = conn.query_raw(&s, params.into_iter()).await?;
+                let rows = conn
+                    .query_raw(&s, params.into_iter())
+                    .await
+                    .map_err(into_error)?;
                 pin_mut!(rows);
                 rows.try_next()
                     .await
-                    .map_or_else(|e| Err(e.into()), |r| Ok(T::from_exists(r.is_some())))
+                    .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_exists(r.is_some())))
             }
             QueryType::QueryOne => conn
                 .query_opt(&s, params.as_slice())
                 .await
-                .map_or_else(|e| Err(e.into()), |r| Ok(T::from_query_one(r))),
+                .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_query_one(r))),
             QueryType::QueryAll => conn
                 .query(&s, params.as_slice())
                 .await
-                .map_or_else(|e| Err(e.into()), |r| Ok(T::from_query_all(r))),
+                .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_query_all(r))),
         }
     }
 }

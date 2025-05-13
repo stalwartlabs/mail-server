@@ -1,28 +1,12 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+use common::{auth::AccessToken, Server};
+use email::index::PREVIEW_LENGTH;
 use jmap_proto::{
-    error::method::MethodError,
     method::parse::{ParseEmailRequest, ParseEmailResponse},
     object::Object,
     types::{property::Property, value::Value},
@@ -30,24 +14,32 @@ use jmap_proto::{
 use mail_parser::{
     decoders::html::html_to_text, parsers::preview::preview_text, MessageParser, PartType,
 };
+use std::future::Future;
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::blob::download::BlobDownload;
 
 use super::{
     body::{ToBodyPart, TruncateBody},
     headers::HeaderToValue,
-    index::PREVIEW_LENGTH,
 };
 
-impl JMAP {
-    pub async fn email_parse(
+pub trait EmailParse: Sync + Send {
+    fn email_parse(
         &self,
         request: ParseEmailRequest,
         access_token: &AccessToken,
-    ) -> Result<ParseEmailResponse, MethodError> {
+    ) -> impl Future<Output = trc::Result<ParseEmailResponse>> + Send;
+}
+
+impl EmailParse for Server {
+    async fn email_parse(
+        &self,
+        request: ParseEmailRequest,
+        access_token: &AccessToken,
+    ) -> trc::Result<ParseEmailResponse> {
         if request.blob_ids.len() > self.core.jmap.mail_parse_max_items {
-            return Err(MethodError::RequestTooLarge);
+            return Err(trc::JmapEvent::RequestTooLarge.into_err());
         }
         let properties = request.properties.unwrap_or_else(|| {
             vec![
@@ -252,9 +244,9 @@ impl JMAP {
                     }
 
                     _ => {
-                        return Err(MethodError::InvalidArguments(format!(
-                            "Invalid property {property:?}"
-                        )));
+                        return Err(trc::JmapEvent::InvalidArguments
+                            .into_err()
+                            .details(format!("Invalid property {property:?}")));
                     }
                 }
             }

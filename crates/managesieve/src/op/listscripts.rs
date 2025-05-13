@@ -1,41 +1,33 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+use std::time::Instant;
+
+use common::listener::SessionStream;
+use directory::Permission;
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
-use tokio::io::{AsyncRead, AsyncWrite};
+use trc::AddContext;
 
 use crate::core::{Session, StatusResponse};
 
-impl<T: AsyncRead + AsyncWrite> Session<T> {
-    pub async fn handle_listscripts(&mut self) -> super::OpResult {
+impl<T: SessionStream> Session<T> {
+    pub async fn handle_listscripts(&mut self) -> trc::Result<Vec<u8>> {
+        // Validate access
+        self.assert_has_permission(Permission::SieveListScripts)?;
+
+        let op_start = Instant::now();
         let account_id = self.state.access_token().primary_id();
         let document_ids = self
-            .jmap
+            .server
             .get_document_ids(account_id, Collection::SieveScript)
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .unwrap_or_default();
 
         if document_ids.is_empty() {
@@ -43,17 +35,19 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         }
 
         let mut response = Vec::with_capacity(128);
+        let count = document_ids.len();
 
         for document_id in document_ids {
             if let Some(script) = self
-                .jmap
+                .server
                 .get_property::<Object<Value>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
                     Property::Value,
                 )
-                .await?
+                .await
+                .caused_by(trc::location!())?
             {
                 response.push(b'\"');
                 if let Some(name) = script.get(&Property::Name).as_string() {
@@ -72,6 +66,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 }
             }
         }
+
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::ListScripts),
+            SpanId = self.session_id,
+            Total = count,
+            Elapsed = op_start.elapsed()
+        );
 
         Ok(StatusResponse::ok("").serialize(response))
     }

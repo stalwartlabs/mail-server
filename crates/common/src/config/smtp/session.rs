@@ -1,8 +1,21 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
 use std::{
     net::{SocketAddr, ToSocketAddrs},
+    str::FromStr,
     time::Duration,
 };
 
+use ahash::AHashSet;
+use base64::{engine::general_purpose::STANDARD, Engine};
+use hyper::{
+    header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
+    HeaderMap,
+};
 use smtp_proto::*;
 use utils::config::{utils::ParseValue, Config};
 
@@ -11,7 +24,7 @@ use crate::{
     expr::{if_block::IfBlock, tokenizer::TokenMap, *},
 };
 
-use self::{resolver::Policy, throttle::parse_throttle};
+use self::resolver::Policy;
 
 use super::*;
 
@@ -20,7 +33,6 @@ pub struct SessionConfig {
     pub timeout: IfBlock,
     pub duration: IfBlock,
     pub transfer_limit: IfBlock,
-    pub throttle: SessionThrottle,
 
     pub connect: Connect,
     pub ehlo: Ehlo,
@@ -30,13 +42,9 @@ pub struct SessionConfig {
     pub data: Data,
     pub extensions: Extensions,
     pub mta_sts_policy: Option<Policy>,
-}
 
-#[derive(Default, Debug, Clone)]
-pub struct SessionThrottle {
-    pub connect: Vec<Throttle>,
-    pub mail_from: Vec<Throttle>,
-    pub rcpt_to: Vec<Throttle>,
+    pub milters: Vec<Milter>,
+    pub hooks: Vec<MTAHook>,
 }
 
 #[derive(Clone)]
@@ -81,6 +89,7 @@ pub struct Auth {
 pub struct Mail {
     pub script: IfBlock,
     pub rewrite: IfBlock,
+    pub is_allowed: IfBlock,
 }
 
 #[derive(Clone)]
@@ -97,7 +106,7 @@ pub struct Rcpt {
     // Limits
     pub max_recipients: IfBlock,
 
-    // Catch-all and sub-adressing
+    // Catch-all and sub-addressing
     pub catch_all: AddressMapping,
     pub subaddressing: AddressMapping,
 }
@@ -113,8 +122,7 @@ pub enum AddressMapping {
 #[derive(Clone)]
 pub struct Data {
     pub script: IfBlock,
-    pub pipe_commands: Vec<Pipe>,
-    pub milters: Vec<Milter>,
+    pub spam_filter: IfBlock,
 
     // Limits
     pub max_messages: IfBlock,
@@ -128,19 +136,13 @@ pub struct Data {
     pub add_auth_results: IfBlock,
     pub add_message_id: IfBlock,
     pub add_date: IfBlock,
-}
-
-// Ceci n'est pas une pipe
-#[derive(Clone)]
-pub struct Pipe {
-    pub command: IfBlock,
-    pub arguments: IfBlock,
-    pub timeout: IfBlock,
+    pub add_delivered_to: bool,
 }
 
 #[derive(Clone)]
 pub struct Milter {
     pub enable: IfBlock,
+    pub id: Arc<String>,
     pub addrs: Vec<SocketAddr>,
     pub hostname: String,
     pub port: u16,
@@ -154,12 +156,36 @@ pub struct Milter {
     pub protocol_version: MilterVersion,
     pub flags_actions: Option<u32>,
     pub flags_protocol: Option<u32>,
+    pub run_on_stage: AHashSet<Stage>,
 }
 
 #[derive(Clone, Copy)]
 pub enum MilterVersion {
     V2,
     V6,
+}
+
+#[derive(Clone)]
+pub struct MTAHook {
+    pub enable: IfBlock,
+    pub id: String,
+    pub url: String,
+    pub timeout: Duration,
+    pub headers: HeaderMap,
+    pub tls_allow_invalid_certs: bool,
+    pub tempfail_on_error: bool,
+    pub run_on_stage: AHashSet<Stage>,
+    pub max_response_size: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Stage {
+    Connect,
+    Ehlo,
+    Auth,
+    Mail,
+    Rcpt,
+    Data,
 }
 
 impl SessionConfig {
@@ -174,21 +200,20 @@ impl SessionConfig {
         let mut session = SessionConfig::default();
         session.rcpt.catch_all = AddressMapping::parse(config, "session.rcpt.catch-all");
         session.rcpt.subaddressing = AddressMapping::parse(config, "session.rcpt.sub-addressing");
-        session.data.milters = config
-            .sub_keys("session.data.milter", "")
+        session.milters = config
+            .sub_keys("session.milter", ".hostname")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
             .into_iter()
             .filter_map(|id| parse_milter(config, &id, &has_rcpt_vars))
             .collect();
-        session.data.pipe_commands = config
-            .sub_keys("session.data.pipe", "")
+        session.hooks = config
+            .sub_keys("session.hook", ".url")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
             .into_iter()
-            .filter_map(|id| parse_pipe(config, &id, &has_rcpt_vars))
+            .filter_map(|id| parse_hooks(config, &id, &has_rcpt_vars))
             .collect();
-        session.throttle = SessionThrottle::parse(config);
         session.mta_sts_policy = Policy::try_parse(config);
 
         for (value, key, token_map) in [
@@ -320,6 +345,11 @@ impl SessionConfig {
                 &has_sender_vars,
             ),
             (
+                &mut session.mail.is_allowed,
+                "session.mail.is-allowed",
+                &has_sender_vars,
+            ),
+            (
                 &mut session.rcpt.script,
                 "session.rcpt.script",
                 &has_rcpt_vars,
@@ -375,6 +405,11 @@ impl SessionConfig {
                 &has_rcpt_vars,
             ),
             (
+                &mut session.data.spam_filter,
+                "session.data.spam-filter",
+                &has_rcpt_vars,
+            ),
+            (
                 &mut session.data.add_received,
                 "session.data.add-headers.received",
                 &has_rcpt_vars,
@@ -409,89 +444,29 @@ impl SessionConfig {
                 *value = if_block;
             }
         }
-
+        session.data.add_delivered_to = config
+            .property_or_default("session.data.add-headers.delivered-to", "true")
+            .unwrap_or(true);
         session
     }
 }
 
-impl SessionThrottle {
-    pub fn parse(config: &mut Config) -> Self {
-        let mut throttle = SessionThrottle::default();
-        let all_throttles = parse_throttle(
-            config,
-            "session.throttle",
-            &TokenMap::default().with_variables(SMTP_RCPT_TO_VARS),
-            THROTTLE_LISTENER
-                | THROTTLE_REMOTE_IP
-                | THROTTLE_LOCAL_IP
-                | THROTTLE_AUTH_AS
-                | THROTTLE_HELO_DOMAIN
-                | THROTTLE_RCPT
-                | THROTTLE_RCPT_DOMAIN
-                | THROTTLE_SENDER
-                | THROTTLE_SENDER_DOMAIN,
-        );
-        for t in all_throttles {
-            if (t.keys & (THROTTLE_RCPT | THROTTLE_RCPT_DOMAIN)) != 0
-                || t.expr.items().iter().any(|c| {
-                    matches!(
-                        c,
-                        ExpressionItem::Variable(V_RECIPIENT | V_RECIPIENT_DOMAIN)
-                    )
-                })
-            {
-                throttle.rcpt_to.push(t);
-            } else if (t.keys
-                & (THROTTLE_SENDER
-                    | THROTTLE_SENDER_DOMAIN
-                    | THROTTLE_HELO_DOMAIN
-                    | THROTTLE_AUTH_AS))
-                != 0
-                || t.expr.items().iter().any(|c| {
-                    matches!(
-                        c,
-                        ExpressionItem::Variable(
-                            V_SENDER | V_SENDER_DOMAIN | V_HELO_DOMAIN | V_AUTHENTICATED_AS
-                        )
-                    )
-                })
-            {
-                throttle.mail_from.push(t);
-            } else {
-                throttle.connect.push(t);
-            }
-        }
-
-        throttle
-    }
-}
-
-fn parse_pipe(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Pipe> {
-    Some(Pipe {
-        command: IfBlock::try_parse(config, ("session.data.pipe", id, "command"), token_map)?,
-        arguments: IfBlock::try_parse(config, ("session.data.pipe", id, "arguments"), token_map)?,
-        timeout: IfBlock::try_parse(config, ("session.data.pipe", id, "timeout"), token_map)
-            .unwrap_or_else(|| {
-                IfBlock::new::<()>(format!("session.data.pipe.{id}.timeout"), [], "30s")
-            }),
-    })
-}
-
 fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Milter> {
     let hostname = config
-        .value_require(("session.data.milter", id, "hostname"))?
+        .value_require(("session.milter", id, "hostname"))?
         .to_string();
-    let port = config.property_require(("session.data.milter", id, "port"))?;
+    let port = config.property_require(("session.milter", id, "port"))?;
     Some(Milter {
-        enable: IfBlock::try_parse(config, ("session.data.milter", id, "enable"), token_map)
+        enable: IfBlock::try_parse(config, ("session.milter", id, "enable"), token_map)
             .unwrap_or_else(|| {
-                IfBlock::new::<()>(format!("session.data.milter.{id}.enable"), [], "false")
+                IfBlock::new::<()>(format!("session.milter.{id}.enable"), [], "false")
             }),
+        id: id.to_string().into(),
         addrs: format!("{}:{}", hostname, port)
             .to_socket_addrs()
             .map_err(|err| {
                 config.new_build_error(
-                    ("session.data.milter", id, "hostname"),
+                    ("session.milter", id, "hostname"),
                     format!("Unable to resolve milter hostname {hostname}: {err}"),
                 )
             })
@@ -500,49 +475,155 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
         hostname,
         port,
         timeout_connect: config
-            .property_or_default(("session.data.milter", id, "timeout.connect"), "30s")
+            .property_or_default(("session.milter", id, "timeout.connect"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30)),
         timeout_command: config
-            .property_or_default(("session.data.milter", id, "timeout.command"), "30s")
+            .property_or_default(("session.milter", id, "timeout.command"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30)),
         timeout_data: config
-            .property_or_default(("session.data.milter", id, "timeout.data"), "60s")
+            .property_or_default(("session.milter", id, "timeout.data"), "60s")
             .unwrap_or_else(|| Duration::from_secs(60)),
         tls: config
-            .property_or_default(("session.data.milter", id, "tls"), "false")
+            .property_or_default(("session.milter", id, "tls"), "false")
             .unwrap_or_default(),
         tls_allow_invalid_certs: config
-            .property_or_default(("session.data.milter", id, "allow-invalid-certs"), "false")
+            .property_or_default(("session.milter", id, "allow-invalid-certs"), "false")
             .unwrap_or_default(),
         tempfail_on_error: config
-            .property_or_default(
-                ("session.data.milter", id, "options.tempfail-on-error"),
-                "true",
-            )
+            .property_or_default(("session.milter", id, "options.tempfail-on-error"), "true")
             .unwrap_or(true),
         max_frame_len: config
             .property_or_default(
-                ("session.data.milter", id, "options.max-response-size"),
+                ("session.milter", id, "options.max-response-size"),
                 "52428800",
             )
             .unwrap_or(52428800),
         protocol_version: match config
-            .property_or_default::<u32>(("session.data.milter", id, "options.version"), "6")
+            .property_or_default::<u32>(("session.milter", id, "options.version"), "6")
             .unwrap_or(6)
         {
             6 => MilterVersion::V6,
             2 => MilterVersion::V2,
             v => {
                 config.new_parse_error(
-                    ("session.data.milter", id, "options.version"),
+                    ("session.milter", id, "options.version"),
                     format!("Unsupported milter protocol version {v}"),
                 );
                 MilterVersion::V6
             }
         },
-        flags_actions: config.property(("session.data.milter", id, "options.flags.actions")),
-        flags_protocol: config.property(("session.data.milter", id, "options.flags.protocol")),
+        flags_actions: config.property(("session.milter", id, "options.flags.actions")),
+        flags_protocol: config.property(("session.milter", id, "options.flags.protocol")),
+        run_on_stage: parse_stages(config, "session.milter", id),
     })
+}
+
+fn parse_hooks(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<MTAHook> {
+    let mut headers = HeaderMap::new();
+
+    for (header, value) in config
+        .values(("session.hook", id, "headers"))
+        .map(|(_, v)| {
+            if let Some((k, v)) = v.split_once(':') {
+                Ok((
+                    HeaderName::from_str(k.trim()).map_err(|err| {
+                        format!(
+                            "Invalid header found in property \"session.hook.{id}.headers\": {err}",
+                        )
+                    })?,
+                    HeaderValue::from_str(v.trim()).map_err(|err| {
+                        format!(
+                            "Invalid header found in property \"session.hook.{id}.headers\": {err}",
+                        )
+                    })?,
+                ))
+            } else {
+                Err(format!(
+                    "Invalid header found in property \"session.hook.{id}.headers\": {v}",
+                ))
+            }
+        })
+        .collect::<Result<Vec<(HeaderName, HeaderValue)>, String>>()
+        .map_err(|e| config.new_parse_error(("session.hook", id, "headers"), e))
+        .unwrap_or_default()
+    {
+        headers.insert(header, value);
+    }
+
+    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+    if let (Some(name), Some(secret)) = (
+        config.value(("session.hook", id, "auth.username")),
+        config.value(("session.hook", id, "auth.secret")),
+    ) {
+        headers.insert(
+            AUTHORIZATION,
+            format!("Basic {}", STANDARD.encode(format!("{}:{}", name, secret)))
+                .parse()
+                .unwrap(),
+        );
+    }
+
+    Some(MTAHook {
+        enable: IfBlock::try_parse(config, ("session.hook", id, "enable"), token_map)
+            .unwrap_or_else(|| {
+                IfBlock::new::<()>(format!("session.hook.{id}.enable"), [], "false")
+            }),
+        id: id.to_string(),
+        url: config
+            .value_require(("session.hook", id, "url"))?
+            .to_string(),
+        timeout: config
+            .property_or_default(("session.hook", id, "timeout"), "30s")
+            .unwrap_or_else(|| Duration::from_secs(30)),
+        tls_allow_invalid_certs: config
+            .property_or_default(("session.hook", id, "allow-invalid-certs"), "false")
+            .unwrap_or_default(),
+        tempfail_on_error: config
+            .property_or_default(("session.hook", id, "options.tempfail-on-error"), "true")
+            .unwrap_or(true),
+        run_on_stage: parse_stages(config, "session.hook", id),
+        max_response_size: config
+            .property_or_default(
+                ("session.hook", id, "options.max-response-size"),
+                "52428800",
+            )
+            .unwrap_or(52428800),
+        headers,
+    })
+}
+
+fn parse_stages(config: &mut Config, prefix: &str, id: &str) -> AHashSet<Stage> {
+    let mut stages = AHashSet::default();
+    let mut invalid = Vec::new();
+    for (_, value) in config.values((prefix, id, "stages")) {
+        let value = value.to_ascii_lowercase();
+        let state = match value.as_str() {
+            "connect" => Stage::Connect,
+            "ehlo" => Stage::Ehlo,
+            "auth" => Stage::Auth,
+            "mail" => Stage::Mail,
+            "rcpt" => Stage::Rcpt,
+            "data" => Stage::Data,
+            _ => {
+                invalid.push(value);
+                continue;
+            }
+        };
+        stages.insert(state);
+    }
+
+    if !invalid.is_empty() {
+        config.new_parse_error(
+            (prefix, id, "stages"),
+            format!("Invalid stages: {}", invalid.join(", ")),
+        );
+    }
+
+    if stages.is_empty() {
+        stages.insert(Stage::Data);
+    }
+
+    stages
 }
 
 impl Default for SessionConfig {
@@ -551,22 +632,17 @@ impl Default for SessionConfig {
             timeout: IfBlock::new::<()>("session.timeout", [], "5m"),
             duration: IfBlock::new::<()>("session.duration", [], "10m"),
             transfer_limit: IfBlock::new::<()>("session.transfer-limit", [], "262144000"),
-            throttle: SessionThrottle {
-                connect: Default::default(),
-                mail_from: Default::default(),
-                rcpt_to: Default::default(),
-            },
             connect: Connect {
                 hostname: IfBlock::new::<()>(
                     "server.connect.hostname",
                     [],
-                    "key_get('default', 'hostname')",
+                    "config_get('server.hostname')",
                 ),
                 script: IfBlock::empty("session.connect.script"),
                 greeting: IfBlock::new::<()>(
                     "session.connect.greeting",
                     [],
-                    "key_get('default', 'hostname') + ' Stalwart ESMTP at your service'",
+                    "config_get('server.hostname') + ' Stalwart ESMTP at your service'",
                 ),
             },
             ehlo: Ehlo {
@@ -589,7 +665,10 @@ impl Default for SessionConfig {
                 ),
                 mechanisms: IfBlock::new::<Mechanism>(
                     "session.auth.mechanisms",
-                    [("local_port != 25 && is_tls", "[plain, login]")],
+                    [
+                        ("local_port != 25 && is_tls", "[plain, login, oauthbearer]"),
+                        ("local_port != 25", "[oauthbearer]"),
+                    ],
                     "false",
                 ),
                 require: IfBlock::new::<()>(
@@ -607,6 +686,11 @@ impl Default for SessionConfig {
             mail: Mail {
                 script: IfBlock::empty("session.mail.script"),
                 rewrite: IfBlock::empty("session.mail.rewrite"),
+                is_allowed: IfBlock::new::<()>(
+                    "session.mail.is-allowed",
+                    [],
+                    "!is_empty(authenticated_as) || !key_exists('blocked-domains', sender_domain)",
+                ),
             },
             rcpt: Rcpt {
                 script: IfBlock::empty("session.rcpt.script"),
@@ -631,16 +715,8 @@ impl Default for SessionConfig {
                 subaddressing: AddressMapping::Enable,
             },
             data: Data {
-                #[cfg(feature = "test_mode")]
                 script: IfBlock::empty("session.data.script"),
-                #[cfg(not(feature = "test_mode"))]
-                script: IfBlock::new::<()>(
-                    "session.data.script",
-                    [("is_empty(authenticated_as)", "'spam-filter'")],
-                    "'track-replies'",
-                ),
-                pipe_commands: Default::default(),
-                milters: Default::default(),
+                spam_filter: IfBlock::new::<()>("session.data.spam-filter", [], "true"),
                 max_messages: IfBlock::new::<()>("session.data.limits.messages", [], "10"),
                 max_message_size: IfBlock::new::<()>("session.data.limits.size", [], "104857600"),
                 max_received_headers: IfBlock::new::<()>(
@@ -678,6 +754,7 @@ impl Default for SessionConfig {
                     [("local_port == 25", "true")],
                     "false",
                 ),
+                add_delivered_to: false,
             },
             extensions: Extensions {
                 pipelining: IfBlock::new::<()>("session.extensions.pipelining", [], "true"),
@@ -716,6 +793,8 @@ impl Default for SessionConfig {
                 ),
             },
             mta_sts_policy: None,
+            milters: Default::default(),
+            hooks: Default::default(),
         }
     }
 }
@@ -724,7 +803,7 @@ impl Default for SessionConfig {
 pub struct Mechanism(u64);
 
 impl ParseValue for Mechanism {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         Ok(Mechanism(match value.to_ascii_uppercase().as_str() {
             "LOGIN" => AUTH_LOGIN,
             "PLAIN" => AUTH_PLAIN,

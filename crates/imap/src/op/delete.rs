@@ -1,103 +1,106 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use crate::core::{Session, SessionData};
+use std::time::Instant;
+
+use crate::{
+    core::{Session, SessionData},
+    spawn_op,
+};
 use common::listener::SessionStream;
-use imap_proto::{protocol::delete::Arguments, receiver::Request, Command, StatusResponse};
+use directory::Permission;
+use imap_proto::{
+    protocol::delete::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
+};
+use jmap::mailbox::set::MailboxSet;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::write::log::ChangeLogBuilder;
 
+use super::ImapContext;
+
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_delete(&mut self, requests: Vec<Request<Command>>) -> crate::OpResult {
-        let mut arguments = Vec::with_capacity(requests.len());
+    pub async fn handle_delete(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapDelete)?;
 
-        for request in requests {
-            match request.parse_delete(self.version) {
-                Ok(argument) => {
-                    arguments.push(argument);
+        let data = self.state.session_data();
+        let version = self.version;
+
+        spawn_op!(data, {
+            for request in requests {
+                match request.parse_delete(version) {
+                    Ok(argument) => match data.delete_folder(argument).await {
+                        Ok(response) => {
+                            data.write_bytes(response.into_bytes()).await?;
+                        }
+                        Err(error) => {
+                            data.write_error(error).await?;
+                        }
+                    },
+                    Err(response) => data.write_error(response).await?,
                 }
-                Err(response) => self.write_bytes(response.into_bytes()).await?,
             }
-        }
 
-        if !arguments.is_empty() {
-            let data = self.state.session_data();
-            tokio::spawn(async move {
-                for argument in arguments {
-                    data.write_bytes(data.delete_folder(argument).await.into_bytes())
-                        .await;
-                }
-            });
-        }
-        Ok(())
+            Ok(())
+        })
     }
 }
 
 impl<T: SessionStream> SessionData<T> {
-    pub async fn delete_folder(&self, arguments: Arguments) -> StatusResponse {
+    pub async fn delete_folder(&self, arguments: Arguments) -> trc::Result<StatusResponse> {
+        let op_start = Instant::now();
+
         // Refresh mailboxes
-        if let Err(err) = self.synchronize_mailboxes(false).await {
-            return err.with_tag(arguments.tag);
-        }
+        self.synchronize_mailboxes(false)
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Validate mailbox
         let (account_id, mailbox_id) =
             if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
                 (mailbox.account_id, mailbox.mailbox_id)
             } else {
-                return StatusResponse::no("Mailbox does not exist.").with_tag(arguments.tag);
+                return Err(trc::ImapEvent::Error
+                    .into_err()
+                    .details("Mailbox does not exist.")
+                    .code(ResponseCode::TryCreate)
+                    .id(arguments.tag));
             };
 
         // Delete message
-        let access_token = match self.get_access_token().await {
-            Ok(access_token) => access_token,
-            Err(response) => return response.with_tag(arguments.tag),
-        };
+        let access_token = self
+            .get_access_token()
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
         let mut changelog = ChangeLogBuilder::new();
         let did_remove_emails = match self
-            .jmap
+            .server
             .mailbox_destroy(account_id, mailbox_id, &mut changelog, &access_token, true)
             .await
+            .imap_ctx(&arguments.tag, trc::location!())?
         {
-            Ok(Ok(did_remove_emails)) => did_remove_emails,
-            Ok(Err(err)) => {
-                return StatusResponse::no(err.description.unwrap_or("Delete failed".into()))
-                    .with_code(err.type_.into())
-                    .with_tag(arguments.tag)
+            Ok(did_remove_emails) => did_remove_emails,
+            Err(err) => {
+                return Err(trc::ImapEvent::Error
+                    .into_err()
+                    .details(err.description.unwrap_or("Delete failed".into()))
+                    .code(ResponseCode::from(err.type_))
+                    .id(arguments.tag));
             }
-            Err(_) => return StatusResponse::database_failure().with_tag(arguments.tag),
         };
 
         // Write changes
-        let change_id = match self.jmap.commit_changes(account_id, changelog).await {
-            Ok(change_id) => change_id,
-            Err(_) => {
-                return StatusResponse::database_failure().with_tag(arguments.tag);
-            }
-        };
+        let change_id = self
+            .server
+            .commit_changes(account_id, changelog)
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Broadcast changes
-        self.jmap
+        self.server
             .broadcast_state_change(if did_remove_emails {
                 StateChange::new(account_id)
                     .with_change(DataType::Mailbox, change_id)
@@ -117,6 +120,15 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
 
-        StatusResponse::ok("Mailbox deleted.").with_tag(arguments.tag)
+        trc::event!(
+            Imap(trc::ImapEvent::DeleteMailbox),
+            SpanId = self.session_id,
+            MailboxName = arguments.mailbox_name,
+            AccountId = account_id,
+            MailboxId = mailbox_id,
+            Elapsed = op_start.elapsed()
+        );
+
+        Ok(StatusResponse::ok("Mailbox deleted.").with_tag(arguments.tag))
     }
 }

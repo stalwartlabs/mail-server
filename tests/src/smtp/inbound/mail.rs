@@ -1,54 +1,33 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
+use std::time::{Duration, Instant, SystemTime};
 
 use common::Core;
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, IprevResult, SpfResult};
 use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
 
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    build_smtp,
     session::{TestSession, VerifyResponse},
-    TempDir,
+    DnsCache, TempDir, TestSMTP,
 };
 
 const CONFIG: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/data.db"
 
 [session.ehlo]
@@ -73,11 +52,14 @@ requiretls = [{if = "remote_ip = '10.0.0.2'", then = true},
 mt-priority = [{if = "remote_ip = '10.0.0.2'", then = 'nsep'},
                {else = false}]
 
+[session.mail]
+is-allowed = "sender_domain != 'blocked.com'"
+
 [session.data.limits]
 size = [{if = "remote_ip = '10.0.0.2'", then = 2048},
         {else = 1024}]
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 match = "remote_ip = '10.0.0.1'"
 key = 'sender'
 rate = '2/1s'
@@ -87,39 +69,43 @@ enable = true
 
 #[tokio::test]
 async fn mail() {
+    // Enable logging
+    crate::enable_logging();
+
     let tmp_dir = TempDir::new("smtp_mail_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-    core.smtp.resolvers.dns.txt_add(
+    let server = TestSMTP::from_core(core).server;
+
+    server.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    server.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.ptr_add(
+    server.ptr_add(
         "10.0.0.1".parse().unwrap(),
         vec!["mx1.foobar.org.".to_string()],
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.ipv4_add(
+    server.ipv4_add(
         "mx1.foobar.org.",
         vec!["10.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.ptr_add(
+    server.ptr_add(
         "10.0.0.2".parse().unwrap(),
         vec!["mx2.foobar.org.".to_string()],
         Instant::now() + Duration::from_secs(5),
     );
 
     // Be rude and do not say EHLO
-    let core = Arc::new(core);
-    let mut session = Session::test(build_smtp(core.clone(), Inner::default()));
+    let mut session = Session::test(server.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
@@ -129,9 +115,16 @@ async fn mail() {
         .unwrap();
     session.response().assert_code("503 5.5.1");
 
-    // Both IPREV and SPF should pass
+    // Test sender not allowed
     session.ingest(b"EHLO mx1.foobar.org\r\n").await.unwrap();
     session.response().assert_code("250");
+    session
+        .ingest(b"MAIL FROM:<bill@blocked.com>\r\n")
+        .await
+        .unwrap();
+    session.response().assert_code("550 5.7.1");
+
+    // Both IPREV and SPF should pass
     session
         .ingest(b"MAIL FROM:<bill@foobar.org>\r\n")
         .await
@@ -166,7 +159,7 @@ async fn mail() {
             .unwrap();
         session
             .response()
-            .assert_code(if n == 0 { "250" } else { "451 4.4.5" });
+            .assert_code(if n == 0 { "250" } else { "452 4.4.5" });
     }
 
     // Test disabled extensions
@@ -202,7 +195,7 @@ async fn mail() {
         .unwrap();
     session.response().assert_code("550 5.7.25");
     session.data.iprev = None;
-    core.smtp.resolvers.dns.ipv4_add(
+    server.ipv4_add(
         "mx2.foobar.org.",
         vec!["10.0.0.2".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
@@ -214,7 +207,7 @@ async fn mail() {
         .await
         .unwrap();
     session.response().assert_code("550 5.7.23");
-    core.smtp.resolvers.dns.txt_add(
+    server.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
@@ -320,7 +313,7 @@ async fn mail() {
     assert_eq!(session.data.future_release, 10);
     session.rset().await;
 
-    // Test FUTURERELEASE extension with invalud HOLDUNTIL value
+    // Test FUTURERELEASE extension with invalid HOLDUNTIL value
     session
         .ingest(format!("MAIL FROM:<jane@foobar.org> HOLDUNTIL={}\r\n", now + 99999).as_bytes())
         .await

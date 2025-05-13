@@ -1,37 +1,20 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::time::{Duration, Instant};
 
 use common::Core;
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, SpfResult};
 
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 use utils::config::Config;
 
 use crate::smtp::{
-    build_smtp,
     session::{TestSession, VerifyResponse},
+    DnsCache, TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -46,7 +29,7 @@ mt-priority = [{if = "remote_ip = '10.0.0.1'", then = 'nsep'},
                {else = false}]
 
 [session.ehlo]
-reject-non-fqdn = true
+reject-non-fqdn = "starts_with(remote_ip, '10.0.0.')"
 
 [auth.spf.verify]
 ehlo = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
@@ -55,21 +38,25 @@ ehlo = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
 
 #[tokio::test]
 async fn ehlo() {
+    // Enable logging
+    crate::enable_logging();
+
     let mut config = Config::new(CONFIG).unwrap();
     let core = Core::parse(&mut config, Default::default(), Default::default()).await;
-    core.smtp.resolvers.dns.txt_add(
+    let server = TestSMTP::from_core(core).server;
+    server.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    server.txt_add(
         "mx2.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
 
     // Reject non-FQDN domains
-    let mut session = Session::test(build_smtp(core, Inner::default()));
+    let mut session = Session::test(server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.stream.tls = false;

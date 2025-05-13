@@ -1,132 +1,195 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 pub mod dkim;
-pub mod domain;
+pub mod dns;
+#[cfg(feature = "enterprise")]
+pub mod enterprise;
 pub mod log;
 pub mod principal;
 pub mod queue;
 pub mod reload;
 pub mod report;
 pub mod settings;
-pub mod sieve;
+pub mod spam;
 pub mod stores;
+pub mod troubleshoot;
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, str::FromStr, sync::Arc};
 
+use common::{auth::AccessToken, Server};
+use directory::{backend::internal::manage, Permission};
+use dkim::DkimManagement;
+use dns::DnsManagement;
+#[cfg(feature = "enterprise")]
+use enterprise::telemetry::TelemetryApi;
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
+use log::LogManagement;
+use mail_parser::DateTime;
+use principal::PrincipalManager;
+use queue::QueueManagement;
+use reload::ManageReload;
+use report::ManageReports;
 use serde::Serialize;
+use settings::ManageSettings;
+use spam::ManageSpamHandler;
+use store::write::now;
+use stores::ManageStore;
+use troubleshoot::TroubleshootApi;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{auth::oauth::auth::OAuthApiHandler, email::crypto::CryptoHandler};
 
-use super::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
+use super::{
+    http::{fetch_body, HttpSessionData},
+    HttpRequest, HttpResponse,
+};
+use std::future::Future;
 
 #[derive(Serialize)]
 #[serde(tag = "error")]
-pub enum ManagementApiError {
+#[serde(rename_all = "camelCase")]
+pub enum ManagementApiError<'x> {
     FieldAlreadyExists {
-        field: Cow<'static, str>,
-        value: Cow<'static, str>,
+        field: &'x str,
+        value: &'x str,
     },
     FieldMissing {
-        field: Cow<'static, str>,
+        field: &'x str,
     },
     NotFound {
-        item: Cow<'static, str>,
+        item: &'x str,
     },
     Unsupported {
-        details: Cow<'static, str>,
+        details: &'x str,
     },
     AssertFailed,
     Other {
-        details: Cow<'static, str>,
-    },
-    UnsupportedDirectoryOperation {
-        class: Cow<'static, str>,
+        details: &'x str,
+        reason: Option<&'x str>,
     },
 }
 
-impl JMAP {
-    pub async fn handle_api_manage_request(
+pub trait ManagementApi: Sync + Send {
+    fn handle_api_manage_request(
         &self,
-        req: &HttpRequest,
-        body: Option<Vec<u8>>,
+        req: &mut HttpRequest,
         access_token: Arc<AccessToken>,
-    ) -> HttpResponse {
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl ManagementApi for Server {
+    #[allow(unused_variables)]
+    async fn handle_api_manage_request(
+        &self,
+        req: &mut HttpRequest,
+        access_token: Arc<AccessToken>,
+        session: &HttpSessionData,
+    ) -> trc::Result<HttpResponse> {
+        let body = fetch_body(req, 1024 * 1024, session.session_id).await;
         let path = req.uri().path().split('/').skip(2).collect::<Vec<_>>();
-        let is_superuser = access_token.is_super_user();
 
         match path.first().copied().unwrap_or_default() {
-            "queue" if is_superuser => self.handle_manage_queue(req, path).await,
-            "settings" if is_superuser => self.handle_manage_settings(req, path, body).await,
-            "reports" if is_superuser => self.handle_manage_reports(req, path).await,
-            "principal" if is_superuser => self.handle_manage_principal(req, path, body).await,
-            "domain" if is_superuser => self.handle_manage_domain(req, path).await,
-            "store" if is_superuser => self.handle_manage_store(req, path).await,
-            "reload" if is_superuser => self.handle_manage_reload(req, path).await,
-            "dkim" if is_superuser => self.handle_manage_dkim(req, path, body).await,
-            "update" if is_superuser => self.handle_manage_update(req, path).await,
-            "logs" if is_superuser && req.method() == Method::GET => {
-                self.handle_view_logs(req).await
+            "queue" => self.handle_manage_queue(req, path, &access_token).await,
+            "settings" => {
+                self.handle_manage_settings(req, path, body, &access_token)
+                    .await
             }
-            "sieve" if is_superuser => self.handle_run_sieve(req, path, body).await,
-            "restart" if is_superuser && req.method() == Method::GET => {
-                ManagementApiError::Unsupported {
-                    details: "Restart is not yet supported".into(),
+            "reports" => self.handle_manage_reports(req, path, &access_token).await,
+            "principal" => {
+                self.handle_manage_principal(req, path, body, &access_token)
+                    .await
+            }
+            "dns" => self.handle_manage_dns(req, path, &access_token).await,
+            "store" => {
+                self.handle_manage_store(req, path, body, session, &access_token)
+                    .await
+            }
+            "reload" => self.handle_manage_reload(req, path, &access_token).await,
+            "dkim" => {
+                self.handle_manage_dkim(req, path, body, &access_token)
+                    .await
+            }
+            "update" => self.handle_manage_update(req, path, &access_token).await,
+            "logs" if req.method() == Method::GET => {
+                self.handle_view_logs(req, &access_token).await
+            }
+            "spam-filter" => {
+                self.handle_manage_spam(req, path, body, session, &access_token)
+                    .await
+            }
+            "restart" if req.method() == Method::GET => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::Restart)?;
+
+                Err(manage::unsupported("Restart is not yet supported"))
+            }
+            "oauth" => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::AuthenticateOauth)?;
+
+                self.handle_oauth_api_request(access_token, body).await
+            }
+            "account" => match (path.get(1).copied().unwrap_or_default(), req.method()) {
+                ("crypto", &Method::POST) => {
+                    // Validate the access token
+                    access_token.assert_has_permission(Permission::ManageEncryption)?;
+
+                    self.handle_crypto_post(access_token, body).await
                 }
-                .into_http_response()
-            }
-            "oauth" => self.handle_oauth_api_request(access_token, body).await,
-            "crypto" => match *req.method() {
-                Method::POST => self.handle_crypto_post(access_token, body).await,
-                Method::GET => self.handle_crypto_get(access_token).await,
-                _ => RequestError::not_found().into_http_response(),
+                ("crypto", &Method::GET) => {
+                    // Validate the access token
+                    access_token.assert_has_permission(Permission::ManageEncryption)?;
+
+                    self.handle_crypto_get(access_token).await
+                }
+                ("auth", &Method::GET) => {
+                    // Validate the access token
+                    access_token.assert_has_permission(Permission::ManagePasswords)?;
+
+                    self.handle_account_auth_get(access_token).await
+                }
+                ("auth", &Method::POST) => {
+                    // Validate the access token
+                    access_token.assert_has_permission(Permission::ManagePasswords)?;
+
+                    self.handle_account_auth_post(req, access_token, body).await
+                }
+                _ => Err(trc::ResourceEvent::NotFound.into_err()),
             },
-            "password" if req.method() == Method::POST => {
-                self.handle_change_password(req, access_token, body).await
+            "troubleshoot" => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::Troubleshoot)?;
+
+                self.handle_troubleshoot_api_request(req, path, &access_token, body)
+                    .await
             }
-            _ => RequestError::not_found().into_http_response(),
-        }
-    }
-}
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+            #[cfg(feature = "enterprise")]
+            "telemetry" => {
+                // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
+                // Any attempt to modify, bypass, or disable this license validation mechanism
+                // constitutes a severe violation of the Stalwart Enterprise License Agreement.
+                // Such actions may result in immediate termination of your license, legal action,
+                // and substantial financial penalties. Stalwart Labs Ltd. actively monitors for
+                // unauthorized modifications and will pursue all available legal remedies against
+                // violators to the fullest extent of the law, including but not limited to claims
+                // for copyright infringement, breach of contract, and fraud.
 
-impl ToHttpResponse for ManagementApiError {
-    fn into_http_response(self) -> super::HttpResponse {
-        JsonResponse::new(self).into_http_response()
-    }
-}
-
-impl From<Cow<'static, str>> for ManagementApiError {
-    fn from(details: Cow<'static, str>) -> Self {
-        ManagementApiError::Other { details }
-    }
-}
-
-impl From<String> for ManagementApiError {
-    fn from(details: String) -> Self {
-        ManagementApiError::Other {
-            details: details.into(),
+                if self.core.is_enterprise_edition() {
+                    self.handle_telemetry_api_request(req, path, &access_token)
+                        .await
+                } else {
+                    Err(manage::enterprise())
+                }
+            }
+            // SPDX-SnippetEnd
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }
@@ -138,4 +201,46 @@ pub fn decode_path_element(item: &str) -> Cow<'_, str> {
         .next()
         .map(|(k, _)| k)
         .unwrap_or_else(|| item.into())
+}
+
+pub(super) struct FutureTimestamp(u64);
+pub(super) struct Timestamp(u64);
+
+impl FromStr for Timestamp {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(dt) = DateTime::parse_rfc3339(s) {
+            Ok(Timestamp(dt.to_timestamp() as u64))
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl FromStr for FutureTimestamp {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(dt) = DateTime::parse_rfc3339(s) {
+            let instant = dt.to_timestamp() as u64;
+            if instant >= now() {
+                return Ok(FutureTimestamp(instant));
+            }
+        }
+
+        Err(())
+    }
+}
+
+impl FutureTimestamp {
+    pub fn into_inner(self) -> u64 {
+        self.0
+    }
+}
+
+impl Timestamp {
+    pub fn into_inner(self) -> u64 {
+        self.0
+    }
 }

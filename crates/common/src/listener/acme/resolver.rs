@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::sync::Arc;
 
@@ -30,16 +13,17 @@ use rustls::{
     ServerConfig,
 };
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use store::write::Bincode;
+use store::{dispatch::lookup::KeyValue, write::Bincode};
+use trc::AcmeEvent;
 
-use crate::{listener::acme::directory::SerializedCert, Core};
+use crate::{listener::acme::directory::SerializedCert, Server, KV_ACME};
 
 use super::{directory::ACME_TLS_ALPN_NAME, AcmeProvider, StaticResolver};
 
-impl Core {
+impl Server {
     pub(crate) fn set_cert(&self, provider: &AcmeProvider, cert: Arc<CertifiedKey>) {
         // Add certificates
-        let mut certificates = self.tls.certificates.load().as_ref().clone();
+        let mut certificates = self.inner.data.tls_certificates.load().as_ref().clone();
         for domain in provider.domains.iter() {
             certificates.insert(
                 domain
@@ -55,7 +39,47 @@ impl Core {
             certificates.insert("*".to_string(), cert);
         }
 
-        self.tls.certificates.store(certificates.into());
+        self.inner.data.tls_certificates.store(certificates.into());
+    }
+
+    pub(crate) async fn build_acme_certificate(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
+        match self
+            .in_memory_store()
+            .key_get::<Bincode<SerializedCert>>(KeyValue::<()>::build_key(KV_ACME, domain))
+            .await
+        {
+            Ok(Some(cert)) => {
+                match any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+                    cert.inner.private_key,
+                ))) {
+                    Ok(key) => Some(Arc::new(CertifiedKey::new(
+                        vec![CertificateDer::from(cert.inner.certificate)],
+                        key,
+                    ))),
+                    Err(err) => {
+                        trc::event!(
+                            Acme(AcmeEvent::Error),
+                            Domain = domain.to_string(),
+                            Reason = err.to_string(),
+                            Details = "Failed to parse private key"
+                        );
+                        None
+                    }
+                }
+            }
+            Err(err) => {
+                trc::event!(
+                    Acme(AcmeEvent::Error),
+                    Domain = domain.to_string(),
+                    CausedBy = err
+                );
+                None
+            }
+            Ok(None) => {
+                trc::event!(Acme(AcmeEvent::TokenNotFound), Domain = domain.to_string());
+                None
+            }
+        }
     }
 }
 
@@ -71,58 +95,6 @@ pub(crate) fn build_acme_static_resolver(key: Option<Arc<CertifiedKey>>) -> Arc<
         .with_cert_resolver(Arc::new(StaticResolver { key }));
     challenge.alpn_protocols.push(ACME_TLS_ALPN_NAME.to_vec());
     Arc::new(challenge)
-}
-
-impl Core {
-    pub(crate) async fn build_acme_certificate(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
-        match self
-            .storage
-            .lookup
-            .key_get::<Bincode<SerializedCert>>(format!("acme:{domain}").into_bytes())
-            .await
-        {
-            Ok(Some(cert)) => {
-                match any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
-                    cert.inner.private_key,
-                ))) {
-                    Ok(key) => Some(Arc::new(CertifiedKey::new(
-                        vec![CertificateDer::from(cert.inner.certificate)],
-                        key,
-                    ))),
-                    Err(err) => {
-                        tracing::error!(
-                            context = "acme",
-                            event = "error",
-                            domain = %domain,
-                            reason = %err,
-                            "Failed to parse private key",
-                        );
-                        None
-                    }
-                }
-            }
-            Err(err) => {
-                tracing::error!(
-                    context = "acme",
-                    event = "error",
-                    domain = %domain,
-                    reason = %err,
-                    "Failed to lookup token",
-                );
-                None
-            }
-            Ok(None) => {
-                tracing::debug!(
-                    context = "acme",
-                    event = "error",
-                    domain = %domain,
-                    reason = "missing-token",
-                    "Token not found in lookup store"
-                );
-                None
-            }
-        }
-    }
 }
 
 pub trait IsTlsAlpnChallenge {

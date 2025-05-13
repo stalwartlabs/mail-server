@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::fmt::Display;
 
@@ -28,10 +11,10 @@ use utils::map::{
     vec_map::VecMap,
 };
 
-use super::{json::Parser, Ignore, JsonObjectParser, Token};
+use super::{Ignore, JsonObjectParser, Token, json::Parser};
 
 impl JsonObjectParser for u64 {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -53,7 +36,7 @@ impl JsonObjectParser for u64 {
 }
 
 impl JsonObjectParser for u128 {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -75,7 +58,7 @@ impl JsonObjectParser for u128 {
 }
 
 impl JsonObjectParser for String {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -95,9 +78,7 @@ impl JsonObjectParser for String {
                             }
                             b'"' if !is_escaped => {
                                 parser.is_eof = true;
-                                return String::from_utf8(buf)
-                                    .map(Into::into)
-                                    .map_err(|_| parser.error_utf8());
+                                return String::from_utf8(buf).map_err(|_| parser.error_utf8());
                             }
                             _ => {
                                 if !is_escaped {
@@ -194,7 +175,7 @@ impl JsonObjectParser for String {
 }
 
 impl<T: JsonObjectParser + Eq> JsonObjectParser for Vec<T> {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -214,7 +195,7 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Vec<T> {
 }
 
 impl<T: JsonObjectParser + Eq> JsonObjectParser for Option<Vec<T>> {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -238,7 +219,7 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Option<Vec<T>> {
 }
 
 impl<T: JsonObjectParser + Eq + BitmapItem> JsonObjectParser for Bitmap<T> {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -262,7 +243,7 @@ impl<T: JsonObjectParser + Eq + BitmapItem> JsonObjectParser for Bitmap<T> {
 }
 
 impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser for VecMap<K, V> {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -280,7 +261,7 @@ impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser f
 impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser
     for Option<VecMap<K, V>>
 {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -301,7 +282,7 @@ impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser
 }
 
 impl JsonObjectParser for bool {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -314,7 +295,7 @@ impl JsonObjectParser for bool {
 }
 
 impl JsonObjectParser for Ignore {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

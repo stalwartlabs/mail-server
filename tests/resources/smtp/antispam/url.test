@@ -10,7 +10,7 @@ Subject: test
 
 my site is https://url.org
 <!-- NEXT TEST -->
-expect R_SUSPICIOUS_URL
+expect SUSPICIOUS_URL
 
 Subject: test
 
@@ -26,9 +26,9 @@ expect MIXED_CHARSET_URL
 
 Subject: test
 
-my site is https://www.xn--80ak6aa92e.com/
+my site is https://www.xn--1ca81o6aa92e.com/
 <!-- NEXT TEST -->
-expect R_SUSPICIOUS_URL
+expect UNPARSABLE_URL
 
 Subject: test
 
@@ -46,7 +46,7 @@ Subject: redirect to omograph
 
 login to https://www.redirect.com/?https://xn--twiter-507b.com
 <!-- NEXT TEST -->
-expect HAS_ONION_URI
+expect HAS_ONION_URI HAS_ANON_DOMAIN
 
 Subject: url in title darkweb.onion/login
 
@@ -54,25 +54,35 @@ test
 <!-- NEXT TEST -->
 expect HAS_IPFS_GATEWAY_URL HAS_WP_URI URI_HIDDEN_PATH
 
+Content-Type: text/html; charset="utf-8"
 Subject: html test
 
-<link href="site.com/ipfs/Qm123">
+<link href="https://site.com/ipfs/Qm123">
 <a href="https://web.org/../../login.php"><img src="http://site.org/wp-static/img.png"></a>
 
 <!-- NEXT TEST -->
-expect HAS_GUC_PROXY_URI HAS_GOOGLE_FIREBASE_URL HAS_GOOGLE_REDIR
+expect HAS_GUC_PROXY_URI HAS_GOOGLE_FIREBASE_URL HAS_GOOGLE_REDIR HAS_ANON_DOMAIN URL_ONLY
 
+Content-Type: text/html; charset="utf-8"
 Subject: mixed urls googleusercontent.com/proxy/url
 
 <a href="https://firebasestorage.googleapis.com/content">google.com/url?otherurl.org</a>
 
 <!-- NEXT TEST -->
-expect WP_COMPROMISED HAS_WP_URI
+expect WP_COMPROMISED
 
 Subject: plain test
 
 http://url.com/Well-known/../assetlinks.json
 http://wp.com/WP-content/content.pdf
+
+<!-- NEXT TEST -->
+expect HAS_WP_URI
+
+Subject: plain test
+
+http://url.com/Well-known/../assetlinks.json
+http://wp.com/WP-other/content.pdf
 
 <!-- NEXT TEST -->
 expect PHISHED_OPENPHISH PHISHED_PHISHTANK
@@ -103,4 +113,12 @@ Der Besucher hat versucht, sich mit folgenden Daten anzumelden.<br>
 Partner: 12345678<br>
 Portal: <a href="https://www.localhost.de/example.php" target="_blank">IP-Sperre einsehen</a>
 </html>
+
+<!-- NEXT TEST -->
+expect RCPT_DOMAIN_IN_BODY
+
+To: hello@world.com
+Subject: Special offer 
+
+An offer for world.com
 

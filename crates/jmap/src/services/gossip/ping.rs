@@ -1,29 +1,14 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use smtp::queue;
-
-use crate::services::housekeeper;
+use common::{
+    core::BuildServer,
+    ipc::{HousekeeperEvent, QueueEvent},
+};
+use trc::ClusterEvent;
 
 use super::{request::Request, Gossiper, PeerStatus};
 
@@ -82,17 +67,13 @@ impl Gossiper {
     }
 
     pub fn request_reload(&self) {
-        let core = self.core.clone();
+        let server = self.inner.build_server();
 
         tokio::spawn(async move {
-            tracing::debug!("One or more nodes became offline, reloading queues.");
+            trc::event!(Cluster(ClusterEvent::OneOrMorePeersOffline));
 
-            let _ = core
-                .jmap_inner
-                .housekeeper_tx
-                .send(housekeeper::Event::IndexStart)
-                .await;
-            let _ = core.smtp_inner.queue_tx.send(queue::Event::Reload).await;
+            server.notify_task_queue();
+            let _ = server.inner.ipc.queue_tx.send(QueueEvent::Refresh).await;
         });
     }
 
@@ -111,7 +92,8 @@ impl Gossiper {
         self.epoch += 1;
 
         if peers.is_empty() {
-            tracing::debug!("Received empty ping packet.");
+            trc::event!(Cluster(ClusterEvent::EmptyPacket));
+
             return;
         }
 
@@ -134,17 +116,24 @@ impl Gossiper {
                             if local_peer.gen_config != peer.gen_config {
                                 local_peer.gen_config = peer.gen_config;
                                 if local_peer.hb_sum > 0 {
-                                    tracing::debug!(
-                                        "Peer {} has configuration changes.",
-                                        peer.addr
+                                    trc::event!(
+                                        Cluster(ClusterEvent::PeerHasChanges),
+                                        RemoteIp = peer.addr,
+                                        Details = "settings"
                                     );
+
                                     update_config = true;
                                 }
                             }
                             if local_peer.gen_lists != peer.gen_lists {
                                 local_peer.gen_lists = peer.gen_lists;
                                 if local_peer.hb_sum > 0 {
-                                    tracing::debug!("Peer {} has list changes.", peer.addr);
+                                    trc::event!(
+                                        Cluster(ClusterEvent::PeerHasChanges),
+                                        RemoteIp = peer.addr,
+                                        Details = "blocked_ips"
+                                    );
+
                                     update_lists = true;
                                 }
                             }
@@ -158,7 +147,7 @@ impl Gossiper {
             }
 
             // Add new peer to the list.
-            tracing::info!("Discovered new peer at {}.", peer.addr);
+            trc::event!(Cluster(ClusterEvent::PeerDiscovered), RemoteIp = peer.addr);
             self.peers.push(peer.into());
         }
 
@@ -173,36 +162,41 @@ impl Gossiper {
 
         // Reload settings
         if update_config || update_lists {
-            let core = self.core.core.clone();
-            let inner = self.core.jmap_inner.clone();
+            let server = self.inner.build_server();
 
             tokio::spawn(async move {
                 let result = if update_config {
-                    core.load().reload().await
+                    server.reload().await
                 } else {
-                    core.load().reload_blocked_ips().await
+                    server.reload_blocked_ips().await
                 };
                 match result {
                     Ok(result) => {
                         if let Some(new_core) = result.new_core {
                             // Update core
-                            core.store(new_core.into());
+                            server.inner.shared_core.store(new_core.into());
 
                             // Reload ACME
-                            if let Err(err) = inner
+                            if server
+                                .inner
+                                .ipc
                                 .housekeeper_tx
-                                .send(housekeeper::Event::AcmeReload)
+                                .send(HousekeeperEvent::ReloadSettings)
                                 .await
+                                .is_err()
                             {
-                                tracing::warn!(
-                                    "Failed to send ACME reload event to housekeeper: {}",
-                                    err
+                                trc::event!(
+                                    Server(trc::ServerEvent::ThreadError),
+                                    Details = "Failed to send setting reload event to housekeeper",
+                                    CausedBy = trc::location!(),
                                 );
                             }
                         }
                     }
                     Err(err) => {
-                        tracing::error!("Failed to reload configuration: {}", err);
+                        trc::error!(err
+                            .details("Failed to reload settings")
+                            .caused_by(trc::location!()));
                     }
                 }
             });

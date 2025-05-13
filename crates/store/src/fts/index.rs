@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{borrow::Cow, fmt::Display};
 
@@ -32,6 +15,7 @@ use nlp::{
     },
     tokenizers::word::WordTokenizer,
 };
+use trc::AddContext;
 
 use crate::{
     backend::MAX_TOKEN_LENGTH,
@@ -112,11 +96,14 @@ impl<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> FtsDocument<'x, T> {
     }
 
     pub fn index_keyword(&mut self, field: Field<T>, text: impl Into<Cow<'x, str>>) {
-        self.parts.push(Text {
-            field,
-            text: text.into(),
-            typ: Type::Keyword,
-        });
+        let text = text.into();
+        if !text.is_empty() {
+            self.parts.push(Text {
+                field,
+                text,
+                typ: Type::Keyword,
+            });
+        }
     }
 }
 
@@ -135,7 +122,7 @@ impl Store {
     pub async fn fts_index<T: Into<u8> + Display + Clone + std::fmt::Debug>(
         &self,
         document: FtsDocument<'_, T>,
-    ) -> crate::Result<()> {
+    ) -> trc::Result<()> {
         let mut detect = LanguageDetector::new();
         let mut tokens: AHashMap<BitmapHash, Postings> = AHashMap::new();
         let mut parts = Vec::new();
@@ -163,11 +150,14 @@ impl Store {
                     position += 10;
                 }
                 Type::Keyword => {
-                    let field = u8::from(text.field);
-                    tokens
-                        .entry(BitmapHash::new(text.text.as_ref()))
-                        .or_default()
-                        .insert_keyword(TokenType::word(field));
+                    let value = text.text.as_ref();
+                    if !value.is_empty() {
+                        let field = u8::from(text.field);
+                        tokens
+                            .entry(BitmapHash::new(value))
+                            .or_default()
+                            .insert_keyword(TokenType::word(field));
+                    }
                 }
             }
         }
@@ -247,7 +237,7 @@ impl Store {
         account_id: u32,
         collection: u8,
         document_ids: &impl DocumentSet,
-    ) -> crate::Result<()> {
+    ) -> trc::Result<()> {
         // Find keys to delete
         let mut delete_keys: AHashMap<u32, Vec<ValueClass<MaybeDynamicId>>> = AHashMap::new();
         self.iterate(
@@ -285,8 +275,14 @@ impl Store {
                             hash[..len].copy_from_slice(&key[U32_LEN..U32_LEN + len]);
                             (hash, len as u8)
                         }
+                        0 => {
+                            // Temporary fix for empty keywords
+                            (hash, 0)
+                        }
                         invalid => {
-                            return Err(format!("Invalid text bitmap key length {invalid}").into())
+                            return Err(trc::Error::corrupted_key(key, None, trc::location!())
+                                .ctx(trc::Key::Reason, "Invalid bitmap key length")
+                                .ctx(trc::Key::Size, invalid));
                         }
                     };
 
@@ -299,7 +295,8 @@ impl Store {
                 Ok(true)
             },
         )
-        .await?;
+        .await
+        .caused_by(trc::location!())?;
 
         // Remove keys
         let mut batch = BatchBuilder::new();
@@ -333,7 +330,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn fts_remove_all(&self, _: u32) -> crate::Result<()> {
+    pub async fn fts_remove_all(&self, _: u32) -> trc::Result<()> {
         // No-op
         // Term indexes are stored in the same key range as the document
 

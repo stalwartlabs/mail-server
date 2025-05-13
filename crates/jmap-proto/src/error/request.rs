@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{borrow::Cow, fmt::Display};
 
@@ -52,22 +35,22 @@ pub enum RequestErrorType {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct RequestError {
+pub struct RequestError<'x> {
     #[serde(rename = "type")]
     pub p_type: RequestErrorType,
     pub status: u16,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<Cow<'static, str>>,
-    pub detail: Cow<'static, str>,
+    pub title: Option<Cow<'x, str>>,
+    pub detail: Cow<'x, str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<RequestLimitError>,
 }
 
-impl RequestError {
+impl<'x> RequestError<'x> {
     pub fn blank(
         status: u16,
-        title: impl Into<Cow<'static, str>>,
-        detail: impl Into<Cow<'static, str>>,
+        title: impl Into<Cow<'x, str>>,
+        detail: impl Into<Cow<'x, str>>,
     ) -> Self {
         RequestError {
             p_type: RequestErrorType::Other,
@@ -124,6 +107,22 @@ impl RequestError {
                 "You have exceeded the blob upload quota of {} files or {} bytes.",
                 max_files, max_bytes
             ),
+        )
+    }
+
+    pub fn over_quota() -> Self {
+        RequestError::blank(
+            403,
+            "Quota exceeded",
+            "You have exceeded your account quota.",
+        )
+    }
+
+    pub fn tenant_over_quota() -> Self {
+        RequestError::blank(
+            403,
+            "Tenant quota exceeded",
+            "Your organization has exceeded its quota.",
         )
     }
 
@@ -215,7 +214,7 @@ impl RequestError {
         }
     }
 
-    pub fn not_request(detail: impl Into<Cow<'static, str>>) -> RequestError {
+    pub fn not_request(detail: impl Into<Cow<'x, str>>) -> RequestError<'x> {
         RequestError {
             p_type: RequestErrorType::NotRequest,
             limit: None,
@@ -226,7 +225,7 @@ impl RequestError {
     }
 }
 
-impl Display for RequestError {
+impl Display for RequestError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.detail)
     }

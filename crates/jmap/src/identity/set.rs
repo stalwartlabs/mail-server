@@ -1,29 +1,13 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use directory::QueryBy;
+use common::Server;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::Object,
     response::references::EvalObjectReferences,
@@ -33,15 +17,23 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
+use std::future::Future;
 use store::write::{log::ChangeLogBuilder, BatchBuilder, F_CLEAR, F_VALUE};
+use trc::AddContext;
+use utils::sanitize_email;
 
-use crate::JMAP;
+pub trait IdentitySet: Sync + Send {
+    fn identity_set(
+        &self,
+        request: SetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+}
 
-impl JMAP {
-    pub async fn identity_set(
+impl IdentitySet for Server {
+    async fn identity_set(
         &self,
         mut request: SetRequest<RequestArguments>,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut identity_ids = self
             .get_document_ids(account_id, Collection::Identity)
@@ -78,11 +70,9 @@ impl JMAP {
                     .storage
                     .directory
                     .query(QueryBy::Id(account_id), false)
-                    .await
+                    .await?
                     .unwrap_or_default()
-                    .unwrap_or_default()
-                    .emails
-                    .contains(email)
+                    .has_str_value(PrincipalField::Emails, email)
                 {
                     response.not_created.append(
                         id,
@@ -111,7 +101,11 @@ impl JMAP {
                 .with_collection(Collection::Identity)
                 .create_document()
                 .value(Property::Value, identity, F_VALUE);
-            let document_id = self.write_batch_expect_id(batch).await?;
+            let document_id = self
+                .store()
+                .write_expect_id(batch)
+                .await
+                .caused_by(trc::location!())?;
             identity_ids.insert(document_id);
             changes.log_insert(Collection::Identity, document_id);
             response.created(id, document_id);
@@ -167,7 +161,10 @@ impl JMAP {
                 .with_collection(Collection::Identity)
                 .update_document(document_id)
                 .value(Property::Value, identity, F_VALUE);
-            self.write_batch(batch).await?;
+            self.store()
+                .write(batch)
+                .await
+                .caused_by(trc::location!())?;
             changes.log_update(Collection::Identity, document_id);
             response.updated.append(id, None);
         }
@@ -183,7 +180,10 @@ impl JMAP {
                     .with_collection(Collection::Identity)
                     .delete_document(document_id)
                     .value(Property::Value, (), F_VALUE | F_CLEAR);
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 changes.log_delete(Collection::Identity, document_id);
                 response.destroyed.push(id);
             } else {
@@ -265,40 +265,4 @@ fn validate_identity_value(
                 .with_description("Field could not be set."));
         }
     })
-}
-
-// Basic email sanitizer
-pub fn sanitize_email(email: &str) -> Option<String> {
-    let mut result = String::with_capacity(email.len());
-    let mut found_local = false;
-    let mut found_domain = false;
-    let mut last_ch = char::from(0);
-
-    for ch in email.chars() {
-        if !ch.is_whitespace() {
-            if ch == '@' {
-                if !result.is_empty() && !found_local {
-                    found_local = true;
-                } else {
-                    return None;
-                }
-            } else if ch == '.' {
-                if !(last_ch.is_alphanumeric() || last_ch == '-' || last_ch == '_') {
-                    return None;
-                } else if found_local {
-                    found_domain = true;
-                }
-            }
-            last_ch = ch;
-            for ch in ch.to_lowercase() {
-                result.push(ch);
-            }
-        }
-    }
-
-    if found_domain && last_ch != '.' {
-        Some(result)
-    } else {
-        None
-    }
 }

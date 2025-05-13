@@ -1,3 +1,65 @@
+Upgrading from `v0.10.x` to `v0.11.0`
+------------------------------------
+
+Version `0.11.0` introduces breaking changes to the spam filter configuration. Although no data migration is required, if changes were made to the previous spam filter, the configuration of the new spam filter should be reviewed. In particular:
+
+- `lookup.spam-*` settings are no longer used, these have been replaced by `spam-filter.*` settings. Review the [updated documentation](http://stalw.art/docs/spamfilter/overview).
+- Previous `spam-filter` and `track-replies` Sieve scripts cannot be used with the new version. They have been replaced by a built-in spam filter written in Rust.
+- Cache settings have changed, see the [documentation](https://stalw.art/docs/server/cache) for details.
+- Support for Pipes was removed in favor of MTA hooks and Milter.
+- `config.resource.spam-filter` is now `spam-filter.resource`.
+- `config.resource.webadmin` is now `webadmin.resource`.
+- `authentication.rate-limit` was removed as security is handled by fail2ban.
+
+Upgrading from `v0.9.x` to `v0.10.0`
+-----------------------------------
+
+## Important Notes
+
+- In version `0.10.0` accounts are associated with roles and permissions, which define what resources they can access. The concept of administrator or super user accounts no longer exists, now there is a single account type (the `individual` principal) which can be assigned the `admin` role or custom permissions to have administrator access.
+- Due to the changes in the database layout in order to support roles and permissions, the database must be migrated to the new layout. The migration is automatic and should not require any manual intervention.
+- While the database migration is automatic, it's recommended to **back up your data** before upgrading.
+- The webadmin must be upgraded **before** the mail server to maintain access post-upgrade. This is true even if you run Stalwart in Docker.
+
+## Step-by-Step Upgrade Process
+
+- Upgrade the webadmin by clicking on `Manage` > `Maintenance` > `Update Webadmin`.
+- Stop Stalwart and backup your data:
+
+  ```bash
+  $ sudo systemctl stop stalwart-mail
+  $ sudo /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
+  $ sudo chown -R stalwart-mail:stalwart-mail /opt/stalwart-mail/export
+  ```
+
+  or, if you are using the Docker image:
+
+  ```bash
+  $ docker stop stalwart-mail
+  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it stalwart-mail /usr/local/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
+  ```
+- Download the `v0.10.0` mail-server for your platform from the [releases page](https://github.com/stalwartlabs/mail-server/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
+- Start the service:
+  ```bash
+  $ sudo systemctl start stalwart-mail
+  ```
+
+  Or, if you are using the Docker image:
+  ```bash
+  $ docker start stalwart-mail
+  ```
+
+Upgrading from `v0.8.x` to `v0.9.0`
+-----------------------------------
+
+Version `0.9.0` introduces significant internal improvements while maintaining compatibility with existing database layouts and configuration file formats from version `0.8.0`. As a result, no data or configuration migration is necessary. This release focuses on enhancing performance and functionality, particularly in logging and tracing capabilities.
+
+To upgrade to Stalwart Mail Server version `0.9.0` from `0.8.x`, begin by downloading the latest version of the `stalwart-mail` binary. Once downloaded, replace the existing binary with the new version. Additionally, it's important to update the WebAdmin interface to the latest version to ensure compatibility and to access new features introduced in this release.
+
+In terms of breaking changes, this release brings significant updates to webhooks. All webhook event names have been modified, requiring a thorough review and adjustment of existing webhook configurations. Furthermore, the update introduces hundreds of new event types, enhancing the granularity and specificity of event handling capabilities. Users should familiarize themselves with these changes to effectively integrate them into their systems.
+
+The reason for this release being classified as a major version, despite the absence of changes to the database or configuration formats, is the complete rewrite of the logging and tracing layer. This overhaul substantially improves the efficiency and speed of generating detailed tracing and logging events, making the system more robust and facilitating easier debugging and monitoring.
+
 Upgrading from `v0.7.3` to `v0.8.0`
 -----------------------------------
 

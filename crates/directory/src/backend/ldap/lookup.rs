@@ -1,30 +1,25 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use ldap3::{Ldap, LdapConnAsync, LdapError, Scope, SearchEntry};
+use ldap3::{Ldap, LdapConnAsync, ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
+use store::xxhash_rust;
+use trc::AddContext;
 
-use crate::{backend::internal::manage::ManageDirectory, DirectoryError, Principal, QueryBy, Type};
+use crate::{
+    backend::{
+        internal::{
+            lookup::DirectoryStore,
+            manage::{self, ManageDirectory, UpdatePrincipal},
+            PrincipalField,
+        },
+        RcptType,
+    },
+    IntoError, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
+};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -33,37 +28,40 @@ impl LdapDirectory {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> crate::Result<Option<Principal<u32>>> {
-        let mut conn = self.pool.get().await?;
-        let mut account_id = None;
-        let account_name;
+    ) -> trc::Result<Option<Principal>> {
+        let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
 
-        let principal = match by {
+        let (mut external_principal, stored_principal) = match by {
             QueryBy::Name(username) => {
-                account_name = username.to_string();
-
                 if let Some(principal) = self
                     .find_principal(&mut conn, &self.mappings.filter_name.build(username))
                     .await?
                 {
-                    principal
+                    (
+                        principal.with_field(PrincipalField::Name, username.to_string()),
+                        None,
+                    )
                 } else {
                     return Ok(None);
                 }
             }
             QueryBy::Id(uid) => {
-                if let Some(username) = self.data_store.get_account_name(uid).await? {
-                    account_name = username;
-                } else {
-                    return Ok(None);
-                }
-                account_id = Some(uid);
-
-                if let Some(principal) = self
-                    .find_principal(&mut conn, &self.mappings.filter_name.build(&account_name))
+                if let Some(stored_principal_) = self
+                    .data_store
+                    .query(QueryBy::Id(uid), return_member_of)
                     .await?
                 {
-                    principal
+                    if let Some(principal) = self
+                        .find_principal(
+                            &mut conn,
+                            &self.mappings.filter_name.build(stored_principal_.name()),
+                        )
+                        .await?
+                    {
+                        (principal, Some(stored_principal_))
+                    } else {
+                        return Ok(None);
+                    }
                 } else {
                     return Ok(None);
                 }
@@ -74,26 +72,48 @@ impl LdapDirectory {
                     Credentials::OAuthBearer { token } => (token, token),
                     Credentials::XOauth2 { username, secret } => (username, secret),
                 };
-                account_name = username.to_string();
 
                 if let Some(auth_bind) = &self.auth_bind {
-                    let (conn, mut ldap) = LdapConnAsync::with_settings(
+                    let (auth_bind_conn, mut ldap) = LdapConnAsync::with_settings(
                         self.pool.manager().settings.clone(),
                         &self.pool.manager().address,
                     )
-                    .await?;
+                    .await
+                    .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
-                    ldap3::drive!(conn);
+                    ldap3::drive!(auth_bind_conn);
 
-                    ldap.simple_bind(&auth_bind.build(username), secret).await?;
+                    let dn = auth_bind.filter.build(username);
 
-                    match self
-                        .find_principal(&mut ldap, &self.mappings.filter_name.build(username))
+                    trc::event!(Store(trc::StoreEvent::LdapBind), Details = dn.clone());
+
+                    if ldap
+                        .simple_bind(&dn, secret)
                         .await
+                        .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                        .success()
+                        .is_err()
                     {
-                        Ok(Some(principal)) => principal,
-                        Err(DirectoryError::Ldap(LdapError::LdapResult { result }))
-                            if [49, 50].contains(&result.rc) =>
+                        return Ok(None);
+                    }
+
+                    let filter = &self.mappings.filter_name.build(username);
+                    let principal = if auth_bind.search {
+                        self.find_principal(&mut ldap, filter).await
+                    } else {
+                        self.find_principal(&mut conn, filter).await
+                    };
+                    match principal {
+                        Ok(Some(principal)) => (
+                            principal.with_field(PrincipalField::Name, username.to_string()),
+                            None,
+                        ),
+                        Err(err)
+                            if err.matches(trc::EventType::Store(trc::StoreEvent::LdapError))
+                                && err
+                                    .value(trc::Key::Code)
+                                    .and_then(|v| v.to_uint())
+                                    .is_some_and(|rc| [49, 50].contains(&rc)) =>
                         {
                             return Ok(None);
                         }
@@ -104,16 +124,12 @@ impl LdapDirectory {
                     .find_principal(&mut conn, &self.mappings.filter_name.build(username))
                     .await?
                 {
-                    if principal.verify_secret(secret).await {
-                        principal
+                    if principal.verify_secret(secret).await? {
+                        (
+                            principal.with_field(PrincipalField::Name, username.to_string()),
+                            None,
+                        )
                     } else {
-                        tracing::debug!(
-                            context = "directory",
-                            event = "invalid_password",
-                            protocol = "ldap",
-                            account = username,
-                            "Invalid password for account"
-                        );
                         return Ok(None);
                     }
                 } else {
@@ -121,181 +137,185 @@ impl LdapDirectory {
                 }
             }
         };
-        let mut principal = principal;
 
-        // Obtain account ID if not available
-        if let Some(account_id) = account_id {
-            principal.id = account_id;
-        } else {
-            principal.id = self
-                .data_store
-                .get_or_create_account_id(&account_name)
-                .await?;
-        }
-        principal.name = account_name;
-
-        // Obtain groups
-        if return_member_of && !principal.member_of.is_empty() {
-            for member_of in principal.member_of.iter_mut() {
-                if member_of.contains('=') {
-                    let (rs, _res) = conn
-                        .search(
-                            member_of,
-                            Scope::Base,
-                            "objectClass=*",
-                            &self.mappings.attr_name,
-                        )
-                        .await?
-                        .success()?;
-                    for entry in rs {
-                        'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
-                            if self.mappings.attr_name.contains(&attr) {
-                                if let Some(group) = value.into_iter().next() {
-                                    if !group.is_empty() {
-                                        *member_of = group;
-                                        break 'outer;
+        // Query groups
+        match external_principal.take_str_array(PrincipalField::MemberOf) {
+            Some(names) if return_member_of => {
+                let mut member_of = Vec::with_capacity(names.len());
+                for mut name in names {
+                    if name.contains('=') {
+                        let (rs, _res) = conn
+                            .search(
+                                &name,
+                                Scope::Base,
+                                "objectClass=*",
+                                &self.mappings.attr_name,
+                            )
+                            .await
+                            .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                            .success()
+                            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
+                        for entry in rs {
+                            'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
+                                if self.mappings.attr_name.contains(&attr) {
+                                    if let Some(group) = value.into_iter().next() {
+                                        if !group.is_empty() {
+                                            name = group;
+                                            break 'outer;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // Map ids
-            self.data_store
-                .map_principal(principal, true)
-                .await
-                .map(Some)
-        } else {
-            principal.member_of.clear();
-            Ok(Some(principal.into()))
+                    member_of.push(
+                        self.data_store
+                            .get_or_create_principal_id(&name, Type::Group)
+                            .await
+                            .caused_by(trc::location!())?,
+                    );
+                }
+
+                // Map ids
+                external_principal.set(PrincipalField::MemberOf, member_of);
+            }
+            _ => (),
         }
+
+        // Obtain account ID if not available
+        let mut principal = if let Some(stored_principal) = stored_principal {
+            stored_principal
+        } else {
+            let id = self
+                .data_store
+                .get_or_create_principal_id(external_principal.name(), Type::Individual)
+                .await
+                .caused_by(trc::location!())?;
+
+            self.data_store
+                .query(QueryBy::Id(id), return_member_of)
+                .await
+                .caused_by(trc::location!())?
+                .ok_or_else(|| manage::not_found(id).caused_by(trc::location!()))?
+        };
+
+        // Keep the internal store up to date with the LDAP server
+        let changes = principal.update_external(external_principal);
+        if !changes.is_empty() {
+            self.data_store
+                .update_principal(
+                    UpdatePrincipal::by_id(principal.id)
+                        .with_updates(changes)
+                        .create_domains(),
+                )
+                .await
+                .caused_by(trc::location!())?;
+        }
+
+        Ok(Some(principal))
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
+    pub async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
+        let filter = self.mappings.filter_email.build(address.as_ref());
         let rs = self
             .pool
             .get()
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_email.build(address.as_ref()),
+                &filter,
                 &self.mappings.attr_name,
             )
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .success()
-            .map(|(rs, _res)| rs)?;
+            .map(|(rs, _res)| rs)
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
-        let mut ids = Vec::with_capacity(rs.len());
+        trc::event!(
+            Store(trc::StoreEvent::LdapQuery),
+            Details = filter,
+            Result = rs.iter().map(result_to_trace).collect::<Vec<_>>()
+        );
+
         for entry in rs {
             let entry = SearchEntry::construct(entry);
-            'outer: for attr in &self.mappings.attr_name {
+            for attr in &self.mappings.attr_name {
                 if let Some(name) = entry.attrs.get(attr).and_then(|v| v.first()) {
                     if !name.is_empty() {
-                        ids.push(self.data_store.get_or_create_account_id(name).await?);
-                        break 'outer;
+                        return self
+                            .data_store
+                            .get_or_create_principal_id(name, Type::Individual)
+                            .await
+                            .map(Some);
                     }
                 }
             }
         }
 
-        Ok(ids)
+        Ok(None)
     }
 
-    pub async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        self.pool
-            .get()
-            .await?
-            .streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                &self.mappings.filter_email.build(address.as_ref()),
-                &self.mappings.attr_email_address,
-            )
-            .await?
-            .next()
-            .await
-            .map(|entry| entry.is_some())
-            .map_err(|e| e.into())
-    }
-
-    pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
-        let mut stream = self
+    pub async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
+        let filter = self.mappings.filter_email.build(address.as_ref());
+        let result = self
             .pool
             .get()
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_verify.build(address),
+                &filter,
                 &self.mappings.attr_email_address,
             )
-            .await?;
-
-        let mut emails = Vec::new();
-        while let Some(entry) = stream.next().await? {
-            let entry = SearchEntry::construct(entry);
-            for attr in &self.mappings.attr_email_address {
-                if let Some(values) = entry.attrs.get(attr) {
-                    for email in values {
-                        if !email.is_empty() {
-                            emails.push(email.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(emails)
-    }
-
-    pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
-        let mut stream = self
-            .pool
-            .get()
-            .await?
-            .streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                &self.mappings.filter_expand.build(address),
-                &self.mappings.attr_email_address,
-            )
-            .await?;
-
-        let mut emails = Vec::new();
-        while let Some(entry) = stream.next().await? {
-            let entry = SearchEntry::construct(entry);
-            for attr in &self.mappings.attr_email_address {
-                if let Some(values) = entry.attrs.get(attr) {
-                    for email in values {
-                        if !email.is_empty() {
-                            emails.push(email.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(emails)
-    }
-
-    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
-        self.pool
-            .get()
-            .await?
-            .streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                &self.mappings.filter_domains.build(domain),
-                Vec::<String>::new(),
-            )
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .next()
             .await
-            .map(|entry| entry.is_some())
-            .map_err(|e| e.into())
+            .map(|entry| {
+                let result = if entry.is_some() {
+                    RcptType::Mailbox
+                } else {
+                    RcptType::Invalid
+                };
+
+                trc::event!(
+                    Store(trc::StoreEvent::LdapQuery),
+                    Details = filter,
+                    Result = entry.as_ref().map(result_to_trace).unwrap_or_default()
+                );
+
+                result
+            })
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
+
+        if result != RcptType::Invalid {
+            Ok(result)
+        } else {
+            self.data_store.rcpt(address).await.map(|result| {
+                if matches!(result, RcptType::List(_)) {
+                    result
+                } else {
+                    RcptType::Invalid
+                }
+            })
+        }
+    }
+
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
+        self.data_store.vrfy(address).await
+    }
+
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
+        self.data_store.expn(address).await
+    }
+
+    pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
+        self.data_store.is_local_domain(domain).await
     }
 }
 
@@ -304,71 +324,101 @@ impl LdapDirectory {
         &self,
         conn: &mut Ldap,
         filter: &str,
-    ) -> crate::Result<Option<Principal<String>>> {
+    ) -> trc::Result<Option<Principal>> {
         conn.search(
             &self.mappings.base_dn,
             Scope::Subtree,
             filter,
             &self.mappings.attrs_principal,
         )
-        .await?
+        .await
+        .map_err(|err| err.into_error().caused_by(trc::location!()))?
         .success()
         .map(|(rs, _)| {
+            trc::event!(
+                Store(trc::StoreEvent::LdapQuery),
+                Details = filter.to_string(),
+                Result = rs.first().map(result_to_trace).unwrap_or_default()
+            );
+
             rs.into_iter().next().map(|entry| {
                 self.mappings
                     .entry_to_principal(SearchEntry::construct(entry))
             })
         })
-        .map_err(Into::into)
+        .map_err(|err| err.into_error().caused_by(trc::location!()))
     }
 }
 
 impl LdapMappings {
-    fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
+    fn entry_to_principal(&self, entry: SearchEntry) -> Principal {
         let mut principal = Principal::default();
-
-        tracing::debug!(
-            context = "ldap",
-            event = "fetch_principal",
-            entry = ?entry,
-            "LDAP entry"
-        );
+        let mut role = ROLE_USER;
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
-                principal.name = value.into_iter().next().unwrap_or_default();
-            } else if self.attr_secret.contains(&attr) {
-                principal.secrets.extend(value);
-            } else if self.attr_email_address.contains(&attr) {
-                for value in value {
-                    if principal.emails.is_empty() {
-                        principal.emails.push(value);
-                    } else {
-                        principal.emails.insert(0, value);
+                if !self.attr_email_address.contains(&attr) {
+                    principal.set(
+                        PrincipalField::Name,
+                        value.into_iter().next().unwrap_or_default(),
+                    );
+                } else {
+                    for (idx, item) in value.into_iter().enumerate() {
+                        principal.prepend_str(PrincipalField::Emails, item.to_lowercase());
+                        if idx == 0 {
+                            principal.set(PrincipalField::Name, item);
+                        }
                     }
                 }
+            } else if self.attr_secret.contains(&attr) {
+                for item in value {
+                    principal.append_str(PrincipalField::Secrets, item);
+                }
+            } else if self.attr_secret_changed.contains(&attr) {
+                // Create a disabled AppPassword, used to indicate that the password has been changed
+                // but cannot be used for authentication.
+                for item in value {
+                    principal.append_str(
+                        PrincipalField::Secrets,
+                        format!("$app${}$", xxhash_rust::xxh3::xxh3_64(item.as_bytes())),
+                    );
+                }
+            } else if self.attr_email_address.contains(&attr) {
+                for item in value {
+                    principal.prepend_str(PrincipalField::Emails, item.to_lowercase());
+                }
             } else if self.attr_email_alias.contains(&attr) {
-                principal.emails.extend(value);
+                for item in value {
+                    principal.append_str(PrincipalField::Emails, item.to_lowercase());
+                }
             } else if let Some(idx) = self.attr_description.iter().position(|a| a == &attr) {
-                if principal.description.is_none() || idx == 0 {
-                    principal.description = value.into_iter().next();
+                if !principal.has_field(PrincipalField::Description) || idx == 0 {
+                    principal.set(
+                        PrincipalField::Description,
+                        value.into_iter().next().unwrap_or_default(),
+                    );
                 }
             } else if self.attr_groups.contains(&attr) {
-                principal.member_of.extend(value);
+                for item in value {
+                    principal.append_str(PrincipalField::MemberOf, item);
+                }
             } else if self.attr_quota.contains(&attr) {
-                if let Ok(quota) = value.into_iter().next().unwrap_or_default().parse() {
-                    principal.quota = quota;
+                if let Ok(quota) = value.into_iter().next().unwrap_or_default().parse::<u64>() {
+                    principal.set(PrincipalField::Quota, quota);
                 }
             } else if self.attr_type.contains(&attr) {
                 for value in value {
                     match value.to_ascii_lowercase().as_str() {
                         "admin" | "administrator" | "root" | "superuser" => {
-                            principal.typ = Type::Superuser
+                            role = ROLE_ADMIN;
+                            principal.typ = Type::Individual
                         }
                         "posixaccount" | "individual" | "person" | "inetorgperson" => {
                             principal.typ = Type::Individual
                         }
-                        "posixgroup" | "groupofuniquenames" | "group" => principal.typ = Type::Group,
+                        "posixgroup" | "groupofuniquenames" | "group" => {
+                            principal.typ = Type::Group
+                        }
                         _ => continue,
                     }
                     break;
@@ -376,6 +426,15 @@ impl LdapMappings {
             }
         }
 
-        principal
+        principal.with_field(PrincipalField::Roles, role)
     }
+}
+
+fn result_to_trace(rs: &ResultEntry) -> trc::Value {
+    SearchEntry::construct(rs.clone())
+        .attrs
+        .into_iter()
+        .map(|(k, v)| trc::Value::Array(vec![trc::Value::from(k), trc::Value::from(v.join(", "))]))
+        .collect::<Vec<_>>()
+        .into()
 }

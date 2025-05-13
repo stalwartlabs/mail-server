@@ -1,33 +1,12 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::collections::HashMap;
 
 use crate::{
-    error::{
-        method::MethodError,
-        request::{RequestError, RequestLimitError},
-    },
     method::{
         changes::ChangesRequest,
         copy::{CopyBlobRequest, CopyRequest},
@@ -42,7 +21,7 @@ use crate::{
         upload::BlobUploadRequest,
         validate::ValidateSieveScriptRequest,
     },
-    parser::{json::Parser, Error, Ignore, JsonObjectParser, Token},
+    parser::{json::Parser, Ignore, JsonObjectParser, Token},
     types::any_id::AnyId,
 };
 
@@ -54,7 +33,7 @@ use super::{
 };
 
 impl Request {
-    pub fn parse(json: &[u8], max_calls: usize, max_size: usize) -> Result<Self, RequestError> {
+    pub fn parse(json: &[u8], max_calls: usize, max_size: usize) -> trc::Result<Self> {
         if json.len() <= max_size {
             let mut request = Request {
                 using: 0,
@@ -71,10 +50,12 @@ impl Request {
             if found_valid_keys {
                 Ok(request)
             } else {
-                Err(RequestError::not_request("Invalid JMAP request"))
+                Err(trc::JmapEvent::NotRequest
+                    .into_err()
+                    .details("Invalid JMAP request"))
             }
         } else {
-            Err(RequestError::limit(RequestLimitError::SizeRequest))
+            Err(trc::LimitEvent::SizeRequest.into_err())
         }
     }
 
@@ -83,7 +64,7 @@ impl Request {
         parser: &mut Parser,
         max_calls: usize,
         key: u128,
-    ) -> Result<bool, RequestError> {
+    ) -> trc::Result<bool> {
         match key {
             0x0067_6e69_7375 => {
                 parser.next_token::<Ignore>()?.assert(Token::ArrayStart)?;
@@ -94,7 +75,7 @@ impl Request {
                         }
                         Token::Comma => (),
                         Token::ArrayEnd => break,
-                        token => return Err(token.error("capability", &token.to_string()).into()),
+                        token => return Err(token.error("capability", &token.to_string())),
                     }
                 }
                 Ok(true)
@@ -109,20 +90,28 @@ impl Request {
                         Token::Comma => continue,
                         Token::ArrayEnd => break,
                         _ => {
-                            return Err(RequestError::not_request("Invalid JMAP request"));
+                            return Err(trc::JmapEvent::NotRequest
+                                .into_err()
+                                .details("Invalid JMAP request"));
                         }
                     };
                     if self.method_calls.len() < max_calls {
                         let method_name = match parser.next_token::<MethodName>() {
                             Ok(Token::String(method)) => method,
                             Ok(_) => {
-                                return Err(RequestError::not_request("Invalid JMAP request"));
+                                return Err(trc::JmapEvent::NotRequest
+                                    .into_err()
+                                    .details("Invalid JMAP request"));
                             }
-                            Err(Error::Method(MethodError::InvalidArguments(_))) => {
+                            Err(err)
+                                if err.matches(trc::EventType::Jmap(
+                                    trc::JmapEvent::InvalidArguments,
+                                )) =>
+                            {
                                 MethodName::error()
                             }
                             Err(err) => {
-                                return Err(err.into());
+                                return Err(err);
                             }
                         };
                         parser.next_token::<Ignore>()?.assert_jmap(Token::Comma)?;
@@ -186,19 +175,19 @@ impl Request {
                             (MethodFunction::Echo, MethodObject::Core) => {
                                 Echo::parse(parser).map(RequestMethod::Echo)
                             }
-                            _ => Err(Error::Method(MethodError::UnknownMethod(
-                                method_name.to_string(),
-                            ))),
+                            _ => Err(trc::JmapEvent::UnknownMethod
+                                .into_err()
+                                .details(method_name.to_string())),
                         };
 
                         let method = match method {
                             Ok(method) => method,
-                            Err(Error::Method(err)) => {
+                            Err(err) if !err.is_jmap_method_error() => {
                                 parser.skip_token(start_depth_array, start_depth_dict)?;
                                 RequestMethod::Error(err)
                             }
                             Err(err) => {
-                                return Err(err.into());
+                                return Err(err);
                             }
                         };
 
@@ -213,7 +202,7 @@ impl Request {
                             name: method_name,
                         });
                     } else {
-                        return Err(RequestError::limit(RequestLimitError::CallsIn));
+                        return Err(trc::LimitEvent::CallsIn.into_err());
                     }
                 }
                 Ok(true)
@@ -234,15 +223,6 @@ impl Request {
                 parser.skip_token(parser.depth_array, parser.depth_dict)?;
                 Ok(false)
             }
-        }
-    }
-}
-
-impl From<Error> for RequestError {
-    fn from(value: Error) -> Self {
-        match value {
-            Error::Request(err) => err,
-            Error::Method(err) => RequestError::not_request(err.to_string()),
         }
     }
 }

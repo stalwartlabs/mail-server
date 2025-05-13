@@ -1,29 +1,12 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use crate::{
     protocol::{copy_move, ProtocolVersion},
-    receiver::Request,
+    receiver::{bad, Request},
     utf7::utf7_maybe_decode,
     Command,
 };
@@ -31,7 +14,7 @@ use crate::{
 use super::parse_sequence_set;
 
 impl Request<Command> {
-    pub fn parse_copy_move(self, version: ProtocolVersion) -> crate::Result<copy_move::Arguments> {
+    pub fn parse_copy_move(self, version: ProtocolVersion) -> trc::Result<copy_move::Arguments> {
         if self.tokens.len() > 1 {
             let mut tokens = self.tokens.into_iter();
 
@@ -39,16 +22,16 @@ impl Request<Command> {
                 sequence_set: parse_sequence_set(
                     &tokens
                         .next()
-                        .ok_or((self.tag.as_str(), "Missing sequence set."))?
+                        .ok_or_else(|| bad(self.tag.to_string(), "Missing sequence set."))?
                         .unwrap_bytes(),
                 )
-                .map_err(|v| (self.tag.as_str(), v))?,
+                .map_err(|v| bad(self.tag.to_string(), v))?,
                 mailbox_name: utf7_maybe_decode(
                     tokens
                         .next()
-                        .ok_or((self.tag.as_str(), "Missing mailbox name."))?
+                        .ok_or_else(|| bad(self.tag.to_string(), "Missing mailbox name."))?
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                     version,
                 ),
                 tag: self.tag,

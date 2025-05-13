@@ -1,32 +1,19 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::{collections::hash_map::Entry, sync::Arc, time::Duration};
+use std::{collections::hash_map::Entry, future::Future, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
-use common::config::smtp::{
-    report::AggregateFrequency,
-    resolver::{Mode, MxPattern},
+use common::{
+    config::smtp::{
+        report::AggregateFrequency,
+        resolver::{Mode, MxPattern},
+    },
+    ipc::{TlsEvent, ToHash},
+    Server, USER_AGENT,
 };
 use mail_auth::{
     flate2::{write::GzEncoder, Compression},
@@ -43,10 +30,11 @@ use store::{
     write::{now, BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Serialize, ValueKey,
 };
+use trc::{AddContext, OutgoingReportEvent};
 
-use crate::{core::SMTP, queue::RecipientDomain, USER_AGENT};
+use crate::{queue::RecipientDomain, reporting::SmtpReporting};
 
-use super::{scheduler::ToHash, AggregateTimestamp, ReportLock, SerializedSize, TlsEvent};
+use super::{AggregateTimestamp, SerializedSize};
 
 #[derive(Debug, Clone)]
 pub struct TlsRptOptions {
@@ -64,53 +52,71 @@ pub struct TlsFormat {
 #[cfg(feature = "test_mode")]
 pub static TLS_HTTP_REPORT: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::new(Vec::new());
 
-impl SMTP {
-    pub async fn send_tls_aggregate_report(&self, events: Vec<ReportEvent>) {
+pub trait TlsReporting: Sync + Send {
+    fn send_tls_aggregate_report(
+        &self,
+        events: Vec<ReportEvent>,
+    ) -> impl Future<Output = ()> + Send;
+    fn generate_tls_aggregate_report(
+        &self,
+        events: &[ReportEvent],
+        rua: &mut Vec<ReportUri>,
+        serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
+        span_id: u64,
+    ) -> impl Future<Output = trc::Result<Option<TlsReport>>> + Send;
+    fn schedule_tls(&self, event: Box<TlsEvent>) -> impl Future<Output = ()> + Send;
+    fn delete_tls_report(&self, events: Vec<ReportEvent>) -> impl Future<Output = ()> + Send;
+}
+
+impl TlsReporting for Server {
+    async fn send_tls_aggregate_report(&self, events: Vec<ReportEvent>) {
         let (domain_name, event_from, event_to) = events
             .first()
             .map(|e| (e.domain.as_str(), e.seq_id, e.due))
             .unwrap();
 
-        let span = tracing::info_span!(
-            "tls-report",
-            domain = domain_name,
-            range_from = event_from,
-            range_to = event_to,
+        let span_id = self.inner.data.span_id_gen.generate().unwrap_or_else(now);
+
+        trc::event!(
+            OutgoingReport(OutgoingReportEvent::TlsAggregate),
+            SpanId = span_id,
+            ReportId = event_from,
+            Domain = domain_name.to_string(),
+            RangeFrom = trc::Value::Timestamp(event_from),
+            RangeTo = trc::Value::Timestamp(event_to),
         );
 
         // Generate report
         let mut rua = Vec::new();
         let mut serialized_size = serde_json::Serializer::new(SerializedSize::new(
-            self.core
-                .eval_if(
-                    &self.core.smtp.report.tls.max_size,
-                    &RecipientDomain::new(domain_name),
-                )
-                .await
-                .unwrap_or(25 * 1024 * 1024),
+            self.eval_if(
+                &self.core.smtp.report.tls.max_size,
+                &RecipientDomain::new(domain_name),
+                span_id,
+            )
+            .await
+            .unwrap_or(25 * 1024 * 1024),
         ));
         let report = match self
-            .generate_tls_aggregate_report(&events, &mut rua, Some(&mut serialized_size))
+            .generate_tls_aggregate_report(&events, &mut rua, Some(&mut serialized_size), span_id)
             .await
         {
             Ok(Some(report)) => report,
             Ok(None) => {
                 // This should not happen
-                tracing::warn!(
-                    parent: &span,
-                    event = "empty-report",
-                    "No policies found in report"
+                trc::event!(
+                    OutgoingReport(OutgoingReportEvent::NotFound),
+                    SpanId = span_id,
+                    CausedBy = trc::location!()
                 );
                 self.delete_tls_report(events).await;
                 return;
             }
             Err(err) => {
-                tracing::warn!(
-                    parent: &span,
-                    event = "error",
-                    "Failed to read TLS report: {}",
-                    err
-                );
+                trc::error!(err
+                    .span_id(span_id)
+                    .caused_by(trc::location!())
+                    .details("Failed to read TLS report"));
                 return;
             }
         };
@@ -122,12 +128,13 @@ impl SMTP {
         {
             Ok(report) => report,
             Err(err) => {
-                tracing::error!(
-                    parent: &span,
-                    event = "error",
-                    "Failed to compress report: {}",
-                    err
+                trc::event!(
+                    OutgoingReport(OutgoingReportEvent::SubmissionError),
+                    SpanId = span_id,
+                    Reason = err.to_string(),
+                    Details = "Failed to compress report"
                 );
+
                 self.delete_tls_report(events).await;
                 return;
             }
@@ -159,31 +166,32 @@ impl SMTP {
                         {
                             Ok(response) => {
                                 if response.status().is_success() {
-                                    tracing::info!(
-                                        parent: &span,
-                                        context = "http",
-                                        event = "success",
-                                        url = uri,
+                                    trc::event!(
+                                        OutgoingReport(OutgoingReportEvent::HttpSubmission),
+                                        SpanId = span_id,
+                                        Url = uri.to_string(),
+                                        Code = response.status().as_u16(),
                                     );
+
                                     self.delete_tls_report(events).await;
                                     return;
                                 } else {
-                                    tracing::debug!(
-                                        parent: &span,
-                                        context = "http",
-                                        event = "invalid-response",
-                                        url = uri,
-                                        status = %response.status()
+                                    trc::event!(
+                                        OutgoingReport(OutgoingReportEvent::SubmissionError),
+                                        SpanId = span_id,
+                                        Url = uri.to_string(),
+                                        Code = response.status().as_u16(),
+                                        Details = "Invalid HTTP response"
                                     );
                                 }
                             }
                             Err(err) => {
-                                tracing::debug!(
-                                    parent: &span,
-                                    context = "http",
-                                    event = "error",
-                                    url = uri,
-                                    reason = %err
+                                trc::event!(
+                                    OutgoingReport(OutgoingReportEvent::SubmissionError),
+                                    SpanId = span_id,
+                                    Url = uri.to_string(),
+                                    Reason = err.to_string(),
+                                    Details = "HTTP submission error"
                                 );
                             }
                         }
@@ -199,24 +207,22 @@ impl SMTP {
         if !rcpts.is_empty() {
             let config = &self.core.smtp.report.tls;
             let from_addr = self
-                .core
-                .eval_if(&config.address, &RecipientDomain::new(domain_name))
+                .eval_if(&config.address, &RecipientDomain::new(domain_name), span_id)
                 .await
                 .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
             let mut message = Vec::with_capacity(2048);
             let _ = report.write_rfc5322_from_bytes(
                 domain_name,
                 &self
-                    .core
                     .eval_if(
                         &self.core.smtp.report.submitter,
                         &RecipientDomain::new(domain_name),
+                        span_id,
                     )
                     .await
                     .unwrap_or_else(|| "localhost".to_string()),
                 (
-                    self.core
-                        .eval_if(&config.name, &RecipientDomain::new(domain_name))
+                    self.eval_if(&config.name, &RecipientDomain::new(domain_name), span_id)
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                         .as_str(),
@@ -233,26 +239,26 @@ impl SMTP {
                 rcpts.iter(),
                 message,
                 &config.sign,
-                &span,
                 false,
+                span_id,
             )
             .await;
         } else {
-            tracing::info!(
-                parent: &span,
-                event = "delivery-failed",
-                "No valid recipients found to deliver report to."
+            trc::event!(
+                OutgoingReport(OutgoingReportEvent::NoRecipientsFound),
+                SpanId = span_id,
             );
         }
         self.delete_tls_report(events).await;
     }
 
-    pub async fn generate_tls_aggregate_report(
+    async fn generate_tls_aggregate_report(
         &self,
         events: &[ReportEvent],
         rua: &mut Vec<ReportUri>,
         mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
-    ) -> store::Result<Option<TlsReport>> {
+        span_id: u64,
+    ) -> trc::Result<Option<TlsReport>> {
         let (domain_name, event_from, event_to, policy) = events
             .first()
             .map(|e| (e.domain.as_str(), e.seq_id, e.due, e.policy_hash))
@@ -260,8 +266,11 @@ impl SMTP {
         let config = &self.core.smtp.report.tls;
         let mut report = TlsReport {
             organization_name: self
-                .core
-                .eval_if(&config.org_name, &RecipientDomain::new(domain_name))
+                .eval_if(
+                    &config.org_name,
+                    &RecipientDomain::new(domain_name),
+                    span_id,
+                )
                 .await
                 .clone(),
             date_range: DateRange {
@@ -269,8 +278,11 @@ impl SMTP {
                 end_datetime: DateTime::from_timestamp(event_to as i64),
             },
             contact_info: self
-                .core
-                .eval_if(&config.contact_info, &RecipientDomain::new(domain_name))
+                .eval_if(
+                    &config.contact_info,
+                    &RecipientDomain::new(domain_name),
+                    span_id,
+                )
                 .await
                 .clone(),
             report_id: format!("{}_{}", event_from, policy),
@@ -336,7 +348,7 @@ impl SMTP {
                             Entry::Vacant(e) => {
                                 if serialized_size
                                     .as_deref_mut()
-                                    .map_or(true, |serialized_size| {
+                                    .is_none_or( |serialized_size| {
                                         serde::Serialize::serialize(e.key(), serialized_size)
                                             .is_ok()
                                     })
@@ -354,7 +366,8 @@ impl SMTP {
                         Ok(true)
                     }
                 })
-                .await?;
+                .await
+                .caused_by(trc::location!())?;
 
             // Add policy
             report.policies.push(Policy {
@@ -387,7 +400,7 @@ impl SMTP {
         })
     }
 
-    pub async fn schedule_tls(&self, event: Box<TlsEvent>) {
+    async fn schedule_tls(&self, event: Box<TlsEvent>) {
         let created = event.interval.to_timestamp();
         let deliver_at = created + event.interval.as_secs();
         let mut report_event = ReportEvent {
@@ -419,7 +432,7 @@ impl SMTP {
             };
 
             match event.policy {
-                super::PolicyType::Tlsa(tlsa) => {
+                common::ipc::PolicyType::Tlsa(tlsa) => {
                     policy.policy_type = PolicyType::Tlsa;
                     if let Some(tlsa) = tlsa {
                         for entry in &tlsa.entries {
@@ -439,7 +452,7 @@ impl SMTP {
                         }
                     }
                 }
-                super::PolicyType::Sts(sts) => {
+                common::ipc::PolicyType::Sts(sts) => {
                     policy.policy_type = PolicyType::Sts;
                     if let Some(sts) = sts {
                         policy.policy_string.push("version: STSv1".to_string());
@@ -479,35 +492,26 @@ impl SMTP {
                 ValueClass::Queue(QueueClass::TlsReportHeader(report_event.clone())),
                 Bincode::new(entry).serialize(),
             );
-
-            // Add lock
-            builder.set(
-                ValueClass::Queue(QueueClass::tls_lock(&report_event)),
-                0u64.serialize(),
-            );
         }
 
         // Write entry
-        report_event.seq_id = self.inner.snowflake_id.generate().unwrap_or_else(now);
+        report_event.seq_id = self.inner.data.queue_id_gen.generate().unwrap_or_else(now);
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
             Bincode::new(event.failure).serialize(),
         );
 
         if let Err(err) = self.core.storage.data.write(builder.build()).await {
-            tracing::error!(
-                context = "report",
-                event = "error",
-                "Failed to write TLS report event: {}",
-                err
-            );
+            trc::error!(err
+                .caused_by(trc::location!())
+                .details("Failed to write TLS report"));
         }
     }
 
-    pub async fn delete_tls_report(&self, events: Vec<ReportEvent>) {
+    async fn delete_tls_report(&self, events: Vec<ReportEvent>) {
         let mut batch = BatchBuilder::new();
 
-        for (pos, event) in events.into_iter().enumerate() {
+        for event in events {
             let from_key = ReportEvent {
                 due: event.due,
                 policy_hash: event.policy_hash,
@@ -532,18 +536,11 @@ impl SMTP {
                 )
                 .await
             {
-                tracing::warn!(
-                    context = "report",
-                    event = "error",
-                    "Failed to remove reports: {}",
-                    err
-                );
-                return;
-            }
+                trc::error!(err
+                    .caused_by(trc::location!())
+                    .details("Failed to delete TLS reports"));
 
-            if pos == 0 {
-                // Remove lock
-                batch.clear(ValueClass::Queue(QueueClass::tls_lock(&event)));
+                return;
             }
 
             // Remove report header
@@ -551,12 +548,9 @@ impl SMTP {
         }
 
         if let Err(err) = self.core.storage.data.write(batch.build()).await {
-            tracing::warn!(
-                context = "report",
-                event = "error",
-                "Failed to remove reports: {}",
-                err
-            );
+            trc::error!(err
+                .caused_by(trc::location!())
+                .details("Failed to delete TLS reports"));
         }
     }
 }

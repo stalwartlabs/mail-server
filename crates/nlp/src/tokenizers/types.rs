@@ -1,37 +1,18 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::str::CharIndices;
 
-use utils::suffixlist::PublicSuffix;
-
 use super::Token;
 
-pub struct TypesTokenizer<'x, 'y> {
+#[derive(Debug)]
+pub struct TypesTokenizer<'x> {
     text: &'x str,
-    suffixes: &'y PublicSuffix,
     iter: CharIndices<'x>,
-    tokens: Vec<Token<TokenType<&'x str>>>,
+    tokens: Vec<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>>,
     peek_pos: usize,
     last_ch_is_space: bool,
     last_token_is_dot: bool,
@@ -43,7 +24,7 @@ pub struct TypesTokenizer<'x, 'y> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenType<T> {
+pub enum TokenType<T, E, U, I> {
     Alphabetic(T),
     Alphanumeric(T),
     Integer(T),
@@ -52,18 +33,18 @@ pub enum TokenType<T> {
     Space,
 
     // Detected types
-    Url(T),
-    UrlNoScheme(T),
+    Url(U),
+    UrlNoScheme(U),
     UrlNoHost(T),
-    IpAddr(T),
-    Email(T),
+    IpAddr(I),
+    Email(E),
     Float(T),
 }
 
-impl Copy for Token<TokenType<&'_ str>> {}
+impl Copy for Token<TokenType<&'_ str, &'_ str, &'_ str, &'_ str>> {}
 
-impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
-    type Item = Token<TokenType<&'x str>>;
+impl<'x> Iterator for TypesTokenizer<'x> {
+    type Item = Token<TokenType<&'x str, &'x str, &'x str, &'x str>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let token = self.peek()?;
@@ -75,7 +56,7 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
             && matches!(
             token.word,
             TokenType::Alphabetic(t) | TokenType::Alphanumeric(t)
-            if t.len() <= 8 && t.chars().all(|c| c.is_ascii()))
+            if t.len() <= 8 && t.is_ascii())
             && self.try_skip_url_scheme()
         {
             if let Some(url) = self.try_parse_url(token.into()) {
@@ -87,32 +68,23 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
         }
 
         // Try parsing email
-        if self.tokenize_emails
-            && token.word.is_email_atom()
-            && self.peek_has_tokens(
-                &[TokenType::Punctuation('@'), TokenType::Punctuation('.')],
-                TokenType::Space,
-            )
-        {
+        if self.tokenize_emails && token.word.is_email_atom() {
+            self.peek_rewind();
             if let Some(email) = self.try_parse_email() {
                 self.peek_advance();
                 return Some(email);
-            } else {
-                self.peek_rewind();
             }
+            self.peek_rewind();
         }
 
         // Try parsing URL without scheme
-        if self.tokenize_urls_without_scheme
-            && token.word.is_domain_atom(true)
-            && self.peek_has_tokens(&[TokenType::Punctuation('.')], TokenType::Space)
-        {
+        if self.tokenize_urls_without_scheme && token.word.is_domain_atom(true) {
+            self.peek_rewind();
             if let Some(url) = self.try_parse_url(None) {
                 self.peek_advance();
                 return Some(url);
-            } else {
-                self.peek_rewind();
             }
+            self.peek_rewind();
         }
 
         // Try parsing currencies and floating point numbers
@@ -128,15 +100,14 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
     }
 }
 
-impl<'x, 'y> TypesTokenizer<'x, 'y> {
-    pub fn new(text: &'x str, suffixes: &'y PublicSuffix) -> Self {
+impl<'x> TypesTokenizer<'x> {
+    pub fn new(text: &'x str) -> Self {
         Self {
             text,
             iter: text.char_indices(),
             tokens: Vec::new(),
             eof: false,
             peek_pos: 0,
-            suffixes,
             last_ch_is_space: false,
             last_token_is_dot: false,
             tokenize_urls: true,
@@ -182,7 +153,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                 has_number = true;
             } else {
                 let last_was_space = self.last_ch_is_space;
-                self.last_ch_is_space = ch.is_ascii_whitespace();
+                self.last_ch_is_space = ch.is_whitespace();
                 stop_char = Token {
                     word: if self.last_ch_is_space {
                         if last_was_space {
@@ -236,7 +207,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         }
     }
 
-    fn next_(&mut self) -> Option<Token<TokenType<&'x str>>> {
+    fn next_(&mut self) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         if self.tokens.is_empty() && !self.eof {
             self.consume();
         }
@@ -247,7 +218,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         }
     }
 
-    fn peek(&mut self) -> Option<Token<TokenType<&'x str>>> {
+    fn peek(&mut self) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         while self.tokens.len() <= self.peek_pos && !self.eof {
             self.consume();
         }
@@ -264,38 +235,15 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         }
     }
 
+    #[inline(always)]
     fn peek_rewind(&mut self) {
         self.peek_pos = 0;
     }
 
-    fn peek_has_tokens(
-        &mut self,
-        tokens: &[TokenType<&'_ str>],
-        stop_token: TokenType<&'_ str>,
-    ) -> bool {
-        let mut tokens = tokens.iter().copied();
-        let mut token = tokens.next().unwrap();
-        while let Some(t) = self.peek() {
-            if t.word == token {
-                if let Some(next_token) = tokens.next() {
-                    token = next_token;
-                } else {
-                    self.peek_rewind();
-                    return true;
-                }
-            } else if t.word == stop_token {
-                break;
-            }
-        }
-
-        self.peek_rewind();
-        false
-    }
-
     fn try_parse_url(
         &mut self,
-        scheme_token: Option<Token<TokenType<&'_ str>>>,
-    ) -> Option<Token<TokenType<&'x str>>> {
+        scheme_token: Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>>,
+    ) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         let (has_scheme, allow_blank_host) = scheme_token.as_ref().map_or((false, false), |t| {
             (
                 true,
@@ -344,8 +292,13 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
             while let Some(token) = self.peek() {
                 match token.word {
                     TokenType::Alphabetic(text) | TokenType::Alphanumeric(text) => {
-                        last_label_is_tld =
-                            text.len() >= 2 && self.suffixes.contains(&text.to_ascii_lowercase());
+                        last_label_is_tld = text.len() >= 2
+                            && psl::Psl::find(
+                                &psl::List,
+                                [text.to_ascii_lowercase().as_bytes()].into_iter(),
+                            )
+                            .typ
+                            .is_some();
                         text_count += 1;
                     }
                     TokenType::Integer(text) => {
@@ -506,7 +459,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         .into()
     }
 
-    fn try_parse_email(&mut self) -> Option<Token<TokenType<&'x str>>> {
+    fn try_parse_email(&mut self) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         // Start token is a valid local part atom
         let start_token = self.peek()?;
         let mut last_is_dot = false;
@@ -514,6 +467,9 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         // Find local part
         loop {
             let token = self.peek()?;
+            if token.to - start_token.from > 255 {
+                return None;
+            }
             match token.word {
                 word if word.is_email_atom() => {
                     last_is_dot = false;
@@ -569,8 +525,13 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                         .map(|(from, to)| (from, to, true));
                 }
                 TokenType::Alphabetic(text) | TokenType::Alphanumeric(text) if text.len() <= 63 => {
-                    last_label_is_tld =
-                        text.len() >= 2 && self.suffixes.contains(&text.to_ascii_lowercase());
+                    last_label_is_tld = text.len() >= 2
+                        && psl::Psl::find(
+                            &psl::List,
+                            [text.to_ascii_lowercase().as_bytes()].into_iter(),
+                        )
+                        .typ
+                        .is_some();
                     has_alpha = true;
                     last_ch = 0;
                 }
@@ -596,6 +557,10 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
             }
             end_pos = token.to;
             restore_pos = self.peek_pos;
+
+            if end_pos - start_pos > 255 {
+                return None;
+            }
         }
         self.peek_pos = restore_pos;
 
@@ -637,7 +602,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         None
     }
 
-    fn try_parse_number(&mut self) -> Option<Token<TokenType<&'x str>>> {
+    fn try_parse_number(&mut self) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         self.peek_rewind();
         let mut start_pos = usize::MAX;
         let mut end_pos = usize::MAX;
@@ -708,7 +673,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                 (TokenType::Punctuation('/'), State::Slash2) => return true,
                 (TokenType::Punctuation('+'), State::None) => State::PlusAlpha,
                 (TokenType::Alphabetic(t) | TokenType::Alphanumeric(t), State::PlusAlpha)
-                    if t.chars().all(|c| c.is_ascii()) =>
+                    if t.is_ascii() =>
                 {
                     State::Colon
                 }
@@ -720,7 +685,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
     }
 }
 
-impl<T> TokenType<T> {
+impl<T, E, U, I> TokenType<T, E, U, I> {
     fn is_email_atom(&self) -> bool {
         matches!(
             self,
@@ -765,17 +730,10 @@ impl<T> TokenType<T> {
 #[cfg(test)]
 mod test {
 
-    use utils::suffixlist::PublicSuffix;
-
     use super::{TokenType, TypesTokenizer};
 
     #[test]
     fn type_tokenizer() {
-        let mut suffixes = PublicSuffix::default();
-        suffixes.suffixes.insert("com".to_string());
-        suffixes.suffixes.insert("co".to_string());
-        suffixes.suffixes.insert("org".to_string());
-
         // Credits: test suite from linkify crate
         for (text, expected) in [
             ("", vec![]),
@@ -1042,7 +1000,7 @@ mod test {
                 "http://example.org/\u{b}bar",
                 vec![
                     TokenType::Url("http://example.org/"),
-                    TokenType::Punctuation('\u{b}'),
+                    TokenType::Space,
                     TokenType::Alphabetic("bar"),
                 ],
             ),
@@ -1098,7 +1056,7 @@ mod test {
                 "example.org/\u{b}bar",
                 vec![
                     TokenType::UrlNoScheme("example.org/"),
-                    TokenType::Punctuation('\u{b}'),
+                    TokenType::Space,
                     TokenType::Alphabetic("bar"),
                 ],
             ),
@@ -2879,11 +2837,11 @@ mod test {
                 ],
             ),
         ] {
-            let result = TypesTokenizer::new(text, &suffixes)
+            let result = TypesTokenizer::new(text)
                 .map(|t| t.word)
                 .collect::<Vec<_>>();
 
-            assert_eq!(result, expected);
+            assert_eq!(result, expected, "text: {:?}", text);
 
             /*print!("({text:?}, ");
             print!("vec![");

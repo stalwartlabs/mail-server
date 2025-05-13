@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{fs, path::PathBuf, time::SystemTime};
 
@@ -27,9 +10,9 @@ use smtp_proto::{Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_S
 use store::write::now;
 use utils::BlobHash;
 
-use crate::smtp::{inbound::sign::SIGNATURES, outbound::TestServer, QueueReceiver};
+use crate::smtp::{inbound::sign::SIGNATURES, QueueReceiver, TestSMTP};
 use smtp::queue::{
-    Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status,
+    dsn::SendDsn, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status,
 };
 
 const CONFIG: &str = r#"
@@ -51,6 +34,9 @@ sign = "['rsa']"
 
 #[tokio::test]
 async fn generate_dsn() {
+    // Enable logging
+    crate::enable_logging();
+
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("resources");
     path.push("smtp");
@@ -62,7 +48,8 @@ async fn generate_dsn() {
     let flags = RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_SUCCESS;
     let mut message = Message {
         size,
-        id: 0,
+        queue_id: 0,
+        span_id: 0,
         created: SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
@@ -103,12 +90,11 @@ async fn generate_dsn() {
         blob_hash: BlobHash::from(dsn_original.as_bytes()),
         quota_keys: vec![],
     };
-    let span = tracing::span!(tracing::Level::INFO, "hi");
 
     // Load config
-    let mut local = TestServer::new("smtp_dsn_test", CONFIG.to_string() + SIGNATURES, true).await;
+    let mut local = TestSMTP::new("smtp_dsn_test", CONFIG.to_string() + SIGNATURES).await;
     let core = local.build_smtp();
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
 
     // Create temp dir for queue
     qr.blob_store
@@ -117,13 +103,13 @@ async fn generate_dsn() {
         .unwrap();
 
     // Disabled DSN
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     qr.assert_no_events();
     qr.assert_queue_is_empty().await;
 
     // Failure DSN
     message.recipients[0].flags = flags;
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;
     qr.compare_dsn(dsn_message, "failure.eml").await;
 
@@ -143,7 +129,7 @@ async fn generate_dsn() {
         flags,
         orcpt: None,
     });
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;
     qr.compare_dsn(dsn_message, "success.eml").await;
 
@@ -156,7 +142,7 @@ async fn generate_dsn() {
         flags,
         orcpt: "jdoe@example.org".to_string().into(),
     });
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;
     qr.compare_dsn(dsn_message, "delay.eml").await;
 
@@ -165,7 +151,7 @@ async fn generate_dsn() {
         rcpt.flags = flags;
     }
     message.domains[0].notify.due = now();
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;
     qr.compare_dsn(dsn_message, "mixed.eml").await;
 

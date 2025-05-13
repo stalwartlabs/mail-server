@@ -1,4 +1,4 @@
-expect REPLYTO_UNPARSEABLE
+expect REPLYTO_UNPARSABLE
 
 Reply-to: hello
 
@@ -72,39 +72,39 @@ Test
 expect REPLYTO_EXCESS_QP REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@domain.org
-Reply-to: =?iso-8859-1?Q?Die_Hasen_und_die_Froesche?= <hello@domain.org>
+Reply-to: =?iso-8859-1?Q?Die_Hasen_und_die_Froesche?= <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->
 expect REPLYTO_EXCESS_BASE64 REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@domain.org
-Reply-to: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <hello@domain.org>
+Reply-to: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->
 expect REPLYTO_EMAIL_HAS_TITLE REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@domain.org
-Reply-to: "Mr. Hello" <hello@domain.org>
+Reply-to: "Mr. Hello" <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->
-expect FREEMAIL_REPLYTO REPLYTO_EQ_FROM HAS_REPLYTO 
+expect FREEMAIL_REPLY_TO FREEMAIL_FROM REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@gmail.com
-Reply-to: hello@gmail.com
+Reply-to: bye@gmail.com
 
 Test
 <!-- NEXT TEST -->
-expect DISPOSABLE_REPLYTO REPLYTO_EQ_FROM HAS_REPLYTO 
+expect DISPOSABLE_REPLY_TO DISPOSABLE_FROM REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@custom.disposable.org
-Reply-to: hello@custom.disposable.org
+Reply-to: bye@custom.disposable.org
 
 Test
 <!-- NEXT TEST -->
-expect FREEMAIL_REPLYTO_NEQ_FROM_DOM FREEMAIL_REPLYTO REPLYTO_DOM_NEQ_FROM_DOM SPOOF_REPLYTO HAS_REPLYTO 
+expect FREEMAIL_REPLY_TO_NEQ_FROM_DOM FREEMAIL_REPLY_TO FREEMAIL_FROM REPLYTO_DOM_NEQ_FROM_DOM SPOOF_REPLYTO HAS_REPLYTO 
 
 From: hello@gmail.com
 Reply-to: hello@yahoomail.com

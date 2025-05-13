@@ -1,27 +1,27 @@
-remote_ip 192.168.0.1
-expect RCVD_IN_DNSWL_LOW RBL_SPAMHAUS
+remote_ip 20.11.0.1
+expect RCVD_IN_DNSWL_LOW RBL_SENDERSCORE_REPUT_0
 
 Subject: test
 
 test
 
 <!-- NEXT TEST -->
-remote_ip 192.168.0.2
-expect RBL_SENDERSCORE RBL_NIXSPAM RBL_SEM RBL_SPAMHAUS_SBL RBL_BARRACUDA RBL_BLOCKLISTDE RBL_VIRUSFREE_BOTNET RBL_SPAMCOP RCVD_IN_DNSWL_MED
+remote_ip 20.11.0.2
+expect RBL_SENDERSCORE_REPUT_0 RBL_SEM RBL_SPAMHAUS_SBL RBL_BARRACUDA RBL_BLOCKLISTDE RBL_VIRUSFREE_BOTNET RBL_SPAMCOP RCVD_IN_DNSWL_MED
 
 Subject: test
 
 test
 
 <!-- NEXT TEST -->
-remote_ip 192.168.0.14
-expect RWL_MAILSPIKE_NEUTRAL RECEIVED_SPAMHAUS_SBL RBL_SPAMHAUS RECEIVED_SPAMHAUS_XBL RECEIVED_BLOCKLISTDE RCVD_IN_DNSWL_MED
+remote_ip 20.11.0.14
+expect RBL_SENDERSCORE_REPUT_1 RWL_MAILSPIKE_NEUTRAL RECEIVED_SPAMHAUS_SBL RECEIVED_SPAMHAUS_XBL RECEIVED_BLOCKLISTDE RCVD_IN_DNSWL_MED
 
-Received: from Agni (localhost [192.168.0.5]) (TLS: TLSv1/SSLv3, 168bits,DES-CBC3-SHA) by agni.forevermore.net 
+Received: from Agni (localhost [20.11.0.5]) (TLS: TLSv1/SSLv3, 168bits,DES-CBC3-SHA) by agni.forevermore.net 
           with esmtp; Mon, 28 Oct 2002 14:48:52 -0800
-Received: from [192.168.0.14] (79.sub-174-252-72.myvzw.com [192.168.0.8]) by mx.google.com 
+Received: from [20.11.0.14] (79.sub-174-252-72.myvzw.com [20.11.0.8]) by mx.google.com 
           with ESMTPS id m16sm345129qck.28.2011.06.15.07.42.02 (version=TLSv1/SSLv3 cipher=OTHER); Wed, 15 Jun 2011 07:42:08 -0700 (PDT)
-Received: from user (192.168.0.2) by DB6PR07MB3384.eurprd07.prod.outlook.com ([192.168.0.2]) 
+Received: from user (20.11.0.2) by DB6PR07MB3384.eurprd07.prod.outlook.com ([20.11.0.2]) 
           with Microsoft SMTP Server (version=TLS1_2, cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.1143.11; Thu, 13 Sep 2018 14:47:44 +0000
 Subject: test
 
@@ -39,6 +39,7 @@ And my website is https://sem-fresh15.com/offers.html
 Try cheating with a trusted domain user@dkimtrusted.org
 
 <!-- NEXT TEST -->
+dkim.result pass
 dkim.domains dkimtrusted.org
 expect DWL_DNSWL_HI
 
@@ -57,7 +58,7 @@ Subject: test
 test
 
 <!-- NEXT TEST -->
-expect SURBL_HASHBL_ABUSE SURBL_HASHBL_MALWARE SURBL_HASHBL_PHISH
+expect SURBL_HASHBL_ABUSE SURBL_HASHBL_MALWARE SURBL_HASHBL_PHISH URL_ONLY REDIRECTOR_URL
 
 From: spammer@spamcorp.net
 Reply-To: User <spammer@spamcorp.net>
@@ -65,6 +66,6 @@ Subject: test
 Content-Type: text/html; charset="utf-8"
 
 <html>
-<a href="https://www.malware.net">test</a>
-<img src="https://www.abuse.net">https://phishing.net/login</a<
+<a href="https://bit.ly/abcde">test</a>
+<img src="https://drive.google.com/path/to/file.exe">https://lnkiy.in/other/path?query=true</a<
 </html>

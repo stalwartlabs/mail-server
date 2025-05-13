@@ -1,0 +1,10 @@
+// Ignore everything
+*
+
+// Allow what is needed
+!crates
+!tests
+!resources/docker/entrypoint.sh
+
+!Cargo.lock
+!Cargo.toml

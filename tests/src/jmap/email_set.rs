@@ -1,41 +1,25 @@
 /*
- * Copyright (c) 2023, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{fs, path::PathBuf};
 
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
 use ahash::AHashSet;
-use jmap::mailbox::INBOX_ID;
+
+use ::email::mailbox::INBOX_ID;
 use jmap_client::{
+    Error, Set,
     client::Client,
     core::set::{SetError, SetErrorType},
     email::{self, Email},
     mailbox::Role,
-    Error, Set,
 };
 use jmap_proto::types::id::Id;
 
-use super::{find_values, replace_blob_ids, replace_boundaries, replace_values, JMAPTest};
+use super::{JMAPTest, find_values, replace_blob_ids, replace_boundaries, replace_values};
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running Email Set tests...");
@@ -59,7 +43,7 @@ async fn create(client: &mut Client, mailbox_id: &str) {
 
     for file_name in fs::read_dir(&test_dir).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();
-        if file_name.extension().map_or(true, |e| e != "json") {
+        if file_name.extension().is_none_or(|e| e != "json") {
             continue;
         }
         println!("Creating email from {:?}", file_name);

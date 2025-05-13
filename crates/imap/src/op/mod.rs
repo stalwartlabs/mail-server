@@ -1,28 +1,11 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use ::store::query::log::Query;
-use imap_proto::StatusResponse;
+use imap_proto::ResponseCode;
 
 pub mod acl;
 pub mod append;
@@ -41,6 +24,7 @@ pub mod login;
 pub mod logout;
 pub mod namespace;
 pub mod noop;
+pub mod quota;
 pub mod rename;
 pub mod search;
 pub mod select;
@@ -73,4 +57,44 @@ impl ToModSeq for Option<u64> {
     }
 }
 
-pub type Result<T> = std::result::Result<T, StatusResponse>;
+#[macro_export]
+macro_rules! spawn_op {
+    ($data:expr, $($code:tt)*) => {
+        {
+
+        tokio::spawn(async move {
+            let data = &($data);
+
+            if let Err(err) = (async {
+                $($code)*
+            })
+            .await
+            {
+                let _ = data.write_error(err).await;
+            }
+        });
+
+        Ok(())}
+    };
+}
+pub trait ImapContext<T> {
+    fn imap_ctx(self, tag: &str, location: &'static str) -> trc::Result<T>;
+}
+
+impl<T> ImapContext<T> for trc::Result<T> {
+    fn imap_ctx(self, tag: &str, location: &'static str) -> trc::Result<T> {
+        match self {
+            Ok(value) => Ok(value),
+            Err(err) => Err(
+                if !err.matches(trc::EventType::Imap(trc::ImapEvent::Error)) {
+                    err.ctx(trc::Key::Id, tag.to_string())
+                        .ctx(trc::Key::Details, "Internal Server Error")
+                        .ctx(trc::Key::Code, ResponseCode::ContactAdmin)
+                        .ctx(trc::Key::CausedBy, location)
+                } else {
+                    err.ctx(trc::Key::Id, tag.to_string())
+                },
+            ),
+        }
+    }
+}

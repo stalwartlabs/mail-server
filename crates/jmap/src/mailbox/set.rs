@@ -1,38 +1,16 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use common::config::jmap::settings::SpecialUse;
+use common::{auth::AccessToken, Server};
+use directory::Permission;
+use email::mailbox::{MailboxFnc, SCHEMA};
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
-    object::{
-        index::{IndexAs, IndexProperty, ObjectIndexBuilder},
-        mailbox::SetArguments,
-        Object,
-    },
+    object::{index::ObjectIndexBuilder, mailbox::SetArguments, Object},
     response::references::EvalObjectReferences,
     types::{
         acl::Acl,
@@ -55,15 +33,16 @@ use store::{
 };
 
 use crate::{
-    auth::{acl::EffectiveAcl, AccessToken},
-    JMAP,
+    auth::acl::{AclMethods, EffectiveAcl},
+    email::delete::EmailDeletion,
+    JmapMethods,
 };
 
 #[allow(unused_imports)]
-use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
-use super::{ARCHIVE_ID, DRAFTS_ID, SENT_ID};
+use email::mailbox::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
+use std::future::Future;
 
-struct SetContext<'x> {
+pub struct SetContext<'x> {
     account_id: u32,
     access_token: &'x AccessToken,
     is_shared: bool,
@@ -72,31 +51,37 @@ struct SetContext<'x> {
     will_destroy: Vec<Id>,
 }
 
-pub static SCHEMA: &[IndexProperty] = &[
-    IndexProperty::new(Property::Name)
-        .index_as(IndexAs::Text {
-            tokenize: true,
-            index: true,
-        })
-        .required(),
-    IndexProperty::new(Property::Role).index_as(IndexAs::Text {
-        tokenize: false,
-        index: true,
-    }),
-    IndexProperty::new(Property::Role).index_as(IndexAs::HasProperty),
-    IndexProperty::new(Property::ParentId).index_as(IndexAs::Integer),
-    IndexProperty::new(Property::SortOrder).index_as(IndexAs::Integer),
-    IndexProperty::new(Property::IsSubscribed).index_as(IndexAs::IntegerList),
-    IndexProperty::new(Property::Acl).index_as(IndexAs::Acl),
-];
+pub trait MailboxSet: Sync + Send {
+    fn mailbox_set(
+        &self,
+        request: SetRequest<SetArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
 
-impl JMAP {
+    fn mailbox_destroy(
+        &self,
+        account_id: u32,
+        document_id: u32,
+        changes: &mut ChangeLogBuilder,
+        access_token: &AccessToken,
+        remove_emails: bool,
+    ) -> impl Future<Output = trc::Result<Result<bool, SetError>>> + Send;
+
+    fn mailbox_set_item(
+        &self,
+        changes_: Object<SetValue>,
+        update: Option<(u32, HashedValue<Object<Value>>)>,
+        ctx: &SetContext,
+    ) -> impl Future<Output = trc::Result<Result<ObjectIndexBuilder, SetError>>> + Send;
+}
+
+impl MailboxSet for Server {
     #[allow(clippy::blocks_in_conditions)]
-    pub async fn mailbox_set(
+    async fn mailbox_set(
         &self,
         mut request: SetRequest<SetArguments>,
         access_token: &AccessToken,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         // Prepare response
         let account_id = request.account_id.document_id();
         let on_destroy_remove_emails = request.arguments.on_destroy_remove_emails.unwrap_or(false);
@@ -147,7 +132,7 @@ impl JMAP {
                             ctx.mailbox_ids.insert(document_id);
                             ctx.response.created(id, document_id);
                         }
-                        Err(store::Error::AssertValueFailed) => {
+                        Err(err) if err.is_assertion_failure() => {
                             ctx.response.not_created.append(
                                 id,
                                 SetError::forbidden().with_description(
@@ -157,13 +142,7 @@ impl JMAP {
                             continue 'create;
                         }
                         Err(err) => {
-                            tracing::error!(
-                                event = "error",
-                                context = "mailbox_set",
-                                account_id = account_id,
-                                error = ?err,
-                                "Failed to update mailbox(es).");
-                            return Err(MethodError::ServerPartialFail);
+                            return Err(err.caused_by(trc::location!()));
                         }
                     }
                 }
@@ -246,20 +225,14 @@ impl JMAP {
                                 Ok(_) => {
                                     changes.log_update(Collection::Mailbox, document_id);
                                 }
-                                Err(store::Error::AssertValueFailed) => {
+                                Err(err) if err.is_assertion_failure() => {
                                     ctx.response.not_updated.append(id, SetError::forbidden().with_description(
                                         "Another process modified this mailbox, please try again.",
                                     ));
                                     continue 'update;
                                 }
                                 Err(err) => {
-                                    tracing::error!(
-                                        event = "error",
-                                        context = "mailbox_set",
-                                        account_id = account_id,
-                                        error = ?err,
-                                        "Failed to update mailbox(es).");
-                                    return Err(MethodError::ServerPartialFail);
+                                    return Err(err.caused_by(trc::location!()));
                                 }
                             }
                         }
@@ -316,24 +289,28 @@ impl JMAP {
         Ok(ctx.response)
     }
 
-    pub async fn mailbox_destroy(
+    async fn mailbox_destroy(
         &self,
         account_id: u32,
         document_id: u32,
         changes: &mut ChangeLogBuilder,
         access_token: &AccessToken,
         remove_emails: bool,
-    ) -> Result<Result<bool, SetError>, MethodError> {
+    ) -> trc::Result<Result<bool, SetError>> {
         // Internal folders cannot be deleted
         #[cfg(feature = "test_mode")]
-        if [INBOX_ID, TRASH_ID].contains(&document_id) && !access_token.is_super_user() {
+        if [INBOX_ID, TRASH_ID].contains(&document_id)
+            && !access_token.has_permission(Permission::DeleteSystemFolders)
+        {
             return Ok(Err(SetError::forbidden().with_description(
                 "You are not allowed to delete Inbox, Junk or Trash folders.",
             )));
         }
 
         #[cfg(not(feature = "test_mode"))]
-        if [INBOX_ID, TRASH_ID, JUNK_ID].contains(&document_id) && !access_token.is_super_user() {
+        if [INBOX_ID, TRASH_ID, JUNK_ID].contains(&document_id)
+            && !access_token.has_permission(Permission::DeleteSystemFolders)
+        {
             return Ok(Err(SetError::forbidden().with_description(
                 "You are not allowed to delete Inbox, Junk or Trash folders.",
             )));
@@ -385,15 +362,6 @@ impl JMAP {
                     let orig_len = mailbox_ids.inner.len();
                     mailbox_ids.inner.retain(|id| id.mailbox_id != document_id);
                     if mailbox_ids.inner.len() == orig_len {
-                        tracing::debug!(
-                            event = "error",
-                            context = "mailbox_set",
-                            account_id = account_id,
-                            mailbox_id = document_id,
-                            message_id = message_id,
-                            "Message is not in the mailbox, skipping."
-                        );
-
                         continue;
                     }
 
@@ -422,7 +390,7 @@ impl JMAP {
                                     Collection::Email,
                                     Id::from_parts(thread_id, message_id),
                                 ),
-                                Err(store::Error::AssertValueFailed) => {
+                                Err(err) if err.is_assertion_failure() => {
                                     return Ok(Err(SetError::forbidden().with_description(
                                         concat!(
                                             "Another process modified a message in this mailbox ",
@@ -431,25 +399,17 @@ impl JMAP {
                                     )));
                                 }
                                 Err(err) => {
-                                    tracing::error!(
-                                    event = "error",
-                                    context = "mailbox_set",
-                                    account_id = account_id,
-                                    mailbox_id = document_id,
-                                    message_id = message_id,
-                                    error = ?err,
-                                    "Failed to update message while deleting mailbox.");
-                                    return Err(MethodError::ServerPartialFail);
+                                    return Err(err.caused_by(trc::location!()));
                                 }
                             }
                         } else {
-                            tracing::debug!(
-                                event = "error",
-                                context = "mailbox_set",
-                                account_id = account_id,
-                                mailbox_id = document_id,
-                                message_id = message_id,
-                                "Message does not have a threadId, skipping."
+                            trc::event!(
+                                Store(trc::StoreEvent::NotFound),
+                                AccountId = account_id,
+                                MessageId = message_id,
+                                MailboxId = document_id,
+                                Details = "Message does not have a threadId.",
+                                CausedBy = trc::location!(),
                             );
                         }
                     } else {
@@ -508,21 +468,12 @@ impl JMAP {
                     changes.log_delete(Collection::Mailbox, document_id);
                     Ok(Ok(did_remove_emails))
                 }
-                Err(store::Error::AssertValueFailed) => Ok(Err(SetError::forbidden()
+                Err(err) if err.is_assertion_failure() => Ok(Err(SetError::forbidden()
                     .with_description(concat!(
                         "Another process modified this mailbox ",
                         "while deleting it, please try again."
                     )))),
-                Err(err) => {
-                    tracing::error!(
-                        event = "error",
-                        context = "mailbox_set",
-                        account_id = account_id,
-                        document_id = document_id,
-                        error = ?err,
-                        "Failed to delete mailbox.");
-                    Err(MethodError::ServerPartialFail)
-                }
+                Err(err) => Err(err.caused_by(trc::location!())),
             }
         } else {
             Ok(Err(SetError::not_found()))
@@ -535,7 +486,7 @@ impl JMAP {
         changes_: Object<SetValue>,
         update: Option<(u32, HashedValue<Object<Value>>)>,
         ctx: &SetContext<'_>,
-    ) -> Result<Result<ObjectIndexBuilder, SetError>, MethodError> {
+    ) -> trc::Result<Result<ObjectIndexBuilder, SetError>> {
         // Parse properties
         let mut changes = Object::with_capacity(changes_.properties.len());
         for (property, value) in changes_.properties {
@@ -738,7 +689,7 @@ impl JMAP {
                 }
 
                 // Role of internal folders cannot be modified
-                if update.as_ref().map_or(false, |(document_id, _)| {
+                if update.as_ref().is_some_and(|(document_id, _)| {
                     *document_id == INBOX_ID || *document_id == TRASH_ID
                 }) {
                     return Ok(Err(SetError::invalid_properties()
@@ -806,7 +757,7 @@ impl JMAP {
         // Refresh ACLs
         let current = update.map(|(_, current)| current);
         if changes.properties.contains_key(&Property::Acl) {
-            self.refresh_acls(&changes, &current);
+            self.refresh_acls(&changes, &current).await;
         }
 
         // Validate
@@ -814,155 +765,6 @@ impl JMAP {
             .with_changes(changes)
             .with_current_opt(current)
             .validate())
-    }
-
-    pub async fn mailbox_get_or_create(
-        &self,
-        account_id: u32,
-    ) -> Result<RoaringBitmap, MethodError> {
-        let mut mailbox_ids = self
-            .get_document_ids(account_id, Collection::Mailbox)
-            .await?
-            .unwrap_or_default();
-        if !mailbox_ids.is_empty() {
-            return Ok(mailbox_ids);
-        }
-
-        #[cfg(feature = "test_mode")]
-        if mailbox_ids.is_empty() && account_id == 0 {
-            return Ok(mailbox_ids);
-        }
-
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::Mailbox);
-
-        // Create mailboxes
-        let mut last_document_id = ARCHIVE_ID;
-        for folder in &self.core.jmap.default_folders {
-            let (role, document_id) = match folder.special_use {
-                SpecialUse::Inbox => ("inbox", INBOX_ID),
-                SpecialUse::Trash => ("trash", TRASH_ID),
-                SpecialUse::Junk => ("junk", JUNK_ID),
-                SpecialUse::Drafts => ("drafts", DRAFTS_ID),
-                SpecialUse::Sent => ("sent", SENT_ID),
-                SpecialUse::Archive => ("archive", ARCHIVE_ID),
-                SpecialUse::None => {
-                    last_document_id += 1;
-                    ("", last_document_id)
-                }
-                SpecialUse::Shared => unreachable!(),
-            };
-
-            let mut object = Object::with_capacity(4)
-                .with_property(Property::Name, folder.name.clone())
-                .with_property(Property::ParentId, Value::Id(0u64.into()))
-                .with_property(
-                    Property::Cid,
-                    Value::UnsignedInt(rand::random::<u32>() as u64),
-                );
-            if !role.is_empty() {
-                object.set(Property::Role, role);
-            }
-            if folder.subscribe {
-                object.set(
-                    Property::IsSubscribed,
-                    Value::List(vec![Value::Id(account_id.into())]),
-                );
-            }
-            batch
-                .create_document_with_id(document_id)
-                .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(object));
-            mailbox_ids.insert(document_id);
-        }
-
-        self.core
-            .storage
-            .data
-            .write(batch.build())
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "mailbox_get_or_create",
-                error = ?err,
-                "Failed to create mailboxes.");
-                MethodError::ServerPartialFail
-            })?;
-
-        Ok(mailbox_ids)
-    }
-
-    pub async fn mailbox_create_path(
-        &self,
-        account_id: u32,
-        path: &str,
-    ) -> Result<Option<(u32, Option<u64>)>, MethodError> {
-        let expanded_path =
-            if let Some(expand_path) = self.mailbox_expand_path(account_id, path, false).await? {
-                expand_path
-            } else {
-                return Ok(None);
-            };
-
-        let mut next_parent_id = 0;
-        let mut path = expanded_path.path.into_iter().peekable();
-        'outer: while let Some(name) = path.peek() {
-            for (part, parent_id, document_id) in &expanded_path.found_names {
-                if part.eq(name) && *parent_id == next_parent_id {
-                    next_parent_id = *document_id;
-                    path.next();
-                    continue 'outer;
-                }
-            }
-            break;
-        }
-
-        // Create missing folders
-        if path.peek().is_some() {
-            let mut changes = self.begin_changes(account_id).await?;
-
-            for name in path {
-                if name.len() > self.core.jmap.mailbox_name_max_len {
-                    return Ok(None);
-                }
-                let mut batch = BatchBuilder::new();
-                batch
-                    .with_account_id(account_id)
-                    .with_collection(Collection::Mailbox)
-                    .create_document()
-                    .custom(
-                        ObjectIndexBuilder::new(SCHEMA).with_changes(
-                            Object::with_capacity(3)
-                                .with_property(Property::Name, name)
-                                .with_property(
-                                    Property::ParentId,
-                                    Value::Id(Id::from(next_parent_id)),
-                                )
-                                .with_property(
-                                    Property::Cid,
-                                    Value::UnsignedInt(rand::random::<u32>() as u64),
-                                ),
-                        ),
-                    );
-                let document_id = self.write_batch_expect_id(batch).await?;
-                changes.log_insert(Collection::Mailbox, document_id);
-                next_parent_id = document_id + 1;
-            }
-            let change_id = changes.change_id;
-            let mut batch = BatchBuilder::new();
-
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Mailbox)
-                .custom(changes);
-            self.write_batch(batch).await?;
-
-            Ok(Some((next_parent_id - 1, Some(change_id))))
-        } else {
-            Ok(Some((next_parent_id - 1, None)))
-        }
     }
 }
 

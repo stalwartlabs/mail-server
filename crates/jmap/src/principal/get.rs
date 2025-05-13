@@ -1,41 +1,30 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use directory::QueryBy;
+use common::Server;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, property::Property, state::State, value::Value},
 };
+use std::future::Future;
 
-use crate::JMAP;
+pub trait PrincipalGet: Sync + Send {
+    fn principal_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+}
 
-impl JMAP {
-    pub async fn principal_get(
+impl PrincipalGet for Server {
+    async fn principal_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
@@ -73,8 +62,7 @@ impl JMAP {
                 .storage
                 .directory
                 .query(QueryBy::Id(id.document_id()), false)
-                .await
-                .map_err(|_| MethodError::ServerPartialFail)?
+                .await?
             {
                 principal
             } else {
@@ -86,16 +74,15 @@ impl JMAP {
             for property in &properties {
                 let value = match property {
                     Property::Id => Value::Id(id),
-                    Property::Type => Value::Text(principal.typ.to_jmap().to_string()),
-                    Property::Name => Value::Text(principal.name.clone()),
+                    Property::Type => Value::Text(principal.typ().to_jmap().to_string()),
+                    Property::Name => Value::Text(principal.name().to_string()),
                     Property::Description => principal
-                        .description
-                        .clone()
-                        .map(Value::Text)
+                        .description()
+                        .map(|v| Value::Text(v.to_string()))
                         .unwrap_or(Value::Null),
                     Property::Email => principal
-                        .emails
-                        .first()
+                        .iter_str(PrincipalField::Emails)
+                        .next()
                         .map(|email| Value::Text(email.clone()))
                         .unwrap_or(Value::Null),
                     _ => Value::Null,

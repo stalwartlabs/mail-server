@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::fmt::{Display, Formatter};
 
@@ -27,7 +10,7 @@ use mail_parser::HeaderName;
 use serde::Serialize;
 use store::write::{DeserializeFrom, SerializeInto};
 
-use crate::parser::{json::Parser, Error, JsonObjectParser};
+use crate::parser::{json::Parser, JsonObjectParser};
 
 use super::{acl::Acl, id::Id, keyword::Keyword, value::Value};
 
@@ -170,7 +153,7 @@ pub trait IntoProperty: Eq + Display {
 }
 
 impl JsonObjectParser for Property {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self> {
+    fn parse(parser: &mut Parser) -> trc::Result<Self> {
         let mut first_char = 0;
         let mut hash = 0;
         let mut shift = 0;
@@ -207,7 +190,7 @@ impl JsonObjectParser for Property {
 }
 
 impl JsonObjectParser for SetProperty {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self> {
+    fn parse(parser: &mut Parser) -> trc::Result<Self> {
         let mut first_char = 0;
         let mut hash = 0;
         let mut shift = 0;
@@ -268,7 +251,7 @@ impl JsonObjectParser for SetProperty {
                     Ok(id) => {
                         patch.push(Value::Id(id));
                     }
-                    Err(Error::Method(_)) => {
+                    Err(err) if err.is_jmap_method_error() => {
                         property = parser.invalid_property()?;
                     }
                     Err(err) => {
@@ -279,7 +262,7 @@ impl JsonObjectParser for SetProperty {
                     Ok(keyword) => {
                         patch.push(Value::Keyword(keyword));
                     }
-                    Err(Error::Method(_)) => {
+                    Err(err) if err.is_jmap_method_error() => {
                         property = parser.invalid_property()?;
                     }
                     Err(err) => {
@@ -307,7 +290,7 @@ impl JsonObjectParser for SetProperty {
                                     Ok(acl) => {
                                         patch.push(Value::UnsignedInt(acl as u64));
                                     }
-                                    Err(Error::Method(_)) => {
+                                    Err(err) if err.is_jmap_method_error() => {
                                         property = parser.invalid_property()?;
                                     }
                                     Err(err) => {
@@ -486,7 +469,7 @@ fn parse_property(first_char: u8, hash: u128) -> Option<Property> {
     })
 }
 
-fn parse_header_property(parser: &mut Parser) -> crate::parser::Result<Property> {
+fn parse_header_property(parser: &mut Parser) -> trc::Result<Property> {
     let hdr_start_pos = parser.pos;
     let mut has_next = false;
 
@@ -570,7 +553,7 @@ fn parse_sub_property(
     parser: &mut Parser,
     first_char: u8,
     parent_hash: u128,
-) -> crate::parser::Result<Property> {
+) -> trc::Result<Property> {
     let mut hash = 0;
     let mut shift = 0;
 
@@ -602,7 +585,7 @@ fn parse_sub_property(
 }
 
 impl JsonObjectParser for ObjectProperty {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self> {
+    fn parse(parser: &mut Parser) -> trc::Result<Self> {
         let mut first_char = 0;
         let mut hash = 0;
         let mut shift = 0;
@@ -723,8 +706,8 @@ impl JsonObjectParser for ObjectProperty {
     }
 }
 
-impl<'x> Parser<'x> {
-    fn invalid_property(&mut self) -> crate::parser::Result<Property> {
+impl Parser<'_> {
+    fn invalid_property(&mut self) -> trc::Result<Property> {
         if self.is_eof || self.skip_string() {
             Ok(Property::_T(
                 String::from_utf8_lossy(self.bytes[self.pos_marker..self.pos - 1].as_ref())

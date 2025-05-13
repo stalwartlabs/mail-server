@@ -1,40 +1,23 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use crate::{
+    Command,
     protocol::{
-        select::{self, QResync},
         ProtocolVersion,
+        select::{self, QResync},
     },
-    receiver::{Request, Token},
+    receiver::{Request, Token, bad},
     utf7::utf7_maybe_decode,
-    Command, StatusResponse,
 };
 
 use super::{parse_number, parse_sequence_set};
 
 impl Request<Command> {
-    pub fn parse_select(self, version: ProtocolVersion) -> crate::Result<select::Arguments> {
+    pub fn parse_select(self, version: ProtocolVersion) -> trc::Result<select::Arguments> {
         if !self.tokens.is_empty() {
             let mut tokens = self.tokens.into_iter().peekable();
 
@@ -44,7 +27,7 @@ impl Request<Command> {
                     .next()
                     .unwrap()
                     .unwrap_string()
-                    .map_err(|v| (self.tag.as_ref(), v))?,
+                    .map_err(|v| bad(self.tag.clone(), v))?,
                 version,
             );
 
@@ -61,38 +44,42 @@ impl Request<Command> {
                             Token::Argument(param) if param.eq_ignore_ascii_case(b"QRESYNC") => {
                                 if tokens
                                     .next()
-                                    .map_or(true, |token| !token.is_parenthesis_open())
+                                    .is_none_or(|token| !token.is_parenthesis_open())
                                 {
-                                    return Err((self.tag, "Expected '(' after 'QRESYNC'.").into());
+                                    return Err(bad(self.tag, "Expected '(' after 'QRESYNC'."));
                                 }
 
                                 let uid_validity = parse_number::<u32>(
                                     &tokens
                                         .next()
-                                        .ok_or((
-                                            self.tag.as_str(),
-                                            "Missing uidvalidity parameter for QRESYNC.",
-                                        ))?
+                                        .ok_or_else(|| {
+                                            bad(
+                                                self.tag.to_string(),
+                                                "Missing uidvalidity parameter for QRESYNC.",
+                                            )
+                                        })?
                                         .unwrap_bytes(),
                                 )
-                                .map_err(|v| (self.tag.as_str(), v))?;
+                                .map_err(|v| bad(self.tag.to_string(), v))?;
                                 let modseq = parse_number::<u64>(
                                     &tokens
                                         .next()
-                                        .ok_or((
-                                            self.tag.as_str(),
-                                            "Missing modseq parameter for QRESYNC.",
-                                        ))?
+                                        .ok_or_else(|| {
+                                            bad(
+                                                self.tag.to_string(),
+                                                "Missing modseq parameter for QRESYNC.",
+                                            )
+                                        })?
                                         .unwrap_bytes(),
                                 )
-                                .map_err(|v| (self.tag.as_str(), v))?;
+                                .map_err(|v| bad(self.tag.to_string(), v))?;
 
                                 let mut known_uids = None;
                                 let mut seq_match = None;
                                 let has_seq_match = match tokens.peek() {
                                     Some(Token::Argument(value)) => {
                                         known_uids = parse_sequence_set(value)
-                                            .map_err(|v| (self.tag.as_str(), v))?
+                                            .map_err(|v| bad(self.tag.to_string(), v))?
                                             .into();
                                         tokens.next();
                                         if matches!(tokens.peek(), Some(Token::ParenthesisOpen)) {
@@ -110,32 +97,45 @@ impl Request<Command> {
                                 };
 
                                 if has_seq_match {
-                                    seq_match = Some((parse_sequence_set(&tokens
-                                        .next()
-                                        .ok_or((
-                                            self.tag.as_str(),
+                                    seq_match = Some((
+                                        parse_sequence_set(
+                                            &tokens
+                                                .next()
+                                                .ok_or_else(|| {
+                                                    bad(
+                                            self.tag.to_string(),
                                             "Missing known-sequence-set parameter for QRESYNC.",
-                                        ))?
-                                        .unwrap_bytes()).map_err(|v| (self.tag.as_str(), v))?, parse_sequence_set(&tokens
-                                            .next()
-                                            .ok_or((
-                                                self.tag.as_str(),
+                                        )
+                                                })?
+                                                .unwrap_bytes(),
+                                        )
+                                        .map_err(|v| bad(self.tag.to_string(), v))?,
+                                        parse_sequence_set(
+                                            &tokens
+                                                .next()
+                                                .ok_or_else(|| {
+                                                    bad(
+                                                self.tag.to_string(),
                                                 "Missing known-uid-set parameter for QRESYNC.",
-                                            ))?
-                                            .unwrap_bytes()).map_err(|v| (self.tag.as_str(), v))?));
+                                            )
+                                                })?
+                                                .unwrap_bytes(),
+                                        )
+                                        .map_err(|v| bad(self.tag.to_string(), v))?,
+                                    ));
                                     if tokens
                                         .next()
-                                        .map_or(true, |token| !token.is_parenthesis_close())
+                                        .is_none_or(|token| !token.is_parenthesis_close())
                                     {
-                                        return Err((self.tag, "Missing ')' for 'QRESYNC'.").into());
+                                        return Err(bad(self.tag, "Missing ')' for 'QRESYNC'."));
                                     }
                                 }
 
                                 if tokens
                                     .next()
-                                    .map_or(true, |token| !token.is_parenthesis_close())
+                                    .is_none_or(|token| !token.is_parenthesis_close())
                                 {
-                                    return Err((self.tag, "Missing ')' for 'QRESYNC'.").into());
+                                    return Err(bad(self.tag, "Missing ')' for 'QRESYNC'."));
                                 }
 
                                 qresync = QResync {
@@ -150,20 +150,16 @@ impl Request<Command> {
                                 break;
                             }
                             _ => {
-                                return Err(StatusResponse::bad(format!(
-                                    "Unexpected value '{}'.",
-                                    token
-                                ))
-                                .with_tag(self.tag));
+                                return Err(bad(
+                                    self.tag,
+                                    format!("Unexpected value '{}'.", token),
+                                ));
                             }
                         }
                     }
                 }
                 Some(token) => {
-                    return Err(
-                        StatusResponse::bad(format!("Unexpected value '{}'.", token))
-                            .with_tag(self.tag),
-                    );
+                    return Err(bad(self.tag, format!("Unexpected value '{}'.", token)));
                 }
                 None => (),
             }
@@ -184,8 +180,8 @@ impl Request<Command> {
 mod tests {
     use crate::{
         protocol::{
-            select::{self, QResync},
             ProtocolVersion, Sequence,
+            select::{self, QResync},
         },
         receiver::Receiver,
     };

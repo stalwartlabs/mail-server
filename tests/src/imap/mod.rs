@@ -1,29 +1,13 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 pub mod acl;
 pub mod append;
 pub mod basic;
+pub mod bayes;
 pub mod body_structure;
 pub mod condstore;
 pub mod copy_move;
@@ -44,30 +28,36 @@ use std::{
 
 use ::managesieve::core::ManageSieveSessionManager;
 use common::{
-    config::server::{ServerProtocol, Servers},
-    Core,
+    config::{
+        server::{Listeners, ServerProtocol},
+        telemetry::Telemetry,
+    },
+    core::BuildServer,
+    manager::boot::build_ipc,
+    Caches, Core, Data, Inner, Server,
 };
 
 use ::store::Stores;
 use ahash::AHashSet;
-use directory::backend::internal::manage::ManageDirectory;
-use imap::core::{ImapSessionManager, Inner, IMAP};
+use imap::core::ImapSessionManager;
 use imap_proto::ResponseType;
-use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
+use jmap::{api::JmapSessionManager, SpawnServices};
 use pop3::Pop3SessionManager;
-use smtp::core::{SmtpSessionManager, SMTP};
+use smtp::{core::SmtpSessionManager, SpawnQueueManager};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
-    sync::{mpsc, watch},
+    sync::watch,
 };
 use utils::config::Config;
 
-use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
+use crate::{
+    add_test_certs, directory::internal::TestInternalDirectory, store::TempDir, AssertConfig,
+};
 
 const SERVER: &str = r#"
 [server]
-hostname = "'imap.example.org'"
+hostname = "imap.example.org"
 
 [server.listener.imap]
 bind = ["127.0.0.1:9991"]
@@ -112,11 +102,21 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-directory = "'auth'"
+directory = "'{STORE}'"
 
 [session.rcpt.errors]
 total = 5
 wait = "1ms"
+
+[spam-filter]
+enable = true
+
+[spam-filter.bayes.account]
+enable = true
+
+[spam-filter.bayes.classify]
+balance = "0.0"
+learns = 10
 
 [queue]
 path = "{TMP}"
@@ -143,6 +143,12 @@ protocol = "smtp"
 enable = false
 allow-invalid-certs = true
 
+[session.data]
+spam-filter = "recipients[0] != 'popper@example.com'"
+
+[session.data.add-headers]
+delivered-to = false
+
 [session.extensions]
 future-release = [ { if = "!is_empty(authenticated_as)", then = "99999999d"},
                    { else = false } ]
@@ -165,6 +171,11 @@ port = 5432
 database = "stalwart"
 user = "postgres"
 password = "mysecretpassword"
+
+[store."psql-replica"]
+type = "sql-read-replica"
+primary = "postgresql"
+replicas = "postgresql"
 
 [store."mysql"]
 type = "mysql"
@@ -196,7 +207,7 @@ data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
 lookup = "{STORE}"
-directory = "auth"
+directory = "{STORE}"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -261,17 +272,9 @@ verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
-[directory."auth"]
-type = "sql"
-store = "auth"
-
-[directory."auth".columns]
-name = "name"
-description = "description"
-secret = "secret"
-email = "address"
-quota = "quota"
-class = "type"
+[directory."{STORE}"]
+type = "internal"
+store = "{STORE}"
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -283,12 +286,19 @@ user-code = "1s"
 token = "1s"
 refresh-token = "3s"
 refresh-token-renew = "2s"
+
+[tracer.console]
+type = "console"
+level = "{LEVEL}"
+multiline = false
+ansi = true
+disabled-events = ["network.*"]
+
 "#;
 
 #[allow(dead_code)]
 pub struct IMAPTest {
-    jmap: Arc<JMAP>,
-    imap: Arc<Inner>,
+    server: Server,
     temp_dir: TempDir,
     shutdown_tx: watch::Sender<bool>,
 }
@@ -299,119 +309,147 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let mut config = Config::new(
         add_test_certs(SERVER)
             .replace("{STORE}", store_id)
-            .replace("{TMP}", &temp_dir.path.display().to_string()),
+            .replace("{TMP}", &temp_dir.path.display().to_string())
+            .replace(
+                "{LEVEL}",
+                &std::env::var("LOG").unwrap_or_else(|_| "disable".to_string()),
+            ),
     )
     .unwrap();
     config.resolve_all_macros().await;
 
     // Parse servers
-    let mut servers = Servers::parse(&mut config);
+    let mut servers = Listeners::parse(&mut config);
 
     // Bind ports and drop privileges
     servers.bind_and_drop_priv(&mut config);
 
     // Build stores
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
 
     // Parse core
+    let tracers = Telemetry::parse(&mut config, &stores);
     let core = Core::parse(&mut config, stores, Default::default()).await;
+    let data = Data::parse(&mut config);
+    let cache = Caches::parse(&mut config);
+
     let store = core.storage.data.clone();
-    let shared_core = core.into_shared();
+    let (ipc, mut ipc_rxs) = build_ipc(&mut config);
+    let inner = Arc::new(Inner {
+        shared_core: core.into_shared(),
+        data,
+        ipc,
+        cache,
+    });
 
     // Parse acceptors
-    servers.parse_tcp_acceptors(&mut config, shared_core.clone());
+    servers.parse_tcp_acceptors(&mut config, inner.clone());
 
-    // Init servers
-    let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&mut config, shared_core.clone(), delivery_tx).await;
-    let jmap = JMAP::init(
-        &mut config,
-        delivery_rx,
-        shared_core.clone(),
-        smtp.inner.clone(),
-    )
-    .await;
-    let imap = IMAP::init(&mut config, jmap.clone()).await;
+    // Enable tracing
+    tracers.enable(true);
+
+    // Start services
     config.assert_no_errors();
+    ipc_rxs.spawn_queue_manager(inner.clone());
+    ipc_rxs.spawn_services(inner.clone());
 
     // Spawn servers
     let (shutdown_tx, _) = servers.spawn(|server, acceptor, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
-                SmtpSessionManager::new(smtp.clone()),
-                shared_core.clone(),
+                SmtpSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Http => server.spawn(
-                JmapSessionManager::new(jmap.clone()),
-                shared_core.clone(),
+                JmapSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Imap => server.spawn(
-                ImapSessionManager::new(imap.clone()),
-                shared_core.clone(),
+                ImapSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Pop3 => server.spawn(
-                Pop3SessionManager::new(imap.clone()),
-                shared_core.clone(),
+                Pop3SessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::ManageSieve => server.spawn(
-                ManageSieveSessionManager::new(imap.clone()),
-                shared_core.clone(),
+                ManageSieveSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
         };
     });
-    // Create tables and test accounts
-    let lookup = DirectoryStore {
-        store: shared_core
-            .load()
-            .storage
-            .lookups
-            .get("auth")
-            .unwrap()
-            .clone(),
-    };
-    lookup.create_test_directory().await;
-    lookup
-        .create_test_user("admin", "secret", "Superuser")
-        .await;
-    lookup
-        .create_test_user_with_email("jdoe@example.com", "secret", "John Doe")
-        .await;
-    lookup
-        .create_test_user_with_email("jane.smith@example.com", "secret", "Jane Smith")
-        .await;
-    lookup
-        .create_test_user_with_email("foobar@example.com", "secret", "Bill Foobar")
-        .await;
-    lookup
-        .create_test_user_with_email("popper@example.com", "secret", "Karl Popper")
-        .await;
-    lookup
-        .create_test_group_with_email("support@example.com", "Support Group")
-        .await;
-    lookup
-        .add_to_group("jane.smith@example.com", "support@example.com")
-        .await;
 
     if delete_if_exists {
         store.destroy().await;
     }
 
-    // Assign Id 0 to admin (required for some tests)
-    store.get_or_create_account_id("admin").await.unwrap();
+    // Create tables and test accounts
+    store
+        .create_test_user("admin", "secret", "Superuser", &[])
+        .await;
+    store
+        .create_test_user(
+            "jdoe@example.com",
+            "secret",
+            "John Doe",
+            &["jdoe@example.com"],
+        )
+        .await;
+    store
+        .create_test_user(
+            "jane.smith@example.com",
+            "secret",
+            "Jane Smith",
+            &["jane.smith@example.com"],
+        )
+        .await;
+    store
+        .create_test_user(
+            "foobar@example.com",
+            "secret",
+            "Bill Foobar",
+            &["foobar@example.com"],
+        )
+        .await;
+    store
+        .create_test_user(
+            "popper@example.com",
+            "secret",
+            "Karl Popper",
+            &["popper@example.com"],
+        )
+        .await;
+    store
+        .create_test_user(
+            "bayes@example.com",
+            "secret",
+            "Thomas Bayes",
+            &["bayes@example.com"],
+        )
+        .await;
+    store
+        .create_test_group(
+            "support@example.com",
+            "Support Group",
+            &["support@example.com"],
+        )
+        .await;
+    store
+        .add_to_group("jane.smith@example.com", "support@example.com")
+        .await;
 
     IMAPTest {
-        jmap: JMAP::from(jmap.clone()).into(),
-        imap: imap.imap_inner,
+        server: inner.build_server(),
         temp_dir,
         shutdown_tx,
     }
@@ -419,21 +457,6 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
 
 #[tokio::test]
 pub async fn imap_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::builder()
-                        .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},common={level},pop3={level},directory={level}"),
-                        )
-                        .unwrap(),
-                )
-                .finish(),
-        )
-        .unwrap();
-    }
-
     // Prepare settings
     let start_time = Instant::now();
     let delete = true;
@@ -486,6 +509,9 @@ pub async fn imap_tests() {
         imap.send("LOGOUT").await;
         imap.assert_read(Type::Untagged, ResponseType::Bye).await;
     }
+
+    // Bayes training
+    bayes::test(&handle).await;
 
     // Run ManageSieve tests
     managesieve::test().await;

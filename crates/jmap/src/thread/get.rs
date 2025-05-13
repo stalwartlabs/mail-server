@@ -1,41 +1,33 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
+use common::Server;
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, id::Id, property::Property},
 };
+use std::future::Future;
 use store::query::{sort::Pagination, Comparator, ResultSet};
+use trc::AddContext;
 
-use crate::JMAP;
+use crate::changes::state::StateManager;
 
-impl JMAP {
-    pub async fn thread_get(
+pub trait ThreadGet: Sync + Send {
+    fn thread_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+}
+
+impl ThreadGet for Server {
+    async fn thread_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let account_id = request.account_id.document_id();
         let ids = if let Some(ids) = request.unwrap_ids(self.core.jmap.get_max_objects)? {
             ids
@@ -50,7 +42,7 @@ impl JMAP {
         };
         let add_email_ids = request
             .properties
-            .map_or(true, |p| p.unwrap().contains(&Property::EmailIds));
+            .is_none_or( |p| p.unwrap().contains(&Property::EmailIds));
         let mut response = GetResponse {
             account_id: request.account_id.into(),
             state: self.get_state(account_id, Collection::Thread).await?.into(),
@@ -77,15 +69,7 @@ impl JMAP {
                                 Pagination::new(document_ids.len() as usize, 0, None, 0),
                             )
                             .await
-                            .map_err(|err| {
-                                tracing::error!(event = "error",
-                                                context = "store",
-                                                account_id = account_id,
-                                                collection = "email",
-                                                error = ?err,
-                                                "Thread emailIds sort failed");
-                                MethodError::ServerPartialFail
-                            })?
+                            .caused_by(trc::location!())?
                             .ids
                             .into_iter()
                             .map(|id| Id::from_parts(thread_id, id as u32))

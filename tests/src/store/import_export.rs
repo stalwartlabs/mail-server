@@ -1,33 +1,16 @@
 /*
- * Copyright (c) 2023, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of the Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use ahash::AHashSet;
-use common::Core;
+use common::{manager::backup::BackupParams, Core};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     rand,
     write::{
-        AnyKey, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, LookupClass,
+        AnyKey, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, InMemoryClass,
         MaybeDynamicId, MaybeDynamicValue, Operation, QueueClass, QueueEvent, TagValue, ValueClass,
     },
     *,
@@ -147,7 +130,7 @@ pub async fn test(db: Store) {
                     batch.ops.push(Operation::Bitmap {
                         class: BitmapClass::Text {
                             field,
-                            token: BitmapHash::new(&random_bytes(field as usize + 2)),
+                            token: BitmapHash::new(random_bytes(field as usize + 2)),
                         },
                         set: true,
                     });
@@ -180,11 +163,11 @@ pub async fn test(db: Store) {
             random_bytes(idx),
         );
         batch.set(
-            ValueClass::Lookup(LookupClass::Key(random_bytes(idx))),
+            ValueClass::InMemory(InMemoryClass::Key(random_bytes(idx))),
             random_bytes(idx),
         );
         batch.add(
-            ValueClass::Lookup(LookupClass::Counter(random_bytes(idx))),
+            ValueClass::InMemory(InMemoryClass::Counter(random_bytes(idx))),
             rand::random(),
         );
         batch.set(
@@ -221,12 +204,6 @@ pub async fn test(db: Store) {
                 random_bytes(4),
             )
             .set(
-                ValueClass::Directory(DirectoryClass::Domain(random_bytes(
-                    4 + account_id as usize,
-                ))),
-                random_bytes(4),
-            )
-            .set(
                 ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
                     account_id,
                 ))),
@@ -257,7 +234,7 @@ pub async fn test(db: Store) {
     // Export store
     println!("Exporting store...");
     let temp_dir = TempDir::new("art_vandelay_tests", true);
-    core.backup(temp_dir.path.clone()).await;
+    core.backup(BackupParams::new(temp_dir.path.clone())).await;
 
     // Destroy store
     println!("Destroying store...");
@@ -292,10 +269,7 @@ struct KeyValue {
 
 impl Snapshot {
     async fn new(db: &Store) -> Self {
-        let is_sql = matches!(
-            db,
-            Store::SQLite(_) | Store::PostgreSQL(_) | Store::MySQL(_)
-        );
+        let is_sql = db.is_sql();
 
         let mut keys = AHashSet::new();
 
@@ -305,14 +279,15 @@ impl Snapshot {
             (SUBSPACE_BITMAP_TAG, false),
             (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_DIRECTORY, true),
-            (SUBSPACE_FTS_QUEUE, true),
+            (SUBSPACE_TASK_QUEUE, true),
             (SUBSPACE_INDEXES, false),
             (SUBSPACE_BLOB_RESERVE, true),
             (SUBSPACE_BLOB_LINK, true),
             (SUBSPACE_BLOBS, true),
             (SUBSPACE_LOGS, true),
             (SUBSPACE_COUNTER, !is_sql),
-            (SUBSPACE_LOOKUP_VALUE, true),
+            (SUBSPACE_IN_MEMORY_COUNTER, !is_sql),
+            (SUBSPACE_IN_MEMORY_VALUE, true),
             (SUBSPACE_PROPERTY, true),
             (SUBSPACE_SETTINGS, true),
             (SUBSPACE_QUEUE_MESSAGE, true),

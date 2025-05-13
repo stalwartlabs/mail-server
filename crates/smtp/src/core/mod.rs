@@ -1,25 +1,8 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
 use std::{
     hash::Hash,
@@ -29,84 +12,35 @@ use std::{
 };
 
 use common::{
+    Inner, Server,
+    auth::AccessToken,
     config::smtp::auth::VerifyStrategy,
-    listener::{
-        limiter::{ConcurrencyLimiter, InFlight},
-        ServerInstance,
-    },
-    Core, DeliveryEvent, SharedCore,
+    listener::{ServerInstance, asn::AsnGeoLookupResult},
 };
-use dashmap::DashMap;
 use directory::Directory;
 use mail_auth::{IprevOutput, SpfOutput};
 use smtp_proto::request::receiver::{
     BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver, RequestReceiver,
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::mpsc,
-};
-use tokio_rustls::TlsConnector;
-use tracing::Span;
-use utils::snowflake::SnowflakeIdGenerator;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
     inbound::auth::SaslToken,
-    queue::{self, DomainPart, QueueId},
-    reporting,
+    queue::{DomainPart, QueueId},
 };
-
-use self::throttle::{ThrottleKey, ThrottleKeyHasherBuilder};
 
 pub mod params;
 pub mod throttle;
 
 #[derive(Clone)]
-pub struct SmtpInstance {
-    pub inner: Arc<Inner>,
-    pub core: SharedCore,
-}
-
-impl SmtpInstance {
-    pub fn new(core: SharedCore, inner: impl Into<Arc<Inner>>) -> Self {
-        Self {
-            core,
-            inner: inner.into(),
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct SmtpSessionManager {
-    pub inner: SmtpInstance,
+    pub inner: Arc<Inner>,
 }
 
 impl SmtpSessionManager {
-    pub fn new(inner: SmtpInstance) -> Self {
+    pub fn new(inner: Arc<Inner>) -> Self {
         Self { inner }
     }
-}
-
-#[derive(Clone)]
-pub struct SMTP {
-    pub core: Arc<Core>,
-    pub inner: Arc<Inner>,
-}
-
-pub struct Inner {
-    pub session_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
-    pub queue_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
-    pub queue_tx: mpsc::Sender<queue::Event>,
-    pub report_tx: mpsc::Sender<reporting::Event>,
-    pub snowflake_id: SnowflakeIdGenerator,
-    pub connectors: TlsConnectors,
-    #[cfg(feature = "local_delivery")]
-    pub delivery_tx: mpsc::Sender<DeliveryEvent>,
-}
-
-pub struct TlsConnectors {
-    pub pki_verify: TlsConnector,
-    pub dummy_verify: TlsConnector,
 }
 
 pub enum State {
@@ -124,30 +58,30 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
     pub hostname: String,
     pub state: State,
     pub instance: Arc<ServerInstance>,
-    pub core: SMTP,
-    pub span: Span,
+    pub server: Server,
     pub stream: T,
     pub data: SessionData,
     pub params: SessionParameters,
-    pub in_flight: Vec<InFlight>,
 }
 
 pub struct SessionData {
+    pub session_id: u64,
     pub local_ip: IpAddr,
     pub local_ip_str: String,
     pub local_port: u16,
     pub remote_ip: IpAddr,
     pub remote_ip_str: String,
     pub remote_port: u16,
+    pub asn_geo_data: AsnGeoLookupResult,
     pub helo_domain: String,
 
     pub mail_from: Option<SessionAddress>,
     pub rcpt_to: Vec<SessionAddress>,
     pub rcpt_errors: usize,
+    pub rcpt_oks: usize,
     pub message: Vec<u8>,
 
-    pub authenticated_as: String,
-    pub authenticated_emails: Vec<String>,
+    pub authenticated_as: Option<Arc<AccessToken>>,
     pub auth_errors: usize,
 
     pub priority: i16,
@@ -164,7 +98,7 @@ pub struct SessionData {
     pub dnsbl_error: Option<Vec<u8>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SessionAddress {
     pub address: String,
     pub address_lcase: String,
@@ -187,7 +121,6 @@ pub struct SessionParameters {
     pub auth_require: bool,
     pub auth_errors_max: usize,
     pub auth_errors_wait: Duration,
-    pub auth_match_sender: bool,
 
     // Rcpt parameters
     pub rcpt_errors_max: usize,
@@ -205,22 +138,31 @@ pub struct SessionParameters {
 }
 
 impl SessionData {
-    pub fn new(local_ip: IpAddr, local_port: u16, remote_ip: IpAddr, remote_port: u16) -> Self {
+    pub fn new(
+        local_ip: IpAddr,
+        local_port: u16,
+        remote_ip: IpAddr,
+        remote_port: u16,
+        asn_geo_data: AsnGeoLookupResult,
+        session_id: u64,
+    ) -> Self {
         SessionData {
+            session_id,
             local_ip,
             local_port,
             remote_ip,
             local_ip_str: local_ip.to_string(),
             remote_ip_str: remote_ip.to_string(),
             remote_port,
+            asn_geo_data,
             helo_domain: String::new(),
             mail_from: None,
             rcpt_to: Vec::new(),
-            authenticated_as: String::new(),
-            authenticated_emails: Vec::new(),
+            authenticated_as: None,
             priority: 0,
             valid_until: Instant::now(),
             rcpt_errors: 0,
+            rcpt_oks: 0,
             message: Vec::with_capacity(0),
             auth_errors: 0,
             messages_sent: 0,
@@ -270,50 +212,17 @@ impl PartialOrd for SessionAddress {
     }
 }
 
-impl From<SmtpInstance> for SMTP {
-    fn from(value: SmtpInstance) -> Self {
-        SMTP {
-            core: value.core.load().clone(),
-            inner: value.inner,
-        }
-    }
-}
-
-#[cfg(feature = "local_delivery")]
-lazy_static::lazy_static! {
-static ref SIEVE: Arc<ServerInstance> = Arc::new(ServerInstance {
-    id: "sieve".to_string(),
-    protocol: common::config::server::ServerProtocol::Lmtp,
-    acceptor: common::listener::TcpAcceptor::Plain,
-    limiter: ConcurrencyLimiter::new(0),
-    shutdown_rx: tokio::sync::watch::channel(false).1,
-    proxy_networks: vec![],
-});
-}
-
-#[cfg(feature = "local_delivery")]
 impl Session<common::listener::stream::NullIo> {
-    pub fn local(core: SMTP, instance: std::sync::Arc<ServerInstance>, data: SessionData) -> Self {
+    pub fn local(
+        server: Server,
+        instance: std::sync::Arc<ServerInstance>,
+        data: SessionData,
+    ) -> Self {
         Session {
             hostname: "localhost".to_string(),
             state: State::None,
             instance,
-            core,
-            span: tracing::info_span!(
-                "local_delivery",
-                "return_path" =
-                    if let Some(addr) = data.mail_from.as_ref().map(|a| a.address_lcase.as_str()) {
-                        if !addr.is_empty() {
-                            addr
-                        } else {
-                            "<>"
-                        }
-                    } else {
-                        "<>"
-                    },
-                "nrcpt" = data.rcpt_to.len(),
-                "size" = data.message.len(),
-            ),
+            server,
             stream: common::listener::stream::NullIo::default(),
             data,
             params: SessionParameters {
@@ -329,32 +238,17 @@ impl Session<common::listener::stream::NullIo> {
                 rcpt_max: Default::default(),
                 rcpt_dsn: Default::default(),
                 max_message_size: Default::default(),
-                auth_match_sender: false,
                 iprev: VerifyStrategy::Disable,
                 spf_ehlo: VerifyStrategy::Disable,
                 spf_mail_from: VerifyStrategy::Disable,
                 can_expn: false,
                 can_vrfy: false,
             },
-            in_flight: vec![],
         }
     }
 
-    pub fn sieve(
-        core: SMTP,
-        mail_from: SessionAddress,
-        rcpt_to: Vec<SessionAddress>,
-        message: Vec<u8>,
-    ) -> Self {
-        Self::local(
-            core,
-            SIEVE.clone(),
-            SessionData::local(mail_from.into(), rcpt_to, message),
-        )
-    }
-
     pub fn has_failed(&mut self) -> Option<String> {
-        if self.stream.tx_buf.first().map_or(true, |&c| c == b'2') {
+        if self.stream.tx_buf.first().is_none_or(|&c| c == b'2') {
             self.stream.tx_buf.clear();
             None
         } else {
@@ -368,12 +262,12 @@ impl Session<common::listener::stream::NullIo> {
     }
 }
 
-#[cfg(feature = "local_delivery")]
 impl SessionData {
     pub fn local(
         mail_from: Option<SessionAddress>,
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,
+        session_id: u64,
     ) -> Self {
         SessionData {
             local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
@@ -382,13 +276,15 @@ impl SessionData {
             remote_ip_str: "127.0.0.1".to_string(),
             remote_port: 0,
             local_port: 0,
+            session_id,
+            asn_geo_data: AsnGeoLookupResult::default(),
             helo_domain: "localhost".into(),
             mail_from,
             rcpt_to,
             rcpt_errors: 0,
+            rcpt_oks: 0,
             message,
-            authenticated_as: "local".into(),
-            authenticated_emails: vec![],
+            authenticated_as: Some(Arc::new(AccessToken::from_id(0))),
             auth_errors: 0,
             priority: 0,
             delivery_by: 0,
@@ -404,14 +300,12 @@ impl SessionData {
     }
 }
 
-#[cfg(feature = "local_delivery")]
 impl Default for SessionData {
     fn default() -> Self {
-        Self::local(None, vec![], vec![])
+        Self::local(None, vec![], vec![], 0)
     }
 }
 
-#[cfg(feature = "local_delivery")]
 impl SessionAddress {
     pub fn new(address: String) -> Self {
         let address_lcase = address.to_lowercase();
@@ -421,24 +315,6 @@ impl SessionAddress {
             address,
             flags: 0,
             dsn_info: None,
-        }
-    }
-}
-
-#[cfg(feature = "test_mode")]
-impl Default for Inner {
-    fn default() -> Self {
-        Self {
-            session_throttle: Default::default(),
-            queue_throttle: Default::default(),
-            queue_tx: mpsc::channel(1).0,
-            report_tx: mpsc::channel(1).0,
-            snowflake_id: Default::default(),
-            connectors: TlsConnectors {
-                pki_verify: mail_send::smtp::tls::build_tls_connector(false),
-                dummy_verify: mail_send::smtp::tls::build_tls_connector(true),
-            },
-            delivery_tx: mpsc::channel(1).0,
         }
     }
 }

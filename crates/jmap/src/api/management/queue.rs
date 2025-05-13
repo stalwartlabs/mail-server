@@ -1,31 +1,18 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
  *
- * This file is part of Stalwart Mail Server.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * You can be released from the requirements of the AGPLv3 license by
- * purchasing a commercial license. Please contact licensing@stalw.art
- * for more details.
-*/
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
 
-use std::str::FromStr;
+use std::{future::Future, sync::atomic::Ordering};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use common::{auth::AccessToken, ipc::QueueEvent, Server};
+use directory::{
+    backend::internal::{manage::ManageDirectory, PrincipalField},
+    Permission, Type,
+};
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use mail_auth::{
     dmarc::URI,
     mta_sts::ReportUri,
@@ -34,19 +21,20 @@ use mail_auth::{
 use mail_parser::DateTime;
 use serde::{Deserializer, Serializer};
 use serde_json::json;
-use smtp::queue::{self, ErrorDetails, HostResponse, QueueId, Status};
+use smtp::{
+    queue::{self, spool::SmtpSpool, ErrorDetails, HostResponse, QueueId, Status},
+    reporting::{dmarc::DmarcReporting, tls::TlsReporting},
+};
 use store::{
     write::{key::DeserializeBigEndian, now, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, ValueKey,
 };
+use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
-use super::decode_path_element;
+use super::{decode_path_element, FutureTimestamp};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Message {
@@ -93,6 +81,7 @@ pub struct Recipient {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum Report {
     Tls {
         id: String,
@@ -120,9 +109,59 @@ pub enum Report {
     },
 }
 
-impl JMAP {
-    pub async fn handle_manage_queue(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
+pub trait QueueManagement: Sync + Send {
+    fn handle_manage_queue(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl QueueManagement for Server {
+    async fn handle_manage_queue(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        access_token: &AccessToken,
+    ) -> trc::Result<HttpResponse> {
         let params = UrlParams::new(req.uri().query());
+
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+
+        // Limit to tenant domains
+        let mut tenant_domains: Option<Vec<String>> = None;
+        #[cfg(feature = "enterprise")]
+        if self.core.is_enterprise_edition() {
+            if let Some(tenant) = access_token.tenant {
+                tenant_domains = self
+                    .core
+                    .storage
+                    .data
+                    .list_principals(
+                        None,
+                        tenant.id.into(),
+                        &[Type::Domain],
+                        &[PrincipalField::Name],
+                        0,
+                        0,
+                    )
+                    .await
+                    .map(|principals| {
+                        principals
+                            .items
+                            .into_iter()
+                            .filter_map(|mut p| p.take_str(PrincipalField::Name))
+                            .collect::<Vec<_>>()
+                    })
+                    .caused_by(trc::location!())?
+                    .into();
+            }
+        }
+
+        // SPDX-SnippetEnd
 
         match (
             path.get(1).copied().unwrap_or_default(),
@@ -130,130 +169,121 @@ impl JMAP {
             req.method(),
         ) {
             ("messages", None, &Method::GET) => {
-                let text = params.get("text");
-                let from = params.get("from");
-                let to = params.get("to");
-                let before = params.parse::<Timestamp>("before").map(|t| t.into_inner());
-                let after = params.parse::<Timestamp>("after").map(|t| t.into_inner());
-                let page = params.parse::<usize>("page").unwrap_or_default();
-                let limit = params.parse::<usize>("limit").unwrap_or_default();
-                let values = params.has_key("values");
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueList)?;
 
-                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
-                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
-                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+                let result = fetch_queued_messages(self, &params, &tenant_domains).await?;
 
-                let mut result_ids = Vec::new();
-                let mut result_values = Vec::new();
-                let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_start)));
-                let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_end)));
-                let has_filters = text.is_some()
-                    || from.is_some()
-                    || to.is_some()
-                    || before.is_some()
-                    || after.is_some();
-                let mut offset = page.saturating_sub(1) * limit;
-                let mut total = 0;
-                let mut total_returned = 0;
-                let _ = self
-                    .core
-                    .storage
-                    .data
-                    .iterate(
-                        IterateParams::new(from_key, to_key).ascending(),
-                        |key, value| {
-                            let message = Bincode::<queue::Message>::deserialize(value)?.inner;
-                            let matches = !has_filters
-                                || (text
-                                    .as_ref()
-                                    .map(|text| {
-                                        message.return_path.contains(text)
-                                            || message
-                                                .recipients
-                                                .iter()
-                                                .any(|r| r.address_lcase.contains(text))
-                                    })
-                                    .unwrap_or_else(|| {
-                                        from.as_ref()
-                                            .map_or(true, |from| message.return_path.contains(from))
-                                            && to.as_ref().map_or(true, |to| {
-                                                message
-                                                    .recipients
-                                                    .iter()
-                                                    .any(|r| r.address_lcase.contains(to))
-                                            })
-                                    })
-                                    && before.as_ref().map_or(true, |before| {
-                                        message.next_delivery_event() < *before
-                                    })
-                                    && after.as_ref().map_or(true, |after| {
-                                        message.next_delivery_event() > *after
-                                    }));
+                let queue_status = self.inner.data.queue_status.load(Ordering::Relaxed);
 
-                            if matches {
-                                if offset == 0 {
-                                    if limit == 0 || total_returned < limit {
-                                        if values {
-                                            result_values.push(Message::from(&message));
-                                        } else {
-                                            result_ids.push(key.deserialize_be_u64(0)?);
-                                        }
-                                        total_returned += 1;
-                                    }
-                                } else {
-                                    offset -= 1;
-                                }
-
-                                total += 1;
-                            }
-
-                            Ok(max_total == 0 || total < max_total)
-                        },
-                    )
-                    .await;
-
-                if values {
+                Ok(if !result.values.is_empty() {
                     JsonResponse::new(json!({
                             "data":{
-                                "items": result_values,
-                                "total": total,
+                                "items": result.values,
+                                "total": result.total,
+                                "status": queue_status,
                             },
                     }))
                 } else {
                     JsonResponse::new(json!({
                             "data": {
-                                "items": result_ids,
-                                "total": total,
+                                "items": result.ids,
+                                "total":  result.total,
+                                "status": queue_status,
                             },
                     }))
                 }
-                .into_http_response()
+                .into_http_response())
             }
             ("messages", Some(queue_id), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueGet)?;
+
                 if let Some(message) = self
-                    .smtp
                     .read_message(queue_id.parse().unwrap_or_default())
                     .await
+                    .filter(|message| {
+                        tenant_domains
+                            .as_ref()
+                            .is_none_or( |domains| message.has_domain(domains))
+                    })
                 {
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": Message::from(&message),
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
-            ("messages", Some(queue_id), &Method::PATCH) => {
+            ("messages", None, &Method::PATCH) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueUpdate)?;
+
                 let time = params
-                    .parse::<Timestamp>("at")
+                    .parse::<FutureTimestamp>("at")
+                    .map(|t| t.into_inner())
+                    .unwrap_or_else(now);
+                let result = fetch_queued_messages(self, &params, &tenant_domains).await?;
+
+                let found = !result.ids.is_empty();
+                if found {
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        for id in result.ids {
+                            if let Some(mut message) = server.read_message(id).await {
+                                let prev_event = message.next_event().unwrap_or_default();
+                                let mut has_changes = false;
+
+                                for domain in &mut message.domains {
+                                    if matches!(
+                                        domain.status,
+                                        Status::Scheduled | Status::TemporaryFailure(_)
+                                    ) {
+                                        domain.retry.due = time;
+                                        if domain.expires > time {
+                                            domain.expires = time + 10;
+                                        }
+                                        has_changes = true;
+                                    }
+                                }
+
+                                if has_changes {
+                                    let next_event = message.next_event().unwrap_or_default();
+                                    message
+                                        .save_changes(&server, prev_event.into(), next_event.into())
+                                        .await;
+                                }
+                            }
+                        }
+
+                        let _ = server.inner.ipc.queue_tx.send(QueueEvent::Refresh).await;
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": found,
+                }))
+                .into_http_response())
+            }
+            ("messages", Some(queue_id), &Method::PATCH) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueUpdate)?;
+
+                let time = params
+                    .parse::<FutureTimestamp>("at")
                     .map(|t| t.into_inner())
                     .unwrap_or_else(now);
                 let item = params.get("filter");
 
                 if let Some(mut message) = self
-                    .smtp
                     .read_message(queue_id.parse().unwrap_or_default())
                     .await
+                    .filter(|message| {
+                        tenant_domains
+                            .as_ref()
+                            .is_none_or( |domains| message.has_domain(domains))
+                    })
                 {
                     let prev_event = message.next_event().unwrap_or_default();
                     let mut found = false;
@@ -264,7 +294,7 @@ impl JMAP {
                             Status::Scheduled | Status::TemporaryFailure(_)
                         ) && item
                             .as_ref()
-                            .map_or(true, |item| domain.domain.contains(item))
+                            .is_none_or( |item| domain.domain.contains(item))
                         {
                             domain.retry.due = time;
                             if domain.expires > time {
@@ -277,24 +307,75 @@ impl JMAP {
                     if found {
                         let next_event = message.next_event().unwrap_or_default();
                         message
-                            .save_changes(&self.smtp, prev_event.into(), next_event.into())
+                            .save_changes(self, prev_event.into(), next_event.into())
                             .await;
-                        let _ = self.smtp.inner.queue_tx.send(queue::Event::Reload).await;
+                        let _ = self.inner.ipc.queue_tx.send(QueueEvent::Refresh).await;
                     }
 
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": found,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
+            ("messages", None, &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueDelete)?;
+
+                let result = fetch_queued_messages(self, &params, &tenant_domains).await?;
+
+                let found = !result.ids.is_empty();
+                if found {
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        let is_active = server.inner.data.queue_status.load(Ordering::Relaxed);
+
+                        if is_active {
+                            let _ = server
+                                .inner
+                                .ipc
+                                .queue_tx
+                                .send(QueueEvent::Paused(true))
+                                .await;
+                        }
+
+                        for id in result.ids {
+                            if let Some(message) = server.read_message(id).await {
+                                let prev_event = message.next_event().unwrap_or_default();
+                                message.remove(&server, prev_event).await;
+                            }
+                        }
+
+                        if is_active {
+                            let _ = server
+                                .inner
+                                .ipc
+                                .queue_tx
+                                .send(QueueEvent::Paused(false))
+                                .await;
+                        }
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": found,
+                }))
+                .into_http_response())
+            }
             ("messages", Some(queue_id), &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueDelete)?;
+
                 if let Some(mut message) = self
-                    .smtp
                     .read_message(queue_id.parse().unwrap_or_default())
                     .await
+                    .filter(|message| {
+                        tenant_domains
+                            .as_ref()
+                            .is_none_or( |domains| message.has_domain(domains))
+                    })
                 {
                     let mut found = false;
                     let prev_event = message.next_event().unwrap_or_default();
@@ -351,124 +432,68 @@ impl JMAP {
                             }) {
                                 let next_event = message.next_event().unwrap_or_default();
                                 message
-                                    .save_changes(&self.smtp, next_event.into(), prev_event.into())
+                                    .save_changes(self, next_event.into(), prev_event.into())
                                     .await;
                             } else {
-                                message.remove(&self.smtp, prev_event).await;
+                                message.remove(self, prev_event).await;
                             }
                         }
                     } else {
-                        message.remove(&self.smtp, prev_event).await;
+                        message.remove(self, prev_event).await;
                         found = true;
                     }
 
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": found,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
             ("reports", None, &Method::GET) => {
-                let domain = params.get("domain").map(|d| d.to_lowercase());
-                let type_ = params.get("type").and_then(|t| match t {
-                    "dmarc" => 0u8.into(),
-                    "tls" => 1u8.into(),
-                    _ => None,
-                });
-                let page: usize = params.parse("page").unwrap_or_default();
-                let limit: usize = params.parse("limit").unwrap_or_default();
+                // Validate the access token
+                access_token.assert_has_permission(Permission::OutgoingReportList)?;
 
-                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
-                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
-                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+                let result = fetch_queued_reports(self, &params, &tenant_domains).await?;
 
-                let mut result = Vec::new();
-                let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
-                    ReportEvent {
-                        due: range_start,
-                        policy_hash: 0,
-                        seq_id: 0,
-                        domain: String::new(),
-                    },
-                )));
-                let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
-                    ReportEvent {
-                        due: range_end,
-                        policy_hash: 0,
-                        seq_id: 0,
-                        domain: String::new(),
-                    },
-                )));
-                let mut offset = page.saturating_sub(1) * limit;
-                let mut total = 0;
-                let mut total_returned = 0;
-                let _ = self
-                    .core
-                    .storage
-                    .data
-                    .iterate(
-                        IterateParams::new(from_key, to_key).ascending().no_values(),
-                        |key, _| {
-                            if type_.map_or(true, |t| t == *key.last().unwrap()) {
-                                let event = ReportEvent::deserialize(key)?;
-                                if event.seq_id != 0
-                                    && domain.as_ref().map_or(true, |d| event.domain.contains(d))
-                                {
-                                    if offset == 0 {
-                                        if limit == 0 || total_returned < limit {
-                                            result.push(
-                                                if *key.last().unwrap() == 0 {
-                                                    QueueClass::DmarcReportHeader(event)
-                                                } else {
-                                                    QueueClass::TlsReportHeader(event)
-                                                }
-                                                .queue_id(),
-                                            );
-                                            total_returned += 1;
-                                        }
-                                    } else {
-                                        offset -= 1;
-                                    }
-
-                                    total += 1;
-                                }
-                            }
-
-                            Ok(max_total == 0 || total < max_total)
-                        },
-                    )
-                    .await;
-
-                JsonResponse::new(json!({
+                Ok(JsonResponse::new(json!({
                         "data": {
-                            "items": result,
-                            "total": total,
+                            "items": result.ids.into_iter().map(|id| id.queue_id()).collect::<Vec<_>>(),
+                            "total": result.total,
                         },
                 }))
-                .into_http_response()
+                .into_http_response())
             }
             ("reports", Some(report_id), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::OutgoingReportGet)?;
+
                 let mut result = None;
                 if let Some(report_id) = parse_queued_report_id(report_id.as_ref()) {
                     match report_id {
-                        QueueClass::DmarcReportHeader(event) => {
+                        QueueClass::DmarcReportHeader(event)
+                            if tenant_domains
+                                .as_ref()
+                                .is_none_or( |domains| domains.contains(&event.domain)) =>
+                        {
                             let mut rua = Vec::new();
-                            if let Ok(Some(report)) = self
-                                .smtp
-                                .generate_dmarc_aggregate_report(&event, &mut rua, None)
-                                .await
+                            if let Some(report) = self
+                                .generate_dmarc_aggregate_report(&event, &mut rua, None, 0)
+                                .await?
                             {
                                 result = Report::dmarc(event, report, rua).into();
                             }
                         }
-                        QueueClass::TlsReportHeader(event) => {
+                        QueueClass::TlsReportHeader(event)
+                            if tenant_domains
+                                .as_ref()
+                                .is_none_or( |domains| domains.contains(&event.domain)) =>
+                        {
                             let mut rua = Vec::new();
-                            if let Ok(Some(report)) = self
-                                .smtp
-                                .generate_tls_aggregate_report(&[event.clone()], &mut rua, None)
-                                .await
+                            if let Some(report) = self
+                                .generate_tls_aggregate_report(&[event.clone()], &mut rua, None, 0)
+                                .await?
                             {
                                 result = Report::tls(event, report, rua).into();
                             }
@@ -478,35 +503,103 @@ impl JMAP {
                 }
 
                 if let Some(result) = result {
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": result,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
+            }
+            ("reports", None, &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::OutgoingReportDelete)?;
+
+                let result = fetch_queued_reports(self, &params, &tenant_domains).await?;
+                let found = !result.ids.is_empty();
+                if found {
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        for id in result.ids {
+                            match id {
+                                QueueClass::DmarcReportHeader(event) => {
+                                    server.delete_dmarc_report(event).await;
+                                }
+                                QueueClass::TlsReportHeader(event) => {
+                                    server.delete_tls_report(vec![event]).await;
+                                }
+                                _ => (),
+                            }
+                        }
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": found,
+                }))
+                .into_http_response())
             }
             ("reports", Some(report_id), &Method::DELETE) => {
-                if let Some(report_id) = parse_queued_report_id(report_id.as_ref()) {
-                    match report_id {
-                        QueueClass::DmarcReportHeader(event) => {
-                            self.smtp.delete_dmarc_report(event).await;
-                        }
-                        QueueClass::TlsReportHeader(event) => {
-                            self.smtp.delete_tls_report(vec![event]).await;
-                        }
-                        _ => (),
-                    }
+                // Validate the access token
+                access_token.assert_has_permission(Permission::OutgoingReportDelete)?;
 
-                    JsonResponse::new(json!({
-                            "data": true,
+                if let Some(report_id) = parse_queued_report_id(report_id.as_ref()) {
+                    let result = match report_id {
+                        QueueClass::DmarcReportHeader(event)
+                            if tenant_domains
+                                .as_ref()
+                                .is_none_or( |domains| domains.contains(&event.domain)) =>
+                        {
+                            self.delete_dmarc_report(event).await;
+                            true
+                        }
+                        QueueClass::TlsReportHeader(event)
+                            if tenant_domains
+                                .as_ref()
+                                .is_none_or( |domains| domains.contains(&event.domain)) =>
+                        {
+                            self.delete_tls_report(vec![event]).await;
+                            true
+                        }
+                        _ => false,
+                    };
+
+                    Ok(JsonResponse::new(json!({
+                            "data": result,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
-            _ => RequestError::not_found().into_http_response(),
+            ("status", None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueGet)?;
+
+                Ok(JsonResponse::new(json!({
+                        "data": self.inner.data.queue_status.load(Ordering::Relaxed),
+                }))
+                .into_http_response())
+            }
+            ("status", Some(action), &Method::PATCH) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueUpdate)?;
+
+                let prev_status = self.inner.data.queue_status.load(Ordering::Relaxed);
+
+                let _ = self
+                    .inner
+                    .ipc
+                    .queue_tx
+                    .send(QueueEvent::Paused(action == "stop"))
+                    .await;
+
+                Ok(JsonResponse::new(json!({
+                        "data": prev_status,
+                }))
+                .into_http_response())
+            }
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }
@@ -516,7 +609,7 @@ impl From<&queue::Message> for Message {
         let now = now();
 
         Message {
-            id: message.id,
+            id: message.queue_id,
             return_path: message.return_path.clone(),
             created: DateTime::from_timestamp(message.created as i64),
             size: message.size,
@@ -574,6 +667,197 @@ impl From<&queue::Message> for Message {
     }
 }
 
+struct QueuedMessages {
+    ids: Vec<u64>,
+    values: Vec<Message>,
+    total: usize,
+}
+
+async fn fetch_queued_messages(
+    server: &Server,
+    params: &UrlParams<'_>,
+    tenant_domains: &Option<Vec<String>>,
+) -> trc::Result<QueuedMessages> {
+    let text = params.get("text");
+    let from = params.get("from");
+    let to = params.get("to");
+    let before = params
+        .parse::<FutureTimestamp>("before")
+        .map(|t| t.into_inner());
+    let after = params
+        .parse::<FutureTimestamp>("after")
+        .map(|t| t.into_inner());
+    let page = params.parse::<usize>("page").unwrap_or_default();
+    let limit = params.parse::<usize>("limit").unwrap_or_default();
+    let values = params.has_key("values");
+
+    let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+    let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+    let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
+    let mut result = QueuedMessages {
+        ids: Vec::new(),
+        values: Vec::new(),
+        total: 0,
+    };
+    let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_start)));
+    let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_end)));
+    let has_filters =
+        text.is_some() || from.is_some() || to.is_some() || before.is_some() || after.is_some();
+    let mut offset = page.saturating_sub(1) * limit;
+    let mut total_returned = 0;
+
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
+                let message = Bincode::<queue::Message>::deserialize(value)
+                    .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?
+                    .inner;
+                let matches = tenant_domains
+                    .as_ref()
+                    .is_none_or( |domains| message.has_domain(domains))
+                    && (!has_filters
+                        || (text
+                            .as_ref()
+                            .map(|text| {
+                                message.return_path.contains(text)
+                                    || message
+                                        .recipients
+                                        .iter()
+                                        .any(|r| r.address_lcase.contains(text))
+                            })
+                            .unwrap_or_else(|| {
+                                from.as_ref()
+                                    .is_none_or( |from| message.return_path.contains(from))
+                                    && to.as_ref().is_none_or( |to| {
+                                        message
+                                            .recipients
+                                            .iter()
+                                            .any(|r| r.address_lcase.contains(to))
+                                    })
+                            })
+                            && before
+                                .as_ref()
+                                .is_none_or( |before| message.next_delivery_event() < *before)
+                            && after
+                                .as_ref()
+                                .is_none_or( |after| message.next_delivery_event() > *after)));
+
+                if matches {
+                    if offset == 0 {
+                        if limit == 0 || total_returned < limit {
+                            if values {
+                                result.values.push(Message::from(&message));
+                            } else {
+                                result.ids.push(key.deserialize_be_u64(0)?);
+                            }
+                            total_returned += 1;
+                        }
+                    } else {
+                        offset -= 1;
+                    }
+
+                    result.total += 1;
+                }
+
+                Ok(max_total == 0 || result.total < max_total)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| result)
+}
+
+struct QueuedReports {
+    ids: Vec<QueueClass>,
+    total: usize,
+}
+
+async fn fetch_queued_reports(
+    server: &Server,
+    params: &UrlParams<'_>,
+    tenant_domains: &Option<Vec<String>>,
+) -> trc::Result<QueuedReports> {
+    let domain = params.get("domain").map(|d| d.to_lowercase());
+    let type_ = params.get("type").and_then(|t| match t {
+        "dmarc" => 0u8.into(),
+        "tls" => 1u8.into(),
+        _ => None,
+    });
+    let page: usize = params.parse("page").unwrap_or_default();
+    let limit: usize = params.parse("limit").unwrap_or_default();
+
+    let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+    let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+    let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
+    let mut result = QueuedReports {
+        ids: Vec::new(),
+        total: 0,
+    };
+    let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
+        ReportEvent {
+            due: range_start,
+            policy_hash: 0,
+            seq_id: 0,
+            domain: String::new(),
+        },
+    )));
+    let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
+        ReportEvent {
+            due: range_end,
+            policy_hash: 0,
+            seq_id: 0,
+            domain: String::new(),
+        },
+    )));
+    let mut offset = page.saturating_sub(1) * limit;
+    let mut total_returned = 0;
+
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(from_key, to_key).ascending().no_values(),
+            |key, _| {
+                if type_.is_none_or( |t| t == *key.last().unwrap()) {
+                    let event = ReportEvent::deserialize(key)?;
+                    if tenant_domains
+                        .as_ref()
+                        .is_none_or( |domains| domains.contains(&event.domain))
+                        && event.seq_id != 0
+                        && domain.as_ref().is_none_or( |d| event.domain.contains(d))
+                    {
+                        if offset == 0 {
+                            if limit == 0 || total_returned < limit {
+                                result.ids.push(if *key.last().unwrap() == 0 {
+                                    QueueClass::DmarcReportHeader(event)
+                                } else {
+                                    QueueClass::TlsReportHeader(event)
+                                });
+                                total_returned += 1;
+                            }
+                        } else {
+                            offset -= 1;
+                        }
+
+                        result.total += 1;
+                    }
+                }
+
+                Ok(max_total == 0 || result.total < max_total)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| result)
+}
+
 impl Report {
     fn dmarc(event: ReportEvent, report: report::Report, rua: Vec<URI>) -> Self {
         Self::Dmarc {
@@ -629,29 +913,6 @@ fn parse_queued_report_id(id: &str) -> Option<QueueClass> {
         "d" => Some(QueueClass::DmarcReportHeader(event)),
         "t" => Some(QueueClass::TlsReportHeader(event)),
         _ => None,
-    }
-}
-
-struct Timestamp(u64);
-
-impl FromStr for Timestamp {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(dt) = DateTime::parse_rfc3339(s) {
-            let instant = dt.to_timestamp() as u64;
-            if instant >= now() {
-                return Ok(Timestamp(instant));
-            }
-        }
-
-        Err(())
-    }
-}
-
-impl Timestamp {
-    pub fn into_inner(self) -> u64 {
-        self.0
     }
 }
 
