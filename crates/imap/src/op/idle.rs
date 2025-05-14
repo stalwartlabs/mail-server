@@ -96,7 +96,7 @@ impl<T: SessionStream> Session<T> {
                         let mut has_mailbox_changes = false;
                         let mut has_email_changes = false;
 
-                        for (type_state, _) in state_change.types {
+                        for type_state in state_change.types {
                             match type_state {
                                 DataType::Email | DataType::EmailDelivery => {
                                     has_email_changes = true;

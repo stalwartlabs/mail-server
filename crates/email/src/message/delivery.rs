@@ -213,11 +213,11 @@ impl MailDelivery for Server {
                     // Notify state change
                     if ingested_message.change_id != u64::MAX {
                         self.broadcast_state_change(
-                            StateChange::new(uid)
-                                .with_change(DataType::EmailDelivery, ingested_message.change_id)
-                                .with_change(DataType::Email, ingested_message.change_id)
-                                .with_change(DataType::Mailbox, ingested_message.change_id)
-                                .with_change(DataType::Thread, ingested_message.change_id),
+                            StateChange::new(uid, ingested_message.change_id)
+                                .with_change(DataType::EmailDelivery)
+                                .with_change(DataType::Email)
+                                .with_change(DataType::Mailbox)
+                                .with_change(DataType::Thread),
                         )
                         .await;
                     }

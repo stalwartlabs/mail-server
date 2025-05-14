@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    AssertConfig, add_test_certs, directory::internal::TestInternalDirectory,
+    AssertConfig, TEST_USERS, add_test_certs, directory::internal::TestInternalDirectory,
     jmap::assert_is_empty, store::TempDir,
 };
 use ::managesieve::core::ManageSieveSessionManager;
@@ -133,7 +133,7 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
     let cache = Caches::parse(&mut config);
 
     let store = core.storage.data.clone();
-    let (ipc, mut ipc_rxs) = build_ipc(&mut config);
+    let (ipc, mut ipc_rxs) = build_ipc(&mut config, false);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,
@@ -194,7 +194,7 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
 
     // Create test accounts
     let mut clients = AHashMap::new();
-    for (account, secret, name, email) in TEST_DAV_USERS {
+    for (account, secret, name, email) in TEST_USERS {
         let account_id = store
             .create_test_user(account, secret, name, &[email])
             .await;
@@ -1127,16 +1127,3 @@ ansi = true
 disabled-events = ["network.*"]
  
 "#;
-
-pub const TEST_DAV_USERS: &[(&str, &str, &str, &str)] = &[
-    ("admin", "secret1", "Superuser", "admin@example,com"),
-    ("john", "secret2", "John Doe", "jdoe@example.com"),
-    (
-        "jane",
-        "secret3",
-        "Jane Doe-Smith",
-        "jane.smith@example.com",
-    ),
-    ("bill", "secret4", "Bill Foobar", "bill@example,com"),
-    ("mike", "secret5", "Mike Noquota", "mike@example,com"),
-];

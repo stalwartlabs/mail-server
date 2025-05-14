@@ -26,6 +26,7 @@ use crate::{
 use ::managesieve::core::ManageSieveSessionManager;
 use ::store::Stores;
 use ahash::AHashSet;
+use base64::{Engine, engine::general_purpose};
 use common::{
     Caches, Core, Data, Inner, Server,
     config::{
@@ -95,7 +96,7 @@ pub async fn imap_tests() {
     store::test(&mut imap, &mut imap_check, &handle).await;
     copy_move::test(&mut imap, &mut imap_check).await;
     thread::test(&mut imap, &mut imap_check).await;
-    idle::test(&mut imap, &mut imap_check).await;
+    idle::test(&mut imap, &mut imap_check, false).await;
     condstore::test(&mut imap, &mut imap_check).await;
     acl::test(&mut imap, &mut imap_check).await;
 
@@ -169,7 +170,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let cache = Caches::parse(&mut config);
 
     let store = core.storage.data.clone();
-    let (ipc, mut ipc_rxs) = build_ipc(&mut config);
+    let (ipc, mut ipc_rxs) = build_ipc(&mut config, false);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,
@@ -306,8 +307,11 @@ pub enum Type {
 
 impl ImapConnection {
     pub async fn connect(tag: &'static [u8]) -> Self {
-        let (reader, writer) =
-            tokio::io::split(TcpStream::connect("127.0.0.1:9991").await.unwrap());
+        Self::connect_to(tag, "127.0.0.1:9991").await
+    }
+
+    pub async fn connect_to(tag: &'static [u8], addr: impl AsRef<str>) -> Self {
+        let (reader, writer) = tokio::io::split(TcpStream::connect(addr.as_ref()).await.unwrap());
         ImapConnection {
             tag,
             reader: BufReader::new(reader).lines(),
@@ -375,6 +379,16 @@ impl ImapConnection {
                 Err(_) => panic!("Timeout while waiting for server response: {:?}", lines),
             }
         }
+    }
+
+    pub async fn authenticate(&mut self, user: &str, pass: &str) {
+        let creds = general_purpose::STANDARD.encode(format!("\0{user}\0{pass}"));
+        self.send(&format!(
+            "AUTHENTICATE PLAIN {{{}+}}\r\n{creds}",
+            creds.len()
+        ))
+        .await;
+        self.assert_read(Type::Tagged, ResponseType::Ok).await;
     }
 
     pub async fn send(&mut self, text: &str) {

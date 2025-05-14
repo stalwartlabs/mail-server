@@ -11,13 +11,14 @@ use deadpool::{
     managed::{Manager, Pool},
 };
 use redis::{
-    Client,
+    Client, ProtocolVersion,
     cluster::{ClusterClient, ClusterClientBuilder},
 };
 use utils::config::{Config, utils::AsKey};
 
 pub mod lookup;
 pub mod pool;
+pub mod pubsub;
 
 #[derive(Debug)]
 pub struct RedisStore {
@@ -104,6 +105,13 @@ impl RedisStore {
                     }
                     if let Some(true) = config.property::<bool>((&prefix, "read-from-replicas")) {
                         builder = builder.read_from_replicas();
+                    }
+                    if config
+                        .value((&prefix, "protocol-version"))
+                        .unwrap_or("resp2")
+                        == "resp3"
+                    {
+                        builder = builder.use_protocol(ProtocolVersion::RESP3);
                     }
 
                     let client = builder

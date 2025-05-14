@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
+use broadcast::publisher::spawn_broadcast_publisher;
 use common::{
     Inner,
     manager::boot::{BootManager, IpcReceivers},
@@ -13,8 +12,9 @@ use common::{
 use housekeeper::spawn_housekeeper;
 use index::spawn_email_queue_task;
 use state_manager::manager::spawn_state_manager;
+use std::sync::Arc;
 
-pub mod gossip;
+pub mod broadcast;
 pub mod housekeeper;
 pub mod index;
 pub mod state_manager;
@@ -55,6 +55,12 @@ impl SpawnServices for IpcReceivers {
 
         // Spawn housekeeper
         spawn_housekeeper(inner.clone(), self.housekeeper_rx.take().unwrap());
+
+        // Spawn broadcast publisher
+        if let Some(event_rx) = self.broadcast_rx.take() {
+            // Spawn broadcast publisher
+            spawn_broadcast_publisher(inner.clone(), event_rx);
+        }
 
         // Spawn index task
         spawn_email_queue_task(inner);

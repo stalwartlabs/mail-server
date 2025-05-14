@@ -76,6 +76,7 @@ impl Server {
             blob_stores: self.core.storage.blobs.clone(),
             fts_stores: self.core.storage.ftss.clone(),
             in_memory_stores: self.core.storage.lookups.clone(),
+            pubsub_stores: Default::default(),
             purge_schedules: Default::default(),
         };
         stores.parse_stores(&mut config).await;

@@ -4,24 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::Arc,
-};
-
-use ahash::{AHashMap, AHashSet};
-use arc_swap::ArcSwap;
-use mail_auth::{MX, Parameters, Txt};
-use mail_send::smtp::tls::build_tls_connector;
-use nlp::bayes::{TokenHash, Weights};
-use parking_lot::RwLock;
-use store::write::BatchBuilder;
-use utils::{
-    cache::{Cache, CacheWithTtl},
-    config::Config,
-    snowflake::SnowflakeIdGenerator,
-};
-
+use super::server::tls::{build_self_signed_cert, parse_certificates};
 use crate::{
     CacheSwap, Caches, Data, DavResource, DavResources, MailboxCache, MessageStoreCache,
     MessageUidCache, TlsConnectors,
@@ -30,8 +13,21 @@ use crate::{
     listener::blocked::BlockedIps,
     manager::webadmin::WebAdminManager,
 };
-
-use super::server::tls::{build_self_signed_cert, parse_certificates};
+use ahash::{AHashMap, AHashSet};
+use arc_swap::ArcSwap;
+use mail_auth::{MX, Parameters, Txt};
+use mail_send::smtp::tls::build_tls_connector;
+use nlp::bayes::{TokenHash, Weights};
+use parking_lot::RwLock;
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::Arc,
+};
+use utils::{
+    cache::{Cache, CacheWithTtl},
+    config::Config,
+    snowflake::{HlcTimestamp, SnowflakeIdGenerator},
+};
 
 impl Data {
     pub fn parse(config: &mut Config) -> Self {
@@ -48,7 +44,7 @@ impl Data {
             .property::<u64>("cluster.node-id")
             .unwrap_or_else(store::rand::random);
         let id_generator = SnowflakeIdGenerator::with_node_id(node_id);
-        BatchBuilder::init_id_generator(node_id as u16);
+        HlcTimestamp::init(node_id as u16);
         if !id_generator.is_valid() {
             panic!("Invalid system time, panicking to avoid data corruption");
         }
@@ -65,7 +61,6 @@ impl Data {
             .ok()
             .map(Arc::new),
             blocked_ips: RwLock::new(BlockedIps::parse(config).blocked_ip_addresses),
-            blocked_ips_version: 0.into(),
             jmap_id_gen: id_generator.clone(),
             queue_id_gen: id_generator.clone(),
             span_id_gen: id_generator,
@@ -74,7 +69,6 @@ impl Data {
                 .value("webadmin.path")
                 .map(|path| WebAdminManager::new(path.into()))
                 .unwrap_or_default(),
-            config_version: 0.into(),
             logos: Default::default(),
             smtp_connectors: TlsConnectors::default(),
             asn_geo_data: Default::default(),
@@ -225,13 +219,11 @@ impl Default for Data {
             tls_certificates: Default::default(),
             tls_self_signed_cert: Default::default(),
             blocked_ips: Default::default(),
-            blocked_ips_version: 0.into(),
             jmap_id_gen: Default::default(),
             queue_id_gen: Default::default(),
             span_id_gen: Default::default(),
             queue_status: true.into(),
             webadmin: Default::default(),
-            config_version: Default::default(),
             logos: Default::default(),
             smtp_connectors: Default::default(),
             asn_geo_data: Default::default(),

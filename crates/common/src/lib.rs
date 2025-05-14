@@ -24,7 +24,7 @@ use config::{
     storage::Storage,
     telemetry::Metrics,
 };
-use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
+use ipc::{BroadcastEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
 use jmap_proto::types::value::AclGrant;
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 use mail_auth::{MX, Txt};
@@ -35,10 +35,7 @@ use rustls::sign::CertifiedKey;
 use std::{
     hash::{BuildHasher, Hash, Hasher},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU8},
-    },
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 use store::roaring::RoaringBitmap;
@@ -126,7 +123,6 @@ pub struct Data {
     pub tls_self_signed_cert: Option<Arc<CertifiedKey>>,
 
     pub blocked_ips: RwLock<AHashSet<IpAddr>>,
-    pub blocked_ips_version: AtomicU8,
 
     pub asn_geo_data: AsnGeoLookupData,
 
@@ -137,7 +133,6 @@ pub struct Data {
 
     pub webadmin: WebAdminManager,
     pub logos: Mutex<AHashMap<String, Option<Resource<Vec<u8>>>>>,
-    pub config_version: AtomicU8,
 
     pub smtp_connectors: TlsConnectors,
 }
@@ -233,6 +228,7 @@ pub struct Ipc {
     pub index_tx: Arc<Notify>,
     pub queue_tx: mpsc::Sender<QueueEvent>,
     pub report_tx: mpsc::Sender<ReportingEvent>,
+    pub broadcast_tx: Option<mpsc::Sender<BroadcastEvent>>,
     pub local_delivery_sm: Arc<Semaphore>,
 }
 
@@ -476,6 +472,7 @@ impl Default for Ipc {
             index_tx: Default::default(),
             queue_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             report_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
+            broadcast_tx: None,
             local_delivery_sm: Arc::new(Semaphore::new(10)),
         }
     }

@@ -214,19 +214,17 @@ pub enum SecurityEvent {
 
 #[event_type]
 pub enum ClusterEvent {
-    PeerAlive,
-    PeerDiscovered,
-    PeerOffline,
-    PeerSuspected,
-    PeerSuspectedIsAlive,
-    PeerBackOnline,
-    PeerLeaving,
-    PeerHasChanges,
-    OneOrMorePeersOffline,
-    EmptyPacket,
-    InvalidPacket,
-    DecryptionError,
-    Error,
+    SubscriberStart,
+    SubscriberStop,
+    SubscriberError,
+    SubscriberDisconnected,
+    PublisherStart,
+    PublisherStop,
+    PublisherError,
+    MessageReceived,
+    MessageSkipped,
+    MessageInvalid,
+    ClockSkewDetected,
 }
 
 #[event_type]
@@ -830,6 +828,7 @@ pub enum StoreEvent {
     ElasticsearchError,
     RedisError,
     S3Error,
+    NatsError,
     AzureError,
     FilesystemError,
     PoolError,

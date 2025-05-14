@@ -17,6 +17,8 @@ pub mod http;
 pub mod memory;
 #[cfg(feature = "mysql")]
 pub mod mysql;
+#[cfg(feature = "nats")]
+pub mod nats;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 #[cfg(feature = "redis")]

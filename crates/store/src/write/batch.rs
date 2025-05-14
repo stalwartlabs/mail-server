@@ -9,17 +9,10 @@ use super::{
     ValueClass, ValueOp, assert::ToAssertValue,
 };
 use crate::{SerializeInfallible, U32_LEN};
-use std::sync::{
-    LazyLock,
-    atomic::{AtomicU64, Ordering},
-};
 use utils::{
     map::{bitmap::ShortId, vec_map::VecMap},
-    snowflake::SnowflakeIdGenerator,
+    snowflake::HlcTimestamp,
 };
-
-static CHANGE_SEQ: AtomicU64 = AtomicU64::new(0);
-static NODE_MUM: LazyLock<u16> = LazyLock::new(|| CHANGE_SEQ.swap(0, Ordering::Relaxed) as u16);
 
 impl BatchBuilder {
     pub fn new() -> Self {
@@ -38,15 +31,8 @@ impl BatchBuilder {
         }
     }
 
-    pub fn init_id_generator(node_number: u16) {
-        CHANGE_SEQ.store(node_number as u64, Ordering::Relaxed);
-    }
-
     fn generate_change_id(&mut self) -> u64 {
-        let change_id = SnowflakeIdGenerator::from_params(
-            CHANGE_SEQ.fetch_add(1, Ordering::Relaxed),
-            *NODE_MUM,
-        );
+        let change_id = HlcTimestamp::generate();
         self.current_change_id = Some(change_id);
         change_id
     }

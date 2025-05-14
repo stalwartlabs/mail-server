@@ -27,7 +27,7 @@ use crate::{
     Caches, Core, Data, IPC_CHANNEL_BUFFER, Inner, Ipc,
     config::{network::AsnGeoLookupConfig, server::Listeners, telemetry::Telemetry},
     core::BuildServer,
-    ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
+    ipc::{BroadcastEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
 };
 
 use super::{
@@ -49,6 +49,7 @@ pub struct IpcReceivers {
     pub housekeeper_rx: Option<mpsc::Receiver<HousekeeperEvent>>,
     pub queue_rx: Option<mpsc::Receiver<QueueEvent>>,
     pub report_rx: Option<mpsc::Receiver<ReportingEvent>>,
+    pub broadcast_rx: Option<mpsc::Receiver<BroadcastEvent>>,
 }
 
 const HELP: &str = concat!(
@@ -424,7 +425,7 @@ impl BootManager {
                     core.network.asn_geo_lookup,
                     AsnGeoLookupConfig::Resource { .. }
                 );
-                let (ipc, ipc_rxs) = build_ipc(&mut config);
+                let (ipc, ipc_rxs) = build_ipc(&mut config, !core.storage.pubsub.is_none());
                 let inner = Arc::new(Inner {
                     shared_core: ArcSwap::from_pointee(core),
                     data,
@@ -487,18 +488,20 @@ impl BootManager {
     }
 }
 
-pub fn build_ipc(config: &mut Config) -> (Ipc, IpcReceivers) {
+pub fn build_ipc(config: &mut Config, has_pubsub: bool) -> (Ipc, IpcReceivers) {
     // Build ipc receivers
     let (state_tx, state_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     let (housekeeper_tx, housekeeper_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     let (queue_tx, queue_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     let (report_tx, report_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let (broadcast_tx, broadcast_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     (
         Ipc {
             state_tx,
             housekeeper_tx,
             queue_tx,
             report_tx,
+            broadcast_tx: has_pubsub.then_some(broadcast_tx),
             index_tx: Arc::new(Notify::new()),
             local_delivery_sm: Arc::new(Semaphore::new(
                 config
@@ -512,6 +515,7 @@ pub fn build_ipc(config: &mut Config) -> (Ipc, IpcReceivers) {
             housekeeper_rx: Some(housekeeper_rx),
             queue_rx: Some(queue_rx),
             report_rx: Some(report_rx),
+            broadcast_rx: has_pubsub.then_some(broadcast_rx),
         },
     )
 }

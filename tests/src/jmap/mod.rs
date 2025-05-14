@@ -73,7 +73,6 @@ pub mod purge;
 pub mod push_subscription;
 pub mod quota;
 pub mod sieve_script;
-pub mod stress_test;
 pub mod thread_get;
 pub mod thread_merge;
 pub mod vacation_response;
@@ -133,19 +132,6 @@ async fn jmap_tests_() {
     if delete {
         params.temp_dir.delete();
     }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore]
-pub async fn jmap_stress_tests() {
-    let params = init_jmap_tests(
-        &std::env::var("STORE")
-            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
-        true,
-    )
-    .await;
-    stress_test::test(params.server.clone(), params.client).await;
-    params.temp_dir.delete();
 }
 
 #[ignore]
@@ -328,7 +314,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let data = Data::parse(&mut config);
     let cache = Caches::parse(&mut config);
     let store = core.storage.data.clone();
-    let (ipc, mut ipc_rxs) = build_ipc(&mut config);
+    let (ipc, mut ipc_rxs) = build_ipc(&mut config, false);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,

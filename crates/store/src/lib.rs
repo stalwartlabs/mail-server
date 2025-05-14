@@ -28,33 +28,6 @@ use backend::{fs::FsStore, http::HttpStore, memory::StaticMemoryStore};
 use utils::config::cron::SimpleCron;
 use write::{BitmapClass, ValueClass};
 
-#[cfg(feature = "s3")]
-use backend::s3::S3Store;
-
-#[cfg(feature = "postgres")]
-use backend::postgres::PostgresStore;
-
-#[cfg(feature = "mysql")]
-use backend::mysql::MysqlStore;
-
-#[cfg(feature = "sqlite")]
-use backend::sqlite::SqliteStore;
-
-#[cfg(feature = "foundation")]
-use backend::foundationdb::FdbStore;
-
-#[cfg(feature = "rocks")]
-use backend::rocksdb::RocksDbStore;
-
-#[cfg(feature = "elastic")]
-use backend::elastic::ElasticSearchStore;
-
-#[cfg(feature = "redis")]
-use backend::redis::RedisStore;
-
-#[cfg(feature = "azure")]
-use backend::azure::AzureStore;
-
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self>;
     fn deserialize_owned(bytes: Vec<u8>) -> trc::Result<Self> {
@@ -210,21 +183,22 @@ pub struct Stores {
     pub blob_stores: AHashMap<String, BlobStore>,
     pub fts_stores: AHashMap<String, FtsStore>,
     pub in_memory_stores: AHashMap<String, InMemoryStore>,
+    pub pubsub_stores: AHashMap<String, PubSubStore>,
     pub purge_schedules: Vec<PurgeSchedule>,
 }
 
 #[derive(Clone, Default)]
 pub enum Store {
     #[cfg(feature = "sqlite")]
-    SQLite(Arc<SqliteStore>),
+    SQLite(Arc<backend::sqlite::SqliteStore>),
     #[cfg(feature = "foundation")]
-    FoundationDb(Arc<FdbStore>),
+    FoundationDb(Arc<backend::foundationdb::FdbStore>),
     #[cfg(feature = "postgres")]
-    PostgreSQL(Arc<PostgresStore>),
+    PostgreSQL(Arc<backend::postgres::PostgresStore>),
     #[cfg(feature = "mysql")]
-    MySQL(Arc<MysqlStore>),
+    MySQL(Arc<backend::mysql::MysqlStore>),
     #[cfg(feature = "rocks")]
-    RocksDb(Arc<RocksDbStore>),
+    RocksDb(Arc<backend::rocksdb::RocksDbStore>),
     #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
     SQLReadReplica(Arc<backend::composite::read_replica::SQLReadReplica>),
     #[default]
@@ -248,9 +222,9 @@ pub enum BlobBackend {
     Store(Store),
     Fs(Arc<FsStore>),
     #[cfg(feature = "s3")]
-    S3(Arc<S3Store>),
+    S3(Arc<backend::s3::S3Store>),
     #[cfg(feature = "azure")]
-    Azure(Arc<AzureStore>),
+    Azure(Arc<backend::azure::AzureStore>),
     #[cfg(feature = "enterprise")]
     Sharded(Arc<backend::composite::sharded_blob::ShardedBlob>),
 }
@@ -259,51 +233,61 @@ pub enum BlobBackend {
 pub enum FtsStore {
     Store(Store),
     #[cfg(feature = "elastic")]
-    ElasticSearch(Arc<ElasticSearchStore>),
+    ElasticSearch(Arc<backend::elastic::ElasticSearchStore>),
 }
 
 #[derive(Clone, Debug)]
 pub enum InMemoryStore {
     Store(Store),
     #[cfg(feature = "redis")]
-    Redis(Arc<RedisStore>),
+    Redis(Arc<backend::redis::RedisStore>),
     Http(Arc<HttpStore>),
     Static(Arc<StaticMemoryStore>),
     #[cfg(feature = "enterprise")]
     Sharded(Arc<backend::composite::sharded_lookup::ShardedInMemory>),
 }
 
+#[derive(Clone, Default)]
+pub enum PubSubStore {
+    #[cfg(feature = "redis")]
+    Redis(Arc<backend::redis::RedisStore>),
+    #[cfg(feature = "nats")]
+    Nats(Arc<backend::nats::NatsStore>),
+    #[default]
+    None,
+}
+
 #[cfg(feature = "sqlite")]
-impl From<SqliteStore> for Store {
-    fn from(store: SqliteStore) -> Self {
+impl From<backend::sqlite::SqliteStore> for Store {
+    fn from(store: backend::sqlite::SqliteStore) -> Self {
         Self::SQLite(Arc::new(store))
     }
 }
 
 #[cfg(feature = "foundation")]
-impl From<FdbStore> for Store {
-    fn from(store: FdbStore) -> Self {
+impl From<backend::foundationdb::FdbStore> for Store {
+    fn from(store: backend::foundationdb::FdbStore) -> Self {
         Self::FoundationDb(Arc::new(store))
     }
 }
 
 #[cfg(feature = "postgres")]
-impl From<PostgresStore> for Store {
-    fn from(store: PostgresStore) -> Self {
+impl From<backend::postgres::PostgresStore> for Store {
+    fn from(store: backend::postgres::PostgresStore) -> Self {
         Self::PostgreSQL(Arc::new(store))
     }
 }
 
 #[cfg(feature = "mysql")]
-impl From<MysqlStore> for Store {
-    fn from(store: MysqlStore) -> Self {
+impl From<backend::mysql::MysqlStore> for Store {
+    fn from(store: backend::mysql::MysqlStore) -> Self {
         Self::MySQL(Arc::new(store))
     }
 }
 
 #[cfg(feature = "rocks")]
-impl From<RocksDbStore> for Store {
-    fn from(store: RocksDbStore) -> Self {
+impl From<backend::rocksdb::RocksDbStore> for Store {
+    fn from(store: backend::rocksdb::RocksDbStore) -> Self {
         Self::RocksDb(Arc::new(store))
     }
 }
@@ -318,8 +302,8 @@ impl From<FsStore> for BlobStore {
 }
 
 #[cfg(feature = "s3")]
-impl From<S3Store> for BlobStore {
-    fn from(store: S3Store) -> Self {
+impl From<backend::s3::S3Store> for BlobStore {
+    fn from(store: backend::s3::S3Store) -> Self {
         BlobStore {
             backend: BlobBackend::S3(Arc::new(store)),
             compression: CompressionAlgo::None,
@@ -328,8 +312,8 @@ impl From<S3Store> for BlobStore {
 }
 
 #[cfg(feature = "azure")]
-impl From<AzureStore> for BlobStore {
-    fn from(store: AzureStore) -> Self {
+impl From<backend::azure::AzureStore> for BlobStore {
+    fn from(store: backend::azure::AzureStore) -> Self {
         BlobStore {
             backend: BlobBackend::Azure(Arc::new(store)),
             compression: CompressionAlgo::None,
@@ -338,15 +322,15 @@ impl From<AzureStore> for BlobStore {
 }
 
 #[cfg(feature = "elastic")]
-impl From<ElasticSearchStore> for FtsStore {
-    fn from(store: ElasticSearchStore) -> Self {
+impl From<backend::elastic::ElasticSearchStore> for FtsStore {
+    fn from(store: backend::elastic::ElasticSearchStore) -> Self {
         Self::ElasticSearch(Arc::new(store))
     }
 }
 
 #[cfg(feature = "redis")]
-impl From<RedisStore> for InMemoryStore {
-    fn from(store: RedisStore) -> Self {
+impl From<backend::redis::RedisStore> for InMemoryStore {
+    fn from(store: backend::redis::RedisStore) -> Self {
         Self::Redis(Arc::new(store))
     }
 }

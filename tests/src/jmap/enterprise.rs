@@ -186,7 +186,7 @@ impl EnterpriseCore for Core {
 async fn alerts(server: &Server) {
     // Make sure the required metrics are set to 0
     assert_eq!(
-        Collector::read_event_metric(EventType::Cluster(ClusterEvent::Error).id()),
+        Collector::read_event_metric(EventType::Cluster(ClusterEvent::PublisherError).id()),
         0
     );
     assert_eq!(Collector::read_metric(MetricType::DomainCount), 0.0);
@@ -196,12 +196,12 @@ async fn alerts(server: &Server) {
     );
 
     // Increment metrics to trigger alerts
-    Collector::update_event_counter(EventType::Cluster(ClusterEvent::Error), 5);
+    Collector::update_event_counter(EventType::Cluster(ClusterEvent::PublisherError), 5);
     Collector::update_gauge(MetricType::DomainCount, 3);
 
     // Make sure the values were set
     assert_eq!(
-        Collector::read_event_metric(EventType::Cluster(ClusterEvent::Error).id()),
+        Collector::read_event_metric(EventType::Cluster(ClusterEvent::PublisherError).id()),
         5
     );
     assert_eq!(Collector::read_metric(MetricType::DomainCount), 3.0);

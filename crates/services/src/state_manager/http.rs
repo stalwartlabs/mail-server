@@ -28,11 +28,11 @@ impl PushServer {
         tokio::spawn(async move {
             let mut response = StateChangeResponse::new();
             for state_change in &state_changes {
-                for (type_state, change_id) in &state_change.types {
+                for type_state in state_change.types {
                     response
                         .changed
                         .get_mut_or_insert(state_change.account_id.into())
-                        .set(*type_state, (*change_id).into());
+                        .set(type_state, (state_change.change_id).into());
                 }
             }
 

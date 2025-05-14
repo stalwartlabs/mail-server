@@ -125,7 +125,7 @@ pub fn spawn_push_manager(inner: Arc<Inner>) -> mpsc::Sender<Event> {
                     Event::Push { ids, state_change } => {
                         for id in ids {
                             if let Some(subscription) = subscriptions.get_mut(&id) {
-                                subscription.state_changes.push(state_change.clone());
+                                subscription.state_changes.push(state_change);
                                 let last_request = subscription.last_request.elapsed();
 
                                 if !subscription.in_flight

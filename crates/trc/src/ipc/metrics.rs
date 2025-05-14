@@ -586,13 +586,9 @@ impl EventType {
             ) => true,
             EventType::PushSubscription(_) => true,
             EventType::Cluster(
-                ClusterEvent::PeerOffline
-                | ClusterEvent::PeerSuspected
-                | ClusterEvent::PeerSuspectedIsAlive
-                | ClusterEvent::EmptyPacket
-                | ClusterEvent::InvalidPacket
-                | ClusterEvent::DecryptionError
-                | ClusterEvent::Error,
+                ClusterEvent::SubscriberError
+                | ClusterEvent::PublisherError
+                | ClusterEvent::SubscriberDisconnected,
             ) => true,
             EventType::Housekeeper(_) => false,
             EventType::TaskQueue(

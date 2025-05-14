@@ -178,18 +178,15 @@ impl WebSocketHandler for Server {
                 }
                 state_change = change_rx.recv() => {
                     if let Some(state_change) = state_change {
-                        if !change_types.is_empty() && state_change
-                            .types
-                            .iter()
-                            .any(|(t, _)| change_types.contains(*t))
-                            {
-                                for (type_state, change_id) in state_change.types {
-                                    changes
-                                        .changed
-                                        .get_mut_or_insert(state_change.account_id.into())
-                                        .set(type_state, change_id.into());
-                                }
-                            }
+                        let mut types = state_change.types;
+                        types.intersection(&change_types);
+
+                        for type_state in types {
+                            changes
+                                .changed
+                                .get_mut_or_insert(state_change.account_id.into())
+                                .set(type_state, state_change.change_id.into());
+                        }
                     } else {
                         trc::event!(
                             Jmap(JmapEvent::WebsocketStop),

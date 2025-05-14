@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken, ipc::HousekeeperEvent};
+use common::{
+    Server,
+    auth::AccessToken,
+    ipc::{BroadcastEvent, HousekeeperEvent},
+};
 use directory::Permission;
 use hyper::Method;
 use serde_json::json;
@@ -59,8 +63,8 @@ impl ManageReload for Server {
             (Some("server.blocked-ip"), &Method::GET) => {
                 let result = self.reload_blocked_ips().await?;
 
-                // Increment version counter
-                self.increment_blocked_version();
+                self.cluster_broadcast(BroadcastEvent::ReloadBlockedIps)
+                    .await;
 
                 Ok(JsonResponse::new(json!({
                     "data": result.config,
@@ -74,8 +78,7 @@ impl ManageReload for Server {
                         // Update core
                         self.inner.shared_core.store(core.into());
 
-                        // Increment version counter
-                        self.increment_config_version();
+                        self.cluster_broadcast(BroadcastEvent::ReloadSettings).await;
                     }
 
                     if let Some(tracers) = result.tracers {

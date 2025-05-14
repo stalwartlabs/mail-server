@@ -30,6 +30,7 @@ impl EventType {
                 | StoreEvent::LdapError
                 | StoreEvent::ElasticsearchError
                 | StoreEvent::RedisError
+                | StoreEvent::NatsError
                 | StoreEvent::S3Error
                 | StoreEvent::AzureError
                 | StoreEvent::FilesystemError
@@ -356,18 +357,17 @@ impl EventType {
                 PushSubscriptionEvent::Success => Level::Trace,
             },
             EventType::Cluster(event) => match event {
-                ClusterEvent::PeerAlive
-                | ClusterEvent::PeerDiscovered
-                | ClusterEvent::PeerOffline
-                | ClusterEvent::PeerSuspected
-                | ClusterEvent::PeerSuspectedIsAlive
-                | ClusterEvent::PeerBackOnline
-                | ClusterEvent::PeerLeaving => Level::Info,
-                ClusterEvent::PeerHasChanges | ClusterEvent::OneOrMorePeersOffline => Level::Debug,
-                ClusterEvent::EmptyPacket
-                | ClusterEvent::Error
-                | ClusterEvent::DecryptionError
-                | ClusterEvent::InvalidPacket => Level::Warn,
+                ClusterEvent::SubscriberStart
+                | ClusterEvent::SubscriberStop
+                | ClusterEvent::PublisherStart
+                | ClusterEvent::PublisherStop => Level::Info,
+                ClusterEvent::SubscriberDisconnected | ClusterEvent::ClockSkewDetected => {
+                    Level::Warn
+                }
+                ClusterEvent::MessageReceived | ClusterEvent::MessageSkipped => Level::Trace,
+                ClusterEvent::PublisherError
+                | ClusterEvent::SubscriberError
+                | ClusterEvent::MessageInvalid => Level::Error,
             },
             EventType::Housekeeper(event) => match event {
                 HousekeeperEvent::Start | HousekeeperEvent::Stop => Level::Info,

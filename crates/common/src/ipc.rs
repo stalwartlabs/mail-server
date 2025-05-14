@@ -54,6 +54,7 @@ pub enum StateEvent {
     },
     Publish {
         state_change: StateChange,
+        broadcast: bool,
     },
     UpdateSharedAccounts {
         account_id: u32,
@@ -63,6 +64,13 @@ pub enum StateEvent {
         subscriptions: Vec<UpdateSubscription>,
     },
     Stop,
+}
+
+#[derive(Debug)]
+pub enum BroadcastEvent {
+    StateChange(StateChange),
+    ReloadSettings,
+    ReloadBlockedIps,
 }
 
 #[derive(Debug)]

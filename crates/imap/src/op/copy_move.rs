@@ -368,10 +368,10 @@ impl<T: SessionStream> SessionData<T> {
             if let Some(change_id) = dest_change_id {
                 self.server
                     .broadcast_state_change(
-                        StateChange::new(dest_account_id)
-                            .with_change(DataType::Email, change_id)
-                            .with_change(DataType::Thread, change_id)
-                            .with_change(DataType::Mailbox, change_id),
+                        StateChange::new(dest_account_id, change_id)
+                            .with_change(DataType::Email)
+                            .with_change(DataType::Thread)
+                            .with_change(DataType::Mailbox),
                     )
                     .await;
             }

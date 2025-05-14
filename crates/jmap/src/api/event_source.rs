@@ -116,11 +116,11 @@ impl EventSourceHandler for Server {
                 loop {
                     match tokio::time::timeout(timeout, change_rx.recv()).await {
                         Ok(Some(state_change)) => {
-                            for (type_state, change_id) in state_change.types {
+                            for type_state in state_change.types {
                                 response
                                     .changed
                                     .get_mut_or_insert(state_change.account_id.into())
-                                    .set(type_state, change_id.into());
+                                    .set(type_state, state_change.change_id.into());
                             }
                         }
                         Ok(None) => {

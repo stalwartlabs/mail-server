@@ -11,6 +11,7 @@ use crate::Store;
 pub mod blob;
 pub mod fts;
 pub mod lookup;
+pub mod pubsub;
 pub mod store;
 
 impl Store {

@@ -4,8 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Duration};
-
+use crate::{
+    Inner, Server,
+    auth::{AccessToken, ResourceToken, TenantInfo},
+    config::smtp::{
+        auth::{ArcSealer, DkimSigner, LazySignature, ResolvedSignature, build_signature},
+        queue::RelayHost,
+    },
+    ipc::{BroadcastEvent, StateEvent},
+};
 use directory::{Directory, QueryBy, Type, backend::internal::manage::ManageDirectory};
 use jmap_proto::types::{
     blob::BlobId,
@@ -15,6 +22,7 @@ use jmap_proto::types::{
     type_state::DataType,
 };
 use sieve::Sieve;
+use std::{sync::Arc, time::Duration};
 use store::{
     BitmapKey, BlobClass, BlobStore, Deserialize, FtsStore, InMemoryStore, IndexKey, IterateParams,
     LogKey, SerializeInfallible, Store, U32_LEN, ValueKey,
@@ -27,16 +35,6 @@ use store::{
 };
 use trc::AddContext;
 use utils::BlobHash;
-
-use crate::{
-    Inner, Server,
-    auth::{AccessToken, ResourceToken, TenantInfo},
-    config::smtp::{
-        auth::{ArcSealer, DkimSigner, LazySignature, ResolvedSignature, build_signature},
-        queue::RelayHost,
-    },
-    ipc::StateEvent,
-};
 
 impl Server {
     #[inline(always)]
@@ -510,22 +508,21 @@ impl Server {
 
         if let Some(changes) = builder.changes() {
             for (account_id, changed_collections) in changes {
-                let mut state_change = StateChange::new(account_id);
-                let change_id = changed_collections.change_id;
+                let mut state_change = StateChange::new(account_id, changed_collections.change_id);
                 for changed_collection in changed_collections.changed_containers {
                     if let Some(data_type) = DataType::try_from_id(changed_collection, true) {
-                        state_change.set_change(data_type, change_id);
+                        state_change.set_change(data_type);
                     }
                 }
                 for changed_collection in changed_collections.changed_items {
                     if let Some(data_type) = DataType::try_from_id(changed_collection, false) {
-                        state_change.set_change(data_type, change_id);
+                        state_change.set_change(data_type);
                     }
                 }
                 if state_change.has_changes() {
                     self.broadcast_state_change(state_change).await;
                 }
-                assigned_ids.change_id = change_id.into();
+                assigned_ids.change_id = changed_collections.change_id.into();
             }
         }
 
@@ -576,7 +573,10 @@ impl Server {
             .ipc
             .state_tx
             .clone()
-            .send(StateEvent::Publish { state_change })
+            .send(StateEvent::Publish {
+                state_change,
+                broadcast: true,
+            })
             .await
         {
             Ok(_) => true,
@@ -588,6 +588,18 @@ impl Server {
                 );
 
                 false
+            }
+        }
+    }
+
+    pub async fn cluster_broadcast(&self, event: BroadcastEvent) {
+        if let Some(broadcast_tx) = &self.inner.ipc.broadcast_tx.clone() {
+            if broadcast_tx.send(event).await.is_err() {
+                trc::event!(
+                    Server(trc::ServerEvent::ThreadError),
+                    Details = "Error sending broadcast event.",
+                    CausedBy = trc::location!()
+                );
             }
         }
     }
@@ -653,13 +665,6 @@ impl Server {
             },
             section: None,
         })
-    }
-
-    pub fn increment_config_version(&self) {
-        self.inner
-            .data
-            .config_version
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub async fn total_accounts(&self) -> trc::Result<u64> {

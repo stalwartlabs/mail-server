@@ -4,9 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::codec::{
-    base32_custom::Base32Writer,
-    leb128::{Leb128Iterator, Leb128Writer},
+use utils::{
+    codec::{
+        base32_custom::Base32Writer,
+        leb128::{Leb128Iterator, Leb128Writer},
+    },
+    map::bitmap::Bitmap,
 };
 
 use crate::parser::{JsonObjectParser, base32::JsonBase32Reader, json::Parser};
@@ -28,30 +31,28 @@ pub enum State {
     Intermediate(JMAPIntermediateState),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct StateChange {
     pub account_id: u32,
-    pub types: Vec<(DataType, u64)>,
+    pub change_id: u64,
+    pub types: Bitmap<DataType>,
 }
 
 impl StateChange {
-    pub fn new(account_id: u32) -> Self {
+    pub fn new(account_id: u32, change_id: u64) -> Self {
         Self {
             account_id,
-            types: Vec::with_capacity(0),
+            change_id,
+            types: Default::default(),
         }
     }
 
-    pub fn set_change(&mut self, type_state: DataType, change_id: u64) {
-        self.types.push((type_state, change_id));
+    pub fn set_change(&mut self, type_state: DataType) {
+        self.types.insert(type_state);
     }
 
-    pub fn with_change(mut self, type_state: DataType, change_id: u64) -> Self {
-        if let Some((_, last_change_id)) = self.types.iter_mut().find(|(ts, _)| ts == &type_state) {
-            *last_change_id = change_id;
-        } else {
-            self.types.push((type_state, change_id));
-        }
+    pub fn with_change(mut self, type_state: DataType) -> Self {
+        self.set_change(type_state);
         self
     }
 

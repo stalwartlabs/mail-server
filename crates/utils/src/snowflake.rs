@@ -5,16 +5,22 @@
  */
 
 use std::{
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        LazyLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, SystemTime},
 };
 
 #[derive(Debug)]
 pub struct SnowflakeIdGenerator {
     epoch: SystemTime,
+    last_timestamp: AtomicU64,
     node_id: u64,
     sequence: AtomicU64,
 }
+
+pub struct HlcTimestamp;
 
 const SEQUENCE_LEN: u64 = 12;
 const NODE_ID_LEN: u64 = 9;
@@ -24,6 +30,12 @@ const NODE_ID_MASK: u64 = (1 << NODE_ID_LEN) - 1;
 
 const DEFAULT_EPOCH: u64 = 1632280000; // 52 years after UNIX_EPOCH
 const DEFAULT_EPOCH_MS: u128 = (DEFAULT_EPOCH as u128) * 1000; // 52 years after UNIX_EPOCH in milliseconds
+
+const MAX_CLOCK_DRIFT: i64 = 60 * 1000; // 1 minute
+
+static LOGICAL_TIME: AtomicU64 = AtomicU64::new(0);
+static CHANGE_SEQ: AtomicU64 = AtomicU64::new(0);
+static NODE_MUM: LazyLock<u16> = LazyLock::new(|| CHANGE_SEQ.swap(0, Ordering::Relaxed) as u16);
 
 /*
 
@@ -61,6 +73,7 @@ impl SnowflakeIdGenerator {
             epoch: SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_EPOCH), // 52 years after UNIX_EPOCH
             node_id,
             sequence: 0.into(),
+            last_timestamp: 0.into(),
         }
     }
 
@@ -79,29 +92,68 @@ impl SnowflakeIdGenerator {
 
     #[inline(always)]
     pub fn generate(&self) -> u64 {
-        let elapsed = self
+        let current_elapsed = self
             .epoch
             .elapsed()
             .map(|e| e.as_millis())
             .unwrap_or_default() as u64;
-        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
+        let last_elapsed = self
+            .last_timestamp
+            .fetch_max(current_elapsed, Ordering::Relaxed);
+        let (elapsed, sequence) = if current_elapsed > last_elapsed {
+            (current_elapsed, 0)
+        } else {
+            (last_elapsed, self.sequence.fetch_add(1, Ordering::Relaxed))
+        };
 
         (elapsed << (SEQUENCE_LEN + NODE_ID_LEN))
-            | ((self.node_id & NODE_ID_MASK) << SEQUENCE_LEN)
-            | (sequence & SEQUENCE_MASK)
+            | ((sequence & SEQUENCE_MASK) << NODE_ID_LEN)
+            | (self.node_id & NODE_ID_MASK)
+    }
+}
+
+impl HlcTimestamp {
+    pub fn init(node_number: u16) {
+        CHANGE_SEQ.store(node_number as u64, Ordering::Relaxed);
     }
 
-    #[inline(always)]
-    pub fn from_params(sequence: u64, node_id: u16) -> u64 {
-        let elapsed = SystemTime::UNIX_EPOCH
+    pub fn update_clock_from_remote_timestamp(timestamp: u64) -> Result<i64, i64> {
+        let remote_clock = timestamp >> (SEQUENCE_LEN + NODE_ID_LEN);
+        let local_elapsed = SystemTime::UNIX_EPOCH
             .elapsed()
             .map(|e| e.as_millis())
             .unwrap_or_default()
             .saturating_sub(DEFAULT_EPOCH_MS) as u64;
+        let diff = remote_clock as i64 - local_elapsed as i64;
+        if diff > 0 {
+            if diff < MAX_CLOCK_DRIFT {
+                LOGICAL_TIME.fetch_max(remote_clock, Ordering::SeqCst);
+                Ok(diff)
+            } else {
+                Err(diff)
+            }
+        } else {
+            Ok(diff)
+        }
+    }
+
+    pub fn generate() -> u64 {
+        let node_id = *NODE_MUM;
+        let current_elapsed = SystemTime::UNIX_EPOCH
+            .elapsed()
+            .map(|e| e.as_millis())
+            .unwrap_or_default()
+            .saturating_sub(DEFAULT_EPOCH_MS) as u64;
+        let last_elapsed = LOGICAL_TIME.fetch_max(current_elapsed, Ordering::SeqCst);
+        let (elapsed, sequence) = if current_elapsed > last_elapsed {
+            (current_elapsed, 0)
+        } else {
+            (last_elapsed, CHANGE_SEQ.fetch_add(1, Ordering::Relaxed))
+        };
 
         (elapsed << (SEQUENCE_LEN + NODE_ID_LEN))
-            | (((node_id as u64) & NODE_ID_MASK) << SEQUENCE_LEN)
-            | (sequence & SEQUENCE_MASK)
+            | ((sequence & SEQUENCE_MASK) << NODE_ID_LEN)
+            | (node_id as u64 & NODE_ID_MASK)
     }
 }
 
@@ -116,6 +168,7 @@ impl Clone for SnowflakeIdGenerator {
         Self {
             epoch: self.epoch,
             node_id: self.node_id,
+            last_timestamp: 0.into(),
             sequence: 0.into(),
         }
     }

@@ -4,39 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::sync::Arc;
+
 use utils::config::{Config, cron::SimpleCron, utils::ParseValue};
 
 use crate::{
-    BlobStore, CompressionAlgo, InMemoryStore, PurgeSchedule, PurgeStore, Store, Stores,
-    backend::fs::FsStore,
+    BlobStore, CompressionAlgo, InMemoryStore, PubSubStore, PurgeSchedule, PurgeStore, Store,
+    Stores, backend::fs::FsStore,
 };
-
-#[cfg(feature = "s3")]
-use crate::backend::s3::S3Store;
-
-#[cfg(feature = "postgres")]
-use crate::backend::postgres::PostgresStore;
-
-#[cfg(feature = "mysql")]
-use crate::backend::mysql::MysqlStore;
-
-#[cfg(feature = "sqlite")]
-use crate::backend::sqlite::SqliteStore;
-
-#[cfg(feature = "foundation")]
-use crate::backend::foundationdb::FdbStore;
-
-#[cfg(feature = "rocks")]
-use crate::backend::rocksdb::RocksDbStore;
-
-#[cfg(feature = "elastic")]
-use crate::backend::elastic::ElasticSearchStore;
-
-#[cfg(feature = "redis")]
-use crate::backend::redis::RedisStore;
-
-#[cfg(feature = "azure")]
-use crate::backend::azure::AzureStore;
 
 #[cfg(feature = "enterprise")]
 enum CompositeStore {
@@ -103,7 +78,10 @@ impl Stores {
                         continue;
                     }
 
-                    if let Some(db) = RocksDbStore::open(config, prefix).await.map(Store::from) {
+                    if let Some(db) = crate::backend::rocksdb::RocksDbStore::open(config, prefix)
+                        .await
+                        .map(Store::from)
+                    {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
@@ -125,7 +103,10 @@ impl Stores {
                         continue;
                     }
 
-                    if let Some(db) = FdbStore::open(config, prefix).await.map(Store::from) {
+                    if let Some(db) = crate::backend::foundationdb::FdbStore::open(config, prefix)
+                        .await
+                        .map(Store::from)
+                    {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
@@ -137,10 +118,13 @@ impl Stores {
                 }
                 #[cfg(feature = "postgres")]
                 "postgresql" => {
-                    if let Some(db) =
-                        PostgresStore::open(config, prefix, config.is_active_store(id))
-                            .await
-                            .map(Store::from)
+                    if let Some(db) = crate::backend::postgres::PostgresStore::open(
+                        config,
+                        prefix,
+                        config.is_active_store(id),
+                    )
+                    .await
+                    .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
@@ -153,9 +137,13 @@ impl Stores {
                 }
                 #[cfg(feature = "mysql")]
                 "mysql" => {
-                    if let Some(db) = MysqlStore::open(config, prefix, config.is_active_store(id))
-                        .await
-                        .map(Store::from)
+                    if let Some(db) = crate::backend::mysql::MysqlStore::open(
+                        config,
+                        prefix,
+                        config.is_active_store(id),
+                    )
+                    .await
+                    .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
@@ -178,7 +166,9 @@ impl Stores {
                         continue;
                     }
 
-                    if let Some(db) = SqliteStore::open(config, prefix).map(Store::from) {
+                    if let Some(db) =
+                        crate::backend::sqlite::SqliteStore::open(config, prefix).map(Store::from)
+                    {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
@@ -196,27 +186,42 @@ impl Stores {
                 }
                 #[cfg(feature = "s3")]
                 "s3" => {
-                    if let Some(db) = S3Store::open(config, prefix).await.map(BlobStore::from) {
+                    if let Some(db) = crate::backend::s3::S3Store::open(config, prefix)
+                        .await
+                        .map(BlobStore::from)
+                    {
                         self.blob_stores
                             .insert(store_id, db.with_compression(compression_algo));
                     }
                 }
                 #[cfg(feature = "elastic")]
                 "elasticsearch" => {
-                    if let Some(db) = ElasticSearchStore::open(config, prefix)
-                        .await
-                        .map(crate::FtsStore::from)
+                    if let Some(db) =
+                        crate::backend::elastic::ElasticSearchStore::open(config, prefix)
+                            .await
+                            .map(crate::FtsStore::from)
                     {
                         self.fts_stores.insert(store_id, db);
                     }
                 }
                 #[cfg(feature = "redis")]
                 "redis" => {
-                    if let Some(db) = RedisStore::open(config, prefix)
+                    if let Some(db) = crate::backend::redis::RedisStore::open(config, prefix)
                         .await
-                        .map(InMemoryStore::from)
+                        .map(Arc::new)
                     {
-                        self.in_memory_stores.insert(store_id, db);
+                        self.in_memory_stores
+                            .insert(store_id.clone(), InMemoryStore::Redis(db.clone()));
+                        self.pubsub_stores.insert(store_id, PubSubStore::Redis(db));
+                    }
+                }
+                #[cfg(feature = "nats")]
+                "nats" => {
+                    if let Some(db) = crate::backend::nats::NatsStore::open(config, prefix)
+                        .await
+                        .map(Arc::new)
+                    {
+                        self.pubsub_stores.insert(store_id, PubSubStore::Nats(db));
                     }
                 }
                 #[cfg(feature = "enterprise")]
@@ -234,7 +239,10 @@ impl Stores {
                 }
                 #[cfg(feature = "azure")]
                 "azure" => {
-                    if let Some(db) = AzureStore::open(config, prefix).await.map(BlobStore::from) {
+                    if let Some(db) = crate::backend::azure::AzureStore::open(config, prefix)
+                        .await
+                        .map(BlobStore::from)
+                    {
                         self.blob_stores
                             .insert(store_id, db.with_compression(compression_algo));
                     }

@@ -16,6 +16,8 @@ use trc::Collector;
 static GLOBAL: Jemalloc = Jemalloc;
 
 #[cfg(test)]
+pub mod cluster;
+#[cfg(test)]
 pub mod directory;
 #[cfg(test)]
 pub mod http_server;
@@ -76,3 +78,16 @@ pub fn enable_logging() {
         }
     }
 }
+
+pub const TEST_USERS: &[(&str, &str, &str, &str)] = &[
+    ("admin", "secret1", "Superuser", "admin@example,com"),
+    ("john", "secret2", "John Doe", "jdoe@example.com"),
+    (
+        "jane",
+        "secret3",
+        "Jane Doe-Smith",
+        "jane.smith@example.com",
+    ),
+    ("bill", "secret4", "Bill Foobar", "bill@example,com"),
+    ("mike", "secret5", "Mike Noquota", "mike@example,com"),
+];

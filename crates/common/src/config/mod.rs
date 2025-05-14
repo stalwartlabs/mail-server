@@ -137,6 +137,21 @@ impl Core {
                 }
             })
             .unwrap_or_default();
+        let pubsub = config
+            .value("storage.pubsub")
+            .map(|id| id.to_string())
+            .and_then(|id| {
+                if let Some(store) = stores.pubsub_stores.get(&id) {
+                    store.clone().into()
+                } else {
+                    config.new_parse_error(
+                        "storage.pubsub",
+                        format!("PubSub store {id:?} not found"),
+                    );
+                    None
+                }
+            })
+            .unwrap_or_default();
         let mut directories =
             Directories::parse(config, &stores, data.clone(), is_enterprise).await;
         let directory = config
@@ -192,6 +207,7 @@ impl Core {
                 blob,
                 fts,
                 lookup,
+                pubsub,
                 directory,
                 directories: directories.directories,
                 purge_schedules: stores.purge_schedules,

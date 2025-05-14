@@ -4,13 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Duration;
+
 use imap_proto::ResponseType;
 
 use crate::jmap::delivery::SmtpConnection;
 
 use super::{AssertResult, ImapConnection, Type};
 
-pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
+const SLEEP: Duration = Duration::from_millis(200);
+
+pub async fn test(
+    imap: &mut ImapConnection,
+    imap_check: &mut ImapConnection,
+    is_cluster_test: bool,
+) {
     println!("Running IDLE tests...");
 
     // Switch connection to IDLE mode
@@ -28,6 +36,9 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     // Expect a new mailbox update
     imap.send("CREATE Provolone").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
@@ -40,6 +51,9 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Continuation, ResponseType::Ok).await;
     imap.send_untagged(message).await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
@@ -53,6 +67,9 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap.send("STORE 1:* +FLAGS (\\Seen)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
@@ -66,6 +83,9 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap.send("CLOSE").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
@@ -77,6 +97,9 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     // Delete folder and expect an update
     imap.send("DELETE Provolone").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
@@ -88,6 +111,9 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Continuation, ResponseType::Ok).await;
     imap.send_untagged(message).await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
@@ -108,6 +134,9 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
 
     imap.send("STORE 1 +FLAGS (\\Deleted)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
@@ -118,6 +147,9 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
         .await
         .assert_contains("* 1 EXPUNGE")
         .assert_contains("* 0 EXISTS");
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
@@ -133,7 +165,7 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
         .assert_contains("* 0 EXISTS");
 
     // Test SMTP delivery notifications
-    let mut lmtp = SmtpConnection::connect_port(11201).await;
+    let mut lmtp = SmtpConnection::connect_port(if is_cluster_test { 17000 } else { 11201 }).await;
     lmtp.ingest(
         "bill@example.com",
         &["jdoe@example.com"],
@@ -148,11 +180,18 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
         ),
     )
     .await;
+    if is_cluster_test {
+        tokio::time::sleep(SLEEP).await;
+    }
     imap_check
         .assert_read(Type::Status, ResponseType::Ok)
         .await
         .assert_contains("STATUS \"INBOX\"")
-        .assert_contains("MESSAGES 11");
+        .assert_contains(if is_cluster_test {
+            "MESSAGES 1"
+        } else {
+            "MESSAGES 11"
+        });
 
     // Stop IDLE mode
     imap_check.send_raw("DONE").await;

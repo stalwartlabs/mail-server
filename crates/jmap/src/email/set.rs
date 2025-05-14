@@ -1040,10 +1040,10 @@ impl EmailSet for Server {
             if response.updated.is_empty() && response.destroyed.is_empty() {
                 // Message ingest does not broadcast state changes
                 self.broadcast_state_change(
-                    StateChange::new(account_id)
-                        .with_change(DataType::Email, change_id)
-                        .with_change(DataType::Mailbox, change_id)
-                        .with_change(DataType::Thread, change_id),
+                    StateChange::new(account_id, change_id)
+                        .with_change(DataType::Email)
+                        .with_change(DataType::Mailbox)
+                        .with_change(DataType::Thread),
                 )
                 .await;
             }

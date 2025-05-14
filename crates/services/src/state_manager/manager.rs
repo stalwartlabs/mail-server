@@ -12,7 +12,7 @@ use std::{
 use common::{
     Inner,
     core::BuildServer,
-    ipc::{PushSubscription, StateEvent, UpdateSubscription},
+    ipc::{BroadcastEvent, PushSubscription, StateEvent, UpdateSubscription},
 };
 use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
 use store::{ahash::AHashMap, rand};
@@ -135,7 +135,27 @@ pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<Stat
                             },
                         );
                 }
-                StateEvent::Publish { state_change } => {
+                StateEvent::Publish {
+                    state_change,
+                    broadcast,
+                } => {
+                    // Publish event to cluster
+                    if broadcast {
+                        if let Some(broadcast_tx) = &inner.ipc.broadcast_tx.clone() {
+                            if broadcast_tx
+                                .send(BroadcastEvent::StateChange(state_change))
+                                .await
+                                .is_err()
+                            {
+                                trc::event!(
+                                    Server(trc::ServerEvent::ThreadError),
+                                    Details = "Error sending broadcast event.",
+                                    CausedBy = trc::location!()
+                                );
+                            }
+                        }
+                    }
+
                     if let Some(shared_accounts) = shared_accounts_map.get(&state_change.account_id)
                     {
                         let current_time = SystemTime::now()
@@ -147,19 +167,18 @@ pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<Stat
                         for (owner_account_id, allowed_types) in shared_accounts {
                             if let Some(subscribers) = subscribers.get(owner_account_id) {
                                 for (subscriber_id, subscriber) in subscribers {
-                                    let mut types = Vec::with_capacity(state_change.types.len());
-                                    for (state_type, change_id) in &state_change.types {
-                                        if subscriber.types.contains(*state_type)
-                                            && allowed_types.contains(*state_type)
+                                    let mut types = Bitmap::new();
+                                    for state_type in state_change.types {
+                                        if subscriber.types.contains(state_type)
+                                            && allowed_types.contains(state_type)
                                         {
-                                            types.push((*state_type, *change_id));
+                                            types.insert(state_type);
                                         }
                                     }
                                     if !types.is_empty() {
                                         match &subscriber.subscription {
                                             SubscriberType::Ipc { tx } if !tx.is_closed() => {
                                                 let subscriber_tx = tx.clone();
-                                                let state_change = state_change.clone();
 
                                                 tokio::spawn(async move {
                                                     // Timeout after 500ms in case there is a blocked client
@@ -167,6 +186,7 @@ pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<Stat
                                                         .send_timeout(
                                                             StateChange {
                                                                 account_id: state_change.account_id,
+                                                                change_id: state_change.change_id,
                                                                 types,
                                                             },
                                                             SEND_TIMEOUT,

@@ -13,7 +13,7 @@ use http::HttpSessionManager;
 use imap::core::ImapSessionManager;
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
-use services::{StartServices, gossip::spawn::GossiperBuilder};
+use services::{StartServices, broadcast::subscriber::spawn_broadcast_subscriber};
 use smtp::{StartQueueManager, core::SmtpSessionManager};
 use trc::Collector;
 use utils::wait_for_shutdown;
@@ -33,7 +33,6 @@ async fn main() -> std::io::Result<()> {
     // Init services
     init.start_services().await;
     init.start_queue_manager();
-    let gossiper = GossiperBuilder::try_parse(&mut init.config);
 
     // Log configuration errors
     init.config.log_errors();
@@ -83,10 +82,8 @@ async fn main() -> std::io::Result<()> {
         };
     });
 
-    // Spawn gossip
-    if let Some(gossiper) = gossiper {
-        gossiper.spawn(init.inner, shutdown_rx.clone()).await;
-    }
+    // Start broadcast subscriber
+    spawn_broadcast_subscriber(init.inner, shutdown_rx);
 
     // Wait for shutdown signal
     wait_for_shutdown().await;

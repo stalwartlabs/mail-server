@@ -15,7 +15,7 @@ use common::{
     Inner, KV_LOCK_HOUSEKEEPER, LONG_1D_SLUMBER, Server,
     config::telemetry::OtelMetrics,
     core::BuildServer,
-    ipc::{HousekeeperEvent, PurgeType},
+    ipc::{BroadcastEvent, HousekeeperEvent, PurgeType},
 };
 
 #[cfg(feature = "enterprise")]
@@ -288,7 +288,9 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                             }
                                         };
 
-                                        server.increment_config_version();
+                                        server
+                                            .cluster_broadcast(BroadcastEvent::ReloadSettings)
+                                            .await;
 
                                         server
                                             .inner
@@ -579,8 +581,9 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                             // Update core
                                             server.inner.shared_core.store(new_core.into());
 
-                                            // Increment version counter
-                                            server.increment_config_version();
+                                            server
+                                                .cluster_broadcast(BroadcastEvent::ReloadSettings)
+                                                .await;
                                         }
                                     }
                                     Err(err) => {

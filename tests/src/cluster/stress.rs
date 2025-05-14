@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Duration};
-
-use super::assert_is_empty;
-use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
 use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
 use email::{
@@ -21,6 +18,7 @@ use jmap_client::{
     mailbox::{self, Mailbox, Role},
 };
 use jmap_proto::types::{collection::Collection, id::Id};
+use std::{sync::Arc, time::Duration};
 use store::{
     rand::{self, Rng},
     roaring::RoaringBitmap,
@@ -30,7 +28,7 @@ const TEST_USER_ID: u32 = 1;
 const NUM_PASSES: usize = 1;
 
 pub async fn test(server: Server, mut client: Client) {
-    println!("Running concurrency stress tests...");
+    println!("Running cluster concurrency stress tests...");
     server
         .core
         .storage

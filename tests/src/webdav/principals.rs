@@ -5,7 +5,7 @@
  */
 
 use super::WebDavTest;
-use crate::webdav::{TEST_DAV_USERS, prop::ALL_DAV_PROPERTIES};
+use crate::{TEST_USERS, webdav::prop::ALL_DAV_PROPERTIES};
 use dav_proto::schema::property::{DavProperty, PrincipalProperty, WebDavProperty};
 use groupware::DavResourceName;
 use hyper::StatusCode;
@@ -23,7 +23,7 @@ pub async fn test(test: &WebDavTest) {
             ALL_DAV_PROPERTIES,
         )
         .await;
-    for (account, _, name, _) in TEST_DAV_USERS {
+    for (account, _, name, _) in TEST_USERS {
         let props = response.properties(&format!(
             "{}/{}/",
             DavResourceName::Principal.base_path(),
@@ -174,7 +174,7 @@ pub async fn test(test: &WebDavTest) {
             .with_values([format!("D:href:{}/jane/", DavResourceName::Card.base_path()).as_str()])
             .with_status(StatusCode::OK);
 
-        for (account, _, name, _) in TEST_DAV_USERS
+        for (account, _, name, _) in TEST_USERS
             .iter()
             .filter(|(account, _, _, _)| ["jane", "support"].contains(account))
         {
@@ -310,7 +310,7 @@ pub async fn test(test: &WebDavTest) {
     response
         .properties(&format!("{}/jane/", DavResourceName::Principal.base_path()))
         .get(DavProperty::WebDav(WebDavProperty::DisplayName))
-        .with_values([TEST_DAV_USERS
+        .with_values([TEST_USERS
             .iter()
             .find(|(account, _, _, _)| *account == "jane")
             .unwrap()
