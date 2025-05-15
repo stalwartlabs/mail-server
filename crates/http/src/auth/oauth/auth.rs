@@ -19,7 +19,7 @@ use std::future::Future;
 use store::{
     Serialize,
     dispatch::lookup::KeyValue,
-    write::{Archive, Archiver},
+    write::{UnversionedArchive, UnversionedArchiver},
 };
 use store::{
     rand::{
@@ -109,7 +109,7 @@ impl OAuthApiHandler for Server {
                     .collect::<String>();
 
                 // Serialize OAuth code
-                let value = Archiver::new(OAuthCode {
+                let value = UnversionedArchiver::new(OAuthCode {
                     status: OAuthStatus::Authorized,
                     account_id: access_token.primary_id(),
                     client_id,
@@ -151,7 +151,7 @@ impl OAuthApiHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
+                    .key_get::<UnversionedArchive<AlignedBytes>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         code.as_bytes(),
                     ))
@@ -185,7 +185,7 @@ impl OAuthApiHandler for Server {
                                 KeyValue::with_prefix(
                                     KV_OAUTH,
                                     oauth.params.as_bytes(),
-                                    Archiver::new(new_oauth_code)
+                                    UnversionedArchiver::new(new_oauth_code)
                                         .serialize()
                                         .caused_by(trc::location!())?,
                                 )
@@ -243,7 +243,7 @@ impl OAuthApiHandler for Server {
         }
 
         // Add OAuth status
-        let oauth_code = Archiver::new(OAuthCode {
+        let oauth_code = UnversionedArchiver::new(OAuthCode {
             status: OAuthStatus::Pending,
             account_id: u32::MAX,
             client_id,

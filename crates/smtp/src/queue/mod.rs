@@ -14,7 +14,7 @@ use common::expr::{self, functions::ResolveVariable, *};
 
 use compact_str::ToCompactString;
 use smtp_proto::{ArchivedResponse, Response};
-use store::{SERIALIZE_QUEUEMSG_V1, SerializedVersion, write::now};
+use store::{SERIALIZE_QUEUE_MSG_V1, SerializedVersion, write::now};
 use utils::BlobHash;
 
 pub mod dsn;
@@ -71,7 +71,7 @@ pub struct Message {
 
 impl SerializedVersion for Message {
     fn serialize_version() -> u8 {
-        SERIALIZE_QUEUEMSG_V1
+        SERIALIZE_QUEUE_MSG_V1
     }
 }
 

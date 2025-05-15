@@ -44,24 +44,22 @@ pub trait SerializeInfallible {
 }
 
 // Max 64 versions (2 ^ 6)
-pub const SERIALIZE_CERT_V1: u8 = 0;
-pub const SERIALIZE_LOCKDATA_V1: u8 = 1;
-pub const SERIALIZE_IDENTITY_V1: u8 = 2;
-pub const SERIALIZE_MAILBOX_V1: u8 = 3;
-pub const SERIALIZE_CRYPTO_V1: u8 = 4;
-pub const SERIALIZE_MSGDATA_V1: u8 = 5;
-pub const SERIALIZE_MSGMETADATA_V1: u8 = 6;
-pub const SERIALIZE_PUSH_V1: u8 = 7;
-pub const SERIALIZE_SIEVE_V1: u8 = 8;
-pub const SERIALIZE_SUBMISSION_V1: u8 = 9;
-pub const SERIALIZE_FILENODE_V1: u8 = 10;
-pub const SERIALIZE_OAUTHCODE_V1: u8 = 11;
-pub const SERIALIZE_QUEUEMSG_V1: u8 = 12;
-pub const SERIALIZE_CALENDAR_V1: u8 = 13;
-pub const SERIALIZE_ADDRESSBOOK_V1: u8 = 14;
-pub const SERIALIZE_CALENDAREVENT_V1: u8 = 15;
-pub const SERIALIZE_PRINCIPAL_V1: u8 = 16;
-pub const SERIALIZE_REPORT_V1: u8 = 17;
+pub const SERIALIZE_MESSAGE_DATA_V1: u8 = 0;
+pub const SERIALIZE_MESSAGE_METADATA_V1: u8 = 1;
+pub const SERIALIZE_MAILBOX_V1: u8 = 2;
+pub const SERIALIZE_CRYPTO_V1: u8 = 3;
+pub const SERIALIZE_IDENTITY_V1: u8 = 4;
+pub const SERIALIZE_PUSH_V1: u8 = 5;
+pub const SERIALIZE_SIEVE_V1: u8 = 6;
+pub const SERIALIZE_SUBMISSION_V1: u8 = 7;
+pub const SERIALIZE_QUEUE_MSG_V1: u8 = 8;
+pub const SERIALIZE_CALENDAR_V1: u8 = 9;
+pub const SERIALIZE_CALENDAR_EVENT_V1: u8 = 10;
+pub const SERIALIZE_ADDRESS_BOOK_V1: u8 = 11;
+pub const SERIALIZE_CONTACT_V1: u8 = 12;
+pub const SERIALIZE_FILE_NODE_V1: u8 = 13;
+pub const SERIALIZE_PRINCIPAL_V1: u8 = 14;
+pub const SERIALIZE_DAV_LOCKS_V1: u8 = 15;
 
 pub trait SerializedVersion {
     fn serialize_version() -> u8;

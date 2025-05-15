@@ -452,9 +452,10 @@ impl AssertResult for Vec<String> {
         }
         if match_all && match_count != self.len() - 1 {
             panic!(
-                "Expected {} mailboxes, but got {}",
+                "Expected {} mailboxes, but got {}: {:?}",
                 match_count,
-                self.len() - 1
+                self.len() - 1,
+                self.iter().collect::<Vec<_>>()
             );
         }
         self

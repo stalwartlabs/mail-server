@@ -801,12 +801,13 @@ impl MessageStoreCache {
         if is_unique_hash {
             hash
         } else {
-            loop {
+            for _ in 0..u32::MAX {
                 hash = hash.wrapping_add(1);
                 if !threads_ids.contains(hash) {
                     return hash;
                 }
             }
+            hash
         }
     }
 }

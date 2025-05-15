@@ -53,7 +53,7 @@ pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Rec
                     );
 
                     match tokio::time::timeout(
-                        Duration::from_secs(1 << retry_count.clamp(1, 6)),
+                        Duration::from_secs(1 << retry_count.max(6)),
                         shutdown_rx.changed(),
                     )
                     .await
@@ -63,7 +63,6 @@ pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Rec
                         }
                         Err(_) => {
                             retry_count += 1;
-
                             continue;
                         }
                     }

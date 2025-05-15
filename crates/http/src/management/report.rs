@@ -4,28 +4,26 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::future::Future;
-
 use common::{Server, auth::AccessToken};
-
 use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
+use http_proto::{request::decode_path_element, *};
 use hyper::Method;
 use mail_auth::report::{
     Feedback,
     tlsrpt::{FailureDetails, Policy, TlsReport},
 };
 use serde_json::json;
-use smtp::reporting::{ReportSerializer, analysis::IncomingReport};
+use smtp::reporting::analysis::IncomingReport;
+use std::future::Future;
 use store::{
     Deserialize, IterateParams, Key, U64_LEN, ValueKey,
     write::{
-        AlignedBytes, Archive, BatchBuilder, ReportClass, ValueClass, key::DeserializeBigEndian,
+        AlignedBytes, BatchBuilder, ReportClass, UnversionedArchive, ValueClass,
+        key::DeserializeBigEndian,
     },
 };
 use trc::AddContext;
 use utils::url_params::UrlParams;
-
-use http_proto::{request::decode_path_element, *};
 
 enum ReportType {
     Dmarc,
@@ -291,10 +289,10 @@ where
 {
     if let Some(tls) = server
         .store()
-        .get_value::<Archive<AlignedBytes>>(key)
+        .get_value::<UnversionedArchive<AlignedBytes>>(key)
         .await?
     {
-        tls.deserialize::<ReportSerializer<T>>().map(|v| Some(v.0))
+        tls.deserialize::<T>().map(Some)
     } else {
         Ok(None)
     }
@@ -381,45 +379,39 @@ async fn fetch_incoming_reports(
                 last_id = id;
 
                 // TODO: Support filtering chunked records (over 10MB) on FDB
-                let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?;
+                let archive =
+                    <UnversionedArchive<AlignedBytes> as Deserialize>::deserialize(value)?;
                 let matches = if has_filters {
                     match typ {
                         ReportType::Dmarc => {
-                            let report =
-                                archive
-                                .deserialize::<ReportSerializer<IncomingReport<mail_auth::report::Report>>>()
-                                .caused_by(trc::location!())?
-                                .0;
+                            let report = archive
+                                .deserialize::<IncomingReport<mail_auth::report::Report>>()
+                                .caused_by(trc::location!())?;
 
-                            filter.is_none_or( |f| report.contains(f))
+                            filter.is_none_or(|f| report.contains(f))
                                 && tenant_domains
                                     .as_ref()
-                                    .is_none_or( |domains| report.has_domain(domains))
+                                    .is_none_or(|domains| report.has_domain(domains))
                         }
                         ReportType::Tls => {
-                            let report =
-                                archive
-                                .deserialize::<ReportSerializer<IncomingReport<TlsReport>>>()
-                                .caused_by(trc::location!())?
-                                .0;
+                            let report = archive
+                                .deserialize::<IncomingReport<TlsReport>>()
+                                .caused_by(trc::location!())?;
 
-                            filter.is_none_or( |f| report.contains(f))
+                            filter.is_none_or(|f| report.contains(f))
                                 && tenant_domains
                                     .as_ref()
-                                    .is_none_or( |domains| report.has_domain(domains))
+                                    .is_none_or(|domains| report.has_domain(domains))
                         }
                         ReportType::Arf => {
-                            let report =
-                                archive
-                                .deserialize::<ReportSerializer<IncomingReport<Feedback>>>()
-                                .caused_by(trc::location!())?
-                                .0;
+                            let report = archive
+                                .deserialize::<IncomingReport<Feedback>>()
+                                .caused_by(trc::location!())?;
 
-
-                            filter.is_none_or( |f| report.contains(f))
+                            filter.is_none_or(|f| report.contains(f))
                                 && tenant_domains
                                     .as_ref()
-                                    .is_none_or( |domains| report.has_domain(domains))
+                                    .is_none_or(|domains| report.has_domain(domains))
                         }
                     }
                 } else {

@@ -19,11 +19,9 @@ use std::{
 };
 use store::{
     Serialize,
-    write::{Archiver, BatchBuilder, ReportClass, ValueClass, now},
+    write::{BatchBuilder, ReportClass, UnversionedArchiver, ValueClass, now},
 };
 use trc::IncomingReportEvent;
-
-use super::ReportSerializer;
 
 enum Compression {
     None,
@@ -281,12 +279,12 @@ impl AnalyzeReport for Server {
                         Format::Dmarc(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Dmarc { id, expires }),
-                                Archiver::new(ReportSerializer(IncomingReport {
+                                UnversionedArchiver::new(IncomingReport {
                                     from,
                                     to,
                                     subject,
                                     report,
-                                }))
+                                })
                                 .serialize()
                                 .unwrap_or_default(),
                             );
@@ -294,12 +292,12 @@ impl AnalyzeReport for Server {
                         Format::Tls(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Tls { id, expires }),
-                                Archiver::new(ReportSerializer(IncomingReport {
+                                UnversionedArchiver::new(IncomingReport {
                                     from,
                                     to,
                                     subject,
                                     report,
-                                }))
+                                })
                                 .serialize()
                                 .unwrap_or_default(),
                             );
@@ -307,12 +305,12 @@ impl AnalyzeReport for Server {
                         Format::Arf(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Arf { id, expires }),
-                                Archiver::new(ReportSerializer(IncomingReport {
+                                UnversionedArchiver::new(IncomingReport {
                                     from,
                                     to,
                                     subject,
                                     report,
-                                }))
+                                })
                                 .serialize()
                                 .unwrap_or_default(),
                             );

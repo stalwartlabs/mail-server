@@ -62,6 +62,7 @@ pub enum PrincipalData {
     ExternalMembers(Vec<String>),
     Urls(Vec<String>),
     PrincipalQuota(Vec<PrincipalQuota>),
+    Language(String),
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]

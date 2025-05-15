@@ -21,7 +21,7 @@ use rkyv::{
     vec::ArchivedVec,
 };
 use std::{borrow::Cow, collections::VecDeque};
-use store::{SERIALIZE_MSGDATA_V1, SERIALIZE_MSGMETADATA_V1, SerializedVersion};
+use store::{SERIALIZE_MESSAGE_DATA_V1, SERIALIZE_MESSAGE_METADATA_V1, SerializedVersion};
 use utils::BlobHash;
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
@@ -47,13 +47,13 @@ impl IndexableAndSerializableObject for MessageData {}
 
 impl SerializedVersion for MessageData {
     fn serialize_version() -> u8 {
-        SERIALIZE_MSGDATA_V1
+        SERIALIZE_MESSAGE_DATA_V1
     }
 }
 
 impl SerializedVersion for MessageMetadata {
     fn serialize_version() -> u8 {
-        SERIALIZE_MSGMETADATA_V1
+        SERIALIZE_MESSAGE_METADATA_V1
     }
 }
 

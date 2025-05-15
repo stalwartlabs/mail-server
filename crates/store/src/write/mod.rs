@@ -43,6 +43,11 @@ pub struct Archive<T> {
 }
 
 #[derive(Debug, Clone)]
+pub struct UnversionedArchive<T> {
+    pub inner: T,
+}
+
+#[derive(Debug, Clone)]
 pub enum AlignedBytes {
     Aligned(AlignedVec<ARCHIVE_ALIGNMENT>),
     Vec(Vec<u8>),
@@ -50,6 +55,18 @@ pub enum AlignedBytes {
 
 #[repr(transparent)]
 pub struct Archiver<T>(pub T)
+where
+    T: rkyv::Archive
+        + for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::util::AlignedVec,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >;
+
+#[repr(transparent)]
+pub struct UnversionedArchiver<T>(pub T)
 where
     T: rkyv::Archive
         + for<'a> rkyv::Serialize<

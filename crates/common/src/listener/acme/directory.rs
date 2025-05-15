@@ -1,7 +1,10 @@
 // Adapted from rustls-acme (https://github.com/FlorianUekermann/rustls-acme), licensed under MIT/Apache-2.0.
 
-use std::time::Duration;
-
+use super::AcmeProvider;
+use super::jose::{
+    Body, eab_sign, key_authorization, key_authorization_sha256, key_authorization_sha256_base64,
+    sign,
+};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use hyper::header::USER_AGENT;
@@ -11,16 +14,11 @@ use reqwest::{Method, Response};
 use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
 use serde::Deserialize;
-use store::write::Archiver;
-use store::{SERIALIZE_CERT_V1, Serialize, SerializedVersion};
+use std::time::Duration;
+use store::Serialize;
+use store::write::UnversionedArchiver;
 use trc::AddContext;
 use trc::event::conv::AssertSuccess;
-
-use super::AcmeProvider;
-use super::jose::{
-    Body, eab_sign, key_authorization, key_authorization_sha256, key_authorization_sha256_base64,
-    sign,
-};
 
 pub const LETS_ENCRYPT_STAGING_DIRECTORY: &str =
     "https://acme-staging-v02.api.letsencrypt.org/directory";
@@ -190,7 +188,7 @@ impl Account {
                 .reason(err)
         })?;
 
-        Archiver::new(SerializedCert {
+        UnversionedArchiver::new(SerializedCert {
             certificate: cert.serialize_der().map_err(|err| {
                 trc::EventType::Acme(trc::AcmeEvent::Error)
                     .caused_by(trc::location!())
@@ -208,12 +206,6 @@ impl Account {
 pub struct SerializedCert {
     pub certificate: Vec<u8>,
     pub private_key: Vec<u8>,
-}
-
-impl SerializedVersion for SerializedCert {
-    fn serialize_version() -> u8 {
-        SERIALIZE_CERT_V1
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use store::dispatch::lookup::KeyValue;
 use store::write::serialize::rkyv_deserialize;
 use store::write::{AlignedBytes, Archive, Archiver, now};
-use store::{SERIALIZE_LOCKDATA_V1, Serialize, SerializedVersion, U32_LEN};
+use store::{SERIALIZE_DAV_LOCKS_V1, Serialize, SerializedVersion, U32_LEN};
 use trc::AddContext;
 
 use super::ETag;
@@ -755,7 +755,7 @@ impl<'x> LockCaches<'x> {
 
 impl SerializedVersion for LockData {
     fn serialize_version() -> u8 {
-        SERIALIZE_LOCKDATA_V1
+        SERIALIZE_DAV_LOCKS_V1
     }
 }
 

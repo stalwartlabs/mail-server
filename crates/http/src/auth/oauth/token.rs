@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{
+    ArchivedOAuthStatus, ErrorType, FormData, MAX_POST_LEN, OAuthCode, OAuthResponse, OAuthStatus,
+    TokenResponse, registration::ClientRegistrationHandler,
+};
 use common::{
     KV_OAUTH, Server,
     auth::{
@@ -11,21 +15,14 @@ use common::{
         oauth::{GrantType, oidc::StandardClaims},
     },
 };
-
+use http_proto::*;
 use hyper::StatusCode;
 use std::future::Future;
 use store::{
     dispatch::lookup::KeyValue,
-    write::{AlignedBytes, Archive},
+    write::{AlignedBytes, UnversionedArchive},
 };
 use trc::AddContext;
-
-use http_proto::*;
-
-use super::{
-    ArchivedOAuthStatus, ErrorType, FormData, MAX_POST_LEN, OAuthCode, OAuthResponse, OAuthStatus,
-    TokenResponse, registration::ClientRegistrationHandler,
-};
 
 pub trait TokenHandler: Sync + Send {
     fn handle_token_request(
@@ -80,7 +77,7 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
+                    .key_get::<UnversionedArchive<AlignedBytes>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         code.as_bytes(),
                     ))
@@ -152,7 +149,7 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
+                    .key_get::<UnversionedArchive<AlignedBytes>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         device_code.as_bytes(),
                     ))

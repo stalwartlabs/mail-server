@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::hash_map::Entry, future::Future, sync::Arc, time::Duration};
-
+use super::{AggregateTimestamp, SerializedSize};
+use crate::{queue::RecipientDomain, reporting::SmtpReporting};
 use ahash::AHashMap;
 use common::{
     Server, USER_AGENT,
@@ -15,7 +15,6 @@ use common::{
     },
     ipc::{TlsEvent, ToHash},
 };
-
 use mail_auth::{
     flate2::{Compression, write::GzEncoder},
     mta_sts::{ReportUri, TlsRpt},
@@ -23,19 +22,18 @@ use mail_auth::{
         DateRange, FailureDetails, Policy, PolicyDetails, PolicyType, Summary, TlsReport,
     },
 };
-
 use mail_parser::DateTime;
 use reqwest::header::CONTENT_TYPE;
 use std::fmt::Write;
+use std::{collections::hash_map::Entry, future::Future, sync::Arc, time::Duration};
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, QueueClass, ReportEvent, ValueClass},
+    write::{
+        AlignedBytes, BatchBuilder, QueueClass, ReportEvent, UnversionedArchive,
+        UnversionedArchiver, ValueClass,
+    },
 };
 use trc::{AddContext, OutgoingReportEvent};
-
-use crate::{queue::RecipientDomain, reporting::SmtpReporting};
-
-use super::{AggregateTimestamp, ReportSerializer, SerializedSize};
 
 #[derive(Debug, Clone)]
 pub struct TlsRptOptions {
@@ -298,12 +296,12 @@ impl TlsReporting for Server {
         for event in events {
             let tls = if let Some(tls) = self
                 .store()
-                .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
+                .get_value::<UnversionedArchive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
                     QueueClass::TlsReportHeader(event.clone()),
                 )))
                 .await?
             {
-                tls.deserialize::<ReportSerializer<TlsFormat>>()?.0
+                tls.deserialize::<TlsFormat>()?
             } else {
                 continue;
             };
@@ -336,10 +334,10 @@ impl TlsReporting for Server {
                 .storage
                 .data
                 .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
-                    let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(v)?;
-                    if let Some(failure_details) = archive
-                        .deserialize::<ReportSerializer<Option<FailureDetails>>>()?
-                        .0
+                    let archive =
+                        <UnversionedArchive<AlignedBytes> as Deserialize>::deserialize(v)?;
+                    if let Some(failure_details) =
+                        archive.deserialize::<Option<FailureDetails>>()?
                     {
                         match record_map.entry(failure_details) {
                             Entry::Occupied(mut e) => {
@@ -492,7 +490,7 @@ impl TlsReporting for Server {
             // Write report
             builder.set(
                 ValueClass::Queue(QueueClass::TlsReportHeader(report_event.clone())),
-                match Archiver::new(ReportSerializer(entry)).serialize() {
+                match UnversionedArchiver::new(entry).serialize() {
                     Ok(data) => data.to_vec(),
                     Err(err) => {
                         trc::error!(
@@ -509,7 +507,7 @@ impl TlsReporting for Server {
         report_event.seq_id = self.inner.data.queue_id_gen.generate();
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
-            match Archiver::new(ReportSerializer(event.failure)).serialize() {
+            match UnversionedArchiver::new(event.failure).serialize() {
                 Ok(data) => data.to_vec(),
                 Err(err) => {
                     trc::error!(
