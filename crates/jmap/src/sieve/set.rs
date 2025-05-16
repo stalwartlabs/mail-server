@@ -32,10 +32,10 @@ use jmap_proto::{
 use rand::distr::Alphanumeric;
 use sieve::compiler::ErrorType;
 use store::{
-    BlobClass,
+    BlobClass, Serialize,
     query::Filter,
     rand::{Rng, rng},
-    write::{Archive, BatchBuilder},
+    write::{Archive, BatchBuilder, UnversionedArchiver},
 };
 use trc::AddContext;
 
@@ -468,7 +468,7 @@ impl SieveScriptSet for Server {
                     match self.core.sieve.untrusted_compiler.compile(&bytes) {
                         Ok(script) => {
                             changes.size = bytes.len() as u32;
-                            bytes.extend(rkyv::to_bytes::<rkyv::rancor::Error>(&script)?.iter());
+                            bytes.extend(UnversionedArchiver::new(script).serialize().caused_by(trc::location!())?);
                             bytes.into()
                         }
                         Err(err) => {

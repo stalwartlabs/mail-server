@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{
+    index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue, VisitText},
+    ingest::{EmailIngest, IngestedEmail, ThreadResult},
+    metadata::{MessageData, MessageMetadata},
+};
+use crate::mailbox::UidMailbox;
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::{
     error::set::SetError,
@@ -22,14 +28,6 @@ use store::{
     write::{BatchBuilder, TaskQueueClass, ValueClass},
 };
 use trc::AddContext;
-
-use crate::{cache::MessageCacheFetch, mailbox::UidMailbox};
-
-use super::{
-    index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue, VisitText},
-    ingest::{EmailIngest, IngestedEmail, ThreadResult},
-    metadata::{MessageData, MessageMetadata},
-};
 
 pub trait EmailCopy: Sync + Send {
     #[allow(clippy::too_many_arguments)]
@@ -145,10 +143,10 @@ impl EmailCopy for Server {
             ThreadResult::Id(thread_id) => (false, thread_id),
             ThreadResult::Create => (
                 true,
-                self.get_cached_messages(account_id)
+                self.store()
+                    .assign_document_ids(account_id, Collection::Thread, 1)
                     .await
-                    .caused_by(trc::location!())?
-                    .assign_thread_id(subject.as_bytes(), message_id.as_bytes()),
+                    .caused_by(trc::location!())?,
             ),
             ThreadResult::Skip => unreachable!(),
         };

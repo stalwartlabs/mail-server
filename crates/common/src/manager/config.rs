@@ -133,7 +133,7 @@ impl ConfigManager {
         Ok(grouped)
     }
 
-    async fn db_list(
+    pub async fn db_list(
         &self,
         prefix: &str,
         strip_prefix: bool,
@@ -530,7 +530,6 @@ impl Patterns {
                 Pattern::Include(MatchType::StartsWith(
                     "authentication.fallback-admin.".to_string(),
                 )),
-                Pattern::Exclude(MatchType::Equal("cluster.key".to_string())),
                 Pattern::Include(MatchType::StartsWith("cluster.".to_string())),
                 Pattern::Include(MatchType::Equal("storage.data".to_string())),
                 Pattern::Include(MatchType::Equal("storage.blob".to_string())),

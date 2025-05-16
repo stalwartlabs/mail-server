@@ -4308,6 +4308,7 @@ dependencies = [
  "jmap",
  "jmap_proto",
  "managesieve",
+ "migration",
  "pop3",
  "services",
  "smtp",
@@ -4425,6 +4426,32 @@ name = "memsec"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c797b9d6bb23aab2fc369c65f871be49214f5c759af65bde26ffaaa2b646b492"
+
+[[package]]
+name = "migration"
+version = "0.11.7"
+dependencies = [
+ "base64 0.22.1",
+ "bincode 1.3.3",
+ "common",
+ "compact_str",
+ "directory",
+ "email",
+ "jmap_proto",
+ "lz4_flex",
+ "mail-auth",
+ "mail-parser 0.11.0",
+ "nlp",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "sieve-rs",
+ "smtp",
+ "store",
+ "tokio",
+ "trc",
+ "utils",
+]
 
 [[package]]
 name = "mime"
@@ -7090,6 +7117,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7d3950ab75b03c52f2f13fd52aab91c9d62698b231b67240e85c3ef5301e63e"
 dependencies = [
  "rkyv",
+ "serde",
 ]
 
 [[package]]
@@ -7457,6 +7485,7 @@ dependencies = [
  "mail-parser 0.11.0",
  "mail-send",
  "managesieve",
+ "migration",
  "nlp",
  "num_cpus",
  "pop3",

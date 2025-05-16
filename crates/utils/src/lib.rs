@@ -140,6 +140,10 @@ impl HttpLimitResponse for Response {
 pub struct Semver(u64);
 
 impl Semver {
+    pub fn current() -> Self {
+        env!("CARGO_PKG_VERSION").try_into().unwrap()
+    }
+
     pub fn new(major: u16, minor: u16, patch: u16) -> Self {
         let mut version: u64 = 0;
         version |= (major as u64) << 32;

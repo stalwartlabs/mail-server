@@ -24,7 +24,7 @@ use std::{borrow::Cow, collections::VecDeque};
 use store::{SERIALIZE_MESSAGE_DATA_V1, SERIALIZE_MESSAGE_METADATA_V1, SerializedVersion};
 use utils::BlobHash;
 
-#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug)]
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Default)]
 pub struct MessageData {
     pub mailboxes: Vec<UidMailbox>,
     pub keywords: Vec<Keyword>,

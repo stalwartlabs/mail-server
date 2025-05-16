@@ -24,7 +24,7 @@ mail-auth = { version = "0.7", features = ["rkyv"] }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 mail-parser = { version = "0.11", features = ["full_encoding"] } 
 mail-builder = { version = "0.4" } 
-smtp-proto = { version = "0.1.6", features = ["rkyv"] }
+smtp-proto = { version = "0.1.6", features = ["rkyv", "serde"] }
 sieve-rs = { version = "0.7", features = ["rkyv"] } 
 ahash = { version = "0.8" }
 rustls = { version = "0.23.5", default-features = false, features = ["std", "ring", "tls12"] }

@@ -38,7 +38,6 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
-use store::roaring::RoaringBitmap;
 use tinyvec::TinyVec;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
@@ -71,6 +70,8 @@ pub static VERSION_PUBLIC: &str = "1.0.0";
 pub static USER_AGENT: &str = "Stalwart/1.0.0";
 pub static DAEMON_NAME: &str = concat!("Stalwart v", env!("CARGO_PKG_VERSION"),);
 pub static PROD_ID: &str = "-//Stalwart Labs Ltd.//Stalwart Server//EN";
+
+pub const DATABASE_SCHEMA_VERSION: u32 = 1;
 
 pub const LONG_1D_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 pub const LONG_1Y_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
@@ -774,41 +775,6 @@ impl std::borrow::Borrow<u32> for DavResource {
 impl DavName {
     pub fn new(name: String, parent_id: u32) -> Self {
         Self { name, parent_id }
-    }
-}
-
-impl MessageStoreCache {
-    pub fn assign_thread_id(&self, thread_name: &[u8], message_id: &[u8]) -> u32 {
-        let mut bytes = Vec::with_capacity(thread_name.len() + message_id.len());
-        bytes.extend_from_slice(thread_name);
-        bytes.extend_from_slice(message_id);
-        let mut hash = store::gxhash::gxhash32(&bytes, 791120);
-
-        if self.emails.items.is_empty() {
-            return hash;
-        }
-
-        // Naive pass, assume hash is unique
-        let mut threads_ids = RoaringBitmap::new();
-        let mut is_unique_hash = true;
-        for item in self.emails.items.iter() {
-            if is_unique_hash && item.thread_id != hash {
-                is_unique_hash = false;
-            }
-            threads_ids.insert(item.thread_id);
-        }
-
-        if is_unique_hash {
-            hash
-        } else {
-            for _ in 0..u32::MAX {
-                hash = hash.wrapping_add(1);
-                if !threads_ids.contains(hash) {
-                    return hash;
-                }
-            }
-            hash
-        }
     }
 }
 

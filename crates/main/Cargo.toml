@@ -33,6 +33,7 @@ groupware = { path = "../groupware" }
 services = { path = "../services" }
 trc = { path = "../trc" }
 utils = { path = "../utils" }
+migration = { path = "../migration" }
 tokio = { version = "1.23", features = ["full"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]

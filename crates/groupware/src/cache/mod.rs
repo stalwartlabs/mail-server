@@ -289,7 +289,7 @@ impl GroupwareCache for Server {
             let mut batch = BatchBuilder::new();
             let document_id = self
                 .store()
-                .assign_document_ids(account_id, Collection::Calendar, 1)
+                .assign_document_ids(account_id, Collection::Calendar, 3)
                 .await?;
             Calendar {
                 name: name.clone(),

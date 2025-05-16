@@ -5,6 +5,7 @@
  */
 
 use std::{
+    collections::BTreeMap,
     net::{IpAddr, Ipv4Addr},
     path::PathBuf,
     sync::Arc,
@@ -152,7 +153,6 @@ impl BootManager {
                 config.new_build_error("*", format!("Could not read configuration file: {err}"));
             }
         }
-        let cfg_local = config.keys.clone();
 
         // Resolve environment macros
         config.resolve_macros(&["env"]).await;
@@ -168,12 +168,33 @@ impl BootManager {
 
         // Load stores
         let mut stores = Stores::parse(&mut config).await;
+        let local_patterns = Patterns::parse(&mut config);
+
+        // Build local keys and warn about database keys defined in the local configuration
+        let mut cfg_local = BTreeMap::new();
+        let mut warn_keys = Vec::new();
+        for (key, value) in &config.keys {
+            if !local_patterns.is_local_key(key) {
+                warn_keys.push(key.clone());
+            }
+            cfg_local.insert(key.clone(), value.clone());
+        }
+        for warn_key in warn_keys {
+            config.new_build_warning(
+                warn_key,
+                concat!(
+                    "Database key defined in local configuration, this might cause issues. ",
+                    "See https://stalw.art/docs/configuration/overview/#loc",
+                    "al-and-database-settings"
+                ),
+            );
+        }
 
         // Build manager
         let manager = ConfigManager {
             cfg_local: ArcSwap::from_pointee(cfg_local),
             cfg_local_path,
-            cfg_local_patterns: Patterns::parse(&mut config).into(),
+            cfg_local_patterns: local_patterns.into(),
             cfg_store: config
                 .value("storage.data")
                 .and_then(|id| stores.stores.get(id))
@@ -183,10 +204,24 @@ impl BootManager {
 
         // Extend configuration with settings stored in the db
         if !manager.cfg_store.is_none() {
-            manager
-                .extend_config(&mut config, "")
+            for (key, value) in manager
+                .db_list("", false)
                 .await
-                .failed("Failed to read configuration");
+                .failed("Failed to read database configuration")
+            {
+                if manager.cfg_local_patterns.is_local_key(&key) {
+                    config.new_build_warning(
+                        &key,
+                        concat!(
+                            "Local key defined in database, this might cause issues. ",
+                            "See https://stalw.art/docs/configuration/overview/#loc",
+                            "al-and-database-settings"
+                        ),
+                    );
+                }
+
+                config.keys.entry(key).or_insert(value);
+            }
         }
 
         // Parse telemetry
@@ -213,25 +248,9 @@ impl BootManager {
                     )));
                 }
 
-                // Generate a Cluster encryption key if missing
-                if config
-                    .value("cluster.key")
-                    .filter(|v| !v.is_empty())
-                    .is_none()
-                {
-                    insert_keys.push(ConfigKey::from((
-                        "cluster.key",
-                        rng()
-                            .sample_iter(Alphanumeric)
-                            .take(64)
-                            .map(char::from)
-                            .collect::<String>(),
-                    )));
-                }
-
                 // Download Spam filter rules if missing
                 // TODO remove this check in 1.0
-                let mut update_webadmin = match config.value("version.spam-filter").and_then(|v| {
+                let update_webadmin = match config.value("version.spam-filter").and_then(|v| {
                     if !v.is_empty() {
                         Some(Semver::try_from(v))
                     } else {
@@ -248,7 +267,6 @@ impl BootManager {
                             .await;
                         let _ = manager.clear_prefix("sieve.trusted.scripts.greylist").await;
                         let _ = manager.clear_prefix("sieve.trusted.scripts.train").await;
-                        //let _ = manager.clear_prefix("session.data.script").await;
                         let _ = manager.clear("version.spam-filter").await;
 
                         match manager.fetch_spam_rules().await {
@@ -309,18 +327,6 @@ impl BootManager {
                         false
                     }
                 };
-
-                // TODO remove key migration in 1.0
-                for (old_key, new_key) in [
-                    ("lookup.default.hostname", "server.hostname"),
-                    ("lookup.default.domain", "report.domain"),
-                ] {
-                    if let (Some(old_value), None) = (config.value(old_key), config.value(new_key))
-                    {
-                        insert_keys.push(ConfigKey::from((new_key, old_value)));
-                        update_webadmin = true;
-                    }
-                }
 
                 // Download webadmin if missing
                 if let Some(blob_store) = config

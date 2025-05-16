@@ -6,8 +6,6 @@
 
 #![warn(clippy::large_futures)]
 
-use std::time::Duration;
-
 use common::{config::server::ServerProtocol, core::BuildServer, manager::boot::BootManager};
 use http::HttpSessionManager;
 use imap::core::ImapSessionManager;
@@ -15,6 +13,7 @@ use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use services::{StartServices, broadcast::subscriber::spawn_broadcast_subscriber};
 use smtp::{StartQueueManager, core::SmtpSessionManager};
+use std::time::Duration;
 use trc::Collector;
 use utils::wait_for_shutdown;
 
@@ -30,6 +29,16 @@ async fn main() -> std::io::Result<()> {
     // Load config and apply macros
     let mut init = Box::pin(BootManager::init()).await;
 
+    // Migrate database
+    if let Err(err) = migration::try_migrate(&init.inner.build_server()).await {
+        trc::event!(
+            Server(trc::ServerEvent::StartupError),
+            Details = "Failed to migrate database, aborting startup.",
+            Reason = err,
+        );
+        return Ok(());
+    }
+
     // Init services
     init.start_services().await;
     init.start_queue_manager();
@@ -38,13 +47,9 @@ async fn main() -> std::io::Result<()> {
     init.config.log_errors();
     init.config.log_warnings();
 
-    {
-        let server = init.inner.build_server();
-
-        // Log licensing information
-        #[cfg(feature = "enterprise")]
-        server.log_license_details();
-    }
+    // Log licensing information
+    #[cfg(feature = "enterprise")]
+    init.inner.build_server().log_license_details();
 
     // Spawn servers
     let (shutdown_tx, shutdown_rx) = init.servers.spawn(|server, acceptor, shutdown_rx| {

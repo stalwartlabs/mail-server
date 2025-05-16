@@ -27,7 +27,10 @@ use jmap_proto::{
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use std::future::Future;
-use store::write::BatchBuilder;
+use store::{
+    Serialize,
+    write::{BatchBuilder, UnversionedArchiver},
+};
 use trc::AddContext;
 
 pub trait VacationResponseSet: Sync + Send {
@@ -436,7 +439,11 @@ impl VacationResponseSet for Server {
                 obj.size = script.len() as u32;
 
                 // Serialize script
-                script.extend(rkyv::to_bytes::<rkyv::rancor::Error>(&compiled_script)?.iter());
+                script.extend(
+                    UnversionedArchiver::new(compiled_script)
+                        .serialize()
+                        .caused_by(trc::location!())?,
+                );
 
                 Ok(script)
             }

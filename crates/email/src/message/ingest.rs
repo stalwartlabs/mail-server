@@ -330,13 +330,10 @@ impl EmailIngest for Server {
                 ThreadResult::Id(thread_id) => thread_id,
                 ThreadResult::Create => {
                     log_thread_create = true;
-                    self.get_cached_messages(account_id)
+                    self.store()
+                        .assign_document_ids(account_id, Collection::Thread, 1)
                         .await
                         .caused_by(trc::location!())?
-                        .assign_thread_id(
-                            subject.as_bytes(),
-                            message_id.as_deref().unwrap_or_default().as_bytes(),
-                        )
                 }
                 ThreadResult::Skip => {
                     // Duplicate message

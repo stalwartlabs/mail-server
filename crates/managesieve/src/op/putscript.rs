@@ -12,7 +12,11 @@ use imap_proto::receiver::Request;
 use jmap_proto::types::{collection::Collection, property::Property};
 use sieve::compiler::ErrorType;
 use std::time::Instant;
-use store::{query::Filter, write::BatchBuilder};
+use store::{
+    Serialize,
+    query::Filter,
+    write::{BatchBuilder, UnversionedArchiver},
+};
 use trc::AddContext;
 
 impl<T: SessionStream> Session<T> {
@@ -75,10 +79,9 @@ impl<T: SessionStream> Session<T> {
         {
             Ok(compiled_script) => {
                 script_bytes.extend(
-                    rkyv::to_bytes::<rkyv::rancor::Error>(&compiled_script)
-                        .map_err(Into::into)
-                        .caused_by(trc::location!())?
-                        .iter(),
+                    UnversionedArchiver::new(compiled_script)
+                        .serialize()
+                        .caused_by(trc::location!())?,
                 );
             }
             Err(err) => {

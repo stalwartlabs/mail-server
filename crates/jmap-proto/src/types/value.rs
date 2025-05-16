@@ -298,6 +298,7 @@ impl Value {
     pub fn as_uint(&self) -> Option<u64> {
         match self {
             Value::UnsignedInt(u) => Some(*u),
+            Value::Id(id) => Some(*id.as_ref()),
             _ => None,
         }
     }

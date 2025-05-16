@@ -4,14 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
-use utils::config::{Config, cron::SimpleCron, utils::ParseValue};
-
 use crate::{
-    BlobStore, CompressionAlgo, InMemoryStore, PubSubStore, PurgeSchedule, PurgeStore, Store,
-    Stores, backend::fs::FsStore,
+    BlobStore, CompressionAlgo, InMemoryStore, PurgeSchedule, PurgeStore, Store, Stores,
+    backend::fs::FsStore,
 };
+use utils::config::{Config, cron::SimpleCron, utils::ParseValue};
 
 #[cfg(feature = "enterprise")]
 enum CompositeStore {
@@ -208,20 +205,22 @@ impl Stores {
                 "redis" => {
                     if let Some(db) = crate::backend::redis::RedisStore::open(config, prefix)
                         .await
-                        .map(Arc::new)
+                        .map(std::sync::Arc::new)
                     {
                         self.in_memory_stores
                             .insert(store_id.clone(), InMemoryStore::Redis(db.clone()));
-                        self.pubsub_stores.insert(store_id, PubSubStore::Redis(db));
+                        self.pubsub_stores
+                            .insert(store_id, crate::PubSubStore::Redis(db));
                     }
                 }
                 #[cfg(feature = "nats")]
                 "nats" => {
                     if let Some(db) = crate::backend::nats::NatsStore::open(config, prefix)
                         .await
-                        .map(Arc::new)
+                        .map(std::sync::Arc::new)
                     {
-                        self.pubsub_stores.insert(store_id, PubSubStore::Nats(db));
+                        self.pubsub_stores
+                            .insert(store_id, crate::PubSubStore::Nats(db));
                     }
                 }
                 #[cfg(feature = "enterprise")]

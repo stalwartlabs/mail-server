@@ -41,7 +41,9 @@ struct ReportData<'x> {
     data: &'x [u8],
 }
 
-#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, serde::Serialize)]
+#[derive(
+    rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, serde::Serialize, serde::Deserialize,
+)]
 pub struct IncomingReport<T> {
     pub from: String,
     pub to: Vec<String>,
