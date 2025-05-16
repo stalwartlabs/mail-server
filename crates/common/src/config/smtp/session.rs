@@ -667,8 +667,11 @@ impl Default for SessionConfig {
                 mechanisms: IfBlock::new::<Mechanism>(
                     "session.auth.mechanisms",
                     [
-                        ("local_port != 25 && is_tls", "[plain, login, oauthbearer]"),
-                        ("local_port != 25", "[oauthbearer]"),
+                        (
+                            "local_port != 25 && is_tls",
+                            "[plain, login, oauthbearer, xoauth2]",
+                        ),
+                        ("local_port != 25", "[oauthbearer, xoauth2]"),
                     ],
                     "false",
                 ),

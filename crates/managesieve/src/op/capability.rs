@@ -22,9 +22,9 @@ impl<T: SessionStream> Session<T> {
             response.extend_from_slice(b"\"STARTTLS\"\r\n");
         }
         if self.stream.is_tls() || self.server.core.imap.allow_plain_auth {
-            response.extend_from_slice(b"\"SASL\" \"PLAIN OAUTHBEARER\"\r\n");
+            response.extend_from_slice(b"\"SASL\" \"PLAIN OAUTHBEARER XOAUTH2\"\r\n");
         } else {
-            response.extend_from_slice(b"\"SASL\" \"OAUTHBEARER\"\r\n");
+            response.extend_from_slice(b"\"SASL\" \"OAUTHBEARER XOAUTH2\"\r\n");
         };
         if let Some(sieve) =
             self.server

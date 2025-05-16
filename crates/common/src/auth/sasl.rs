@@ -30,36 +30,6 @@ pub fn sasl_decode_challenge_plain(challenge: &[u8]) -> Option<Credentials<Strin
     }
 }
 
-pub fn sasl_decode_challenge_xoauth(challenge: &[u8]) -> Option<Credentials<String>> {
-    let mut b_username = Vec::new();
-    let mut b_secret = Vec::new();
-    let mut arg_num = 0;
-    let mut in_arg = false;
-
-    for &ch in challenge {
-        if in_arg {
-            if ch != 1 {
-                if arg_num == 1 {
-                    b_username.push(ch);
-                } else if arg_num == 2 {
-                    b_secret.push(ch);
-                }
-            } else {
-                in_arg = false;
-            }
-        } else if ch == b'=' {
-            arg_num += 1;
-            in_arg = true;
-        }
-    }
-    match (String::from_utf8(b_username), String::from_utf8(b_secret)) {
-        (Ok(s_username), Ok(s_secret)) if !s_username.is_empty() => {
-            Some((s_username, s_secret).into())
-        }
-        _ => None,
-    }
-}
-
 pub fn sasl_decode_challenge_oauth(challenge: &[u8]) -> Option<Credentials<String>> {
     extract_oauth_bearer(challenge).map(|s| Credentials::OAuthBearer { token: s.into() })
 }
@@ -86,6 +56,7 @@ fn extract_oauth_bearer(bytes: &[u8]) -> Option<&str> {
 
     None
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

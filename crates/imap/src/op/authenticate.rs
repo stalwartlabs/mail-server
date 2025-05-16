@@ -29,7 +29,7 @@ impl<T: SessionStream> Session<T> {
         let mut args = request.parse_authenticate()?;
 
         match args.mechanism {
-            Mechanism::Plain | Mechanism::OAuthBearer => {
+            Mechanism::Plain | Mechanism::OAuthBearer | Mechanism::XOauth2 => {
                 if !args.params.is_empty() {
                     let challenge = base64_decode(args.params.pop().unwrap().as_bytes())
                         .ok_or_else(|| {

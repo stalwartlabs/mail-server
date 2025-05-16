@@ -7,9 +7,7 @@
 use common::{
     auth::{
         AuthRequest,
-        sasl::{
-            sasl_decode_challenge_oauth, sasl_decode_challenge_plain, sasl_decode_challenge_xoauth,
-        },
+        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
     },
     listener::SessionStream,
 };
@@ -38,18 +36,10 @@ impl SaslToken {
                 },
             }
             .into(),
-            AUTH_OAUTHBEARER => SaslToken {
+            AUTH_OAUTHBEARER | AUTH_XOAUTH2 => SaslToken {
                 mechanism,
                 credentials: Credentials::OAuthBearer {
                     token: String::new(),
-                },
-            }
-            .into(),
-            AUTH_XOAUTH2 => SaslToken {
-                mechanism,
-                credentials: Credentials::XOauth2 {
-                    username: String::new(),
-                    secret: String::new(),
                 },
             }
             .into(),
@@ -96,17 +86,11 @@ impl<T: SessionStream> Session<T> {
                             .await
                     };
                 }
-                (AUTH_OAUTHBEARER, _) => {
+                (AUTH_OAUTHBEARER | AUTH_XOAUTH2, _) => {
                     if let Some(credentials) = sasl_decode_challenge_oauth(&response) {
                         return self.authenticate(credentials).await;
                     }
                 }
-                (AUTH_XOAUTH2, _) => {
-                    if let Some(credentials) = sasl_decode_challenge_xoauth(&response) {
-                        return self.authenticate(credentials).await;
-                    }
-                }
-
                 _ => (),
             }
         }

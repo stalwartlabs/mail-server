@@ -176,8 +176,9 @@ impl Capability {
             ]);
         } else {
             capabilities.extend([
-                Capability::Auth(Mechanism::OAuthBearer),
                 Capability::Auth(Mechanism::Plain),
+                Capability::Auth(Mechanism::OAuthBearer),
+                Capability::Auth(Mechanism::XOauth2),
             ]);
         }
         if offer_tls {
