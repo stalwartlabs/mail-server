@@ -392,11 +392,7 @@ impl<T: SessionStream> Session<T> {
                     let now = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .map_or(0, |d| d.as_secs());
-                    if from.hold_until > now {
-                        from.hold_until - now
-                    } else {
-                        0
-                    }
+                    from.hold_until.saturating_sub(now)
                 };
                 if hold_for <= max_hold {
                     self.data.future_release = hold_for;

@@ -258,8 +258,7 @@ impl Subscriber {
 
     #[cfg(all(unix, not(target_os = "linux")))]
     fn send_large_payload(&self, _payload: &[u8]) -> io::Result<usize> {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
+        Err(std::io::Error::other(
             "Large payloads not supported on non-Linux OS",
         ))
     }

@@ -321,7 +321,7 @@ impl io::Write for SerializedSize {
             self.bytes_left -= buf_len;
             Ok(buf_len)
         } else {
-            Err(io::Error::new(io::ErrorKind::Other, "Size exceeded"))
+            Err(io::Error::other("Size exceeded"))
         }
     }
 

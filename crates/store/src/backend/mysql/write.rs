@@ -174,8 +174,7 @@ impl MysqlStore {
                             result.push_counter_id(
                                 trx.exec_first::<i64, _, _>(&s, ()).await?.ok_or_else(|| {
                                     mysql_async::Error::Io(mysql_async::IoError::Io(
-                                        std::io::Error::new(
-                                            std::io::ErrorKind::Other,
+                                        std::io::Error::other(
                                             "LAST_INSERT_ID() did not return a value",
                                         ),
                                     ))

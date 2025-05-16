@@ -602,7 +602,7 @@ impl PrincipalSet {
     pub fn has_int_value(&self, key: PrincipalField, value: u64) -> bool {
         self.fields.get(&key).is_some_and(|v| match v {
             PrincipalValue::Integer(v) => *v == value,
-            PrincipalValue::IntegerList(l) => l.iter().any(|v| *v == value),
+            PrincipalValue::IntegerList(l) => l.contains(&value),
             PrincipalValue::String(_) | PrincipalValue::StringList(_) => false,
         })
     }

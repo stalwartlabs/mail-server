@@ -52,6 +52,7 @@ pub enum Capability {
     Quota,
     QuotaResource(QuotaResourceName),
     QuotaSet,
+    JmapAccess,
 }
 
 /*
@@ -126,6 +127,7 @@ impl Capability {
                 return;
             }
             Capability::QuotaSet => b"QUOTA=SET",
+            Capability::JmapAccess => b"JMAPACCESS",
         });
     }
 
@@ -138,6 +140,7 @@ impl Capability {
             Capability::LiteralPlus,
             Capability::Id,
             Capability::Utf8Accept,
+            Capability::JmapAccess,
         ];
 
         if is_authenticated {

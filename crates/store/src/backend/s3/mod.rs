@@ -179,7 +179,7 @@ impl S3Store {
     fn build_key(&self, key: &[u8]) -> String {
         if let Some(prefix) = &self.prefix {
             let mut writer =
-                Base32Writer::with_raw_capacity(prefix.len() + ((key.len() + 3) / 4 * 5));
+                Base32Writer::with_raw_capacity(prefix.len() + (key.len().div_ceil(4) * 5));
             writer.push_string(prefix);
             writer.write_all(key).unwrap();
             writer.finalize()

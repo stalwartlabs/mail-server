@@ -347,7 +347,7 @@ async fn https(
 }
 
 fn get_header(response: &Response, header: &'static str) -> trc::Result<String> {
-    match response.headers().get_all(header).iter().last() {
+    match response.headers().get_all(header).iter().next_back() {
         Some(value) => Ok(value
             .to_str()
             .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_http_str_error(err))?

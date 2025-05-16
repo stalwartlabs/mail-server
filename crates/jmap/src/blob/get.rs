@@ -85,8 +85,7 @@ impl BlobOperations for Server {
                     } else {
                         range_to
                     };
-                    let bytes_range = bytes.get(range_from..range_to).unwrap_or_default();
-                    bytes_range
+                    bytes.get(range_from..range_to).unwrap_or_default()
                 };
 
                 for property in &properties {

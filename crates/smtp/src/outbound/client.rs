@@ -604,6 +604,7 @@ impl SmtpClient<TlsStream<TcpStream>> {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum StartTlsResult {
     Success {
         smtp_client: SmtpClient<TlsStream<TcpStream>>,

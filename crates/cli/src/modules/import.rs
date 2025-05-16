@@ -1019,9 +1019,7 @@ impl Iterator for Mailbox {
                     internal_date: m.internal_date(),
                     contents: m.unwrap_contents(),
                 })
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::Other, "Failed to parse from mbox file.")
-                })
+                .map_err(|_| std::io::Error::other("Failed to parse from mbox file."))
             }),
             Mailbox::Maildir(it) => it.next().map(|r| {
                 r.map(|m| Message {
