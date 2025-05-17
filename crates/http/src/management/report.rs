@@ -18,8 +18,7 @@ use std::future::Future;
 use store::{
     Deserialize, IterateParams, Key, U64_LEN, ValueKey,
     write::{
-        AlignedBytes, BatchBuilder, ReportClass, UnversionedArchive, ValueClass,
-        key::DeserializeBigEndian,
+        AlignedBytes, Archive, BatchBuilder, ReportClass, ValueClass, key::DeserializeBigEndian,
     },
 };
 use trc::AddContext;
@@ -289,7 +288,7 @@ where
 {
     if let Some(tls) = server
         .store()
-        .get_value::<UnversionedArchive<AlignedBytes>>(key)
+        .get_value::<Archive<AlignedBytes>>(key)
         .await?
     {
         tls.deserialize::<T>().map(Some)
@@ -379,8 +378,7 @@ async fn fetch_incoming_reports(
                 last_id = id;
 
                 // TODO: Support filtering chunked records (over 10MB) on FDB
-                let archive =
-                    <UnversionedArchive<AlignedBytes> as Deserialize>::deserialize(value)?;
+                let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?;
                 let matches = if has_filters {
                     match typ {
                         ReportType::Dmarc => {

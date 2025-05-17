@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
+use crate::auth::oauth::OAuthStatus;
 use common::{
     KV_OAUTH, Server,
     auth::{
@@ -13,13 +12,15 @@ use common::{
         oauth::{CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, USER_CODE_ALPHABET, USER_CODE_LEN},
     },
 };
+use http_proto::*;
 use serde::Deserialize;
 use serde_json::json;
 use std::future::Future;
+use std::sync::Arc;
 use store::{
     Serialize,
     dispatch::lookup::KeyValue,
-    write::{UnversionedArchive, UnversionedArchiver},
+    write::{Archive, Archiver},
 };
 use store::{
     rand::{
@@ -30,9 +31,6 @@ use store::{
     write::AlignedBytes,
 };
 use trc::AddContext;
-
-use crate::auth::oauth::OAuthStatus;
-use http_proto::*;
 
 use super::{DeviceAuthResponse, FormData, MAX_POST_LEN, OAuthCode, OAuthCodeRequest};
 
@@ -109,13 +107,14 @@ impl OAuthApiHandler for Server {
                     .collect::<String>();
 
                 // Serialize OAuth code
-                let value = UnversionedArchiver::new(OAuthCode {
+                let value = Archiver::new(OAuthCode {
                     status: OAuthStatus::Authorized,
                     account_id: access_token.primary_id(),
                     client_id,
                     nonce,
                     params: redirect_uri.unwrap_or_default(),
                 })
+                .untrusted()
                 .serialize()
                 .caused_by(trc::location!())?;
 
@@ -151,7 +150,7 @@ impl OAuthApiHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<UnversionedArchive<AlignedBytes>>(KeyValue::<()>::build_key(
+                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         code.as_bytes(),
                     ))
@@ -185,7 +184,8 @@ impl OAuthApiHandler for Server {
                                 KeyValue::with_prefix(
                                     KV_OAUTH,
                                     oauth.params.as_bytes(),
-                                    UnversionedArchiver::new(new_oauth_code)
+                                    Archiver::new(new_oauth_code)
+                                        .untrusted()
                                         .serialize()
                                         .caused_by(trc::location!())?,
                                 )
@@ -243,13 +243,14 @@ impl OAuthApiHandler for Server {
         }
 
         // Add OAuth status
-        let oauth_code = UnversionedArchiver::new(OAuthCode {
+        let oauth_code = Archiver::new(OAuthCode {
             status: OAuthStatus::Pending,
             account_id: u32::MAX,
             client_id,
             nonce,
             params: device_code.clone(),
         })
+        .untrusted()
         .serialize()
         .caused_by(trc::location!())?;
 

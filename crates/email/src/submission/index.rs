@@ -73,4 +73,8 @@ impl IndexableObject for &ArchivedEmailSubmission {
     }
 }
 
-impl IndexableAndSerializableObject for EmailSubmission {}
+impl IndexableAndSerializableObject for EmailSubmission {
+    fn is_versioned() -> bool {
+        false
+    }
+}

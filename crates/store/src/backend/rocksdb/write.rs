@@ -19,13 +19,15 @@ use rocksdb::{
 use super::{CF_INDEXES, CF_LOGS, CfHandle, RocksDbStore, into_error};
 use crate::{
     Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER,
-    SUBSPACE_QUOTA,
+    SUBSPACE_QUOTA, U64_LEN,
     backend::deserialize_i64_le,
-    write::{AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueOp},
+    write::{
+        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueClass, ValueOp,
+    },
 };
 
 impl RocksDbStore {
-    pub(crate) async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
+    pub(crate) async fn write(&self, mut batch: Batch<'_>) -> trc::Result<AssignedIds> {
         let db = self.db.clone();
 
         self.spawn_worker(move || {
@@ -34,7 +36,7 @@ impl RocksDbStore {
                 cf_indexes: db.cf_handle(CF_INDEXES).unwrap(),
                 cf_logs: db.cf_handle(CF_LOGS).unwrap(),
                 txn_opts: OptimisticTransactionOptions::default(),
-                batch: &batch,
+                batch: &mut batch,
             };
             txn.txn_opts.set_snapshot(true);
 
@@ -119,12 +121,12 @@ impl RocksDbStore {
     }
 }
 
-struct RocksDBTransaction<'x> {
+struct RocksDBTransaction<'x, 'y> {
     db: &'x OptimisticTransactionDB,
     cf_indexes: Arc<BoundColumnFamily<'x>>,
     cf_logs: Arc<BoundColumnFamily<'x>>,
     txn_opts: OptimisticTransactionOptions,
-    batch: &'x Batch<'x>,
+    batch: &'x mut Batch<'y>,
 }
 
 enum CommitError {
@@ -132,23 +134,49 @@ enum CommitError {
     RocksDB(rocksdb::Error),
 }
 
-impl RocksDBTransaction<'_> {
-    fn commit(&self) -> Result<AssignedIds, CommitError> {
+impl RocksDBTransaction<'_, '_> {
+    fn commit(&mut self) -> Result<AssignedIds, CommitError> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
+        let mut change_id = 0u64;
         let mut result = AssignedIds::default();
+        let has_changes = !self.batch.changes.is_empty();
 
         let txn = self
             .db
             .transaction_opt(&WriteOptions::default(), &self.txn_opts);
 
-        for op in self.batch.ops {
+        if has_changes {
+            let cf = self.db.cf_handle("n").unwrap();
+            for &account_id in self.batch.changes.keys() {
+                let key = ValueClass::ChangeId.serialize(account_id, 0, 0, 0);
+                let change_id = txn
+                    .get_pinned_for_update_cf(&cf, &key, true)
+                    .map_err(CommitError::from)
+                    .and_then(|bytes| {
+                        if let Some(bytes) = bytes {
+                            deserialize_i64_le(&key, &bytes)
+                                .map(|v| v + 1)
+                                .map_err(CommitError::from)
+                        } else {
+                            Ok(1)
+                        }
+                    })?;
+                txn.put_cf(&cf, &key, &change_id.to_le_bytes()[..])?;
+                result.push_change_id(account_id, change_id as u64);
+            }
+        }
+
+        for op in self.batch.ops.iter_mut() {
             match op {
                 Operation::AccountId {
                     account_id: account_id_,
                 } => {
                     account_id = *account_id_;
+                    if has_changes {
+                        change_id = result.last_change_id(account_id)?;
+                    }
                 }
                 Operation::Collection {
                     collection: collection_,
@@ -165,7 +193,15 @@ impl RocksDBTransaction<'_> {
                     let cf = self.db.subspace_handle(class.subspace(collection));
 
                     match op {
-                        ValueOp::Set(value) => {
+                        ValueOp::Set {
+                            value,
+                            version_offset,
+                        } => {
+                            if let Some(offset) = version_offset {
+                                value[*offset..*offset + U64_LEN]
+                                    .copy_from_slice(&change_id.to_be_bytes());
+                            }
+
                             txn.put_cf(&cf, &key, value)?;
                         }
                         ValueOp::AtomicAdd(by) => {
@@ -198,7 +234,7 @@ impl RocksDBTransaction<'_> {
                         collection,
                         document_id,
                         field: *field,
-                        key,
+                        key: &*key,
                     }
                     .serialize(0);
 
@@ -218,15 +254,11 @@ impl RocksDBTransaction<'_> {
                         txn.delete_cf(&cf, &key)?;
                     }
                 }
-                Operation::Log {
-                    collection,
-                    change_id,
-                    set,
-                } => {
+                Operation::Log { collection, set } => {
                     let key = LogKey {
                         account_id,
                         collection: *collection,
-                        change_id: *change_id,
+                        change_id,
                     }
                     .serialize(0);
 

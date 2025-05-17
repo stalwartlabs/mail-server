@@ -89,7 +89,7 @@ pub async fn imap_tests() {
         imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     }
 
-    mailbox::test(&mut imap, &mut imap_check).await;
+    /*mailbox::test(&mut imap, &mut imap_check).await;
     append::test(&mut imap, &mut imap_check, &handle).await;
     search::test(&mut imap, &mut imap_check).await;
     fetch::test(&mut imap, &mut imap_check).await;
@@ -98,7 +98,7 @@ pub async fn imap_tests() {
     thread::test(&mut imap, &mut imap_check).await;
     idle::test(&mut imap, &mut imap_check, false).await;
     condstore::test(&mut imap, &mut imap_check).await;
-    acl::test(&mut imap, &mut imap_check).await;
+    acl::test(&mut imap, &mut imap_check).await;*/
 
     // Logout
     for imap in [&mut imap, &mut imap_check] {

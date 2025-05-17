@@ -926,10 +926,6 @@ impl EmailSet for Server {
                 }
             }
 
-            // Update change id
-            new_data.change_id = batch.change_id();
-            last_change_id = new_data.change_id.into();
-
             // Write changes
             batch
                 .with_account_id(account_id)
@@ -951,8 +947,14 @@ impl EmailSet for Server {
                 batch.log_container_property_change(SyncCollection::Email, parent_id);
             }
 
-            match self.commit_batch(batch).await {
-                Ok(_) => {
+            match self
+                .commit_batch(batch)
+                .await
+                .and_then(|ids| ids.last_change_id(account_id))
+            {
+                Ok(change_id) => {
+                    last_change_id = change_id.into();
+
                     // Add to updated list
                     for id in will_update {
                         response.updated.append(id, None);
@@ -1012,8 +1014,12 @@ impl EmailSet for Server {
                     .emails_tombstone(account_id, &mut batch, destroy_ids)
                     .await?;
                 if !batch.is_empty() {
-                    last_change_id = batch.change_id().into();
-                    self.commit_batch(batch).await.caused_by(trc::location!())?;
+                    last_change_id = self
+                        .commit_batch(batch)
+                        .await
+                        .and_then(|ids| ids.last_change_id(account_id))
+                        .caused_by(trc::location!())?
+                        .into();
                 }
 
                 // Mark messages that were not found as not destroyed (this should not occur in practice)

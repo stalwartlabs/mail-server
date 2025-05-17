@@ -182,9 +182,12 @@ impl MailboxDestroy for Server {
         };
 
         if !batch.is_empty() {
-            let change_id = batch.change_id();
-            match self.commit_batch(batch).await {
-                Ok(_) => Ok(Ok(Some(change_id))),
+            match self
+                .commit_batch(batch)
+                .await
+                .and_then(|ids| ids.last_change_id(account_id))
+            {
+                Ok(change_id) => Ok(Ok(Some(change_id))),
                 Err(err) if err.is_assertion_failure() => Ok(Err(SetError::forbidden()
                     .with_description(concat!(
                         "Another process modified a message in this mailbox ",

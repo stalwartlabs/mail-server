@@ -541,7 +541,6 @@ impl<T: SessionStream> SessionData<T> {
                         .deserialize()
                         .imap_ctx(&arguments.tag, trc::location!())?;
                     new_data.keywords.push(Keyword::Seen);
-                    new_data.change_id = batch.change_id();
 
                     batch
                         .with_account_id(account_id)
@@ -560,14 +559,14 @@ impl<T: SessionStream> SessionData<T> {
 
         // Set Seen ids
         if !batch.is_empty() {
-            let change_id = batch.change_id();
             match self
                 .server
                 .commit_batch(batch)
                 .await
+                .and_then(|ids| ids.last_change_id(account_id))
                 .imap_ctx(&arguments.tag, trc::location!())
             {
-                Ok(_) => {
+                Ok(change_id) => {
                     modseq = change_id;
                 }
                 Err(err) => {

@@ -14,7 +14,7 @@ use common::expr::{self, functions::ResolveVariable, *};
 
 use compact_str::ToCompactString;
 use smtp_proto::{ArchivedResponse, Response};
-use store::{SERIALIZE_QUEUE_MSG_V1, SerializedVersion, write::now};
+use store::write::now;
 use utils::BlobHash;
 
 pub mod dsn;
@@ -77,12 +77,6 @@ pub struct Message {
     #[rkyv(with = rkyv::with::Skip)]
     #[serde(skip)]
     pub span_id: u64,
-}
-
-impl SerializedVersion for Message {
-    fn serialize_version() -> u8 {
-        SERIALIZE_QUEUE_MSG_V1
-    }
 }
 
 #[derive(

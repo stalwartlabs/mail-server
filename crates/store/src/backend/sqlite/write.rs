@@ -7,8 +7,8 @@
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::{
-    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
-    write::{AssignedIds, Batch, BitmapClass, Operation, ValueOp},
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U64_LEN,
+    write::{AssignedIds, Batch, BitmapClass, Operation, ValueClass, ValueOp},
 };
 
 use super::{SqliteStore, into_error};
@@ -20,17 +20,38 @@ impl SqliteStore {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
+            let mut change_id = 0u64;
             let trx = conn
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(into_error)?;
             let mut result = AssignedIds::default();
+            let has_changes = !batch.changes.is_empty();
 
-            for op in batch.ops {
+            if has_changes {
+                for &account_id in batch.changes.keys() {
+                    let key = ValueClass::ChangeId.serialize(account_id, 0, 0, 0);
+                    let change_id = trx
+                        .prepare_cached(concat!(
+                            "INSERT INTO n (k, v) VALUES (?, ?) ",
+                            "ON CONFLICT(k) DO UPDATE SET v = v + ",
+                            "excluded.v RETURNING v"
+                        ))
+                        .map_err(into_error)?
+                        .query_row(params![&key, &1i64], |row| row.get::<_, i64>(0))
+                        .map_err(into_error)?;
+                    result.push_change_id(account_id, change_id as u64);
+                }
+            }
+
+            for op in batch.ops.iter_mut() {
                 match op {
                     Operation::AccountId {
                         account_id: account_id_,
                     } => {
                         account_id = *account_id_;
+                        if has_changes {
+                            change_id = result.last_change_id(account_id)?;
+                        }
                     }
                     Operation::Collection {
                         collection: collection_,
@@ -47,7 +68,15 @@ impl SqliteStore {
                         let table = char::from(class.subspace(collection));
 
                         match op {
-                            ValueOp::Set(value) => {
+                            ValueOp::Set {
+                                value,
+                                version_offset,
+                            } => {
+                                if let Some(offset) = version_offset {
+                                    value[*offset..*offset + U64_LEN]
+                                        .copy_from_slice(&change_id.to_be_bytes());
+                                }
+
                                 trx.prepare_cached(&format!(
                                     "INSERT OR REPLACE INTO {} (k, v) VALUES (?, ?)",
                                     table
@@ -88,7 +117,7 @@ impl SqliteStore {
                                         table
                                     ))
                                     .map_err(into_error)?
-                                    .query_row(params![&key, &by], |row| row.get::<_, i64>(0))
+                                    .query_row(params![&key, &*by], |row| row.get::<_, i64>(0))
                                     .map_err(into_error)?,
                                 );
                             }
@@ -106,7 +135,7 @@ impl SqliteStore {
                             collection,
                             document_id,
                             field: *field,
-                            key,
+                            key: &*key,
                         }
                         .serialize(0);
 
@@ -149,15 +178,11 @@ impl SqliteStore {
                                 .map_err(into_error)?;
                         };
                     }
-                    Operation::Log {
-                        collection,
-                        change_id,
-                        set,
-                    } => {
+                    Operation::Log { collection, set } => {
                         let key = LogKey {
                             account_id,
                             collection: *collection,
-                            change_id: *change_id,
+                            change_id,
                         }
                         .serialize(0);
 

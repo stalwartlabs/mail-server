@@ -42,4 +42,8 @@ impl IndexableObject for &ArchivedMailbox {
     }
 }
 
-impl IndexableAndSerializableObject for Mailbox {}
+impl IndexableAndSerializableObject for Mailbox {
+    fn is_versioned() -> bool {
+        false
+    }
+}

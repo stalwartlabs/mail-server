@@ -22,7 +22,7 @@ use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
 use proc_macros::EnumMethods;
-use store::{SERIALIZE_PRINCIPAL_V1, SerializedVersion, Store};
+use store::Store;
 use trc::ipc::bitset::Bitset;
 
 pub mod backend;
@@ -44,12 +44,6 @@ pub struct Principal {
     pub quota: Option<u64>,
     pub tenant: Option<u32>,
     pub data: Vec<PrincipalData>,
-}
-
-impl SerializedVersion for Principal {
-    fn serialize_version() -> u8 {
-        SERIALIZE_PRINCIPAL_V1
-    }
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]

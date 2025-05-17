@@ -54,7 +54,11 @@ impl IndexableObject for &ArchivedAddressBook {
     }
 }
 
-impl IndexableAndSerializableObject for AddressBook {}
+impl IndexableAndSerializableObject for AddressBook {
+    fn is_versioned() -> bool {
+        true
+    }
+}
 
 impl IndexableObject for ContactCard {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -100,4 +104,8 @@ impl IndexableObject for &ArchivedContactCard {
     }
 }
 
-impl IndexableAndSerializableObject for ContactCard {}
+impl IndexableAndSerializableObject for ContactCard {
+    fn is_versioned() -> bool {
+        true
+    }
+}

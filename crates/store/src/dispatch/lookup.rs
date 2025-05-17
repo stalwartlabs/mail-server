@@ -37,12 +37,13 @@ impl InMemoryStore {
                 let mut batch = BatchBuilder::new();
                 batch.any_op(Operation::Value {
                     class: ValueClass::InMemory(InMemoryClass::Key(kv.key)),
-                    op: ValueOp::Set(
-                        KeySerializer::new(kv.value.len() + U64_LEN)
+                    op: ValueOp::Set {
+                        value: KeySerializer::new(kv.value.len() + U64_LEN)
                             .write(kv.expires.map_or(u64::MAX, |expires| now() + expires))
                             .write(kv.value.as_slice())
                             .finalize(),
-                    ),
+                        version_offset: None,
+                    },
                 });
                 store.write(batch.build_all()).await.map(|_| ())
             }
@@ -65,12 +66,13 @@ impl InMemoryStore {
                 if let Some(expires) = kv.expires {
                     batch.any_op(Operation::Value {
                         class: ValueClass::InMemory(InMemoryClass::Key(kv.key.clone())),
-                        op: ValueOp::Set(
-                            KeySerializer::new(U64_LEN * 2)
+                        op: ValueOp::Set {
+                            value: KeySerializer::new(U64_LEN * 2)
                                 .write(0u64)
                                 .write(now() + expires)
                                 .finalize(),
-                        ),
+                            version_offset: None,
+                        },
                     });
                 }
 

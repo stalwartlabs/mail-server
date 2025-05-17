@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Instant};
-
+use crate::{
+    core::{MailboxId, SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::{
     mailbox::{JUNK_ID, UidMailbox},
@@ -17,16 +20,11 @@ use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse, protocol::copy_move::Arguments,
     receiver::Request,
 };
-
-use crate::{
-    core::{MailboxId, SelectedMailbox, Session, SessionData},
-    spawn_op,
-};
-use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use jmap_proto::{
     error::set::SetErrorType,
     types::{acl::Acl, collection::Collection, state::StateChange, type_state::DataType},
 };
+use std::{sync::Arc, time::Instant};
 use store::{
     roaring::RoaringBitmap,
     write::{AlignedBytes, Archive, BatchBuilder, ValueClass},
@@ -220,7 +218,6 @@ impl<T: SessionStream> SessionData<T> {
                 let mut new_data = data
                     .deserialize()
                     .imap_ctx(&arguments.tag, trc::location!())?;
-                new_data.change_id = batch.change_id();
 
                 // Add destination folder
                 new_data.add_mailbox(dest_mailbox_id);

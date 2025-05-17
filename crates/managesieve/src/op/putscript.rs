@@ -15,7 +15,7 @@ use std::time::Instant;
 use store::{
     Serialize,
     query::Filter,
-    write::{BatchBuilder, UnversionedArchiver},
+    write::{Archiver, BatchBuilder},
 };
 use trc::AddContext;
 
@@ -79,7 +79,8 @@ impl<T: SessionStream> Session<T> {
         {
             Ok(compiled_script) => {
                 script_bytes.extend(
-                    UnversionedArchiver::new(compiled_script)
+                    Archiver::new(compiled_script)
+                        .untrusted()
                         .serialize()
                         .caused_by(trc::location!())?,
                 );

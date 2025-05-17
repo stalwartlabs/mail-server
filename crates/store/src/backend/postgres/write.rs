@@ -12,9 +12,10 @@ use rand::Rng;
 use tokio_postgres::{IsolationLevel, error::SqlState};
 
 use crate::{
-    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U64_LEN,
     write::{
-        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueOp,
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
+        ValueClass, ValueOp,
     },
 };
 
@@ -28,13 +29,13 @@ enum CommitError {
 }
 
 impl PostgresStore {
-    pub(crate) async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
+    pub(crate) async fn write(&self, mut batch: Batch<'_>) -> trc::Result<AssignedIds> {
         let mut conn = self.conn_pool.get().await.map_err(into_error)?;
         let start = Instant::now();
         let mut retry_count = 0;
 
         loop {
-            match self.write_trx(&mut conn, &batch).await {
+            match self.write_trx(&mut conn, &mut batch).await {
                 Ok(result) => {
                     return Ok(result);
                 }
@@ -72,11 +73,12 @@ impl PostgresStore {
     async fn write_trx(
         &self,
         conn: &mut Object,
-        batch: &Batch<'_>,
+        batch: &mut Batch<'_>,
     ) -> Result<AssignedIds, CommitError> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
+        let mut change_id = 0u64;
         let mut asserted_values = AHashMap::new();
         let trx = conn
             .build_transaction()
@@ -84,13 +86,34 @@ impl PostgresStore {
             .start()
             .await?;
         let mut result = AssignedIds::default();
+        let has_changes = !batch.changes.is_empty();
 
-        for op in batch.ops {
+        if has_changes {
+            for &account_id in batch.changes.keys() {
+                let key = ValueClass::ChangeId.serialize(account_id, 0, 0, 0);
+                let s = trx
+                    .prepare_cached(concat!(
+                        "INSERT INTO n (k, v) VALUES ($1, 1) ",
+                        "ON CONFLICT(k) DO UPDATE SET v = n.v + 1 RETURNING v"
+                    ))
+                    .await?;
+                let change_id = trx
+                    .query_one(&s, &[&key])
+                    .await
+                    .and_then(|row| row.try_get::<_, i64>(0))?;
+                result.push_change_id(account_id, change_id as u64);
+            }
+        }
+
+        for op in batch.ops.iter_mut() {
             match op {
                 Operation::AccountId {
                     account_id: account_id_,
                 } => {
                     account_id = *account_id_;
+                    if has_changes {
+                        change_id = result.last_change_id(account_id)?;
+                    }
                 }
                 Operation::Collection {
                     collection: collection_,
@@ -107,7 +130,15 @@ impl PostgresStore {
                     let table = char::from(class.subspace(collection));
 
                     match op {
-                        ValueOp::Set(value) => {
+                        ValueOp::Set {
+                            value,
+                            version_offset,
+                        } => {
+                            if let Some(offset) = version_offset {
+                                value[*offset..*offset + U64_LEN]
+                                    .copy_from_slice(&change_id.to_be_bytes());
+                            }
+
                             let s = if let Some(exists) = asserted_values.get(&key) {
                                 if *exists {
                                     trx.prepare_cached(&format!(
@@ -133,7 +164,7 @@ impl PostgresStore {
                                 .await?
                             };
 
-                            if trx.execute(&s, &[&key, &value]).await? == 0 {
+                            if trx.execute(&s, &[&key, &(*value)]).await? == 0 {
                                 return Err(trc::StoreEvent::AssertValueFailed.into_err().into());
                             }
                         }
@@ -148,14 +179,14 @@ impl PostgresStore {
                                         table, table
                                     ))
                                     .await?;
-                                trx.execute(&s, &[&key, &by]).await?;
+                                trx.execute(&s, &[&key, &*by]).await?;
                             } else {
                                 let s = trx
                                     .prepare_cached(&format!(
                                         "UPDATE {table} SET v = v + $1 WHERE k = $2"
                                     ))
                                     .await?;
-                                trx.execute(&s, &[&by, &key]).await?;
+                                trx.execute(&s, &[&*by, &key]).await?;
                             }
                         }
                         ValueOp::AddAndGet(by) => {
@@ -169,7 +200,7 @@ impl PostgresStore {
                                 ))
                                 .await?;
                             result.push_counter_id(
-                                trx.query_one(&s, &[&key, &by])
+                                trx.query_one(&s, &[&key, &*by])
                                     .await
                                     .and_then(|row| row.try_get::<_, i64>(0))?,
                             );
@@ -188,7 +219,7 @@ impl PostgresStore {
                         collection,
                         document_id,
                         field: *field,
-                        key,
+                        key: &*key,
                     }
                     .serialize(0);
 
@@ -231,15 +262,11 @@ impl PostgresStore {
                         }
                     })?;
                 }
-                Operation::Log {
-                    collection,
-                    change_id,
-                    set,
-                } => {
+                Operation::Log { collection, set } => {
                     let key = LogKey {
                         account_id,
                         collection: *collection,
-                        change_id: *change_id,
+                        change_id,
                     }
                     .serialize(0);
 
@@ -250,7 +277,7 @@ impl PostgresStore {
                         ))
                         .await?;
 
-                    trx.execute(&s, &[&key, &set]).await?;
+                    trx.execute(&s, &[&key, &*set]).await?;
                 }
                 Operation::AssertValue {
                     class,

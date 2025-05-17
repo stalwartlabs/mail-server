@@ -224,7 +224,6 @@ pub enum ClusterEvent {
     MessageReceived,
     MessageSkipped,
     MessageInvalid,
-    ClockSkewDetected,
 }
 
 #[event_type]

@@ -27,9 +27,7 @@ use store::{
     ahash::AHashMap,
     dispatch::lookup::KeyValue,
     query::Filter,
-    write::{
-        AlignedBytes, Archiver, BatchBuilder, BlobOp, UnversionedArchive, UnversionedArchiver,
-    },
+    write::{AlignedBytes, Archive, ArchiveVersion, Archiver, BatchBuilder, BlobOp},
 };
 use trc::{AddContext, SieveEvent};
 use utils::config::utils::ParseValue;
@@ -242,7 +240,11 @@ impl SieveScriptIngest for Server {
                         }
                     }
                     Event::DuplicateId { id, expiry, last } => {
-                        let id_hash = SeenIdHash::new(account_id, active_script.hash, &id);
+                        let id_hash = SeenIdHash::new(
+                            account_id,
+                            active_script.version.hash().unwrap_or_default(),
+                            &id,
+                        );
                         if let Some(result) = checked_ids.get(&id_hash) {
                             input = (*result).into();
                         } else {
@@ -563,7 +565,7 @@ impl SieveScriptIngest for Server {
                 document_id,
                 script: Arc::new(script.script),
                 script_name: script.name,
-                hash: script.hash,
+                version: script.version,
             }))
         } else {
             Ok(None)
@@ -614,7 +616,7 @@ impl SieveScriptIngest for Server {
             })?;
 
         // Obtain the sieve script length
-        let hash = script_object.hash;
+        let version = script_object.version;
         let unarchived_script = script_object
             .unarchive::<SieveScript>()
             .caused_by(trc::location!())?;
@@ -637,7 +639,7 @@ impl SieveScriptIngest for Server {
 
         // Obtain the precompiled script
         if let Some(script) = script_bytes.get(script_offset..).and_then(|bytes| {
-            <UnversionedArchive<AlignedBytes> as Deserialize>::deserialize(bytes)
+            <Archive<AlignedBytes> as Deserialize>::deserialize(bytes)
                 .ok()?
                 .deserialize::<Sieve>()
                 .ok()
@@ -645,7 +647,7 @@ impl SieveScriptIngest for Server {
             Ok(CompiledScript {
                 script,
                 name: unarchived_script.name.as_str().into(),
-                hash,
+                version,
             })
         } else {
             // Deserialization failed, probably because the script compiler version changed
@@ -659,7 +661,7 @@ impl SieveScriptIngest for Server {
             ) {
                 Ok(sieve) => {
                     // Store updated compiled sieve script
-                    let sieve = UnversionedArchiver::new(sieve);
+                    let sieve = Archiver::new(sieve).untrusted();
                     let compiled_bytes = sieve.serialize().caused_by(trc::location!())?;
                     let mut updated_sieve_bytes =
                         Vec::with_capacity(script_offset + compiled_bytes.len());
@@ -703,7 +705,7 @@ impl SieveScriptIngest for Server {
                     Ok(CompiledScript {
                         script: sieve.into_inner(),
                         name: new_archive.into_inner().name,
-                        hash,
+                        version,
                     })
                 }
                 Err(error) => Err(trc::StoreEvent::UnexpectedError
@@ -718,5 +720,5 @@ impl SieveScriptIngest for Server {
 pub struct CompiledScript {
     pub script: Sieve,
     pub name: String,
-    pub hash: u32,
+    pub version: ArchiveVersion,
 }

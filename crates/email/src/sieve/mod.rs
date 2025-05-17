@@ -9,7 +9,7 @@ use std::sync::Arc;
 use common::KV_SIEVE_ID;
 
 use sieve::Sieve;
-use store::{SERIALIZE_SIEVE_V1, SerializedVersion, blake3};
+use store::{blake3, write::ArchiveVersion};
 use utils::BlobHash;
 
 pub mod activate;
@@ -20,7 +20,7 @@ pub mod ingest;
 #[derive(Debug, Clone)]
 pub struct ActiveScript {
     pub document_id: u32,
-    pub hash: u32,
+    pub version: ArchiveVersion,
     pub script_name: String,
     pub script: Arc<Sieve>,
 }
@@ -35,12 +35,6 @@ pub struct SieveScript {
     pub blob_hash: BlobHash,
     pub size: u32,
     pub vacation_response: Option<VacationResponse>,
-}
-
-impl SerializedVersion for SieveScript {
-    fn serialize_version() -> u8 {
-        SERIALIZE_SIEVE_V1
-    }
 }
 
 #[derive(

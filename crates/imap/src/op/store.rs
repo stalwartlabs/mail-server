@@ -281,10 +281,6 @@ impl<T: SessionStream> SessionData<T> {
                 vec![]
             };
 
-            // Add change id
-            new_data.change_id = batch.change_id();
-            let modseq = new_data.change_id + 1;
-
             // Set all current mailboxes as changed if the Seen tag changed
             if seen_changed {
                 for mailbox_id in new_data.mailboxes.iter() {
@@ -327,9 +323,6 @@ impl<T: SessionStream> SessionData<T> {
                 if is_uid {
                     data_items.push(DataItem::Uid { uid: imap_id.uid });
                 }
-                if is_condstore {
-                    data_items.push(DataItem::ModSeq { modseq });
-                }
                 items.items.push(FetchItem {
                     id: imap_id.seqnum,
                     items: data_items,
@@ -338,12 +331,9 @@ impl<T: SessionStream> SessionData<T> {
                 items.items.push(FetchItem {
                     id: imap_id.seqnum,
                     items: if is_uid {
-                        vec![
-                            DataItem::ModSeq { modseq },
-                            DataItem::Uid { uid: imap_id.uid },
-                        ]
+                        vec![DataItem::Uid { uid: imap_id.uid }]
                     } else {
-                        vec![DataItem::ModSeq { modseq }]
+                        vec![]
                     },
                 });
             }
@@ -367,9 +357,17 @@ impl<T: SessionStream> SessionData<T> {
                 .server
                 .commit_batch(batch)
                 .await
+                .and_then(|ids| ids.last_change_id(mailbox.id.account_id))
                 .caused_by(trc::location!())
             {
-                Ok(_) => {}
+                Ok(change_id) => {
+                    if is_condstore {
+                        let modseq = change_id + 1;
+                        for item in items.items.iter_mut() {
+                            item.items.push(DataItem::ModSeq { modseq });
+                        }
+                    }
+                }
                 Err(err) if err.is_assertion_failure() => {
                     items.items.clear();
                     response.rtype = ResponseType::No;

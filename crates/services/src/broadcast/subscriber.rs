@@ -14,7 +14,6 @@ use compact_str::CompactString;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
 use trc::{ClusterEvent, ServerEvent};
-use utils::snowflake::HlcTimestamp;
 
 pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Receiver<bool>) {
     let this_node_id = {
@@ -96,7 +95,6 @@ pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Rec
                             };
 
                             let mut max_timestamp = 0;
-                            let mut num_events = 0;
                             let mut has_errors = false;
 
                             for event in batch.events() {
@@ -154,7 +152,6 @@ pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Rec
                                             }
                                         },
                                     }
-                                    num_events += 1;
                                 } else if !has_errors {
                                     trc::event!(
                                         Cluster(ClusterEvent::MessageInvalid),
@@ -165,30 +162,11 @@ pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Rec
 
                             }
 
-                            let skew = if max_timestamp != 0 {
-                                match HlcTimestamp::update_clock_from_remote_timestamp(max_timestamp) {
-                                    Ok(skew) => Some(skew),
-                                    Err(large_skew) => {
-                                        trc::event!(
-                                            Cluster(ClusterEvent::ClockSkewDetected),
-                                            From = node_id,
-                                            To = this_node_id,
-                                            Total = num_events,
-                                            Details = large_skew,
-                                        );
-                                        continue;
-                                    },
-                                }
-                            } else {
-                                None
-                            };
-
                             trc::event!(
                                 Cluster(ClusterEvent::MessageReceived),
                                 From = node_id,
                                 To = this_node_id,
-                                Total = batch.events().flatten().map(log_event).collect::<Vec<_>>(),
-                                Details = skew,
+                                Details = batch.events().flatten().map(log_event).collect::<Vec<_>>(),
                             );
                         }
                         None => {

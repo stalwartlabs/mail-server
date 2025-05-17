@@ -22,15 +22,15 @@ use jmap_proto::types::{
     type_state::DataType,
 };
 use sieve::Sieve;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use store::{
     BitmapKey, BlobClass, BlobStore, Deserialize, FtsStore, InMemoryStore, IndexKey, IterateParams,
-    LogKey, SerializeInfallible, Store, U32_LEN, ValueKey,
+    Key, LogKey, SUBSPACE_LOGS, SerializeInfallible, Store, U32_LEN, U64_LEN, ValueKey,
     dispatch::DocumentSet,
     roaring::RoaringBitmap,
     write::{
-        AlignedBytes, Archive, AssignedIds, BatchBuilder, BlobOp, DirectoryClass, QueueClass,
-        ValueClass, key::DeserializeBigEndian, now,
+        AlignedBytes, AnyClass, Archive, AssignedIds, BatchBuilder, BlobOp, DirectoryClass,
+        QueueClass, ValueClass, key::DeserializeBigEndian, now,
     },
 };
 use trc::AddContext;
@@ -501,14 +501,19 @@ impl Server {
 
     pub async fn commit_batch(&self, mut builder: BatchBuilder) -> trc::Result<AssignedIds> {
         let mut assigned_ids = AssignedIds::default();
+        let mut commit_points = builder.commit_points();
 
-        for batch in builder.build() {
-            assigned_ids = self.store().write(batch).await?;
+        for commit_point in commit_points.iter() {
+            let batch = builder.build_one(commit_point);
+            assigned_ids
+                .ids
+                .extend(self.store().write(batch).await?.ids);
         }
 
         if let Some(changes) = builder.changes() {
             for (account_id, changed_collections) in changes {
-                let mut state_change = StateChange::new(account_id, changed_collections.change_id);
+                let mut state_change =
+                    StateChange::new(account_id, assigned_ids.last_change_id(account_id)?);
                 for changed_collection in changed_collections.changed_containers {
                     if let Some(data_type) = DataType::try_from_id(changed_collection, true) {
                         state_change.set_change(data_type);
@@ -522,20 +527,13 @@ impl Server {
                 if state_change.has_changes() {
                     self.broadcast_state_change(state_change).await;
                 }
-                assigned_ids.change_id = changed_collections.change_id.into();
             }
         }
 
         Ok(assigned_ids)
     }
 
-    pub async fn delete_changes(&self, account_id: u32, before: Duration) -> trc::Result<()> {
-        let reference_cid = self.inner.data.jmap_id_gen.past_id(before).ok_or_else(|| {
-            trc::StoreEvent::UnexpectedError
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Reason, "Failed to generate reference change id.")
-        })?;
-
+    pub async fn delete_changes(&self, account_id: u32, max_entries: usize) -> trc::Result<()> {
         for collection in [
             SyncCollection::Email.into(),
             SyncCollection::Thread.into(),
@@ -546,22 +544,74 @@ impl Server {
             SyncCollection::AddressBook.into(),
             SyncCollection::Calendar.into(),
         ] {
-            self.core
-                .storage
-                .data
-                .delete_range(
-                    LogKey {
-                        account_id,
-                        collection,
-                        change_id: 0,
-                    },
-                    LogKey {
-                        account_id,
-                        collection,
-                        change_id: reference_cid,
+            let from_key = LogKey {
+                account_id,
+                collection,
+                change_id: 0,
+            };
+            let to_key = LogKey {
+                account_id,
+                collection,
+                change_id: u64::MAX,
+            };
+
+            let mut first_change_id = 0;
+            let mut num_changes = 0;
+
+            self.store()
+                .iterate(
+                    IterateParams::new(from_key, to_key)
+                        .descending()
+                        .no_values(),
+                    |key, _| {
+                        first_change_id = key.deserialize_be_u64(key.len() - U64_LEN)?;
+                        num_changes += 1;
+
+                        Ok(num_changes <= max_entries)
                     },
                 )
-                .await?;
+                .await
+                .caused_by(trc::location!())?;
+
+            if num_changes > max_entries {
+                self.store()
+                    .delete_range(
+                        LogKey {
+                            account_id,
+                            collection,
+                            change_id: 0,
+                        },
+                        LogKey {
+                            account_id,
+                            collection,
+                            change_id: first_change_id,
+                        },
+                    )
+                    .await
+                    .caused_by(trc::location!())?;
+
+                // Write truncation entry for cache
+                let mut batch = BatchBuilder::new();
+                batch
+                    .with_account_id(account_id)
+                    .with_collection(collection)
+                    .set(
+                        ValueClass::Any(AnyClass {
+                            subspace: SUBSPACE_LOGS,
+                            key: LogKey {
+                                account_id,
+                                collection,
+                                change_id: first_change_id,
+                            }
+                            .serialize(0),
+                        }),
+                        Vec::new(),
+                    );
+                self.store()
+                    .write(batch.build_all())
+                    .await
+                    .caused_by(trc::location!())?;
+            }
         }
 
         Ok(())

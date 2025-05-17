@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use store::dispatch::lookup::KeyValue;
 use store::write::serialize::rkyv_deserialize;
 use store::write::{AlignedBytes, Archive, Archiver, now};
-use store::{SERIALIZE_DAV_LOCKS_V1, Serialize, SerializedVersion, U32_LEN};
+use store::{Serialize, U32_LEN};
 use trc::AddContext;
 
 use super::ETag;
@@ -318,6 +318,7 @@ impl LockRequestHandler for Server {
                     KeyValue::new(
                         resource_hash,
                         Archiver::new(lock_data)
+                            .untrusted()
                             .serialize()
                             .caused_by(trc::location!())?,
                     )
@@ -750,12 +751,6 @@ impl<'x> LockCaches<'x> {
         } else {
             Ok(false)
         }
-    }
-}
-
-impl SerializedVersion for LockData {
-    fn serialize_version() -> u8 {
-        SERIALIZE_DAV_LOCKS_V1
     }
 }
 

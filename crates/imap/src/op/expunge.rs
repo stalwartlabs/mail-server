@@ -178,7 +178,6 @@ impl<T: SessionStream> SessionData<T> {
 
                 // Untag message from this mailbox and remove Deleted flag
                 let mut new_data = data.deserialize().caused_by(trc::location!())?;
-                new_data.change_id = batch.change_id();
                 new_data.remove_mailbox(mailbox_id);
                 new_data.remove_keyword(&Keyword::Deleted);
 

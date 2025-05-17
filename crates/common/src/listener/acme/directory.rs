@@ -16,7 +16,7 @@ use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSignin
 use serde::Deserialize;
 use std::time::Duration;
 use store::Serialize;
-use store::write::UnversionedArchiver;
+use store::write::Archiver;
 use trc::AddContext;
 use trc::event::conv::AssertSuccess;
 
@@ -188,7 +188,7 @@ impl Account {
                 .reason(err)
         })?;
 
-        UnversionedArchiver::new(SerializedCert {
+        Archiver::new(SerializedCert {
             certificate: cert.serialize_der().map_err(|err| {
                 trc::EventType::Acme(trc::AcmeEvent::Error)
                     .caused_by(trc::location!())
@@ -196,6 +196,7 @@ impl Account {
             })?,
             private_key: cert.serialize_private_key_der(),
         })
+        .untrusted()
         .serialize()
     }
 }

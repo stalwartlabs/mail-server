@@ -147,7 +147,6 @@ impl ClusterEvent {
             ClusterEvent::MessageReceived => "PubSub message received",
             ClusterEvent::MessageSkipped => "PubSub message skipped",
             ClusterEvent::MessageInvalid => "Invalid PubSub message",
-            ClusterEvent::ClockSkewDetected => "Clock skew detected",
         }
     }
 
@@ -165,7 +164,6 @@ impl ClusterEvent {
             ClusterEvent::MessageInvalid => {
                 "An invalid message was received from the PubSub server"
             }
-            ClusterEvent::ClockSkewDetected => "A large clock skew was detected between nodes",
         }
     }
 }

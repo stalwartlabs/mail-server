@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::types::type_state::DataType;
-use store::{SERIALIZE_PUSH_V1, SerializedVersion};
 use utils::map::bitmap::Bitmap;
 
 #[derive(
@@ -25,10 +24,4 @@ pub struct PushSubscription {
 pub struct Keys {
     pub p256dh: Vec<u8>,
     pub auth: Vec<u8>,
-}
-
-impl SerializedVersion for PushSubscription {
-    fn serialize_version() -> u8 {
-        SERIALIZE_PUSH_V1
-    }
 }

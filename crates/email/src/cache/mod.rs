@@ -49,22 +49,8 @@ impl MessageCacheFetch for Server {
             }
         };
 
-        // Perform full refresh on stale ids
-        let cache = cache_.load_full();
-        if cache.last_change_id > 0
-            && self
-                .core
-                .jmap
-                .changes_max_history
-                .and_then(|history| self.inner.data.jmap_id_gen.past_id(history))
-                .is_some_and(|last_change_id| cache.last_change_id < last_change_id)
-        {
-            let cache = full_cache_build(self, account_id, cache.update_lock.clone()).await?;
-            cache_.update(cache.clone());
-            return Ok(cache);
-        }
-
         // Obtain current state
+        let cache = cache_.load_full();
         let changes = self
             .core
             .storage
@@ -76,6 +62,13 @@ impl MessageCacheFetch for Server {
             )
             .await
             .caused_by(trc::location!())?;
+
+        // Regenerate cache if the change log has been truncated
+        if changes.is_truncated {
+            let cache = full_cache_build(self, account_id, cache.update_lock.clone()).await?;
+            cache_.update(cache.clone());
+            return Ok(cache);
+        }
 
         // Verify changes
         if changes.changes.is_empty() {

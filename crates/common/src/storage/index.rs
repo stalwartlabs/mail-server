@@ -13,7 +13,7 @@ use rkyv::{
 };
 use std::{borrow::Cow, fmt::Debug};
 use store::{
-    Serialize, SerializeInfallible, SerializedVersion,
+    Serialize, SerializeInfallible,
     write::{Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, TagValue},
 };
 use utils::BlobHash;
@@ -218,7 +218,6 @@ pub trait IndexableObject: Sync + Send {
 
 pub trait IndexableAndSerializableObject:
     IndexableObject
-    + SerializedVersion
     + rkyv::Archive
     + for<'a> rkyv::Serialize<
         rkyv::api::high::HighSerializer<
@@ -228,6 +227,7 @@ pub trait IndexableAndSerializableObject:
         >,
     >
 {
+    fn is_versioned() -> bool;
 }
 
 #[derive(Debug)]
@@ -295,7 +295,12 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> IntoOperations
                 for item in changes.index_values() {
                     build_index(batch, item, self.tenant_id, true);
                 }
-                batch.set(Property::Value, Archiver::new(changes).serialize()?);
+                if N::is_versioned() {
+                    let (offset, bytes) = Archiver::new(changes).serialize_versioned()?;
+                    batch.set_versioned(Property::Value, bytes, offset);
+                } else {
+                    batch.set(Property::Value, Archiver::new(changes).serialize()?);
+                }
             }
             (Some(current), Some(changes)) => {
                 // Update
@@ -318,7 +323,12 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> IntoOperations
                         }
                     }
                 }
-                batch.set(Property::Value, Archiver::new(changes).serialize()?);
+                if N::is_versioned() {
+                    let (offset, bytes) = Archiver::new(changes).serialize_versioned()?;
+                    batch.set_versioned(Property::Value, bytes, offset);
+                } else {
+                    batch.set(Property::Value, Archiver::new(changes).serialize()?);
+                }
             }
             (Some(current), None) => {
                 // Deletion
@@ -586,4 +596,8 @@ impl IndexableObject for () {
     }
 }
 
-impl IndexableAndSerializableObject for () {}
+impl IndexableAndSerializableObject for () {
+    fn is_versioned() -> bool {
+        false
+    }
+}

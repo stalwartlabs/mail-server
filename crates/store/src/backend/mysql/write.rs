@@ -11,9 +11,10 @@ use mysql_async::{Conn, Error, IsolationLevel, TxOpts, params, prelude::Queryabl
 use rand::Rng;
 
 use crate::{
-    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U64_LEN,
     write::{
-        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueOp,
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
+        ValueClass, ValueOp,
     },
 };
 
@@ -27,13 +28,13 @@ enum CommitError {
 }
 
 impl MysqlStore {
-    pub(crate) async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
+    pub(crate) async fn write(&self, mut batch: Batch<'_>) -> trc::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
         let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
 
         loop {
-            let err = match self.write_trx(&mut conn, &batch).await {
+            let err = match self.write_trx(&mut conn, &mut batch).await {
                 Ok(result) => {
                     return Ok(result);
                 }
@@ -69,11 +70,13 @@ impl MysqlStore {
     async fn write_trx(
         &self,
         conn: &mut Conn,
-        batch: &Batch<'_>,
+        batch: &mut Batch<'_>,
     ) -> Result<AssignedIds, CommitError> {
+        let has_changes = !batch.changes.is_empty();
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
+        let mut change_id = 0u64;
         let mut asserted_values = AHashMap::new();
         let mut tx_opts = TxOpts::default();
         tx_opts
@@ -82,12 +85,35 @@ impl MysqlStore {
         let mut trx = conn.start_transaction(tx_opts).await?;
         let mut result = AssignedIds::default();
 
-        for op in batch.ops {
+        if has_changes {
+            for &account_id in batch.changes.keys() {
+                let key = ValueClass::ChangeId.serialize(account_id, 0, 0, 0);
+                let s = trx
+                    .prep(concat!(
+                        "INSERT INTO n (k, v) VALUES (:k, LAST_INSERT_ID(1)) ",
+                        "ON DUPLICATE KEY UPDATE v = LAST_INSERT_ID(v + 1)"
+                    ))
+                    .await?;
+                trx.exec_drop(&s, params! {"k" => key}).await?;
+                let s = trx.prep("SELECT LAST_INSERT_ID()").await?;
+                let change_id = trx.exec_first::<i64, _, _>(&s, ()).await?.ok_or_else(|| {
+                    mysql_async::Error::Io(mysql_async::IoError::Io(std::io::Error::other(
+                        "LAST_INSERT_ID() did not return a value",
+                    )))
+                })?;
+                result.push_change_id(account_id, change_id as u64);
+            }
+        }
+
+        for op in batch.ops.iter_mut() {
             match op {
                 Operation::AccountId {
                     account_id: account_id_,
                 } => {
                     account_id = *account_id_;
+                    if has_changes {
+                        change_id = result.last_change_id(account_id)?;
+                    }
                 }
                 Operation::Collection {
                     collection: collection_,
@@ -104,7 +130,15 @@ impl MysqlStore {
                     let table = char::from(class.subspace(collection));
 
                     match op {
-                        ValueOp::Set(value) => {
+                        ValueOp::Set {
+                            value,
+                            version_offset,
+                        } => {
+                            if let Some(offset) = version_offset {
+                                value[*offset..*offset + U64_LEN]
+                                    .copy_from_slice(&change_id.to_be_bytes());
+                            }
+
                             let exists = asserted_values.get(&key);
                             let s = if let Some(exists) = exists {
                                 if *exists {
@@ -125,7 +159,10 @@ impl MysqlStore {
                             .await?
                             };
 
-                            match trx.exec_drop(&s, params! {"k" => key, "v" => value}).await {
+                            match trx
+                                .exec_drop(&s, params! {"k" => key, "v" => &*value})
+                                .await
+                            {
                                 Ok(_) => {
                                     if exists.is_some() && trx.affected_rows() == 0 {
                                         trx.rollback().await?;
@@ -151,12 +188,12 @@ impl MysqlStore {
                                         table
                                     ))
                                     .await?;
-                                trx.exec_drop(&s, (key, by)).await?;
+                                trx.exec_drop(&s, (key, &*by)).await?;
                             } else {
                                 let s = trx
                                     .prep(format!("UPDATE {table} SET v = v + ? WHERE k = ?"))
                                     .await?;
-                                trx.exec_drop(&s, (by, key)).await?;
+                                trx.exec_drop(&s, (&*by, key)).await?;
                             }
                         }
                         ValueOp::AddAndGet(by) => {
@@ -169,7 +206,7 @@ impl MysqlStore {
                                     table
                                 ))
                                 .await?;
-                            trx.exec_drop(&s, params! {"k" => key, "v" => by}).await?;
+                            trx.exec_drop(&s, params! {"k" => key, "v" => &*by}).await?;
                             let s = trx.prep("SELECT LAST_INSERT_ID()").await?;
                             result.push_counter_id(
                                 trx.exec_first::<i64, _, _>(&s, ()).await?.ok_or_else(|| {
@@ -195,7 +232,7 @@ impl MysqlStore {
                         collection,
                         document_id,
                         field: *field,
-                        key,
+                        key: &*key,
                     }
                     .serialize(0);
 
@@ -236,15 +273,11 @@ impl MysqlStore {
                         );
                     }
                 }
-                Operation::Log {
-                    collection,
-                    change_id,
-                    set,
-                } => {
+                Operation::Log { collection, set } => {
                     let key = LogKey {
                         account_id,
                         collection: *collection,
-                        change_id: *change_id,
+                        change_id,
                     }
                     .serialize(0);
 
@@ -252,7 +285,7 @@ impl MysqlStore {
                         .prep("INSERT INTO l (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")
                         .await?;
 
-                    trx.exec_drop(&s, (key, &set)).await?;
+                    trx.exec_drop(&s, (key, &*set)).await?;
                 }
                 Operation::AssertValue {
                     class,

@@ -29,4 +29,8 @@ impl IndexableObject for &ArchivedIdentity {
     }
 }
 
-impl IndexableAndSerializableObject for Identity {}
+impl IndexableAndSerializableObject for Identity {
+    fn is_versioned() -> bool {
+        false
+    }
+}

@@ -485,7 +485,6 @@ impl EmailIngest for Server {
 
         // Build write batch
         let mut batch = BatchBuilder::new();
-        let change_id = batch.change_id();
         let mailbox_ids_event = mailbox_ids
             .iter()
             .map(|m| trc::Value::from(m.mailbox_id))
@@ -499,6 +498,7 @@ impl EmailIngest for Server {
                 .log_container_insert(SyncCollection::Thread);
         }
 
+        let seq = self.generate_snowflake_id();
         let document_id = self
             .store()
             .assign_document_ids(account_id, Collection::Email, 1)
@@ -515,7 +515,6 @@ impl EmailIngest for Server {
                 MessageData {
                     mailboxes: mailbox_ids,
                     keywords: params.keywords,
-                    change_id,
                     thread_id,
                 },
                 params.received_at.unwrap_or_else(now),
@@ -523,7 +522,7 @@ impl EmailIngest for Server {
             .caused_by(trc::location!())?
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                    seq: change_id,
+                    seq,
                     hash: blob_id.hash.clone(),
                 }),
                 vec![],
@@ -533,7 +532,7 @@ impl EmailIngest for Server {
         if let Some(learn_spam) = train_spam {
             batch.set(
                 ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                    seq: change_id,
+                    seq,
                     hash: blob_id.hash.clone(),
                     learn_spam,
                 }),
@@ -542,10 +541,12 @@ impl EmailIngest for Server {
         }
 
         // Insert and obtain ids
-        self.store()
+        let change_id = self
+            .store()
             .write(batch.build_all())
             .await
-            .caused_by(trc::location!())?;
+            .caused_by(trc::location!())?
+            .last_change_id(account_id)?;
         let id = Id::from_parts(thread_id, document_id);
 
         // Request FTS index

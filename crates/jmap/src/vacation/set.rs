@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
 use super::get::VacationResponseGet;
 use crate::{JmapMethods, changes::state::StateManager};
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
@@ -26,10 +24,11 @@ use jmap_proto::{
 };
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
+use std::borrow::Cow;
 use std::future::Future;
 use store::{
     Serialize,
-    write::{BatchBuilder, UnversionedArchiver},
+    write::{Archiver, BatchBuilder},
 };
 use trc::AddContext;
 
@@ -286,8 +285,13 @@ impl VacationResponseSet for Server {
             // Write changes
             batch.custom(obj).caused_by(trc::location!())?;
             if !batch.is_empty() {
-                response.new_state = Some(batch.change_id().into());
-                self.commit_batch(batch).await.caused_by(trc::location!())?;
+                response.new_state = Some(
+                    self.commit_batch(batch)
+                        .await
+                        .and_then(|ids| ids.last_change_id(account_id))
+                        .caused_by(trc::location!())?
+                        .into(),
+                );
             }
 
             // Deactivate other sieve scripts
@@ -326,8 +330,13 @@ impl VacationResponseSet for Server {
 
             // Write changes
             if !batch.is_empty() {
-                response.new_state = Some(batch.change_id().into());
-                self.commit_batch(batch).await.caused_by(trc::location!())?;
+                response.new_state = Some(
+                    self.commit_batch(batch)
+                        .await
+                        .and_then(|ids| ids.last_change_id(account_id))
+                        .caused_by(trc::location!())?
+                        .into(),
+                );
             }
         }
 
@@ -440,7 +449,8 @@ impl VacationResponseSet for Server {
 
                 // Serialize script
                 script.extend(
-                    UnversionedArchiver::new(compiled_script)
+                    Archiver::new(compiled_script)
+                        .untrusted()
                         .serialize()
                         .caused_by(trc::location!())?,
                 );

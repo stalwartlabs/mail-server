@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{ArchivedFileNode, FileNode};
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
 use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
-
-use super::{ArchivedFileNode, FileNode};
 
 impl IndexableObject for FileNode {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -64,7 +63,11 @@ impl IndexableObject for &ArchivedFileNode {
     }
 }
 
-impl IndexableAndSerializableObject for FileNode {}
+impl IndexableAndSerializableObject for FileNode {
+    fn is_versioned() -> bool {
+        true
+    }
+}
 
 pub trait NodeSize {
     fn size(&self) -> u32;

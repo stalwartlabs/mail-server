@@ -14,7 +14,7 @@ use jmap_proto::types::{
     collection::Collection,
     keyword::{Keyword, OTHER},
 };
-use store::{ahash::AHashMap, roaring::RoaringBitmap};
+use store::{ahash::AHashMap, roaring::RoaringBitmap, write::Archive};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -42,7 +42,7 @@ pub(crate) async fn update_email_cache(
                 insert_item(
                     &mut new_cache,
                     *document_id,
-                    archive.unarchive::<MessageData>()?,
+                    archive.to_unarchived::<MessageData>()?,
                 );
             }
         }
@@ -84,7 +84,11 @@ pub(crate) async fn full_email_cache_build(
             Collection::Email,
             &(),
             |document_id, archive| {
-                insert_item(&mut cache, document_id, archive.unarchive::<MessageData>()?);
+                insert_item(
+                    &mut cache,
+                    document_id,
+                    archive.to_unarchived::<MessageData>()?,
+                );
                 Ok(true)
             },
         )
@@ -97,7 +101,12 @@ pub(crate) async fn full_email_cache_build(
     Ok(cache)
 }
 
-fn insert_item(cache: &mut MessagesCache, document_id: u32, message: &ArchivedMessageData) {
+fn insert_item(
+    cache: &mut MessagesCache,
+    document_id: u32,
+    archive: Archive<&ArchivedMessageData>,
+) {
+    let message = archive.inner;
     let mut item = MessageCache {
         mailboxes: message
             .mailboxes
@@ -109,7 +118,7 @@ fn insert_item(cache: &mut MessagesCache, document_id: u32, message: &ArchivedMe
             .collect(),
         keywords: 0,
         thread_id: message.thread_id.to_native(),
-        change_id: message.change_id.to_native(),
+        change_id: archive.version.change_id().unwrap_or_default(),
         document_id,
     };
     for keyword in message.keywords.iter() {

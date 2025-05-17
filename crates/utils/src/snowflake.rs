@@ -5,10 +5,7 @@
  */
 
 use std::{
-    sync::{
-        LazyLock,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime},
 };
 
@@ -19,8 +16,6 @@ pub struct SnowflakeIdGenerator {
     sequence: AtomicU64,
 }
 
-pub struct HlcTimestamp;
-
 const SEQUENCE_LEN: u64 = 12;
 const NODE_ID_LEN: u64 = 9;
 
@@ -28,13 +23,7 @@ const SEQUENCE_MASK: u64 = (1 << SEQUENCE_LEN) - 1;
 const NODE_ID_MASK: u64 = (1 << NODE_ID_LEN) - 1;
 
 const DEFAULT_EPOCH: u64 = 1632280000; // 52 years after UNIX_EPOCH
-const DEFAULT_EPOCH_MS: u128 = (DEFAULT_EPOCH as u128) * 1000; // 52 years after UNIX_EPOCH in milliseconds
-
-const MAX_CLOCK_DRIFT: i64 = 2000; // 2 seconds
-
-static LOGICAL_TIME: AtomicU64 = AtomicU64::new(0);
-static CHANGE_SEQ: AtomicU64 = AtomicU64::new(0);
-static NODE_MUM: LazyLock<u16> = LazyLock::new(|| CHANGE_SEQ.swap(0, Ordering::Relaxed) as u16);
+//const DEFAULT_EPOCH_MS: u128 = (DEFAULT_EPOCH as u128) * 1000; // 52 years after UNIX_EPOCH in milliseconds
 
 /*
 
@@ -100,49 +89,6 @@ impl SnowflakeIdGenerator {
         (elapsed << (SEQUENCE_LEN + NODE_ID_LEN))
             | (sequence << NODE_ID_LEN)
             | (self.node_id & NODE_ID_MASK)
-    }
-}
-
-impl HlcTimestamp {
-    pub fn init(node_number: u16) {
-        CHANGE_SEQ.store(node_number as u64, Ordering::Relaxed);
-    }
-
-    pub fn update_clock_from_remote_timestamp(timestamp: u64) -> Result<i64, i64> {
-        let remote_clock = timestamp >> (SEQUENCE_LEN + NODE_ID_LEN);
-        let local_elapsed = SystemTime::UNIX_EPOCH
-            .elapsed()
-            .map(|e| e.as_millis())
-            .unwrap_or_default()
-            .saturating_sub(DEFAULT_EPOCH_MS) as u64;
-        let diff = remote_clock as i64 - local_elapsed as i64;
-        if diff > 0 {
-            if diff < MAX_CLOCK_DRIFT {
-                LOGICAL_TIME.fetch_max(remote_clock, Ordering::SeqCst);
-                Ok(diff)
-            } else {
-                Err(diff)
-            }
-        } else {
-            Ok(diff)
-        }
-    }
-
-    pub fn generate() -> u64 {
-        let node_id = *NODE_MUM;
-        let elapsed = SystemTime::UNIX_EPOCH
-            .elapsed()
-            .map(|e| e.as_millis())
-            .unwrap_or_default()
-            .saturating_sub(DEFAULT_EPOCH_MS) as u64;
-        let elapsed = LOGICAL_TIME
-            .fetch_max(elapsed, Ordering::SeqCst)
-            .max(elapsed);
-        let sequence = CHANGE_SEQ.fetch_add(1, Ordering::Relaxed) & SEQUENCE_MASK;
-
-        (elapsed << (SEQUENCE_LEN + NODE_ID_LEN))
-            | (sequence << NODE_ID_LEN)
-            | (node_id as u64 & NODE_ID_MASK)
     }
 }
 

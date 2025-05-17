@@ -9,7 +9,6 @@ pub mod storage;
 
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::value::AclGrant;
-use store::{SERIALIZE_FILE_NODE_V1, SerializedVersion};
 use utils::BlobHash;
 
 #[derive(
@@ -36,10 +35,4 @@ pub struct FileProperties {
     pub size: u32,
     pub media_type: Option<String>,
     pub executable: bool,
-}
-
-impl SerializedVersion for FileNode {
-    fn serialize_version() -> u8 {
-        SERIALIZE_FILE_NODE_V1
-    }
 }

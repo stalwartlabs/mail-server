@@ -38,13 +38,14 @@ pub(crate) const ARCHIVE_ALIGNMENT: usize = 16;
 #[derive(Debug, Clone)]
 pub struct Archive<T> {
     pub inner: T,
-    pub version: u8,
-    pub hash: u32,
+    pub version: ArchiveVersion,
 }
 
-#[derive(Debug, Clone)]
-pub struct UnversionedArchive<T> {
-    pub inner: T,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ArchiveVersion {
+    Versioned { change_id: u64, hash: u32 },
+    Hashed { hash: u32 },
+    Unversioned,
 }
 
 #[derive(Debug, Clone)]
@@ -53,8 +54,7 @@ pub enum AlignedBytes {
     Vec(Vec<u8>),
 }
 
-#[repr(transparent)]
-pub struct Archiver<T>(pub T)
+pub struct Archiver<T>
 where
     T: rkyv::Archive
         + for<'a> rkyv::Serialize<
@@ -63,24 +63,27 @@ where
                 rkyv::ser::allocator::ArenaHandle<'a>,
                 rkyv::rancor::Error,
             >,
-        >;
-
-#[repr(transparent)]
-pub struct UnversionedArchiver<T>(pub T)
-where
-    T: rkyv::Archive
-        + for<'a> rkyv::Serialize<
-            rkyv::api::high::HighSerializer<
-                rkyv::util::AlignedVec,
-                rkyv::ser::allocator::ArenaHandle<'a>,
-                rkyv::rancor::Error,
-            >,
-        >;
+        >,
+{
+    pub inner: T,
+    pub flags: u8,
+}
 
 #[derive(Debug, Default)]
 pub struct AssignedIds {
-    pub counter_ids: Vec<i64>,
-    pub change_id: Option<u64>,
+    pub ids: Vec<AssignedId>,
+}
+
+#[derive(Debug)]
+pub enum AssignedId {
+    Counter(i64),
+    ChangeId(ChangeId),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ChangeId {
+    pub account_id: u32,
+    pub change_id: u64,
 }
 
 #[cfg(not(feature = "test_mode"))]
@@ -95,12 +98,12 @@ pub(crate) const MAX_COMMIT_TIME: Duration = Duration::from_secs(3600);
 
 #[derive(Debug)]
 pub struct Batch<'x> {
-    pub(crate) ops: &'x [Operation],
+    pub(crate) changes: &'x VecMap<u32, ChangedCollection>,
+    pub(crate) ops: &'x mut [Operation],
 }
 
 #[derive(Debug)]
 pub struct BatchBuilder {
-    current_change_id: Option<u64>,
     current_account_id: Option<u32>,
     current_collection: Option<u8>,
     current_document_id: Option<u32>,
@@ -115,7 +118,6 @@ pub struct BatchBuilder {
 
 #[derive(Debug, Default)]
 pub struct ChangedCollection {
-    pub change_id: u64,
     pub changed_containers: Bitmap<ShortId>,
     pub changed_items: Bitmap<ShortId>,
 }
@@ -149,7 +151,6 @@ pub enum Operation {
         set: bool,
     },
     Log {
-        change_id: u64,
         collection: u8,
         set: Vec<u8>,
     },
@@ -189,6 +190,7 @@ pub enum ValueClass {
     Telemetry(TelemetryClass),
     Any(AnyClass),
     DocumentId,
+    ChangeId,
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -278,7 +280,10 @@ pub struct ReportEvent {
 
 #[derive(Debug, PartialEq, Eq, Hash, Default)]
 pub enum ValueOp {
-    Set(Vec<u8>),
+    Set {
+        value: Vec<u8>,
+        version_offset: Option<usize>,
+    },
     AtomicAdd(i64),
     AddAndGet(i64),
     #[default]
@@ -408,23 +413,46 @@ impl BlobClass {
 
 impl AssignedIds {
     pub fn push_counter_id(&mut self, id: i64) {
-        self.counter_ids.push(id);
+        self.ids.push(AssignedId::Counter(id));
     }
 
-    pub fn change_id(&self) -> trc::Result<u64> {
-        self.change_id.ok_or_else(|| {
-            trc::StoreEvent::UnexpectedError
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Reason, "No change id was assigned")
-        })
+    pub fn push_change_id(&mut self, account_id: u32, change_id: u64) {
+        self.ids.push(AssignedId::ChangeId(ChangeId {
+            account_id,
+            change_id,
+        }));
+    }
+
+    pub fn last_change_id(&self, account_id: u32) -> trc::Result<u64> {
+        self.ids
+            .iter()
+            .filter_map(|id| match id {
+                AssignedId::ChangeId(change_id) if change_id.account_id == account_id => {
+                    Some(change_id.change_id)
+                }
+                _ => None,
+            })
+            .next_back()
+            .ok_or_else(|| {
+                trc::StoreEvent::UnexpectedError
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Reason, "No change ids were created")
+            })
     }
 
     pub fn last_counter_id(&self) -> trc::Result<i64> {
-        self.counter_ids.last().copied().ok_or_else(|| {
-            trc::StoreEvent::UnexpectedError
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Reason, "No document ids were created")
-        })
+        self.ids
+            .iter()
+            .filter_map(|id| match id {
+                AssignedId::Counter(counter_id) => Some(*counter_id),
+                _ => None,
+            })
+            .next_back()
+            .ok_or_else(|| {
+                trc::StoreEvent::UnexpectedError
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Reason, "No counter ids were created")
+            })
     }
 }
 
@@ -449,6 +477,23 @@ impl TagValue {
         match self {
             TagValue::Id(_) => std::mem::size_of::<u32>(),
             TagValue::Text(items) => items.len(),
+        }
+    }
+}
+
+impl ArchiveVersion {
+    pub fn hash(&self) -> Option<u32> {
+        match self {
+            ArchiveVersion::Versioned { hash, .. } => Some(*hash),
+            ArchiveVersion::Hashed { hash } => Some(*hash),
+            ArchiveVersion::Unversioned => None,
+        }
+    }
+
+    pub fn change_id(&self) -> Option<u64> {
+        match self {
+            ArchiveVersion::Versioned { change_id, .. } => Some(*change_id),
+            _ => None,
         }
     }
 }

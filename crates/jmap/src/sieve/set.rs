@@ -9,7 +9,6 @@ use common::{
     auth::{AccessToken, ResourceToken},
     storage::index::ObjectIndexBuilder,
 };
-
 use email::sieve::{
     ArchivedSieveScript, SieveScript, activate::SieveScriptActivate, delete::SieveScriptDelete,
 };
@@ -35,7 +34,7 @@ use store::{
     BlobClass, Serialize,
     query::Filter,
     rand::{Rng, rng},
-    write::{Archive, BatchBuilder, UnversionedArchiver},
+    write::{Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
 
@@ -285,8 +284,11 @@ impl SieveScriptSet for Server {
 
         // Write changes
         if !batch.is_empty() {
-            let change_id = batch.change_id();
-            self.commit_batch(batch).await.caused_by(trc::location!())?;
+            let change_id = self
+                .commit_batch(batch)
+                .await
+                .and_then(|ids| ids.last_change_id(account_id))
+                .caused_by(trc::location!())?;
             ctx.response.new_state = State::Exact(change_id).into();
         }
 
@@ -468,7 +470,7 @@ impl SieveScriptSet for Server {
                     match self.core.sieve.untrusted_compiler.compile(&bytes) {
                         Ok(script) => {
                             changes.size = bytes.len() as u32;
-                            bytes.extend(UnversionedArchiver::new(script).serialize().caused_by(trc::location!())?);
+                            bytes.extend(Archiver::new(script).untrusted().serialize().caused_by(trc::location!())?);
                             bytes.into()
                         }
                         Err(err) => {

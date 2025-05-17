@@ -185,84 +185,6 @@ impl Store {
     }
 
     pub async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
-        #[cfg(feature = "test_mode")]
-        if std::env::var("PARANOID_WRITE").is_ok_and(|v| v == "1") {
-            let mut account_id = u32::MAX;
-            let mut collection = u8::MAX;
-            let mut document_id = u32::MAX;
-
-            let mut bitmaps = Vec::new();
-
-            for op in batch.ops {
-                match op {
-                    Operation::AccountId {
-                        account_id: account_id_,
-                    } => {
-                        account_id = *account_id_;
-                    }
-                    Operation::Collection {
-                        collection: collection_,
-                    } => {
-                        collection = *collection_;
-                    }
-                    Operation::DocumentId {
-                        document_id: document_id_,
-                    } => {
-                        document_id = *document_id_;
-                    }
-                    Operation::Bitmap { class, set } => {
-                        let key = class.serialize(account_id, collection, document_id, 0);
-
-                        bitmaps.push((key, class.clone(), document_id, *set));
-                    }
-                    _ => {}
-                }
-            }
-
-            match self {
-                #[cfg(feature = "sqlite")]
-                Self::SQLite(store) => store.write(batch).await,
-                #[cfg(feature = "foundation")]
-                Self::FoundationDb(store) => store.write(batch).await,
-                #[cfg(feature = "postgres")]
-                Self::PostgreSQL(store) => store.write(batch).await,
-                #[cfg(feature = "mysql")]
-                Self::MySQL(store) => store.write(batch).await,
-                #[cfg(feature = "rocks")]
-                Self::RocksDb(store) => store.write(batch).await,
-                #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
-                Self::SQLReadReplica(store) => store.write(batch).await,
-                Self::None => Err(trc::StoreEvent::NotConfigured.into()),
-            }
-            .caused_by(trc::location!())?;
-
-            for (key, class, document_id, set) in bitmaps {
-                let mut bitmaps = BITMAPS.lock();
-                let map = bitmaps.entry(key).or_default();
-                if set {
-                    if !map.insert(document_id) {
-                        println!(
-                            concat!(
-                                "WARNING: key {:?} already contains document {} for account ",
-                                "{}, collection {}"
-                            ),
-                            class, document_id, account_id, collection
-                        );
-                    }
-                } else if !map.remove(&document_id) {
-                    println!(
-                        concat!(
-                            "WARNING: key {:?} does not contain document {} for account ",
-                            "{}, collection {}"
-                        ),
-                        class, document_id, account_id, collection
-                    );
-                }
-            }
-
-            return Ok(AssignedIds::default());
-        }
-
         let start_time = Instant::now();
         let ops = batch.ops.len();
 
@@ -875,8 +797,8 @@ impl Store {
                                 value
                             );
                         }
-                        SUBSPACE_COUNTER if key.len() == std::mem::size_of::<u32>() + 1 => {
-                            // Message ID counters
+                        SUBSPACE_COUNTER if key.len() == U32_LEN + 1 || key.len() == U32_LEN => {
+                            // Message ID and change ID counters
                             return Ok(true);
                         }
                         SUBSPACE_INDEXES => {

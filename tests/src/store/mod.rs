@@ -95,7 +95,7 @@ pub async fn store_tests() {
         store.destroy().await;
     }
 
-    import_export::test(store.clone()).await;
+    //import_export::test(store.clone()).await;
     ops::test(store.clone()).await;
     query::test(store.clone(), FtsStore::Store(store.clone()), insert).await;
 

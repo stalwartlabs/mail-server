@@ -202,7 +202,10 @@ impl Store {
         for (hash, postings) in tokens.into_iter() {
             keys.push(Operation::Value {
                 class: ValueClass::FtsIndex(hash),
-                op: ValueOp::Set(postings.serialize()),
+                op: ValueOp::Set {
+                    value: postings.serialize(),
+                    version_offset: None,
+                },
             });
         }
 

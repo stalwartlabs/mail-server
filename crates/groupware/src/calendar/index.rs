@@ -57,7 +57,11 @@ impl IndexableObject for &ArchivedCalendar {
     }
 }
 
-impl IndexableAndSerializableObject for Calendar {}
+impl IndexableAndSerializableObject for Calendar {
+    fn is_versioned() -> bool {
+        true
+    }
+}
 
 impl IndexableObject for CalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -103,7 +107,11 @@ impl IndexableObject for &ArchivedCalendarEvent {
     }
 }
 
-impl IndexableAndSerializableObject for CalendarEvent {}
+impl IndexableAndSerializableObject for CalendarEvent {
+    fn is_versioned() -> bool {
+        true
+    }
+}
 
 impl CalendarPreferences {
     pub fn size(&self) -> usize {

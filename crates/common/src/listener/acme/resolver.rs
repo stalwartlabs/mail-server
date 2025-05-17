@@ -19,7 +19,7 @@ use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::sync::Arc;
 use store::{
     dispatch::lookup::KeyValue,
-    write::{AlignedBytes, UnversionedArchive},
+    write::{AlignedBytes, Archive},
 };
 use trc::AcmeEvent;
 
@@ -48,7 +48,7 @@ impl Server {
     pub(crate) async fn build_acme_certificate(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
         match self
             .in_memory_store()
-            .key_get::<UnversionedArchive<AlignedBytes>>(KeyValue::<()>::build_key(KV_ACME, domain))
+            .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(KV_ACME, domain))
             .await
         {
             Ok(Some(cert_)) => match cert_.unarchive::<SerializedCert>() {

@@ -9,16 +9,12 @@ use super::{
     ValueClass, ValueOp, assert::ToAssertValue,
 };
 use crate::{SerializeInfallible, U32_LEN};
-use utils::{
-    map::{bitmap::ShortId, vec_map::VecMap},
-    snowflake::HlcTimestamp,
-};
+use utils::map::{bitmap::ShortId, vec_map::VecMap};
 
 impl BatchBuilder {
     pub fn new() -> Self {
         Self {
             ops: Vec::with_capacity(32),
-            current_change_id: None,
             current_account_id: None,
             current_collection: None,
             current_document_id: None,
@@ -29,12 +25,6 @@ impl BatchBuilder {
             has_assertions: false,
             commit_points: Vec::new(),
         }
-    }
-
-    fn generate_change_id(&mut self) -> u64 {
-        let change_id = HlcTimestamp::generate();
-        self.current_change_id = Some(change_id);
-        change_id
     }
 
     pub fn with_account_id(&mut self, account_id: u32) -> &mut Self {
@@ -193,7 +183,30 @@ impl BatchBuilder {
         self.batch_size += class.serialized_size() + value.len();
         self.ops.push(Operation::Value {
             class,
-            op: ValueOp::Set(value),
+            op: ValueOp::Set {
+                value,
+                version_offset: None,
+            },
+        });
+        self.batch_ops += 1;
+        self
+    }
+
+    pub fn set_versioned(
+        &mut self,
+        class: impl Into<ValueClass>,
+        value: impl Into<Vec<u8>>,
+        version_offset: usize,
+    ) -> &mut Self {
+        let class = class.into();
+        let value = value.into();
+        self.batch_size += class.serialized_size() + value.len();
+        self.ops.push(Operation::Value {
+            class,
+            op: ValueOp::Set {
+                value,
+                version_offset: Some(version_offset),
+            },
         });
         self.batch_ops += 1;
         self
@@ -214,7 +227,10 @@ impl BatchBuilder {
         self.batch_size += (U32_LEN * 3) + op.len();
         self.ops.push(Operation::Value {
             class: ValueClass::Acl(grant_account_id),
-            op: ValueOp::Set(op),
+            op: ValueOp::Set {
+                value: op,
+                version_offset: None,
+            },
         });
         self.batch_ops += 1;
         self
@@ -240,10 +256,6 @@ impl BatchBuilder {
                 document_id,
             );
         }
-        if self.current_change_id.is_none() {
-            self.generate_change_id();
-            self.batch_ops += 1;
-        }
         self
     }
 
@@ -256,10 +268,6 @@ impl BatchBuilder {
                 prefix,
                 document_id,
             );
-        }
-        if self.current_change_id.is_none() {
-            self.generate_change_id();
-            self.batch_ops += 1;
         }
         self
     }
@@ -274,10 +282,6 @@ impl BatchBuilder {
                 document_id,
             );
         }
-        if self.current_change_id.is_none() {
-            self.generate_change_id();
-            self.batch_ops += 1;
-        }
         self
     }
 
@@ -288,10 +292,6 @@ impl BatchBuilder {
             self.changes
                 .get_mut_or_insert(account_id)
                 .log_container_insert(collection.into(), document_id);
-        }
-        if self.current_change_id.is_none() {
-            self.generate_change_id();
-            self.batch_ops += 1;
         }
         self
     }
@@ -304,10 +304,6 @@ impl BatchBuilder {
                 .get_mut_or_insert(account_id)
                 .log_container_update(collection.into(), document_id);
         }
-        if self.current_change_id.is_none() {
-            self.generate_change_id();
-            self.batch_ops += 1;
-        }
         self
     }
 
@@ -318,10 +314,6 @@ impl BatchBuilder {
             self.changes
                 .get_mut_or_insert(account_id)
                 .log_container_delete(collection.into(), document_id);
-        }
-        if self.current_change_id.is_none() {
-            self.generate_change_id();
-            self.batch_ops += 1;
         }
         self
     }
@@ -336,35 +328,27 @@ impl BatchBuilder {
                 .get_mut_or_insert(account_id)
                 .log_container_property_update(collection.into(), document_id);
         }
-        if self.current_change_id.is_none() {
-            self.generate_change_id();
-            self.batch_ops += 1;
-        }
         self
     }
 
     fn serialize_changes(&mut self) {
-        if let Some(change_id) = self.current_change_id.take() {
-            if !self.changes.is_empty() {
-                for (account_id, changelog) in std::mem::take(&mut self.changes) {
-                    self.with_account_id(account_id);
+        if !self.changes.is_empty() {
+            for (account_id, changelog) in std::mem::take(&mut self.changes) {
+                self.with_account_id(account_id);
 
-                    for (collection, changes) in changelog.into_iterator() {
-                        let cc = self.changed_collections.get_mut_or_insert(account_id);
-                        cc.change_id = change_id;
-                        if changes.has_container_changes() {
-                            cc.changed_containers.insert(ShortId(collection));
-                        }
-                        if changes.has_item_changes() {
-                            cc.changed_items.insert(ShortId(collection));
-                        }
-
-                        self.ops.push(Operation::Log {
-                            change_id,
-                            collection,
-                            set: changes.serialize(),
-                        });
+                for (collection, changes) in changelog.into_iterator() {
+                    let cc = self.changed_collections.get_mut_or_insert(account_id);
+                    if changes.has_container_changes() {
+                        cc.changed_containers.insert(ShortId(collection));
                     }
+                    if changes.has_item_changes() {
+                        cc.changed_items.insert(ShortId(collection));
+                    }
+
+                    self.ops.push(Operation::Log {
+                        collection,
+                        set: changes.serialize(),
+                    });
                 }
             }
         }
@@ -401,39 +385,27 @@ impl BatchBuilder {
         self.current_account_id
     }
 
-    pub fn change_id(&mut self) -> u64 {
-        self.current_change_id
-            .unwrap_or_else(|| self.generate_change_id())
-    }
-
-    pub fn last_change_id(&self) -> Option<u64> {
-        self.current_change_id
-    }
-
-    pub fn build(&mut self) -> impl Iterator<Item = Batch<'_>> {
+    pub fn commit_points(&mut self) -> CommitPointIterator {
         self.serialize_changes();
-        self.build_batches()
+        CommitPointIterator {
+            commit_points: std::mem::take(&mut self.commit_points),
+            commit_point_last: self.ops.len(),
+            offset_start: 0,
+        }
     }
 
-    fn build_batches(&self) -> impl Iterator<Item = Batch<'_>> {
-        let mut offset_start = 0;
-        self.commit_points
-            .iter()
-            .copied()
-            .chain([self.ops.len()])
-            .map(move |point| {
-                let batch = Batch {
-                    ops: &self.ops[offset_start..point],
-                };
-                offset_start = point;
-                batch
-            })
+    pub fn build_one(&mut self, commit_point: CommitPoint) -> Batch<'_> {
+        Batch {
+            changes: &self.changed_collections,
+            ops: &mut self.ops[commit_point.offset_start..commit_point.offset_end],
+        }
     }
 
     pub fn build_all(&mut self) -> Batch<'_> {
         self.serialize_changes();
         Batch {
-            ops: self.ops.as_slice(),
+            changes: &self.changed_collections,
+            ops: self.ops.as_mut_slice(),
         }
     }
 
@@ -459,6 +431,34 @@ impl BatchBuilder {
 
     pub fn is_empty(&self) -> bool {
         self.batch_ops == 0
+    }
+}
+
+pub struct CommitPointIterator {
+    commit_points: Vec<usize>,
+    commit_point_last: usize,
+    offset_start: usize,
+}
+
+pub struct CommitPoint {
+    pub offset_start: usize,
+    pub offset_end: usize,
+}
+
+impl CommitPointIterator {
+    pub fn iter(&mut self) -> impl Iterator<Item = CommitPoint> {
+        self.commit_points
+            .iter()
+            .copied()
+            .chain([self.commit_point_last])
+            .map(|offset_end| {
+                let point = CommitPoint {
+                    offset_start: self.offset_start,
+                    offset_end,
+                };
+                self.offset_start = offset_end;
+                point
+            })
     }
 }
 

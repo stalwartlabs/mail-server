@@ -27,6 +27,7 @@ pub struct Changes {
     pub to_change_id: u64,
     pub container_change_id: Option<u64>,
     pub item_change_id: Option<u64>,
+    pub is_truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -45,6 +46,7 @@ impl Default for Changes {
             to_change_id: 0,
             container_change_id: None,
             item_change_id: None,
+            is_truncated: false,
         }
     }
 }
@@ -83,6 +85,10 @@ impl Store {
             |key, value| {
                 let change_id = key.deserialize_be_u64(key.len() - U64_LEN)?;
                 if is_inclusive || change_id != from_change_id {
+                    if value.is_empty() {
+                        changelog.is_truncated = true;
+                        return Ok(true);
+                    }
                     if changelog.changes.is_empty() {
                         changelog.from_change_id = change_id;
                     }

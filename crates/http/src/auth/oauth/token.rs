@@ -20,7 +20,7 @@ use hyper::StatusCode;
 use std::future::Future;
 use store::{
     dispatch::lookup::KeyValue,
-    write::{AlignedBytes, UnversionedArchive},
+    write::{AlignedBytes, Archive},
 };
 use trc::AddContext;
 
@@ -77,7 +77,7 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<UnversionedArchive<AlignedBytes>>(KeyValue::<()>::build_key(
+                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         code.as_bytes(),
                     ))
@@ -149,7 +149,7 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<UnversionedArchive<AlignedBytes>>(KeyValue::<()>::build_key(
+                    .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
                         KV_OAUTH,
                         device_code.as_bytes(),
                     ))
@@ -329,7 +329,7 @@ impl TokenHandler for Server {
                         nonce,
                         preferred_username: access_token.name.clone().into(),
                         email: access_token.emails.first().cloned(),
-                        description: access_token.description.clone().into(),
+                        description: access_token.description.clone(),
                     },
                 ) {
                     Ok(id_token) => Some(id_token),

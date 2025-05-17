@@ -4,52 +4,69 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    cmp::Ordering,
-    time::{Duration, Instant},
+use super::{
+    FdbStore, MAX_VALUE_SIZE, ReadVersion, into_error,
+    read::{ChunkedValue, read_chunked_value},
 };
-
+use crate::{
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U64_LEN,
+    WITH_SUBSPACE,
+    backend::deserialize_i64_le,
+    write::{
+        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueClass, ValueOp,
+        key::KeySerializer,
+    },
+};
 use foundationdb::{
     FdbError, KeySelector, RangeOption, Transaction,
     options::{self, MutationType},
 };
 use futures::TryStreamExt;
 use rand::Rng;
-
-use crate::{
-    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
-    WITH_SUBSPACE,
-    backend::deserialize_i64_le,
-    write::{
-        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueOp,
-        key::KeySerializer,
-    },
-};
-
-use super::{
-    FdbStore, MAX_VALUE_SIZE, ReadVersion, into_error,
-    read::{ChunkedValue, read_chunked_value},
+use std::{
+    cmp::Ordering,
+    time::{Duration, Instant},
 };
 
 impl FdbStore {
     pub(crate) async fn write(&self, batch: Batch<'_>) -> trc::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
+        let has_changes = !batch.changes.is_empty();
 
         loop {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
+            let mut change_id = 0u64;
             let mut result = AssignedIds::default();
 
             let trx = self.db.create_trx().map_err(into_error)?;
 
-            for op in batch.ops {
+            if has_changes {
+                for &account_id in batch.changes.keys() {
+                    debug_assert!(account_id != u32::MAX);
+                    let key = ValueClass::ChangeId.serialize(account_id, 0, 0, WITH_SUBSPACE);
+                    let change_id =
+                        if let Some(bytes) = trx.get(&key, false).await.map_err(into_error)? {
+                            deserialize_i64_le(&key, &bytes)? + 1
+                        } else {
+                            1
+                        };
+                    trx.set(&key, &change_id.to_le_bytes()[..]);
+                    result.push_change_id(account_id, change_id as u64);
+                }
+            }
+
+            for op in batch.ops.iter_mut() {
                 match op {
                     Operation::AccountId {
                         account_id: account_id_,
                     } => {
                         account_id = *account_id_;
+                        if has_changes {
+                            change_id = result.last_change_id(account_id)?;
+                        }
                     }
                     Operation::Collection {
                         collection: collection_,
@@ -67,7 +84,15 @@ impl FdbStore {
                         let do_chunk = !class.is_counter(collection);
 
                         match op {
-                            ValueOp::Set(value) => {
+                            ValueOp::Set {
+                                value,
+                                version_offset,
+                            } => {
+                                if let Some(offset) = version_offset {
+                                    value[*offset..*offset + U64_LEN]
+                                        .copy_from_slice(&change_id.to_be_bytes());
+                                }
+
                                 if !value.is_empty() && do_chunk {
                                     for (pos, chunk) in value.chunks(MAX_VALUE_SIZE).enumerate() {
                                         match pos.cmp(&1) {
@@ -129,7 +154,7 @@ impl FdbStore {
                             collection,
                             document_id,
                             field: *field,
-                            key,
+                            key: &*key,
                         }
                         .serialize(WITH_SUBSPACE);
 
@@ -140,41 +165,23 @@ impl FdbStore {
                         }
                     }
                     Operation::Bitmap { class, set } => {
-                        let is_document_id = matches!(class, BitmapClass::DocumentIds);
                         let key =
                             class.serialize(account_id, collection, document_id, WITH_SUBSPACE);
 
                         if *set {
-                            if is_document_id {
-                                trx.add_conflict_range(
-                                    &key,
-                                    &class.serialize(
-                                        account_id,
-                                        collection,
-                                        document_id + 1,
-                                        WITH_SUBSPACE,
-                                    ),
-                                    options::ConflictRangeType::Read,
-                                )
-                                .map_err(into_error)?;
-                            }
-
                             trx.set(&key, &[]);
                         } else {
                             trx.clear(&key);
                         }
                     }
-                    Operation::Log {
-                        collection,
-                        change_id,
-                        set,
-                    } => {
+                    Operation::Log { collection, set } => {
                         let key = LogKey {
                             account_id,
                             collection: *collection,
-                            change_id: *change_id,
+                            change_id,
                         }
                         .serialize(WITH_SUBSPACE);
+
                         trx.set(&key, set);
                     }
                     Operation::AssertValue {
@@ -210,7 +217,7 @@ impl FdbStore {
             {
                 return Ok(result);
             } else {
-                let backoff = rand::rng().random_range(50..=300);
+                let backoff = rand::rng().random_range(50..=100);
                 tokio::time::sleep(Duration::from_millis(backoff)).await;
                 retry_count += 1;
             }

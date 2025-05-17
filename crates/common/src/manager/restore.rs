@@ -10,6 +10,7 @@ use std::{
 };
 
 use crate::Core;
+use ahash::AHashMap;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     BlobStore, Key, LogKey, SUBSPACE_LOGS, SerializeInfallible, Store, U32_LEN,
@@ -71,6 +72,8 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
 
     let mut batch_size = 0;
     let mut batch = BatchBuilder::new();
+
+    let mut change_ids: AHashMap<u32, u64> = AHashMap::new();
 
     while let Some(op) = reader.next().await {
         match op {
@@ -194,11 +197,6 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                                         .deserialize_leb128::<u32>()
                                         .expect("Failed to deserialize principal id"),
                                 ),
-                                /*3 => DirectoryClass::Domain(
-                                    key.get(1..)
-                                        .expect("Failed to read directory string")
-                                        .to_vec(),
-                                ),*/
                                 4 => {
                                     batch.add(
                                         ValueClass::Directory(DirectoryClass::UsedQuota(
@@ -343,20 +341,27 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                         }
                     }
                     Family::Log => {
+                        let change_id = key
+                            .as_slice()
+                            .deserialize_be_u64(0)
+                            .expect("Failed to deserialize change id");
+                        let change_ids = change_ids.entry(account_id).or_default();
+                        *change_ids = std::cmp::max(*change_ids, change_id);
+
                         batch.any_op(Operation::Value {
                             class: ValueClass::Any(AnyClass {
                                 subspace: SUBSPACE_LOGS,
                                 key: LogKey {
                                     account_id,
                                     collection,
-                                    change_id: key
-                                        .as_slice()
-                                        .deserialize_be_u64(0)
-                                        .expect("Failed to deserialize change id"),
+                                    change_id,
                                 }
                                 .serialize(0),
                             }),
-                            op: ValueOp::Set(value),
+                            op: ValueOp::Set {
+                                value,
+                                version_offset: None,
+                            },
                         });
                     }
                     Family::None => failed("No family specified in file"),
@@ -379,6 +384,21 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
     }
 
     if !batch.is_empty() {
+        store
+            .write(batch.build_all())
+            .await
+            .failed("Failed to write batch");
+    }
+
+    if !change_ids.is_empty() {
+        let mut batch = BatchBuilder::new();
+
+        for (account_id, change_id) in change_ids {
+            batch
+                .with_account_id(account_id)
+                .add(ValueClass::ChangeId, change_id as i64);
+        }
+
         store
             .write(batch.build_all())
             .await

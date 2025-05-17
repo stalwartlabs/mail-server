@@ -27,10 +27,7 @@ use groupware::{
 use jmap_proto::types::{collection::Collection, property::Property, value::ArchivedAclGrant};
 use propfind::PropFindItem;
 use rkyv::vec::ArchivedVec;
-use store::{
-    U32_LEN,
-    write::{AlignedBytes, Archive, BatchBuilder, Operation, ValueClass, ValueOp},
-};
+use store::write::{AlignedBytes, Archive, BatchBuilder, Operation, ValueClass, ValueOp};
 use uri::{OwnedUri, Urn};
 
 pub mod acl;
@@ -94,6 +91,7 @@ pub(crate) enum DavQueryFilter {
 
 pub(crate) trait ETag {
     fn etag(&self) -> String;
+    fn ctag(&self) -> String;
 }
 
 pub(crate) trait ExtractETag {
@@ -102,7 +100,11 @@ pub(crate) trait ExtractETag {
 
 impl<T> ETag for Archive<T> {
     fn etag(&self) -> String {
-        format!("\"{}\"", self.hash)
+        format!("\"{}\"", self.version.hash().unwrap_or_default())
+    }
+
+    fn ctag(&self) -> String {
+        format!("\"{}\"", self.version.change_id().unwrap_or_default())
     }
 }
 
@@ -113,11 +115,10 @@ impl ExtractETag for BatchBuilder {
             match op {
                 Operation::Value {
                     class: ValueClass::Property(p_id),
-                    op: ValueOp::Set(value),
+                    op: ValueOp::Set { value, .. },
                 } if *p_id == p_value => {
-                    return value
-                        .get(value.len() - U32_LEN..)
-                        .map(|v| format!("\"{}\"", u32::from_be_bytes(v.try_into().unwrap())));
+                    return Archive::<AlignedBytes>::extract_hash(value)
+                        .map(|hash| format!("\"{}\"", hash));
                 }
                 _ => {}
             }

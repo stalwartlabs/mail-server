@@ -11,11 +11,14 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use std::future::Future;
 use std::time::Duration;
 use store::rand::prelude::SliceRandom;
+use store::write::key::DeserializeBigEndian;
+use store::write::now;
 use store::{
     BitmapKey, ValueKey,
     roaring::RoaringBitmap,
     write::{AlignedBytes, Archive, BatchBuilder, BitmapClass, TagValue, ValueClass},
 };
+use store::{IndexKey, IterateParams, SerializeInfallible, U32_LEN};
 use trc::AddContext;
 use utils::BlobHash;
 
@@ -167,13 +170,7 @@ impl EmailDeletion for Server {
     }
 
     async fn emails_auto_expunge(&self, account_id: u32, period: Duration) -> trc::Result<()> {
-        let reference_cid = self.inner.data.jmap_id_gen.past_id(period).ok_or_else(|| {
-            trc::StoreEvent::UnexpectedError
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Reason, "Failed to generate reference cid.")
-        })?;
-        let destroy_ids = RoaringBitmap::from_iter(
+        let trashed_ids = RoaringBitmap::from_iter(
             self.get_cached_messages(account_id)
                 .await
                 .caused_by(trc::location!())?
@@ -181,14 +178,53 @@ impl EmailDeletion for Server {
                 .items
                 .iter()
                 .filter(|item| {
-                    item.change_id < reference_cid
-                        && item
-                            .mailboxes
-                            .iter()
-                            .any(|id| id.mailbox_id == TRASH_ID || id.mailbox_id == JUNK_ID)
+                    item.mailboxes
+                        .iter()
+                        .any(|id| id.mailbox_id == TRASH_ID || id.mailbox_id == JUNK_ID)
                 })
                 .map(|item| item.document_id),
         );
+        if trashed_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Filter messages by received date
+        let mut destroy_ids = RoaringBitmap::new();
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    IndexKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        document_id: 0,
+                        field: Property::ReceivedAt.into(),
+                        key: now().saturating_sub(period.as_secs() * 2).serialize(),
+                    },
+                    IndexKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        document_id: u32::MAX,
+                        field: Property::ReceivedAt.into(),
+                        key: now().saturating_sub(period.as_secs()).serialize(),
+                    },
+                )
+                .no_values()
+                .ascending(),
+                |key, _| {
+                    let document_id = key
+                        .deserialize_be_u32(key.len() - U32_LEN)
+                        .caused_by(trc::location!())?;
+
+                    if trashed_ids.contains(document_id) {
+                        destroy_ids.insert(document_id);
+                    }
+
+                    Ok(trashed_ids.len() != destroy_ids.len())
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
         if destroy_ids.is_empty() {
             return Ok(());
         }

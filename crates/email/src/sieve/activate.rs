@@ -102,9 +102,12 @@ impl SieveScriptActivate for Server {
 
         // Write changes
         if !changed_ids.is_empty() {
-            let change_id = batch.change_id();
-            match self.commit_batch(batch).await {
-                Ok(_) => Ok((change_id, changed_ids)),
+            match self
+                .commit_batch(batch)
+                .await
+                .and_then(|ids| ids.last_change_id(account_id))
+            {
+                Ok(change_id) => Ok((change_id, changed_ids)),
                 Err(err) if err.is_assertion_failure() => Ok((0, vec![])),
                 Err(err) => Err(err.caused_by(trc::location!())),
             }

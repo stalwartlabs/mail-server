@@ -26,7 +26,7 @@ use std::{
 use utils::{
     cache::{Cache, CacheWithTtl},
     config::Config,
-    snowflake::{HlcTimestamp, SnowflakeIdGenerator},
+    snowflake::SnowflakeIdGenerator,
 };
 
 impl Data {
@@ -44,7 +44,6 @@ impl Data {
             .property::<u64>("cluster.node-id")
             .unwrap_or_else(store::rand::random);
         let id_generator = SnowflakeIdGenerator::with_node_id(node_id);
-        HlcTimestamp::init(node_id as u16);
         if !id_generator.is_valid() {
             panic!("Invalid system time, panicking to avoid data corruption");
         }

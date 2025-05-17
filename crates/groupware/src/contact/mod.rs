@@ -11,7 +11,6 @@ use calcard::vcard::VCard;
 use common::DavName;
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
-use store::{SERIALIZE_ADDRESS_BOOK_V1, SERIALIZE_CONTACT_V1, SerializedVersion};
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -73,17 +72,5 @@ impl From<AddressBookRight> for Acl {
             AddressBookRight::Share => Acl::Share,
             AddressBookRight::Delete => Acl::Delete,
         }
-    }
-}
-
-impl SerializedVersion for AddressBook {
-    fn serialize_version() -> u8 {
-        SERIALIZE_ADDRESS_BOOK_V1
-    }
-}
-
-impl SerializedVersion for ContactCard {
-    fn serialize_version() -> u8 {
-        SERIALIZE_CONTACT_V1
     }
 }

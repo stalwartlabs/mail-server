@@ -12,7 +12,6 @@ use calcard::icalendar::ICalendar;
 use common::DavName;
 use dav_proto::schema::request::DeadProperty;
 use jmap_proto::types::{acl::Acl, value::AclGrant};
-use store::{SERIALIZE_CALENDAR_EVENT_V1, SERIALIZE_CALENDAR_V1, SerializedVersion};
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -177,18 +176,6 @@ impl From<CalendarRight> for Acl {
             CalendarRight::Share => Acl::Share,
             CalendarRight::Delete => Acl::Delete,
         }
-    }
-}
-
-impl SerializedVersion for Calendar {
-    fn serialize_version() -> u8 {
-        SERIALIZE_CALENDAR_V1
-    }
-}
-
-impl SerializedVersion for CalendarEvent {
-    fn serialize_version() -> u8 {
-        SERIALIZE_CALENDAR_EVENT_V1
     }
 }
 

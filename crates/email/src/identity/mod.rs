@@ -6,8 +6,6 @@
 
 pub mod index;
 
-use store::{SERIALIZE_IDENTITY_V1, SerializedVersion};
-
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
@@ -24,10 +22,4 @@ pub struct Identity {
 pub struct EmailAddress {
     pub name: Option<String>,
     pub email: String,
-}
-
-impl SerializedVersion for Identity {
-    fn serialize_version() -> u8 {
-        SERIALIZE_IDENTITY_V1
-    }
 }

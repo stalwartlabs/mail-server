@@ -245,7 +245,7 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("* 1 FETCH")
-        .assert_contains("UID 3)")
+        .assert_contains("(UID 3 MODSEQ")
         .assert_count("FETCH (", 1)
         .assert_contains("[MODIFIED 2,4:5]");
 
@@ -257,7 +257,7 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("* 2 FETCH")
-        .assert_contains("UID 4)")
+        .assert_contains("(UID 4 MODSEQ")
         .assert_count("FETCH (", 1)
         .assert_contains("[MODIFIED 5]");
 

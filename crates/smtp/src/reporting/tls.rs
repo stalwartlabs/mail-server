@@ -28,10 +28,7 @@ use std::fmt::Write;
 use std::{collections::hash_map::Entry, future::Future, sync::Arc, time::Duration};
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{
-        AlignedBytes, BatchBuilder, QueueClass, ReportEvent, UnversionedArchive,
-        UnversionedArchiver, ValueClass,
-    },
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, QueueClass, ReportEvent, ValueClass},
 };
 use trc::{AddContext, OutgoingReportEvent};
 
@@ -296,7 +293,7 @@ impl TlsReporting for Server {
         for event in events {
             let tls = if let Some(tls) = self
                 .store()
-                .get_value::<UnversionedArchive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
+                .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
                     QueueClass::TlsReportHeader(event.clone()),
                 )))
                 .await?
@@ -334,8 +331,7 @@ impl TlsReporting for Server {
                 .storage
                 .data
                 .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
-                    let archive =
-                        <UnversionedArchive<AlignedBytes> as Deserialize>::deserialize(v)?;
+                    let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(v)?;
                     if let Some(failure_details) =
                         archive.deserialize::<Option<FailureDetails>>()?
                     {
@@ -490,7 +486,7 @@ impl TlsReporting for Server {
             // Write report
             builder.set(
                 ValueClass::Queue(QueueClass::TlsReportHeader(report_event.clone())),
-                match UnversionedArchiver::new(entry).serialize() {
+                match Archiver::new(entry).serialize() {
                     Ok(data) => data.to_vec(),
                     Err(err) => {
                         trc::error!(
@@ -507,7 +503,7 @@ impl TlsReporting for Server {
         report_event.seq_id = self.inner.data.queue_id_gen.generate();
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
-            match UnversionedArchiver::new(event.failure).serialize() {
+            match Archiver::new(event.failure).serialize() {
                 Ok(data) => data.to_vec(),
                 Err(err) => {
                     trc::error!(

@@ -4,21 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::hash_map::Entry, future::Future};
-
+use super::{AggregateTimestamp, SerializedSize};
+use crate::{
+    core::Session,
+    queue::{DomainPart, RecipientDomain},
+    reporting::SmtpReporting,
+};
 use ahash::AHashMap;
 use common::{
     Server,
     config::smtp::report::AggregateFrequency,
     ipc::{DmarcEvent, ToHash},
     listener::SessionStream,
-};
-
-use super::{AggregateTimestamp, SerializedSize};
-use crate::{
-    core::Session,
-    queue::{DomainPart, RecipientDomain},
-    reporting::SmtpReporting,
 };
 use compact_str::ToCompactString;
 use mail_auth::{
@@ -28,12 +25,10 @@ use mail_auth::{
     dmarc::{self, URI},
     report::{AuthFailureType, IdentityAlignment, PolicyPublished, Record, Report, SPFDomainScope},
 };
+use std::{collections::hash_map::Entry, future::Future};
 use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
-    write::{
-        AlignedBytes, BatchBuilder, QueueClass, ReportEvent, UnversionedArchive,
-        UnversionedArchiver, ValueClass,
-    },
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, QueueClass, ReportEvent, ValueClass},
 };
 use trc::{AddContext, OutgoingReportEvent};
 use utils::config::Rate;
@@ -477,7 +472,7 @@ impl DmarcReporting for Server {
         // Deserialize report
         let dmarc = match self
             .store()
-            .get_value::<UnversionedArchive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
+            .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::Queue(
                 QueueClass::DmarcReportHeader(event.clone()),
             )))
             .await?
@@ -552,7 +547,7 @@ impl DmarcReporting for Server {
             .storage
             .data
             .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
-                let archive = <UnversionedArchive<AlignedBytes> as Deserialize>::deserialize(v)?;
+                let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(v)?;
 
                 match record_map.entry(archive.deserialize::<Record>()?) {
                     Entry::Occupied(mut e) => {
@@ -661,7 +656,7 @@ impl DmarcReporting for Server {
             // Write report
             builder.set(
                 ValueClass::Queue(QueueClass::DmarcReportHeader(report_event.clone())),
-                match UnversionedArchiver::new(entry).serialize() {
+                match Archiver::new(entry).serialize() {
                     Ok(data) => data.to_vec(),
                     Err(err) => {
                         trc::error!(
@@ -678,7 +673,7 @@ impl DmarcReporting for Server {
         report_event.seq_id = self.inner.data.queue_id_gen.generate();
         builder.set(
             ValueClass::Queue(QueueClass::DmarcReportEvent(report_event)),
-            match UnversionedArchiver::new(event.report_record).serialize() {
+            match Archiver::new(event.report_record).serialize() {
                 Ok(data) => data.to_vec(),
                 Err(err) => {
                     trc::error!(

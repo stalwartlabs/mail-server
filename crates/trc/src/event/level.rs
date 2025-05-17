@@ -361,9 +361,7 @@ impl EventType {
                 | ClusterEvent::SubscriberStop
                 | ClusterEvent::PublisherStart
                 | ClusterEvent::PublisherStop => Level::Info,
-                ClusterEvent::SubscriberDisconnected | ClusterEvent::ClockSkewDetected => {
-                    Level::Warn
-                }
+                ClusterEvent::SubscriberDisconnected => Level::Warn,
                 ClusterEvent::MessageReceived | ClusterEvent::MessageSkipped => Level::Trace,
                 ClusterEvent::PublisherError
                 | ClusterEvent::SubscriberError

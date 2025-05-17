@@ -12,8 +12,7 @@ use store::{
     IterateParams, SUBSPACE_REPORT_OUT, Serialize, U64_LEN, ValueKey,
     ahash::AHashSet,
     write::{
-        AlignedBytes, AnyKey, BatchBuilder, ReportClass, UnversionedArchive, UnversionedArchiver,
-        ValueClass,
+        AlignedBytes, AnyKey, Archive, Archiver, BatchBuilder, ReportClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
     },
 };
@@ -91,7 +90,7 @@ pub(crate) async fn migrate_reports(server: &Server) -> trc::Result<()> {
                             let mut batch = BatchBuilder::new();
                             batch.set(
                                 ValueClass::Report(ReportClass::Dmarc { id, expires }),
-                                UnversionedArchiver::new(bincoded.inner)
+                                Archiver::new(bincoded.inner)
                                     .serialize()
                                     .caused_by(trc::location!())?,
                             );
@@ -106,7 +105,7 @@ pub(crate) async fn migrate_reports(server: &Server) -> trc::Result<()> {
                         Err(err) => {
                             if server
                                 .store()
-                                .get_value::<UnversionedArchive<AlignedBytes>>(ValueKey::from(
+                                .get_value::<Archive<AlignedBytes>>(ValueKey::from(
                                     ValueClass::Report(ReportClass::Dmarc { id, expires }),
                                 ))
                                 .await
@@ -129,7 +128,7 @@ pub(crate) async fn migrate_reports(server: &Server) -> trc::Result<()> {
                             let mut batch = BatchBuilder::new();
                             batch.set(
                                 ValueClass::Report(ReportClass::Tls { id, expires }),
-                                UnversionedArchiver::new(bincoded.inner)
+                                Archiver::new(bincoded.inner)
                                     .serialize()
                                     .caused_by(trc::location!())?,
                             );
@@ -144,7 +143,7 @@ pub(crate) async fn migrate_reports(server: &Server) -> trc::Result<()> {
                         Err(err) => {
                             if server
                                 .store()
-                                .get_value::<UnversionedArchive<AlignedBytes>>(ValueKey::from(
+                                .get_value::<Archive<AlignedBytes>>(ValueKey::from(
                                     ValueClass::Report(ReportClass::Tls { id, expires }),
                                 ))
                                 .await
@@ -167,7 +166,7 @@ pub(crate) async fn migrate_reports(server: &Server) -> trc::Result<()> {
                             let mut batch = BatchBuilder::new();
                             batch.set(
                                 ValueClass::Report(ReportClass::Arf { id, expires }),
-                                UnversionedArchiver::new(bincoded.inner)
+                                Archiver::new(bincoded.inner)
                                     .serialize()
                                     .caused_by(trc::location!())?,
                             );
@@ -182,7 +181,7 @@ pub(crate) async fn migrate_reports(server: &Server) -> trc::Result<()> {
                         Err(err) => {
                             if server
                                 .store()
-                                .get_value::<UnversionedArchive<AlignedBytes>>(ValueKey::from(
+                                .get_value::<Archive<AlignedBytes>>(ValueKey::from(
                                     ValueClass::Report(ReportClass::Arf { id, expires }),
                                 ))
                                 .await

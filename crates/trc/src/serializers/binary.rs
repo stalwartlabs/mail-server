@@ -358,7 +358,6 @@ impl EventType {
             EventType::Cluster(ClusterEvent::MessageReceived) => 46,
             EventType::Cluster(ClusterEvent::MessageSkipped) => 47,
             EventType::Cluster(ClusterEvent::MessageInvalid) => 49,
-            EventType::Cluster(ClusterEvent::ClockSkewDetected) => 50,
             EventType::Config(ConfigEvent::AlreadyUpToDate) => 53,
             EventType::Config(ConfigEvent::BuildError) => 54,
             EventType::Config(ConfigEvent::BuildWarning) => 55,
@@ -939,7 +938,6 @@ impl EventType {
             46 => Some(EventType::Cluster(ClusterEvent::MessageReceived)),
             47 => Some(EventType::Cluster(ClusterEvent::MessageSkipped)),
             49 => Some(EventType::Cluster(ClusterEvent::MessageInvalid)),
-            50 => Some(EventType::Cluster(ClusterEvent::ClockSkewDetected)),
             53 => Some(EventType::Config(ConfigEvent::AlreadyUpToDate)),
             54 => Some(EventType::Config(ConfigEvent::BuildError)),
             55 => Some(EventType::Config(ConfigEvent::BuildWarning)),
@@ -1511,7 +1509,7 @@ impl EventType {
     }
 }
 
-// 51, 52
+// 50, 51, 52
 
 impl Key {
     fn code(&self) -> u64 {

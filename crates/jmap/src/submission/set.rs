@@ -242,8 +242,11 @@ impl EmailSubmissionSet for Server {
 
         // Write changes
         if !batch.is_empty() {
-            let change_id = batch.change_id();
-            self.commit_batch(batch).await.caused_by(trc::location!())?;
+            let change_id = self
+                .commit_batch(batch)
+                .await
+                .and_then(|ids| ids.last_change_id(account_id))
+                .caused_by(trc::location!())?;
             response.new_state = State::Exact(change_id).into();
         }
 

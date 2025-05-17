@@ -6,9 +6,12 @@
 
 use std::collections::HashSet;
 
+use ahash::AHashSet;
+use jmap_proto::types::collection::SyncCollection;
 use store::{
     Store, ValueKey,
-    write::{BatchBuilder, DirectoryClass, ValueClass},
+    rand::{self, Rng},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, DirectoryClass, ValueClass},
 };
 
 // FDB max value
@@ -138,6 +141,67 @@ pub async fn test(db: Store) {
         1000
     );
 
+    // Concurrent changelog
+    let mut handles = Vec::new();
+    let mut assigned_ids = AHashSet::new();
+    print!("Incrementing changeId 1000 times concurrently...");
+    let time = std::time::Instant::now();
+    for document_id in 0..1000 {
+        handles.push({
+            let db = db.clone();
+            tokio::spawn(async move {
+                let mut builder = BatchBuilder::new();
+                let value = if document_id != 0 {
+                    (0..rand::rng().random_range(1..=100))
+                        .map(|_| rand::rng().random_range(0..=255))
+                        .collect::<Vec<u8>>()
+                } else {
+                    vec![0u8; 100000]
+                };
+
+                let (offset, archived_value) = Archiver::new(value).serialize_versioned().unwrap();
+
+                builder
+                    .with_account_id(0)
+                    .with_collection(0)
+                    .update_document(document_id)
+                    .set_versioned(ValueClass::Property(5), archived_value, offset)
+                    .log_container_insert(SyncCollection::Email);
+                db.write(builder.build_all())
+                    .await
+                    .unwrap()
+                    .last_change_id(0)
+                    .unwrap()
+            })
+        });
+    }
+    for handle in handles {
+        let assigned_id = handle.await.unwrap();
+        assert!(
+            assigned_ids.insert(assigned_id),
+            "counter assigned {assigned_id} twice or more times: {:?}.",
+            assigned_ids
+        );
+    }
+    assert_eq!(assigned_ids.len(), 1000);
+    println!(" done in {:?}ms", time.elapsed().as_millis());
+    let mut change_ids = AHashSet::new();
+    for document_id in 0..1000 {
+        let archive = db
+            .get_value::<Archive<AlignedBytes>>(ValueKey {
+                account_id: 0,
+                collection: 0,
+                document_id,
+                class: ValueClass::Property(5),
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        change_ids.insert(archive.version.change_id().unwrap());
+        archive.unarchive_untrusted::<Vec<u8>>().unwrap();
+    }
+    assert_eq!(change_ids, assigned_ids);
+
     println!("Running chunking tests...");
     for (test_num, value) in [
         vec![b'A'; 0],
@@ -233,19 +297,24 @@ pub async fn test(db: Store) {
         }
 
         // Delete everything
-        db.write(
-            BatchBuilder::new()
-                .with_account_id(0)
-                .with_collection(0)
-                .with_account_id(0)
-                .update_document(0)
-                .clear(ValueClass::Property(0))
-                .clear(ValueClass::Property(2))
-                .clear(ValueClass::Directory(DirectoryClass::UsedQuota(0)))
-                .build_all(),
-        )
-        .await
-        .unwrap();
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(0)
+            .with_collection(0)
+            .with_account_id(0)
+            .update_document(0)
+            .clear(ValueClass::Property(0))
+            .clear(ValueClass::Property(2))
+            .clear(ValueClass::Directory(DirectoryClass::UsedQuota(0)))
+            .clear(ValueClass::ChangeId);
+
+        for document_id in 0..1000 {
+            batch
+                .update_document(document_id)
+                .clear(ValueClass::Property(5));
+        }
+
+        db.write(batch.build_all()).await.unwrap();
 
         // Make sure everything is deleted
         db.assert_is_empty(db.clone().into()).await;

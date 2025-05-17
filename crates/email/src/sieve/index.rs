@@ -35,7 +35,11 @@ impl IndexableObject for SieveScript {
     }
 }
 
-impl IndexableAndSerializableObject for SieveScript {}
+impl IndexableAndSerializableObject for SieveScript {
+    fn is_versioned() -> bool {
+        false
+    }
+}
 
 impl IndexableObject for &ArchivedSieveScript {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {

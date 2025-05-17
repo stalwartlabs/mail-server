@@ -172,7 +172,6 @@ impl EmailCopy for Server {
 
         // Prepare batch
         let mut batch = BatchBuilder::new();
-        let change_id = batch.change_id();
         batch.with_account_id(account_id);
 
         if is_new_thread {
@@ -195,14 +194,13 @@ impl EmailCopy for Server {
                 ObjectIndexBuilder::<(), _>::new().with_changes(MessageData {
                     mailboxes: mailbox_ids,
                     keywords,
-                    change_id,
                     thread_id,
                 }),
             )
             .caused_by(trc::location!())?
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                    seq: change_id,
+                    seq: self.generate_snowflake_id(),
                     hash: metadata.blob_hash.clone(),
                 }),
                 vec![],
@@ -217,10 +215,12 @@ impl EmailCopy for Server {
             .caused_by(trc::location!())?;
 
         // Insert and obtain ids
-        self.store()
+        let change_id = self
+            .store()
             .write(batch.build_all())
             .await
-            .caused_by(trc::location!())?;
+            .caused_by(trc::location!())?
+            .last_change_id(account_id)?;
 
         // Request FTS index
         self.notify_task_queue();

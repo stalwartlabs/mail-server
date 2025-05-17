@@ -19,7 +19,7 @@ use std::{
 };
 use store::{
     Serialize,
-    write::{BatchBuilder, ReportClass, UnversionedArchiver, ValueClass, now},
+    write::{Archiver, BatchBuilder, ReportClass, ValueClass, now},
 };
 use trc::IncomingReportEvent;
 
@@ -281,7 +281,7 @@ impl AnalyzeReport for Server {
                         Format::Dmarc(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Dmarc { id, expires }),
-                                UnversionedArchiver::new(IncomingReport {
+                                Archiver::new(IncomingReport {
                                     from,
                                     to,
                                     subject,
@@ -294,7 +294,7 @@ impl AnalyzeReport for Server {
                         Format::Tls(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Tls { id, expires }),
-                                UnversionedArchiver::new(IncomingReport {
+                                Archiver::new(IncomingReport {
                                     from,
                                     to,
                                     subject,
@@ -307,7 +307,7 @@ impl AnalyzeReport for Server {
                         Format::Arf(report) => {
                             batch.set(
                                 ValueClass::Report(ReportClass::Arf { id, expires }),
-                                UnversionedArchiver::new(IncomingReport {
+                                Archiver::new(IncomingReport {
                                     from,
                                     to,
                                     subject,

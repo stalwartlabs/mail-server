@@ -124,8 +124,12 @@ impl MailboxSet for Server {
         }
 
         if !batch.is_empty() {
-            change_id = Some(batch.change_id());
-            self.commit_batch(batch).await.caused_by(trc::location!())?;
+            change_id = self
+                .commit_batch(batch)
+                .await
+                .and_then(|ids| ids.last_change_id(account_id))
+                .caused_by(trc::location!())?
+                .into();
         }
 
         // Process updates
@@ -206,9 +210,12 @@ impl MailboxSet for Server {
         }
 
         if !batch.is_empty() {
-            let change_id_ = batch.change_id();
-            match self.commit_batch(batch).await {
-                Ok(_) => {
+            match self
+                .commit_batch(batch)
+                .await
+                .and_then(|ids| ids.last_change_id(account_id))
+            {
+                Ok(change_id_) => {
                     change_id = Some(change_id_);
                     for id in will_update {
                         ctx.response.updated.append(id, None);

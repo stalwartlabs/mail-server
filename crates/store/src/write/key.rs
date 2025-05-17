@@ -405,6 +405,7 @@ impl ValueClass {
                     .write_leb128(*node_id),
             },
             ValueClass::DocumentId => serializer.write(account_id).write(collection),
+            ValueClass::ChangeId => serializer.write(account_id),
             ValueClass::Any(any) => serializer.write(any.key.as_slice()),
         }
         .finalize()
@@ -583,6 +584,7 @@ impl ValueClass {
                 TelemetryClass::Metric { .. } => U64_LEN * 2 + 1,
             },
             ValueClass::DocumentId => U32_LEN + 1,
+            ValueClass::ChangeId => U32_LEN,
             ValueClass::Any(v) => v.key.len(),
         }
     }
@@ -629,7 +631,7 @@ impl ValueClass {
                 TelemetryClass::Index { .. } => SUBSPACE_TELEMETRY_INDEX,
                 TelemetryClass::Metric { .. } => SUBSPACE_TELEMETRY_METRIC,
             },
-            ValueClass::DocumentId => SUBSPACE_COUNTER,
+            ValueClass::DocumentId | ValueClass::ChangeId => SUBSPACE_COUNTER,
             ValueClass::Any(any) => any.subspace,
         }
     }
@@ -639,7 +641,8 @@ impl ValueClass {
             ValueClass::Directory(DirectoryClass::UsedQuota(_))
             | ValueClass::InMemory(InMemoryClass::Counter(_))
             | ValueClass::Queue(QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_))
-            | ValueClass::DocumentId => true,
+            | ValueClass::DocumentId
+            | ValueClass::ChangeId => true,
             ValueClass::Property(84) if collection == 1 => true, // TODO: Find a more elegant way to do this
             _ => false,
         }
