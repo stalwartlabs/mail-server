@@ -87,7 +87,9 @@ pub async fn test(params: &mut JMAPTest) {
         }
 
         if pass == 1 {
-            changes = get_changes(&server).await;
+            let (changes_, is_truncated) = get_changes(&server).await;
+            assert!(!is_truncated);
+            changes = changes_;
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         } else {
             break;
@@ -142,14 +144,16 @@ pub async fn test(params: &mut JMAPTest) {
         .assert_contains("\"Junk Mail\" (MESSAGES 1)");
 
     // Compare changes
-    let new_changes = get_changes(&server).await;
+    let (new_changes, is_truncated) = get_changes(&server).await;
     assert!(!changes.is_empty());
     assert!(!new_changes.is_empty());
-    for change in changes {
+    assert!(is_truncated);
+    for change in &changes {
         assert!(
-            !new_changes.contains(&change),
-            "Change {:?} was not purged",
-            change
+            !new_changes.contains(change),
+            "Change {change:?} was not purged, expected {} changes, got {}",
+            changes.len(),
+            new_changes.len()
         );
     }
 
@@ -164,8 +168,9 @@ pub async fn test(params: &mut JMAPTest) {
     assert_is_empty(server).await;
 }
 
-async fn get_changes(server: &Server) -> AHashSet<(u64, u8)> {
+async fn get_changes(server: &Server) -> (AHashSet<(u64, u8)>, bool) {
     let mut changes = AHashSet::new();
+    let mut is_truncated = false;
     server
         .core
         .storage
@@ -183,17 +188,20 @@ async fn get_changes(server: &Server) -> AHashSet<(u64, u8)> {
                     change_id: u64::MAX,
                 },
             )
-            .ascending()
-            .no_values(),
-            |key, _| {
-                changes.insert((
-                    key.deserialize_be_u64(key.len() - U64_LEN).unwrap(),
-                    key[U32_LEN],
-                ));
+            .ascending(),
+            |key, value| {
+                if !value.is_empty() {
+                    changes.insert((
+                        key.deserialize_be_u64(key.len() - U64_LEN).unwrap(),
+                        key[U32_LEN],
+                    ));
+                } else {
+                    is_truncated = true;
+                }
                 Ok(true)
             },
         )
         .await
         .unwrap();
-    changes
+    (changes, is_truncated)
 }

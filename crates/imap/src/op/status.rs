@@ -192,7 +192,8 @@ impl<T: SessionStream> SessionData<T> {
                             items_response.push((
                                 *item,
                                 StatusItemType::String(
-                                    Id::from_parts(0, mailbox.mailbox_id).to_string(),
+                                    Id::from_parts(mailbox.account_id, mailbox.mailbox_id)
+                                        .to_string(),
                                 ),
                             ));
                         }

@@ -198,7 +198,7 @@ impl EmailDeletion for Server {
                         collection: Collection::Email.into(),
                         document_id: 0,
                         field: Property::ReceivedAt.into(),
-                        key: now().saturating_sub(period.as_secs() * 2).serialize(),
+                        key: 0u64.serialize(),
                     },
                     IndexKey {
                         account_id,

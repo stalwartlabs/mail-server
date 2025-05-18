@@ -130,6 +130,12 @@ impl ChangesLookup for Server {
             }
         };
 
+        if changelog.is_truncated && request.since_state != State::Initial {
+            return Err(trc::JmapEvent::CannotCalculateChanges
+                .into_err()
+                .details("Changelog has been truncated"));
+        }
+
         let mut changes = changelog
             .changes
             .into_iter()

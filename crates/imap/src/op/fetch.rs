@@ -500,12 +500,12 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::EmailId => {
                         items.push(DataItem::EmailId {
-                            email_id: Id::from_parts(data.thread_id, id).to_string(),
+                            email_id: Id::from_parts(account_id, id).to_string(),
                         });
                     }
                     Attribute::ThreadId => {
                         items.push(DataItem::ThreadId {
-                            thread_id: Id::from_parts(0, data.thread_id).to_string(),
+                            thread_id: Id::from_parts(account_id, data.thread_id).to_string(),
                         });
                     }
                 }

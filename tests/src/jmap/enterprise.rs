@@ -47,23 +47,23 @@ use super::{JMAPTest, ManagementApi, delivery::AssertResult};
 const METRICS_CONFIG: &str = r#"
 [metrics.alerts.expected]
 enable = true
-condition = "domain_count > 1 && cluster_error > 3"
+condition = "domain_count > 1 && cluster_publisher_error > 3"
 
 [metrics.alerts.expected.notify.event]
 enable = true
-message = "Yikes! Found %{cluster.error}% cluster errors!"
+message = "Yikes! Found %{cluster.publisher-error}% cluster errors!"
 
 [metrics.alerts.expected.notify.email]
 enable = true
 from-name = "Alert Subsystem"
 from-addr = "alert@example.com"
 to = ["jdoe@example.com"]
-subject = "Found %{cluster.error}% cluster errors"
-body = "Sorry for the bad news, but we found %{domain.count}% domains and %{cluster.error}% cluster errors."
+subject = "Found %{cluster.publisher-error}% cluster errors"
+body = "Sorry for the bad news, but we found %{domain.count}% domains and %{cluster.publisher-error}% cluster errors."
 
 [metrics.alerts.unexpected]
 enable = true
-condition = "domain_count < 1 || cluster_error < 3"
+condition = "domain_count < 1 || cluster_publisher_error < 3"
 
 [metrics.alerts.unexpected.notify.event]
 enable = true
