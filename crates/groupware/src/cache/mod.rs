@@ -288,8 +288,12 @@ impl GroupwareCache for Server {
                 name: name.clone(),
                 preferences: vec![CalendarPreferences {
                     account_id,
-                    name: name.clone(),
-                    description: self.core.groupware.default_calendar_display_name.clone(),
+                    name: self
+                        .core
+                        .groupware
+                        .default_calendar_display_name
+                        .clone()
+                        .unwrap_or_else(|| name.clone()),
                     ..Default::default()
                 }],
                 ..Default::default()

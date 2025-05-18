@@ -22,9 +22,9 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     g++-x86-64-linux-gnu binutils-x86-64-linux-gnu
 RUN rustup target add "$(cat /target.txt)"
 COPY --from=planner /recipe.json /recipe.json
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --target "$(cat /target.txt)" --release --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise" --recipe-path /recipe.json
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --target "$(cat /target.txt)" --release --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise" --recipe-path /recipe.json
 COPY . .
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise"
+RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise"
 RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release -p stalwart-cli
 RUN mv "/build/target/$(cat /target.txt)/release" "/output"
 

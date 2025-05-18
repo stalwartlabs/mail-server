@@ -92,7 +92,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
     if [ ! -z "${FDB_ARCH}" ]; then \
-        RUSTFLAGS="-L /usr/lib" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise"; \
+        RUSTFLAGS="-L /usr/lib" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis nats enterprise"; \
     fi
 RUN \
     --mount=type=secret,id=ACTIONS_RESULTS_URL,env=ACTIONS_RESULTS_URL \
@@ -100,7 +100,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
-    cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise" && \
+    cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise" && \
     cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart-cli
 # Copy the source code
 COPY . .
@@ -114,7 +114,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
     if [ ! -z "${FDB_ARCH}" ]; then \
-        RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise" && \
+        RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis nats enterprise" && \
         mv /app/target/${TARGET}/release/stalwart-mail /app/artifact/stalwart-mail-foundationdb; \
     fi
 # Build generic version
@@ -124,7 +124,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
-    cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise" && \
+    cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise" && \
     cargo zigbuild --release --target ${TARGET} -p stalwart-cli && \
     mv /app/target/${TARGET}/release/stalwart-mail /app/artifact/stalwart-mail && \
     mv /app/target/${TARGET}/release/stalwart-cli /app/artifact/stalwart-cli

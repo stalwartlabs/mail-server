@@ -549,7 +549,6 @@ impl DavRequestHandler for Server {
         };
 
         //let c = println!("------------------------------------------");
-
         //let std_body = std::str::from_utf8(&body).unwrap_or("[binary]").to_string();
 
         // Parse headers
@@ -559,7 +558,7 @@ impl DavRequestHandler for Server {
         }
 
         let start_time = Instant::now();
-        let result = match self
+        match self
             .dispatch_dav_request(&request, &headers, access_token, resource, method, body)
             .await
         {
@@ -674,7 +673,7 @@ impl DavRequestHandler for Server {
 
                 HttpResponse::new(code)
             }
-        };
+        }
 
         /*let c = println!(
             "{:?} {} -> {:?}\nHeaders: {:?}\nBody: {}\nResponse headers: {:?}\nResponse: {}",
@@ -689,9 +688,9 @@ impl DavRequestHandler for Server {
                 http_proto::HttpResponseBody::Empty => "[empty]".to_string(),
                 _ => "[binary]".to_string(),
             }
-        );*/
+        );
 
-        result
+        result*/
     }
 }
 
