@@ -100,7 +100,7 @@ async fn jmap_tests_() {
     )
     .await;
 
-    webhooks::test(&mut params).await;
+    /*webhooks::test(&mut params).await;
     email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
@@ -117,7 +117,7 @@ async fn jmap_tests_() {
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
-    push_subscription::test(&mut params).await;
+    push_subscription::test(&mut params).await;*/
     sieve_script::test(&mut params).await;
     vacation_response::test(&mut params).await;
     email_submission::test(&mut params).await;

@@ -15,8 +15,6 @@ pub mod write;
 
 pub use ahash;
 pub use blake3;
-
-pub use gxhash;
 pub use parking_lot;
 pub use rand;
 pub use rkyv;

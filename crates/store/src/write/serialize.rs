@@ -15,7 +15,6 @@ const HASHED: u8 = 1 << 5;
 const LZ4_COMPRESSED: u8 = 1 << 4;
 
 const COMPRESS_WATERMARK: usize = 8192;
-const HASH_SEED: i64 = 791120;
 
 fn validate_marker_and_contents(bytes: &[u8]) -> Option<(bool, &[u8], ArchiveVersion)> {
     let (marker, contents) = bytes
@@ -34,7 +33,7 @@ fn validate_marker_and_contents(bytes: &[u8]) -> Option<(bool, &[u8], ArchiveVer
         contents
             .split_at_checked(contents.len() - U32_LEN)
             .and_then(|(contents, archive_hash)| {
-                let hash = gxhash::gxhash32(contents, HASH_SEED);
+                let hash = xxhash_rust::xxh3::xxh3_64(contents) as u32;
                 if hash.to_be_bytes().as_slice() == archive_hash {
                     Some((
                         is_uncompressed,
@@ -49,7 +48,7 @@ fn validate_marker_and_contents(bytes: &[u8]) -> Option<(bool, &[u8], ArchiveVer
         contents
             .split_at_checked(contents.len() - U32_LEN)
             .and_then(|(contents, archive_hash)| {
-                let hash = gxhash::gxhash32(contents, HASH_SEED);
+                let hash = xxhash_rust::xxh3::xxh3_64(contents) as u32;
                 if hash.to_be_bytes().as_slice() == archive_hash {
                     Some((is_uncompressed, contents, ArchiveVersion::Hashed { hash }))
                 } else {
@@ -177,7 +176,8 @@ where
                         if self.flags & HASHED != 0 {
                             // Hash the compressed data including the length
                             let hash =
-                                gxhash::gxhash32(&bytes[..compressed_len + U32_LEN], HASH_SEED);
+                                xxhash_rust::xxh3::xxh3_64(&bytes[..compressed_len + U32_LEN])
+                                    as u32;
 
                             // Add the hash
                             bytes[compressed_len + U32_LEN..compressed_len + (U32_LEN * 2)]
@@ -200,7 +200,9 @@ where
 
                 bytes.extend_from_slice(input);
                 if self.flags & HASHED != 0 {
-                    bytes.extend_from_slice(&gxhash::gxhash32(input, HASH_SEED).to_be_bytes());
+                    bytes.extend_from_slice(
+                        &(xxhash_rust::xxh3::xxh3_64(input) as u32).to_be_bytes(),
+                    );
                 }
                 if version_offset != 0 {
                     bytes.extend_from_slice(0u64.to_be_bytes().as_slice());
