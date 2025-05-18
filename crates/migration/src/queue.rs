@@ -6,7 +6,9 @@
 
 use crate::LegacyBincode;
 use common::Server;
-use smtp::queue::Message;
+use smtp::queue::{
+    Domain, ErrorDetails, HostResponse, Message, QueueId, QuotaKey, Recipient, Status,
+};
 use store::{
     IterateParams, Serialize, U64_LEN, ValueKey,
     ahash::AHashSet,
@@ -16,6 +18,7 @@ use store::{
     },
 };
 use trc::AddContext;
+use utils::BlobHash;
 
 pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
     let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
@@ -51,16 +54,45 @@ pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
     for queue_id in queue_ids {
         match server
             .store()
-            .get_value::<LegacyBincode<Message>>(ValueKey::from(ValueClass::Queue(
+            .get_value::<LegacyBincode<LegacyMessage>>(ValueKey::from(ValueClass::Queue(
                 QueueClass::Message(queue_id),
             )))
             .await
         {
             Ok(Some(bincoded)) => {
+                let message = bincoded.inner;
+                let message = Message {
+                    queue_id: message.queue_id,
+                    created: message.created,
+                    blob_hash: message.blob_hash,
+                    return_path: message.return_path,
+                    return_path_lcase: message.return_path_lcase,
+                    return_path_domain: message.return_path_domain,
+                    recipients: message
+                        .recipients
+                        .into_iter()
+                        .map(|r| Recipient {
+                            domain_idx: r.domain_idx as u32,
+                            address: r.address,
+                            address_lcase: r.address_lcase,
+                            status: r.status,
+                            flags: r.flags,
+                            orcpt: r.orcpt,
+                        })
+                        .collect(),
+                    domains: message.domains,
+                    flags: message.flags,
+                    env_id: message.env_id,
+                    priority: message.priority,
+                    size: message.size as u64,
+                    quota_keys: message.quota_keys,
+                    span_id: message.span_id,
+                };
+
                 let mut batch = BatchBuilder::new();
                 batch.set(
                     ValueClass::Queue(QueueClass::Message(queue_id)),
-                    Archiver::new(bincoded.inner)
+                    Archiver::new(message)
                         .serialize()
                         .caused_by(trc::location!())?,
                 );
@@ -97,4 +129,37 @@ pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct LegacyMessage {
+    pub queue_id: QueueId,
+    pub created: u64,
+    pub blob_hash: BlobHash,
+
+    pub return_path: String,
+    pub return_path_lcase: String,
+    pub return_path_domain: String,
+    pub recipients: Vec<LegacyRecipient>,
+    pub domains: Vec<Domain>,
+
+    pub flags: u64,
+    pub env_id: Option<String>,
+    pub priority: i16,
+
+    pub size: usize,
+    pub quota_keys: Vec<QuotaKey>,
+
+    #[serde(skip)]
+    pub span_id: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct LegacyRecipient {
+    pub domain_idx: usize,
+    pub address: String,
+    pub address_lcase: String,
+    pub status: Status<HostResponse<String>, HostResponse<ErrorDetails>>,
+    pub flags: u64,
+    pub orcpt: Option<String>,
 }

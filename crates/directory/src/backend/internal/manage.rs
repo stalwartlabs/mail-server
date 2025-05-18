@@ -2312,7 +2312,7 @@ impl ManageDirectory for Store {
                     quotas[0] = quota;
                 }
                 for quota in principal_quotas {
-                    quotas[quota.typ as usize] = quota.quota;
+                    quotas[(quota.typ as usize) + 1] = quota.quota;
                 }
 
                 result.set(PrincipalField::Quota, quotas);

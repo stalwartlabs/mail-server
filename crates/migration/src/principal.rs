@@ -200,13 +200,15 @@ impl FromLegacy for Principal {
             let mut principal_quotas = Vec::new();
 
             for (idx, quota) in quotas.into_iter().take(Type::MAX_ID + 2).enumerate() {
-                if idx != 0 {
-                    principal_quotas.push(PrincipalQuota {
-                        quota,
-                        typ: Type::from_u8((idx - 1) as u8),
-                    });
-                } else if quota != 0 {
-                    principal.quota = Some(quota);
+                if quota != 0 {
+                    if idx != 0 {
+                        principal_quotas.push(PrincipalQuota {
+                            quota,
+                            typ: Type::from_u8((idx - 1) as u8),
+                        });
+                    } else {
+                        principal.quota = Some(quota);
+                    }
                 }
             }
 
