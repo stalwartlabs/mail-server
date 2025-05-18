@@ -244,6 +244,8 @@ pub enum ChallengeType {
     Dns01,
     #[serde(rename = "tls-alpn-01")]
     TlsAlpn01,
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Deserialize)]
@@ -366,6 +368,7 @@ impl ChallengeType {
             Self::Http01 => "http-01",
             Self::Dns01 => "dns-01",
             Self::TlsAlpn01 => "tls-alpn-01",
+            Self::Unknown => "unknown",
         }
     }
 }
