@@ -16,14 +16,14 @@ use calcard::{
 use common::{CacheSwap, DavResource, DavResources, Server, auth::AccessToken};
 use file::{build_file_resources, build_nested_hierarchy, resource_from_file};
 use jmap_proto::types::collection::{Collection, SyncCollection};
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 use store::{
     ahash::AHashMap,
     query::log::{Change, Query},
     write::{AlignedBytes, Archive, BatchBuilder},
 };
 use tokio::sync::Semaphore;
-use trc::AddContext;
+use trc::{AddContext, StoreEvent};
 
 pub mod calcard;
 pub mod file;
@@ -71,6 +71,7 @@ impl GroupwareCache for Server {
         let cache_ = match cache_store.get_value_or_guard_async(&account_id).await {
             Ok(cache) => cache,
             Err(guard) => {
+                let start_time = Instant::now();
                 let cache = full_cache_build(
                     self,
                     account_id,
@@ -79,15 +80,27 @@ impl GroupwareCache for Server {
                     access_token,
                 )
                 .await?;
+
                 if guard.insert(CacheSwap::new(cache.clone())).is_err() {
                     cache_store.insert(account_id, CacheSwap::new(cache.clone()));
                 }
+
+                trc::event!(
+                    Store(StoreEvent::CacheMiss),
+                    AccountId = account_id,
+                    Collection = collection.as_str(),
+                    Total = cache.resources.len(),
+                    ChangeId = cache.highest_change_id,
+                    Elapsed = start_time.elapsed(),
+                );
+
                 return Ok(cache);
             }
         };
 
         // Obtain current state
         let cache = cache_.load_full();
+        let start_time = Instant::now();
         let changes = self
             .core
             .storage
@@ -111,11 +124,29 @@ impl GroupwareCache for Server {
             )
             .await?;
             cache_.update(cache.clone());
+
+            trc::event!(
+                Store(StoreEvent::CacheStale),
+                AccountId = account_id,
+                Collection = collection.as_str(),
+                ChangeId = cache.highest_change_id,
+                Total = cache.resources.len(),
+                Elapsed = start_time.elapsed(),
+            );
+
             return Ok(cache);
         }
 
         // Verify changes
         if changes.changes.is_empty() {
+            trc::event!(
+                Store(StoreEvent::CacheHit),
+                AccountId = account_id,
+                Collection = collection.as_str(),
+                ChangeId = cache.highest_change_id,
+                Elapsed = start_time.elapsed(),
+            );
+
             return Ok(cache);
         }
 
@@ -123,11 +154,20 @@ impl GroupwareCache for Server {
         let _permit = cache.update_lock.acquire().await;
         let cache = cache_.load_full();
         if cache.highest_change_id >= changes.to_change_id {
+            trc::event!(
+                Store(StoreEvent::CacheHit),
+                AccountId = account_id,
+                Collection = collection.as_str(),
+                ChangeId = cache.highest_change_id,
+                Elapsed = start_time.elapsed(),
+            );
+
             return Ok(cache);
         }
 
         let mut updated_resources = AHashMap::with_capacity(8);
         let has_no_children = collection == SyncCollection::FileNode;
+        let num_changes = changes.changes.len();
 
         for change in changes.changes {
             match change {
@@ -245,6 +285,16 @@ impl GroupwareCache for Server {
 
         let cache = Arc::new(cache);
         cache_.update(cache.clone());
+
+        trc::event!(
+            Store(StoreEvent::CacheUpdate),
+            AccountId = account_id,
+            Collection = collection.as_str(),
+            ChangeId = cache.highest_change_id,
+            Details = num_changes,
+            Total = cache.resources.len(),
+            Elapsed = start_time.elapsed(),
+        );
 
         Ok(cache)
     }

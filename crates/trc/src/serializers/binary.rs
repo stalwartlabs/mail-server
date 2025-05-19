@@ -884,6 +884,10 @@ impl EventType {
             EventType::WebDav(WebDavEvent::Mkcalendar) => 575,
             EventType::Calendar(CalendarEvent::RuleExpansionError) => 576,
             EventType::Store(StoreEvent::NatsError) => 577,
+            EventType::Store(StoreEvent::CacheMiss) => 50,
+            EventType::Store(StoreEvent::CacheHit) => 51,
+            EventType::Store(StoreEvent::CacheStale) => 52,
+            EventType::Store(StoreEvent::CacheUpdate) => 578,
         }
     }
 
@@ -1504,12 +1508,14 @@ impl EventType {
             575 => Some(EventType::WebDav(WebDavEvent::Mkcalendar)),
             576 => Some(EventType::Calendar(CalendarEvent::RuleExpansionError)),
             577 => Some(EventType::Store(StoreEvent::NatsError)),
+            50 => Some(EventType::Store(StoreEvent::CacheMiss)),
+            51 => Some(EventType::Store(StoreEvent::CacheHit)),
+            52 => Some(EventType::Store(StoreEvent::CacheStale)),
+            578 => Some(EventType::Store(StoreEvent::CacheUpdate)),
             _ => None,
         }
     }
 }
-
-// 50, 51, 52
 
 impl Key {
     fn code(&self) -> u64 {

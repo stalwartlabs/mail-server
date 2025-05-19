@@ -104,32 +104,26 @@ impl JmapConfig {
     pub fn parse(config: &mut Config) -> Self {
         // Parse HTTP headers
         let mut http_headers = config
-            .values("server.http.headers")
+            .values("http.headers")
             .map(|(_, v)| {
                 if let Some((k, v)) = v.split_once(':') {
                     Ok((
                         hyper::header::HeaderName::from_str(k.trim()).map_err(|err| {
-                            format!(
-                                "Invalid header found in property \"server.http.headers\": {}",
-                                err
-                            )
+                            format!("Invalid header found in property \"http.headers\": {}", err)
                         })?,
                         hyper::header::HeaderValue::from_str(v.trim()).map_err(|err| {
-                            format!(
-                                "Invalid header found in property \"server.http.headers\": {}",
-                                err
-                            )
+                            format!("Invalid header found in property \"http.headers\": {}", err)
                         })?,
                     ))
                 } else {
                     Err(format!(
-                        "Invalid header found in property \"server.http.headers\": {}",
+                        "Invalid header found in property \"http.headers\": {}",
                         v
                     ))
                 }
             })
             .collect::<Result<Vec<_>, String>>()
-            .map_err(|e| config.new_parse_error("server.http.headers", e))
+            .map_err(|e| config.new_parse_error("http.headers", e))
             .unwrap_or_default();
 
         // Parse default folders
@@ -200,7 +194,7 @@ impl JmapConfig {
 
         // Add permissive CORS headers
         if config
-            .property::<bool>("server.http.permissive-cors")
+            .property::<bool>("http.permissive-cors")
             .unwrap_or(false)
         {
             http_headers.push((
@@ -222,7 +216,7 @@ impl JmapConfig {
         }
 
         // Add HTTP Strict Transport Security
-        if config.property::<bool>("server.http.hsts").unwrap_or(false) {
+        if config.property::<bool>("http.hsts").unwrap_or(false) {
             http_headers.push((
                 hyper::header::STRICT_TRANSPORT_SECURITY,
                 hyper::header::HeaderValue::from_static(
@@ -245,7 +239,7 @@ impl JmapConfig {
                 .property_or_default::<Option<usize>>("jmap.protocol.changes.max-results", "5000")
                 .unwrap_or_default(),
             changes_max_history: config
-                .property_or_default::<Option<usize>>("changes.max-history", "100000")
+                .property_or_default::<Option<usize>>("changes.max-history", "10000")
                 .unwrap_or_default(),
             snippet_max_results: config
                 .property("jmap.protocol.search-snippet.max-results")
@@ -301,10 +295,10 @@ impl JmapConfig {
                 .unwrap_or(256),
             capabilities: BaseCapabilities::default(),
             rate_authenticated: config
-                .property_or_default::<Option<Rate>>("jmap.rate-limit.account", "1000/1m")
+                .property_or_default::<Option<Rate>>("http.rate-limit.account", "1000/1m")
                 .unwrap_or_default(),
             rate_anonymous: config
-                .property_or_default::<Option<Rate>>("jmap.rate-limit.anonymous", "100/1m")
+                .property_or_default::<Option<Rate>>("http.rate-limit.anonymous", "100/1m")
                 .unwrap_or_default(),
             event_source_throttle: config
                 .property_or_default("jmap.event-source.throttle", "1s")
@@ -327,9 +321,7 @@ impl JmapConfig {
             encrypt_append: config
                 .property_or_default("storage.encryption.append", "false")
                 .unwrap_or(false),
-            http_use_forwarded: config
-                .property("server.http.use-x-forwarded")
-                .unwrap_or(false),
+            http_use_forwarded: config.property("http.use-x-forwarded").unwrap_or(false),
             http_headers,
             push_attempt_interval: config
                 .property_or_default("jmap.push.attempts.interval", "1m")

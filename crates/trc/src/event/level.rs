@@ -20,7 +20,12 @@ impl EventType {
                 | StoreEvent::SqlQuery
                 | StoreEvent::LdapQuery
                 | StoreEvent::LdapBind => Level::Trace,
-                StoreEvent::NotFound | StoreEvent::HttpStoreFetch => Level::Debug,
+                StoreEvent::CacheMiss
+                | StoreEvent::CacheHit
+                | StoreEvent::CacheStale
+                | StoreEvent::CacheUpdate
+                | StoreEvent::NotFound
+                | StoreEvent::HttpStoreFetch => Level::Debug,
                 StoreEvent::AssertValueFailed
                 | StoreEvent::FoundationdbError
                 | StoreEvent::MysqlError

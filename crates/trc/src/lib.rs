@@ -841,6 +841,12 @@ pub enum StoreEvent {
     CryptoError,
     HttpStoreError,
 
+    // Caching
+    CacheMiss,
+    CacheHit,
+    CacheStale,
+    CacheUpdate,
+
     // Warnings
     BlobMissingMarker,
 

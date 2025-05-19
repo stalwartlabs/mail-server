@@ -96,11 +96,11 @@ impl Default for Network {
             contact_form: None,
             node_id: 1,
             http_response_url: IfBlock::new::<()>(
-                "server.http.url",
+                "http.url",
                 [],
                 "protocol + '://' + config_get('server.hostname') + ':' + local_port",
             ),
-            http_allowed_endpoint: IfBlock::new::<()>("server.http.allowed-endpoint", [], "200"),
+            http_allowed_endpoint: IfBlock::new::<()>("http.allowed-endpoint", [], "200"),
             asn_geo_lookup: AsnGeoLookupConfig::Disabled,
             server_name: Default::default(),
             report_domain: Default::default(),
@@ -240,11 +240,8 @@ impl Network {
         }
 
         for (value, key) in [
-            (&mut network.http_response_url, "server.http.url"),
-            (
-                &mut network.http_allowed_endpoint,
-                "server.http.allowed-endpoint",
-            ),
+            (&mut network.http_response_url, "http.url"),
+            (&mut network.http_allowed_endpoint, "http.allowed-endpoint"),
         ] {
             if let Some(if_block) = IfBlock::try_parse(config, key, token_map) {
                 *value = if_block;

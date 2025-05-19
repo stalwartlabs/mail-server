@@ -138,15 +138,15 @@ impl Core {
             })
             .unwrap_or_default();
         let pubsub = config
-            .value("storage.pubsub")
+            .value("cluster.pubsub")
             .map(|id| id.to_string())
             .and_then(|id| {
                 if let Some(store) = stores.pubsub_stores.get(&id) {
                     store.clone().into()
                 } else {
                     config.new_parse_error(
-                        "storage.pubsub",
-                        format!("PubSub store {id:?} not found"),
+                        "cluster.pubsub",
+                        format!("PubSub server {id:?} not found"),
                     );
                     None
                 }

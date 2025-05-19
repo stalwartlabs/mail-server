@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::{collections::hash_map::Entry, sync::Arc, time::Instant};
 
 use common::{CacheSwap, MessageStoreCache, Server};
 use email::{full_email_cache_build, update_email_cache};
@@ -15,7 +15,7 @@ use store::{
     query::log::{Change, Query},
 };
 use tokio::sync::Semaphore;
-use trc::AddContext;
+use trc::{AddContext, StoreEvent};
 
 pub mod email;
 pub mod mailbox;
@@ -38,19 +38,32 @@ impl MessageCacheFetch for Server {
         {
             Ok(cache) => cache,
             Err(guard) => {
+                let start_time = Instant::now();
                 let cache = full_cache_build(self, account_id, Arc::new(Semaphore::new(1))).await?;
+
                 if guard.insert(CacheSwap::new(cache.clone())).is_err() {
                     self.inner
                         .cache
                         .messages
                         .insert(account_id, CacheSwap::new(cache.clone()));
                 }
+
+                trc::event!(
+                    Store(StoreEvent::CacheMiss),
+                    AccountId = account_id,
+                    Collection = SyncCollection::Email.as_str(),
+                    Total = vec![cache.emails.items.len(), cache.mailboxes.items.len()],
+                    ChangeId = cache.last_change_id,
+                    Elapsed = start_time.elapsed(),
+                );
+
                 return Ok(cache);
             }
         };
 
         // Obtain current state
         let cache = cache_.load_full();
+        let start_time = Instant::now();
         let changes = self
             .core
             .storage
@@ -67,11 +80,29 @@ impl MessageCacheFetch for Server {
         if changes.is_truncated {
             let cache = full_cache_build(self, account_id, cache.update_lock.clone()).await?;
             cache_.update(cache.clone());
+
+            trc::event!(
+                Store(StoreEvent::CacheStale),
+                AccountId = account_id,
+                Collection = SyncCollection::Email.as_str(),
+                ChangeId = cache.last_change_id,
+                Total = vec![cache.emails.items.len(), cache.mailboxes.items.len()],
+                Elapsed = start_time.elapsed(),
+            );
+
             return Ok(cache);
         }
 
         // Verify changes
         if changes.changes.is_empty() {
+            trc::event!(
+                Store(StoreEvent::CacheHit),
+                AccountId = account_id,
+                Collection = SyncCollection::Email.as_str(),
+                ChangeId = cache.last_change_id,
+                Elapsed = start_time.elapsed(),
+            );
+
             return Ok(cache);
         }
 
@@ -79,6 +110,14 @@ impl MessageCacheFetch for Server {
         let _permit = cache.update_lock.acquire().await;
         let cache = cache_.0.load();
         let mut cache = if cache.last_change_id >= changes.to_change_id {
+            trc::event!(
+                Store(StoreEvent::CacheHit),
+                AccountId = account_id,
+                Collection = SyncCollection::Email.as_str(),
+                ChangeId = cache.last_change_id,
+                Elapsed = start_time.elapsed(),
+            );
+
             return Ok(cache.clone());
         } else {
             cache.as_ref().clone()
@@ -140,6 +179,16 @@ impl MessageCacheFetch for Server {
 
         let cache = Arc::new(cache);
         cache_.update(cache.clone());
+
+        trc::event!(
+            Store(StoreEvent::CacheUpdate),
+            AccountId = account_id,
+            Collection = SyncCollection::Email.as_str(),
+            ChangeId = cache.last_change_id,
+            Details = vec![changed_items.len(), changed_containers.len()],
+            Total = vec![cache.emails.items.len(), cache.mailboxes.items.len()],
+            Elapsed = start_time.elapsed(),
+        );
 
         Ok(cache)
     }

@@ -77,6 +77,7 @@ impl Data {
 
 impl Caches {
     pub fn parse(config: &mut Config) -> Self {
+        const MB_50: u64 = 50 * 1024 * 1024;
         const MB_10: u64 = 10 * 1024 * 1024;
         const MB_5: u64 = 5 * 1024 * 1024;
         const MB_1: u64 = 1024 * 1024;
@@ -103,7 +104,7 @@ impl Caches {
             messages: Cache::from_config(
                 config,
                 "message",
-                MB_10,
+                MB_50,
                 (std::mem::size_of::<u32>()
                     + std::mem::size_of::<CacheSwap<MessageStoreCache>>()
                     + (1024 * std::mem::size_of::<MessageUidCache>())

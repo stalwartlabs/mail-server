@@ -67,10 +67,10 @@ impl GroupwareConfig {
                 .unwrap_or_default(),
             max_ical_instances: config
                 .property("calendar.max-recurrence-expansions")
-                .unwrap_or(1000),
+                .unwrap_or(3000),
             max_ical_attendees_per_instance: config
                 .property("calendar.max-attendees-per-instance")
-                .unwrap_or(1000),
+                .unwrap_or(20),
             max_file_size: config
                 .property("file-storage.max-size")
                 .unwrap_or(25 * 1024 * 1024),

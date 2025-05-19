@@ -303,3 +303,19 @@ impl BitmapItem for Collection {
         !matches!(self, Collection::None)
     }
 }
+
+impl SyncCollection {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SyncCollection::Email => "email",
+            SyncCollection::Thread => "thread",
+            SyncCollection::Calendar => "calendar",
+            SyncCollection::AddressBook => "addressBook",
+            SyncCollection::FileNode => "fileNode",
+            SyncCollection::Identity => "identity",
+            SyncCollection::EmailSubmission => "emailSubmission",
+            SyncCollection::SieveScript => "sieveScript",
+            SyncCollection::None => "",
+        }
+    }
+}

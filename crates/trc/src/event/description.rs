@@ -1556,6 +1556,10 @@ impl StoreEvent {
             StoreEvent::HttpStoreFetch => "HTTP store updated",
             StoreEvent::HttpStoreError => "Error updating HTTP store",
             StoreEvent::NatsError => "NATS error",
+            StoreEvent::CacheMiss => "Cache miss",
+            StoreEvent::CacheHit => "Cache hit",
+            StoreEvent::CacheStale => "Cache is stale",
+            StoreEvent::CacheUpdate => "Cache update",
         }
     }
 
@@ -1594,6 +1598,10 @@ impl StoreEvent {
             StoreEvent::HttpStoreFetch => "The HTTP store was updated",
             StoreEvent::HttpStoreError => "An error occurred while updating the HTTP store",
             StoreEvent::NatsError => "A NATS error occurred",
+            StoreEvent::CacheMiss => "No cache entry found for the account",
+            StoreEvent::CacheHit => "Cache entry found for the account, no update needed",
+            StoreEvent::CacheStale => "Cache is too old, rebuilding",
+            StoreEvent::CacheUpdate => "Cache updated with latest database changes",
         }
     }
 }
