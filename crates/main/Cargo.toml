@@ -1,10 +1,10 @@
 [package]
-name = "mail-server"
-description = "Stalwart Server"
+name = "stalwart"
+description = "Stalwart and Collaboration Server"
 authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
 repository = "https://github.com/stalwartlabs/jmap-server"
 homepage = "https://stalw.art"
-keywords = ["imap", "jmap", "smtp", "email", "mail", "server"]
+keywords = ["imap", "jmap", "smtp", "email", "mail", "webdav", "server"]
 categories = ["email"]
 license = "AGPL-3.0-only OR LicenseRef-SEL"
 version = "0.12.0"
@@ -12,7 +12,7 @@ edition = "2024"
 resolver = "2"
 
 [[bin]]
-name = "stalwart-mail"
+name = "stalwart"
 path = "src/main.rs"
 
 [dependencies]

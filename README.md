@@ -5,13 +5,13 @@
 </p>
 
 <h3 align="center">
-  Secure & Modern All-in-One Mail Server (IMAP, JMAP, POP3, SMTP) 🛡️
+  Secure, scalable mail & collaboration server with comprehensive protocol support 🛡️ <br/>(IMAP, JMAP, SMTP, CalDAV, CardDAV, WebDAV)
 </h3>
 
 <br>
 
 <p align="center">
-  <a href="https://github.com/stalwartlabs/mail-server/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/stalwartlabs/mail-server/ci.yml?style=flat-square" alt="continuous integration"></a>
+  <a href="https://github.com/stalwartlabs/stalwart/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/stalwartlabs/stalwart/ci.yml?style=flat-square" alt="continuous integration"></a>
   &nbsp;
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg?label=license&style=flat-square" alt="License: AGPL v3"></a>
   &nbsp;
@@ -30,23 +30,33 @@
 
 ## Features
 
-**Stalwart Mail Server** is an open-source mail server solution with JMAP, IMAP4, POP3, and SMTP support and a wide range of modern features. It is written in Rust and designed to be secure, fast, robust and scalable.
+**Stalwart** is an open-source mail & collaboration server solution with JMAP, IMAP4, POP3, SMTP, CalDAV, CardDAV and WebDAV support and a wide range of modern features. It is written in Rust and designed to be secure, fast, robust and scalable.
 
 Key features:
 
-- **JMAP**, **IMAP4**, **POP3** and **ManageSieve** server:
-  - [JMAP](https://datatracker.ietf.org/doc/html/rfc8621) server with
-   [Sieve Scripts](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-22.html), [WebSocket](https://datatracker.ietf.org/doc/html/rfc8887), [Blob Management](https://www.rfc-editor.org/rfc/rfc9404.html) and [Quotas](https://www.rfc-editor.org/rfc/rfc9425.html) extensions.
-  - [IMAP4rev2](https://datatracker.ietf.org/doc/html/rfc9051) and [IMAP4rev1](https://datatracker.ietf.org/doc/html/rfc3501) server with support for [numerous extensions](https://stalw.art/docs/development/rfcs#imap4-and-extensions).
-  - [POP3](https://datatracker.ietf.org/doc/html/rfc1939) server with [extensions](https://datatracker.ietf.org/doc/html/rfc2449), [STLS](https://datatracker.ietf.org/doc/html/rfc2595) and [SASL](https://datatracker.ietf.org/doc/html/rfc5034) support.
-  - [ManageSieve](https://datatracker.ietf.org/doc/html/rfc5804) server for managing Sieve scripts.
-- **SMTP** server:
-  - Built-in [DMARC](https://datatracker.ietf.org/doc/html/rfc7489), [DKIM](https://datatracker.ietf.org/doc/html/rfc6376), [SPF](https://datatracker.ietf.org/doc/html/rfc7208) and [ARC](https://datatracker.ietf.org/doc/html/rfc8617) support for message authentication.
-  - Strong transport security through [DANE](https://datatracker.ietf.org/doc/html/rfc6698), [MTA-STS](https://datatracker.ietf.org/doc/html/rfc8461) and [SMTP TLS](https://datatracker.ietf.org/doc/html/rfc8460) reporting.
-  - Inbound throttling and filtering with granular configuration rules, sieve scripting, MTA hooks and milter integration.
-  - Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
-  - Envelope rewriting and message modification.
-- Built-in **Spam and Phishing** filter:
+- **Email** server with complete protocol support:
+  - JMAP: 
+    * [JMAP for Mail](https://datatracker.ietf.org/doc/html/rfc8621) server.
+    * [JMAP for Sieve Scripts](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-22.html).
+    * [WebSocket](https://datatracker.ietf.org/doc/html/rfc8887), [Blob Management](https://www.rfc-editor.org/rfc/rfc9404.html) and [Quotas](https://www.rfc-editor.org/rfc/rfc9425.html) extensions.
+  - IMAP:
+    * [IMAP4rev2](https://datatracker.ietf.org/doc/html/rfc9051) and [IMAP4rev1](https://datatracker.ietf.org/doc/html/rfc3501) server.
+    * [ManageSieve](https://datatracker.ietf.org/doc/html/rfc5804) server.
+    * Numerous [extensions](https://stalw.art/docs/development/rfcs#imap4-and-extensions) supported.
+  - POP3:
+    - [POP3](https://datatracker.ietf.org/doc/html/rfc1939) server.
+    - [STLS](https://datatracker.ietf.org/doc/html/rfc2595) and [SASL](https://datatracker.ietf.org/doc/html/rfc5034) support as well as other [extensions](https://datatracker.ietf.org/doc/html/rfc2449).
+  - SMTP:
+    * SMTP server with built-in [DMARC](https://datatracker.ietf.org/doc/html/rfc7489), [DKIM](https://datatracker.ietf.org/doc/html/rfc6376), [SPF](https://datatracker.ietf.org/doc/html/rfc7208) and [ARC](https://datatracker.ietf.org/doc/html/rfc8617) support for message authentication.
+    * Strong transport security through [DANE](https://datatracker.ietf.org/doc/html/rfc6698), [MTA-STS](https://datatracker.ietf.org/doc/html/rfc8461) and [SMTP TLS](https://datatracker.ietf.org/doc/html/rfc8460) reporting.
+    * Inbound throttling and filtering with granular configuration rules, sieve scripting, MTA hooks and milter integration.
+    * Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
+    * Envelope rewriting and message modification.
+- **Calendar**, **Contacts** and **File Storage** server:
+  - [CalDAV](https://datatracker.ietf.org/doc/html/rfc4791) server for calendar and scheduling.
+  - [CardDAV](https://datatracker.ietf.org/doc/html/rfc6352) server for contact management.
+  - [WebDAV](https://datatracker.ietf.org/doc/html/rfc4918) server for file storage and sharing.
+- **Spam** and **Phishing** built-in filter:
   - Comprehensive set of filtering **rules** on par with popular solutions.
   - LLM-driven spam filtering and message analysis.
   - Statistical **spam classifier** with automatic training capabilities.
@@ -75,8 +85,6 @@ Key features:
 - **Scalable and fault-tolerant**:
   - Designed to handle growth seamlessly, from small setups to large-scale deployments.
   - Built with **fault tolerance** and **high availability** in mind, recovers from hardware or software failures with minimal operational impact. 
-  - Partition-tolerant **failure detection**, ensuring continuous operation even during network partitions or node failures. 
-  - **Coordinator-free** architecture with automatic node discovery eliminates central bottlenecks and single points of failure. 
   - **Kubernetes** support for automated scaling and efficient container orchestration.
   - Read replicas, sharded blob storage and in-memory data stores for high performance and low latency.
 - **Authentication and Authorization**:
@@ -108,11 +116,11 @@ Key features:
 
 ## Presentation
 
-**Want a deeper dive?** Need to explain to your boss why Stalwart is the perfect fit? Whether you're evaluating options, making a case to your team, or simply curious about how it all works under the hood, these slides walk you through the key features, architecture, and benefits of Stalwart Mail Server. Browse the [slides](https://stalw.art/slides) to see what makes it stand out.
+**Want a deeper dive?** Need to explain to your boss why Stalwart is the perfect fit? Whether you're evaluating options, making a case to your team, or simply curious about how it all works under the hood, these slides walk you through the key features, architecture, and benefits of Stalwart. Browse the [slides](https://stalw.art/slides) to see what makes it stand out.
 
 ## Get Started
 
-Install Stalwart Mail Server on your server by following the instructions for your platform:
+Install Stalwart on your server by following the instructions for your platform:
 
 - [Linux / MacOS](https://stalw.art/docs/install/linux)
 - [Windows](https://stalw.art/docs/install/windows)
@@ -122,14 +130,14 @@ All documentation is available at [stalw.art/docs/get-started](https://stalw.art
 
 ## Support
 
-If you are having problems running Stalwart Mail Server, you found a bug or just have a question,
-do not hesitate to reach us on [GitHub Discussions](https://github.com/stalwartlabs/mail-server/discussions),
+If you are having problems running Stalwart, you found a bug or just have a question,
+do not hesitate to reach us on [GitHub Discussions](https://github.com/stalwartlabs/stalwart/discussions),
 [Reddit](https://www.reddit.com/r/stalwartlabs) or [Discord](https://discord.gg/aVQr3jF8jd).
 Additionally you may purchase an [premium support](https://stalw.art/support) to obtain priority support from Stalwart Labs LLC.
 
 ## Sponsorship
 
-Your support is crucial in helping us continue to improve the project, add new features, and maintain the highest level of quality. By [becoming a sponsor](https://opencollective.com/stalwart), you help fund the development and future of Stalwart Mail Server. As a thank-you, sponsors who contribute $5 per month or more will automatically receive a [Small Business Edition](https://stalw.art/small-business/) license, which includes all the powerful features of the [Enterprise edition](https://stalw.art/enterprise/).
+Your support is crucial in helping us continue to improve the project, add new features, and maintain the highest level of quality. By [becoming a sponsor](https://opencollective.com/stalwart), you help fund the development and future of Stalwart. As a thank-you, sponsors who contribute $5 per month or more will automatically receive a [Small Business Edition](https://stalw.art/small-business/) license, which includes all the powerful features of the [Enterprise edition](https://stalw.art/enterprise/).
 
 These are some of our open-source sponsors:
 
@@ -139,15 +147,17 @@ These are some of our open-source sponsors:
 
 ## Roadmap
 
-- [ ] CalDAV, CardDAV and WebDAV support
-- [ ] JMAP Calendar, Contacts and Tasks support
-- [ ] ActiveSync support
+- [ ] JMAP for Calendars, Contacts and File Storage support
+- [ ] Webmail client
 
-See the [enhancement requests](https://github.com/stalwartlabs/mail-server/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement) page for a full list of proposed features by the community.
+See the [enhancement requests](https://github.com/stalwartlabs/stalwart/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement) page for a full list of proposed features by the community.
 
 ## Funding
 
-Part of the development of this project was funded through the [NGI0 Entrust Fund](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu/) programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594.
+Part of the development of this project was funded through:
+
+- [NGI0 Entrust Fund](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu/) programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594.
+- [NGI Zero Core](https://nlnet.nl/NGI0/), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101092990.
 
 If you find the project useful you can help by [becoming a sponsor](https://opencollective.com/stalwart). Thank you!
 
@@ -162,4 +172,4 @@ Each file in this project contains a license notice at the top, indicating the a
 
 ## Copyright
 
-Copyright (C) 2024, Stalwart Labs Ltd.
+Copyright (C) 2020, Stalwart Labs Ltd.

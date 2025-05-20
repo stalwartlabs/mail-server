@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this feature request form! Use this form only for requesting new features. If you have a question or problem, please use the [Q&A discussion](https://github.com/stalwartlabs/mail-server/discussions/new?category=q-a).
+        Thanks for taking the time to fill out this feature request form! Use this form only for requesting new features. If you have a question or problem, please use the [Q&A discussion](https://github.com/stalwartlabs/stalwart/discussions/new?category=q-a).
   - type: textarea
     id: request
     attributes:

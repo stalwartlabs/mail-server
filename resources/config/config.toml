@@ -1,5 +1,5 @@
 #############################################
-# Stalwart Mail Server Configuration File   
+# Stalwart Configuration File   
 #############################################
 
 [server.listener."smtp"]
@@ -65,8 +65,8 @@ ansi = false
 enable = true
 
 #[server.run-as]
-#user = "stalwart-mail"
-#group = "stalwart-mail"
+#user = "stalwart"
+#group = "stalwart"
 
 [authentication.fallback-admin]
 user = "admin"

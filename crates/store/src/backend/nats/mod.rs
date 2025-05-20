@@ -66,7 +66,7 @@ impl NatsStore {
             )
             .require_tls(
                 config
-                    .property_or_default((&prefix, "tls.require"), "false")
+                    .property_or_default((&prefix, "tls.enable"), "false")
                     .unwrap_or_default(),
             );
 

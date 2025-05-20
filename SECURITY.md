@@ -1,19 +1,18 @@
-# Security Policy for Stalwart Mail Server
+# Security Policy for Stalwart
 
 ## Supported Versions
 
-We provide security updates for the following versions of Stalwart Mail Server:
+We provide security updates for the following versions of Stalwart:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.11.x   | :white_check_mark: |
-| 0.10.x   | :white_check_mark: |
-| 0.9.x   | :white_check_mark: |
-| < 0.8   | :x:                |
+| 0.12.x  | :white_check_mark: |
+| 0.11.x  | :white_check_mark: |
+| < 0.10  | :x:                |
 
 ## Reporting a Vulnerability
 
-We take the security of Stalwart Mail Server very seriously. If you believe you've found a security vulnerability, we encourage you to inform us responsibly.
+We take the security of Stalwart very seriously. If you believe you've found a security vulnerability, we encourage you to inform us responsibly.
 
 **Do not report security vulnerabilities through public GitHub issues.**
 

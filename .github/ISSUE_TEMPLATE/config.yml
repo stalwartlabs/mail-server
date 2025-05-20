@@ -4,7 +4,7 @@ contact_links:
     url: https://stalw.art/docs/
     about: Read the documentation, use the search bar to find answers to your questions.
   - name: I have a question or problem not covered in the documentation
-    url: https://github.com/stalwartlabs/mail-server/discussions/new?category=q-a
+    url: https://github.com/stalwartlabs/stalwart/discussions/new?category=q-a
     about: Open a Q&A discussion
   - name: Join Stalwart's Reddit
     url: https://www.reddit.com/r/stalwartlabs

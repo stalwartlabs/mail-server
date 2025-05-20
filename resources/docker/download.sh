@@ -1,12 +1,12 @@
 #!/usr/bin/env sh
 # shellcheck shell=dash
 
-# Stalwart Mail Server install script -- based on the rustup installation script.
+# Stalwart install script -- based on the rustup installation script.
 
 set -e
 set -u
 
-readonly BASE_URL="https://github.com/stalwartlabs/mail-server/releases/latest/download"
+readonly BASE_URL="https://github.com/stalwartlabs/stalwart/releases/latest/download"
 
 main() {
     downloader --check
@@ -26,16 +26,16 @@ main() {
     # Detect OS
     local _os="unknown"
     local _uname="$(uname)"
-    _account="stalwart-mail"
+    _account="stalwart"
     if [ "${_uname}" = "Linux" ]; then
         _os="linux"
     elif [ "${_uname}" = "Darwin" ]; then
         _os="macos"
-        _account="_stalwart-mail"
+        _account="_stalwart"
     fi
 
     # Default component setting
-    local _component="stalwart-mail"
+    local _component="stalwart"
     local _dir="/usr/local/bin"
 
     # Detect platform architecture
@@ -45,11 +45,11 @@ main() {
 
     # Download latest binary
     say "⏳ Downloading ${_component} for ${_arch}..."
-    local _file="${_dir}/stalwart-mail.tar.gz"
+    local _file="${_dir}/stalwart.tar.gz"
     local _url="${BASE_URL}/${_component}-${_arch}.tar.gz"
     ensure downloader "$_url" "$_file" "$_arch"
     ensure tar zxvf "$_file" -C "$_dir"
-    ignore chmod +x "$_dir/stalwart-mail"
+    ignore chmod +x "$_dir/stalwart"
     ignore rm "$_file"
 
     return 0

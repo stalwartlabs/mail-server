@@ -6,10 +6,10 @@
         <key>Label</key>
         <string>stalwart.mail</string>
         <key>ServiceDescription</key>
-        <string>Stalwart Mail Server</string>
+        <string>Stalwart</string>
         <key>ProgramArguments</key>
         <array>
-            <string>__PATH__/bin/stalwart-mail</string>
+            <string>__PATH__/bin/stalwart</string>
             <string>--config=__PATH__/etc/config.toml</string>
         </array>
         <key>RunAtLoad</key>

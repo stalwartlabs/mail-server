@@ -26,8 +26,8 @@ mod test {
     #[test]
     #[ignore]
     fn train() {
-        let db = fs::read_to_string("/Users/me/code/mail-server/_ignore/old/spam_or_not_spam.csv")
-            .unwrap();
+        let db =
+            fs::read_to_string("/Users/me/code/stalwart/_ignore/old/spam_or_not_spam.csv").unwrap();
         let mut bayes = BayesModel::default();
 
         for line in db.lines() {
@@ -47,7 +47,7 @@ mod test {
         }
         println!("Ham: {} Spam: {}", bayes.ham_learns, bayes.spam_learns,);
         fs::write(
-            "/Users/me/code/mail-server/_ignore/old/spam_or_not_spam.bin",
+            "/Users/me/code/stalwart/_ignore/old/spam_or_not_spam.bin",
             bincode::serialize(&bayes).unwrap(),
         )
         .unwrap();
@@ -57,7 +57,7 @@ mod test {
     #[ignore]
     fn classify() {
         let model: BayesModel = bincode::deserialize(
-            &fs::read("/Users/me/code/mail-server/_ignore/old/spam_or_not_spam.bin").unwrap(),
+            &fs::read("/Users/me/code/stalwart/_ignore/old/spam_or_not_spam.bin").unwrap(),
         )
         .unwrap();
         let bayes = BayesClassifier::new();

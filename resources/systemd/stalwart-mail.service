@@ -1,5 +1,5 @@
 [Unit]
-Description=Stalwart Mail Server
+Description=Stalwart Server
 Conflicts=postfix.service sendmail.service exim4.service
 ConditionPathExists=__PATH__/etc/config.toml
 After=network-online.target
@@ -11,10 +11,10 @@ KillMode=process
 KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5
-ExecStart=__PATH__/bin/stalwart-mail --config=__PATH__/etc/config.toml
-SyslogIdentifier=stalwart-mail
-User=stalwart-mail
-Group=stalwart-mail
+ExecStart=__PATH__/bin/stalwart --config=__PATH__/etc/config.toml
+SyslogIdentifier=stalwart
+User=stalwart
+Group=stalwart
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]

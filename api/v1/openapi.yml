@@ -4,7 +4,7 @@
 
 openapi: 3.0.0
 info:
-  title: Stalwart Mail Server API
+  title: Stalwart API
   version: 1.0.0
 servers:
   - url: https://mail.example.org/api

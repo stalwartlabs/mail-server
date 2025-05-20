@@ -58,7 +58,7 @@ const HELP: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     r#"
 
-Usage: stalwart-mail [OPTIONS]
+Usage: stalwart [OPTIONS]
 
 Options:
   -c, --config <PATH>              Start server with the specified configuration file

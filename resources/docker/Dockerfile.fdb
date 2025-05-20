@@ -40,12 +40,12 @@ RUN cargo build --manifest-path=crates/main/Cargo.toml --no-default-features --f
 
 FROM debian:buster-slim AS runtime
 
-COPY --from=builder /app/target/release/stalwart-mail /usr/local/bin/stalwart-mail
+COPY --from=builder /app/target/release/stalwart /usr/local/bin/stalwart
 RUN apt-get update -y && apt-get install -yq ca-certificates
 RUN curl -LO https://github.com/apple/foundationdb/releases/download/7.1.0/foundationdb-clients_7.1.0-1_amd64.deb && \
     dpkg -i foundationdb-clients_7.1.0-1_amd64.deb
-RUN useradd stalwart-mail -s /sbin/nologin -M
-RUN mkdir -p /opt/stalwart-mail
-RUN chown stalwart-mail:stalwart-mail /opt/stalwart-mail
+RUN useradd stalwart -s /sbin/nologin -M
+RUN mkdir -p /opt/stalwart
+RUN chown stalwart:stalwart /opt/stalwart
 
-ENTRYPOINT ["/usr/local/bin/stalwart-mail", "--config", "/opt/stalwart-mail/etc/config.toml"]
+ENTRYPOINT ["/usr/local/bin/stalwart", "--config", "/opt/stalwart/etc/config.toml"]

@@ -5,13 +5,13 @@ FEATURES="rocks"
 NUM_NODES=5
 
 # Kill previous processes
-sudo pkill stalwart-mail
+sudo pkill stalwart
 
 # Delete previous tests
 rm -rf $BASE_DIR
 
-# Build the mail-server binary
-cargo build -p mail-server --no-default-features --features "$FEATURES" 
+# Build the stalwart binary
+cargo build -p stalwart --no-default-features --features "$FEATURES" 
 
 for NUM in $(seq 1 $NUM_NODES); do
     sudo ifconfig en0 alias 10.0.$NUM.1 netmask 255.255.255.0
@@ -49,5 +49,5 @@ config.resource.spam-filter = "file:///dev/null"
 config.resource.webadmin = "file:///dev/null"
 EOF
 
-    sudo ./target/debug/stalwart-mail --config $BASE_DIR/config$NUM.toml &
+    sudo ./target/debug/stalwart --config $BASE_DIR/config$NUM.toml &
 done

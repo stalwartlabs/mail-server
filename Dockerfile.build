@@ -92,7 +92,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
     if [ ! -z "${FDB_ARCH}" ]; then \
-        RUSTFLAGS="-L /usr/lib" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis nats enterprise"; \
+        RUSTFLAGS="-L /usr/lib" cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "foundationdb elastic s3 redis nats enterprise"; \
     fi
 RUN \
     --mount=type=secret,id=ACTIONS_RESULTS_URL,env=ACTIONS_RESULTS_URL \
@@ -100,7 +100,7 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
-    cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise" && \
+    cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise" && \
     cargo chef cook --recipe-path recipe.json --zigbuild --release --target ${TARGET} -p stalwart-cli
 # Copy the source code
 COPY . .
@@ -114,8 +114,8 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
     if [ ! -z "${FDB_ARCH}" ]; then \
-        RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "foundationdb elastic s3 redis nats enterprise" && \
-        mv /app/target/${TARGET}/release/stalwart-mail /app/artifact/stalwart-mail-foundationdb; \
+        RUSTFLAGS="-L /usr/lib" cargo zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "foundationdb elastic s3 redis nats enterprise" && \
+        mv /app/target/${TARGET}/release/stalwart /app/artifact/stalwart-foundationdb; \
     fi
 # Build generic version
 RUN \
@@ -124,9 +124,9 @@ RUN \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     source /env-cargo && \
-    cargo zigbuild --release --target ${TARGET} -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise" && \
+    cargo zigbuild --release --target ${TARGET} -p stalwart --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure nats enterprise" && \
     cargo zigbuild --release --target ${TARGET} -p stalwart-cli && \
-    mv /app/target/${TARGET}/release/stalwart-mail /app/artifact/stalwart-mail && \
+    mv /app/target/${TARGET}/release/stalwart /app/artifact/stalwart && \
     mv /app/target/${TARGET}/release/stalwart-cli /app/artifact/stalwart-cli
 
 # *****************
@@ -139,16 +139,16 @@ COPY --from=builder /app/artifact /
 # Runtime image for GNU targets
 # *****************
 FROM --platform=$TARGETPLATFORM docker.io/library/debian:bookworm-slim AS gnu
-WORKDIR /opt/stalwart-mail
+WORKDIR /opt/stalwart
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -yq ca-certificates tzdata
-COPY --from=builder /app/artifact/stalwart-mail /usr/local/bin
+COPY --from=builder /app/artifact/stalwart /usr/local/bin
 COPY --from=builder /app/artifact/stalwart-cli /usr/local/bin
 COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod -R 755 /usr/local/bin
-CMD ["/usr/local/bin/stalwart-mail"]
-VOLUME [ "/opt/stalwart-mail" ]
+CMD ["/usr/local/bin/stalwart"]
+VOLUME [ "/opt/stalwart" ]
 EXPOSE	443 25 110 587 465 143 993 995 4190 8080
 ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
 
@@ -156,13 +156,13 @@ ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
 # Runtime image for musl targets
 # *****************
 FROM --platform=$TARGETPLATFORM alpine AS musl
-WORKDIR /opt/stalwart-mail
+WORKDIR /opt/stalwart
 RUN apk add --update --no-cache ca-certificates tzdata && rm -rf /var/cache/apk/*
-COPY --from=builder /app/artifact/stalwart-mail /usr/local/bin
+COPY --from=builder /app/artifact/stalwart /usr/local/bin
 COPY --from=builder /app/artifact/stalwart-cli /usr/local/bin
 COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod -R 755 /usr/local/bin
-CMD ["/usr/local/bin/stalwart-mail"]
-VOLUME [ "/opt/stalwart-mail" ]
+CMD ["/usr/local/bin/stalwart"]
+VOLUME [ "/opt/stalwart" ]
 EXPOSE	443 25 110 587 465 143 993 995 4190 8080
 ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]

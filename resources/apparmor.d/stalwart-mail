@@ -1,6 +1,6 @@
 #include <tunables/global>
 
-profile stalwart-mail flags=(attach_disconnected) {
+profile stalwart flags=(attach_disconnected) {
   #include <abstractions/base>
   #include <abstractions/nameservice>
   #include <abstractions/openssl>
@@ -17,8 +17,8 @@ profile stalwart-mail flags=(attach_disconnected) {
   owner /proc/*/net/if_inet6 r,
   owner /proc/*/net/ipv6_route r,
 
-  # Full write access to /opt/stalwart-mail
-  /opt/stalwart-mail/** rwk,
+  # Full write access to /opt/stalwart
+  /opt/stalwart/** rwk,
 
   # Allow creating directories under /tmp
   /tmp/ r,
@@ -51,9 +51,9 @@ profile stalwart-mail flags=(attach_disconnected) {
   network inet6 dgram bind port 7911,
 
   # Basic system access
-  /usr/bin/stalwart-mail rix,
-  /etc/stalwart-mail/** r,
-  /var/log/stalwart-mail/** w,
+  /usr/bin/stalwart rix,
+  /etc/stalwart/** r,
+  /var/log/stalwart/** w,
 
   # Additional permissions might be needed depending on specific requirements
 }

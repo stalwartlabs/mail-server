@@ -54,7 +54,7 @@ Upgrading from `v0.8.x` to `v0.9.0`
 
 Version `0.9.0` introduces significant internal improvements while maintaining compatibility with existing database layouts and configuration file formats from version `0.8.0`. As a result, no data or configuration migration is necessary. This release focuses on enhancing performance and functionality, particularly in logging and tracing capabilities.
 
-To upgrade to Stalwart Mail Server version `0.9.0` from `0.8.x`, begin by downloading the latest version of the `stalwart-mail` binary. Once downloaded, replace the existing binary with the new version. Additionally, it's important to update the WebAdmin interface to the latest version to ensure compatibility and to access new features introduced in this release.
+To upgrade to Stalwart version `0.9.0` from `0.8.x`, begin by downloading the latest version of the `stalwart-mail` binary. Once downloaded, replace the existing binary with the new version. Additionally, it's important to update the WebAdmin interface to the latest version to ensure compatibility and to access new features introduced in this release.
 
 In terms of breaking changes, this release brings significant updates to webhooks. All webhook event names have been modified, requiring a thorough review and adjustment of existing webhook configurations. Furthermore, the update introduces hundreds of new event types, enhancing the granularity and specificity of event handling capabilities. Users should familiarize themselves with these changes to effectively integrate them into their systems.
 
@@ -151,7 +151,7 @@ Version `0.8.0` includes both performance and security enhancements that require
 Upgrading from `v0.6.0` to `v0.7.0`
 -----------------------------------
 
-Version `0.7.0` of Stalwart Mail Server introduces significant improvements and features that enhance performance and functionality. However, it also comes with multiple breaking changes in the configuration files and a revamped database layout optimized for accessing large mailboxes. Additionally, Stalwart now supports compression for binaries stored in the blob store, further increasing efficiency.
+Version `0.7.0` of Stalwart introduces significant improvements and features that enhance performance and functionality. However, it also comes with multiple breaking changes in the configuration files and a revamped database layout optimized for accessing large mailboxes. Additionally, Stalwart now supports compression for binaries stored in the blob store, further increasing efficiency.
 Due to these extensive changes, the recommended approach for upgrading is to perform a clean reinstallation of Stalwart and manually migrate your accounts to the new version.
 
 ## Pre-Upgrade Steps
@@ -249,7 +249,7 @@ Upgrading from `v0.4.x` to `v0.5.0`
 
 Rather than manually updating the configuration file, it is recommended to start with a fresh configuration file and update it with the necessary settings:
 
-- Install `v0.5.0` in a distinct directory. You now have the option to use an [internal directory](https://stalw.art/docs/directory/types/internal), which will allow you to manage users and groups directly from Stalwart Mail server. Alternatively, you can continue to use an external directory such as LDAP or SQL.
+- Install `v0.5.0` in a distinct directory. You now have the option to use an [internal directory](https://stalw.art/docs/directory/types/internal), which will allow you to manage users and groups directly from Stalwart server. Alternatively, you can continue to use an external directory such as LDAP or SQL.
 - Update the configuration files with your previous settings. All configuration attributes are backward compatible, except those starting with `store.*`, `directory.*` and `jmap.purge.*`.
 - Export each account following the procedure described in the [migration guide](https://stalw.art/docs/management/database/migrate).
 - Stop the old `v0.4.x` server.
@@ -301,14 +301,14 @@ Upgrading from `v0.3.x` to `v0.4.0`
 5. **Configure the SPAM Filter Database:** Set up and configure the SPAM filter database. More details can be found [here](https://stalw.art/docs/spamfilter/settings/database).
 6. **Review All TOML Files:** Navigate to every TOML file under the `etc/` directory and make necessary changes.
 7. **Update Binary:** Download and substitute the v0.4.0 binary suitable for your platform from [here](https://github.com/stalwartlabs/mail-server/releases/tag/v0.4.0).
-8. **Restart Service:** Conclude by restarting the Stalwart Mail Server service.
+8. **Restart Service:** Conclude by restarting the Stalwart service.
 
 ### Alternative Method:
 
 1. **Separate Installation:** Install v0.4.0 in a distinct directory. This will auto-update all configuration files and establish the spam filter database in SQLite format.
 2. **Move Configuration Files:** Transfer the configuration files from `etc/` and the SQLite spam filter database from `data/` to your current installation's directory.
 3. **Replace Binary:** Move the binary from the `bin/` directory to your current installation's `data/` directory.
-4. **Restart Service:** Finally, restart the Stalwart Mail Server service.
+4. **Restart Service:** Finally, restart the Stalwart service.
 
 
 We apologize for the lack of an automated migration tool for this upgrade. However, we are planning on introducing an automated migration tool in the near future. Thank you for your understanding and patience.

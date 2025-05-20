@@ -660,10 +660,10 @@ impl Metrics {
                 .property_or_default("metrics.open-telemetry.interval", "1m")
                 .unwrap_or_else(|| Duration::from_secs(60));
             let resource = Resource::new([
-                KeyValue::new(SERVICE_NAME, "stalwart-mail"),
+                KeyValue::new(SERVICE_NAME, "stalwart"),
                 KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
             ]);
-            let instrumentation = InstrumentationLibrary::builder("stalwart-mail")
+            let instrumentation = InstrumentationLibrary::builder("stalwart")
                 .with_version(env!("CARGO_PKG_VERSION"))
                 .build();
 
