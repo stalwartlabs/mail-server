@@ -904,7 +904,7 @@ throttle = "500ms"
 throttle = "500ms"
 attempts.interval = "500ms"
 
-[jmap.email]
+[email]
 auto-expunge = "1s"
 
 [changes]

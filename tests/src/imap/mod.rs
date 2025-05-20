@@ -788,23 +788,23 @@ throttle = "500ms"
 throttle = "500ms"
 attempts.interval = "500ms"
 
-[jmap.folders.inbox]
+[email.folders.inbox]
 name = "Inbox"
 subscribe = false
 
-[jmap.folders.sent]
+[email.folders.sent]
 name = "Sent Items"
 subscribe = false
 
-[jmap.folders.trash]
+[email.folders.trash]
 name = "Deleted Items"
 subscribe = false
 
-[jmap.folders.junk]
+[email.folders.junk]
 name = "Junk Mail"
 subscribe = false
 
-[jmap.folders.drafts]
+[email.folders.drafts]
 name = "Drafts"
 subscribe = false
 

@@ -130,7 +130,7 @@ impl JmapConfig {
         let mut default_folders = Vec::new();
         let mut shared_folder = "Shared Folders".to_string();
         for key in config
-            .sub_keys("jmap.folders", ".name")
+            .sub_keys("email.folders", ".name")
             .map(|v| v.to_string())
             .collect::<Vec<_>>()
         {
@@ -142,22 +142,22 @@ impl JmapConfig {
                 }
                 Ok(special_use) => {
                     let subscribe = config
-                        .property_or_default(("jmap.folders", key.as_str(), "subscribe"), "true")
+                        .property_or_default(("email.folders", key.as_str(), "subscribe"), "true")
                         .unwrap_or(true);
                     let create = config
-                        .property_or_default(("jmap.folders", key.as_str(), "create"), "true")
+                        .property_or_default(("email.folders", key.as_str(), "create"), "true")
                         .unwrap_or(true)
                         | [SpecialUse::Inbox, SpecialUse::Trash, SpecialUse::Junk]
                             .contains(&special_use);
                     if let Some(name) = config
-                        .value(("jmap.folders", key.as_str(), "name"))
+                        .value(("email.folders", key.as_str(), "name"))
                         .map(|name| name.trim())
                         .filter(|name| !name.is_empty())
                     {
                         default_folders.push(DefaultFolder {
                             name: name.to_string(),
                             aliases: config
-                                .value(("jmap.folders", key.as_str(), "aliases"))
+                                .value(("email.folders", key.as_str(), "aliases"))
                                 .unwrap_or_default()
                                 .split(',')
                                 .map(|s| s.trim().to_string())
@@ -285,7 +285,7 @@ impl JmapConfig {
             mail_max_size: config.property("jmap.email.max-size").unwrap_or(75000000),
             mail_parse_max_items: config.property("jmap.email.parse.max-items").unwrap_or(10),
             mail_autoexpunge_after: config
-                .property_or_default::<Option<Duration>>("jmap.email.auto-expunge", "30d")
+                .property_or_default::<Option<Duration>>("email.auto-expunge", "30d")
                 .unwrap_or_default(),
             sieve_max_script_name: config
                 .property("sieve.untrusted.limits.name-length")
@@ -316,10 +316,10 @@ impl JmapConfig {
                 .property_or_default("jmap.push.max-total", "100")
                 .unwrap_or(100),
             encrypt: config
-                .property_or_default("storage.encryption.enable", "true")
+                .property_or_default("email.encryption.enable", "true")
                 .unwrap_or(true),
             encrypt_append: config
-                .property_or_default("storage.encryption.append", "false")
+                .property_or_default("email.encryption.append", "false")
                 .unwrap_or(false),
             http_use_forwarded: config.property("http.use-x-forwarded").unwrap_or(false),
             http_headers,
@@ -342,7 +342,7 @@ impl JmapConfig {
                 .property_or_default("jmap.push.throttle", "1s")
                 .unwrap_or_else(|| Duration::from_secs(1)),
             account_purge_frequency: config
-                .property_or_default::<SimpleCron>("jmap.account.purge.frequency", "0 0 *")
+                .property_or_default::<SimpleCron>("account.purge.frequency", "0 0 *")
                 .unwrap_or_else(|| SimpleCron::parse_value("0 0 *").unwrap()),
             fallback_admin: config
                 .value("authentication.fallback-admin.user")

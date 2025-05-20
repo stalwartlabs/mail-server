@@ -259,7 +259,10 @@ mod test {
     fn print_permissions() {
         const CHECK: &str = ":white_check_mark:";
 
-        for permission in Permission::all() {
+        let mut permissions = Permission::all().collect::<Vec<_>>();
+        permissions.sort_by(|a, b| a.name().cmp(b.name()));
+
+        for permission in permissions {
             println!(
                 "|`{}`|{}|{}|{}|{}|",
                 permission.name(),

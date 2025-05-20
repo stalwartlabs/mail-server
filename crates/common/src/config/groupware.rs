@@ -45,13 +45,8 @@ impl GroupwareConfig {
             max_lock_timeout: config.property("dav.lock.max-timeout").unwrap_or(3600),
             max_locks_per_user: config.property("dav.locks.max-per-user").unwrap_or(10),
             max_results: config.property("dav.response.max-results").unwrap_or(2000),
-            max_vcard_size: config.property("contacts.max-size").unwrap_or(512 * 1024),
-            max_ical_size: config.property("calendar.max-size").unwrap_or(512 * 1024),
             default_calendar_name: config
                 .property_or_default::<Option<String>>("calendar.default.href-name", "default")
-                .unwrap_or_default(),
-            default_addressbook_name: config
-                .property_or_default::<Option<String>>("contacts.default.href-name", "default")
                 .unwrap_or_default(),
             default_calendar_display_name: config
                 .property_or_default::<Option<String>>(
@@ -59,18 +54,23 @@ impl GroupwareConfig {
                     "Stalwart Calendar",
                 )
                 .unwrap_or_default(),
+            default_addressbook_name: config
+                .property_or_default::<Option<String>>("contacts.default.href-name", "default")
+                .unwrap_or_default(),
             default_addressbook_display_name: config
                 .property_or_default::<Option<String>>(
                     "contacts.default.display-name",
                     "Stalwart Address Book",
                 )
                 .unwrap_or_default(),
+            max_ical_size: config.property("calendar.max-size").unwrap_or(512 * 1024),
             max_ical_instances: config
                 .property("calendar.max-recurrence-expansions")
                 .unwrap_or(3000),
             max_ical_attendees_per_instance: config
                 .property("calendar.max-attendees-per-instance")
                 .unwrap_or(20),
+            max_vcard_size: config.property("contacts.max-size").unwrap_or(512 * 1024),
             max_file_size: config
                 .property("file-storage.max-size")
                 .unwrap_or(25 * 1024 * 1024),
