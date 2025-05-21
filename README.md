@@ -83,10 +83,10 @@ Key features:
   - Security audited (read the [report](https://stalw.art/blog/security-audit)).
   - Memory safe (thanks to Rust).
 - **Scalable and fault-tolerant**:
-  - Designed to handle growth seamlessly, from small setups to large-scale deployments.
-  - Coordinator-less cluster orchestration or with **Kafka**, **NATS** or **Redis**.
+  - Designed to handle growth seamlessly, from small setups to large-scale deployments of thousands of nodes.
   - Built with **fault tolerance** and **high availability** in mind, recovers from hardware or software failures with minimal operational impact. 
-  - **Kubernetes** support for automated scaling and efficient container orchestration.
+  - Peer-to-peer cluster coordination or with **Kafka**, **NATS** or **Redis**.
+  - **Kubernetes**, **Apache Mesos** and **Docker Swarm** support for automated scaling and container orchestration.
   - Read replicas, sharded blob storage and in-memory data stores for high performance and low latency.
 - **Authentication and Authorization**:
   - **OpenID Connect** authentication.

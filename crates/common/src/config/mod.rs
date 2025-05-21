@@ -138,15 +138,15 @@ impl Core {
             })
             .unwrap_or_default();
         let pubsub = config
-            .value("cluster.pubsub")
+            .value("cluster.coordinator")
             .map(|id| id.to_string())
             .and_then(|id| {
                 if let Some(store) = stores.pubsub_stores.get(&id) {
                     store.clone().into()
                 } else {
                     config.new_parse_error(
-                        "cluster.pubsub",
-                        format!("PubSub server {id:?} not found"),
+                        "cluster.coordinator",
+                        format!("Coordinator backend {id:?} not found"),
                     );
                     None
                 }
