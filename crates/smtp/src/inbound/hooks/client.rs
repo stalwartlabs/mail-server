@@ -13,7 +13,7 @@ pub(super) async fn send_mta_hook_request(
     mta_hook: &MTAHook,
     request: Request,
 ) -> Result<Response, String> {
-    let response = reqwest::Client::builder()
+    let response = utils::reqwest_client_builder()
         .timeout(mta_hook.timeout)
         .danger_accept_invalid_certs(mta_hook.tls_allow_invalid_certs)
         .build()

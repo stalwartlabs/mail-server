@@ -26,7 +26,7 @@ pub async fn exec_header(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         return Ok(Variable::from(url.split_once("/?").unwrap().1.to_string()));
     }
 
-    reqwest::Client::builder()
+    utils::reqwest_client_builder()
         .user_agent(agent.as_ref())
         .timeout(Duration::from_millis(timeout))
         .redirect(Policy::none())

@@ -7,7 +7,6 @@ use super::jose::{
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use hyper::header::USER_AGENT;
 use rcgen::{Certificate, CustomExtension, PKCS_ECDSA_P256_SHA256};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Method, Response};
@@ -316,7 +315,7 @@ async fn https(
     body: Option<String>,
 ) -> trc::Result<Response> {
     let url = url.as_ref();
-    let mut builder = reqwest::Client::builder()
+    let mut builder = utils::reqwest_client_builder()
         .timeout(Duration::from_secs(30))
         .http1_only();
 
@@ -330,8 +329,7 @@ async fn https(
     let mut request = builder
         .build()
         .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_http_error(err))?
-        .request(method, url)
-        .header(USER_AGENT, crate::USER_AGENT);
+        .request(method, url);
 
     if let Some(body) = body {
         request = request

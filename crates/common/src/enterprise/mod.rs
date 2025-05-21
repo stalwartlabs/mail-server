@@ -188,12 +188,18 @@ impl Server {
 
                 let mut logo = None;
                 if let Some(logo_url) = logo_url {
-                    let response = reqwest::get(logo_url.as_str()).await.map_err(|err| {
-                        trc::ResourceEvent::DownloadExternal
-                            .into_err()
-                            .details("Failed to download logo")
-                            .reason(err)
-                    })?;
+                    let response = utils::reqwest_client_builder()
+                        .build()
+                        .unwrap_or_default()
+                        .get(logo_url.as_str())
+                        .send()
+                        .await
+                        .map_err(|err| {
+                            trc::ResourceEvent::DownloadExternal
+                                .into_err()
+                                .details("Failed to download logo")
+                                .reason(err)
+                        })?;
 
                     let content_type = response
                         .headers()

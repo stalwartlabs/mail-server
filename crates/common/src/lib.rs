@@ -46,6 +46,8 @@ use utils::{
     snowflake::SnowflakeIdGenerator,
 };
 
+pub use utils::USER_AGENT;
+
 pub mod addresses;
 pub mod auth;
 pub mod config;
@@ -67,7 +69,6 @@ pub use psl;
 pub static VERSION_PRIVATE: &str = env!("CARGO_PKG_VERSION");
 pub static VERSION_PUBLIC: &str = "1.0.0";
 
-pub static USER_AGENT: &str = "Stalwart/1.0.0";
 pub static DAEMON_NAME: &str = concat!("Stalwart v", env!("CARGO_PKG_VERSION"),);
 pub static PROD_ID: &str = "-//Stalwart Labs Ltd.//Stalwart Server//EN";
 

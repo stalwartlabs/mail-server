@@ -63,7 +63,7 @@ pub(crate) async fn http_request(
     keys: Option<EncryptionKeys>,
     push_timeout: Duration,
 ) -> bool {
-    let client_builder = reqwest::Client::builder().timeout(push_timeout);
+    let client_builder = utils::reqwest_client_builder().timeout(push_timeout);
 
     #[cfg(feature = "test_mode")]
     let client_builder = client_builder.danger_accept_invalid_certs(true);

@@ -64,3 +64,4 @@ enterprise = [ "jmap/enterprise",
                "dav/enterprise",
                "groupware/enterprise",
                "services/enterprise" ]
+tls-native-roots = ["utils/tls-native-roots"]

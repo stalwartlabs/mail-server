@@ -419,7 +419,7 @@ pub async fn jmap_raw_request(body: impl AsRef<str>, username: &str, secret: &st
       }"#;
 
     String::from_utf8(
-        reqwest::Client::builder()
+        utils::reqwest_client_builder()
             .danger_accept_invalid_certs(true)
             .timeout(Duration::from_millis(1000))
             .default_headers(headers)
@@ -620,7 +620,7 @@ impl ManagementApi {
         query: &str,
         body: Option<String>,
     ) -> Result<String, String> {
-        let mut request = reqwest::Client::builder()
+        let mut request = utils::reqwest_client_builder()
             .timeout(Duration::from_millis(500))
             .danger_accept_invalid_certs(true)
             .build()

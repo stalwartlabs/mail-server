@@ -36,10 +36,10 @@ impl OpenIdDirectory {
             QueryBy::Credentials(Credentials::OAuthBearer { token }) => {
                 // Send request
                 #[cfg(feature = "test_mode")]
-                let client = reqwest::Client::builder().danger_accept_invalid_certs(true);
+                let client = utils::reqwest_client_builder().danger_accept_invalid_certs(true);
 
                 #[cfg(not(feature = "test_mode"))]
-                let client = reqwest::Client::builder();
+                let client = utils::reqwest_client_builder();
 
                 let client = client
                     .timeout(self.config.endpoint_timeout)

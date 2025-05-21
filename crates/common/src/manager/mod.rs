@@ -76,7 +76,7 @@ pub async fn fetch_resource(
             .await
             .map_err(|err| format!("Failed to read {path}: {err}"))
     } else {
-        let response = reqwest::Client::builder()
+        let response = utils::reqwest_client_builder()
             .timeout(timeout)
             .danger_accept_invalid_certs(is_localhost_url(url))
             .user_agent(USER_AGENT)

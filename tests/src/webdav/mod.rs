@@ -302,7 +302,7 @@ impl DummyWebDavClient {
         headers: impl IntoIterator<Item = (&'static str, &str)>,
         body: impl Into<String>,
     ) -> DavResponse {
-        let mut request = reqwest::Client::builder()
+        let mut request = utils::reqwest_client_builder()
             .timeout(Duration::from_millis(500))
             .danger_accept_invalid_certs(true)
             .build()

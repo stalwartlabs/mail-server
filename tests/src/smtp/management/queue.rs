@@ -493,7 +493,7 @@ async fn manage_queue() {
 
     // Test authentication error
     assert_eq!(
-        reqwest::Client::builder()
+        utils::reqwest_client_builder()
             .timeout(Duration::from_millis(500))
             .danger_accept_invalid_certs(true)
             .build()

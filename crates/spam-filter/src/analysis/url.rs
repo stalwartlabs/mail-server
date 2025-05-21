@@ -290,7 +290,7 @@ async fn http_get_header(
             Ok(None)
         };
     }
-    reqwest::Client::builder()
+    utils::reqwest_client_builder()
         .user_agent("Mozilla/5.0 (X11; Linux i686; rv:109.0) Gecko/20100101 Firefox/118.0")
         .timeout(timeout)
         .redirect(Policy::none())

@@ -111,7 +111,12 @@ impl PublicSuffix {
 
         for (idx, value) in values.into_iter().enumerate() {
             let bytes = if value.starts_with("https://") || value.starts_with("http://") {
-                let result = match reqwest::get(&value).await {
+                let result = match crate::reqwest_client_builder()
+                    .build()
+                    .unwrap_or_default()
+                    .get(&value)
+                    .await
+                {
                     Ok(r) => {
                         if r.status().is_success() {
                             r.bytes().await

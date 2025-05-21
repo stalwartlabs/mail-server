@@ -125,7 +125,7 @@ impl AiApiConfig {
         };
 
         // Send request
-        let response = reqwest::Client::builder()
+        let response = utils::reqwest_client_builder()
             .timeout(self.timeout)
             .danger_accept_invalid_certs(self.tls_allow_invalid_certs)
             .build()

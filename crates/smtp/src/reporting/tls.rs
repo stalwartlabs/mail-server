@@ -8,7 +8,7 @@ use super::{AggregateTimestamp, SerializedSize};
 use crate::{queue::RecipientDomain, reporting::SmtpReporting};
 use ahash::AHashMap;
 use common::{
-    Server, USER_AGENT,
+    Server,
     config::smtp::{
         report::AggregateFrequency,
         resolver::{Mode, MxPattern},
@@ -142,8 +142,7 @@ impl TlsReporting for Server {
         for uri in &rua {
             match uri {
                 ReportUri::Http(uri) => {
-                    if let Ok(client) = reqwest::Client::builder()
-                        .user_agent(USER_AGENT)
+                    if let Ok(client) = utils::reqwest_client_builder()
                         .timeout(Duration::from_secs(2 * 60))
                         .build()
                     {

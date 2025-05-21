@@ -21,14 +21,14 @@ use compact_str::ToCompactString;
 use futures::StreamExt;
 use reqwest::Response;
 use rustls::{
-    ClientConfig, RootCertStore, SignatureScheme,
+    ClientConfig, SignatureScheme,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
 };
-use rustls_pki_types::TrustAnchor;
 
 pub use downcast_rs;
 pub use erased_serde;
 
+pub static USER_AGENT: &str = "Stalwart/1.0.0";
 pub const BLOB_HASH_LEN: usize = 32;
 
 #[derive(
@@ -294,26 +294,46 @@ pub async fn wait_for_shutdown() {
 }
 
 pub fn rustls_client_config(allow_invalid_certs: bool) -> ClientConfig {
+    #[cfg(feature = "tls-native-roots")]
+    use rustls_platform_verifier::BuilderVerifierExt;
+
     let config = ClientConfig::builder();
 
     if !allow_invalid_certs {
-        let mut root_cert_store = RootCertStore::empty();
+        #[cfg(feature = "tls-native-roots")]
+        let config = config.with_platform_verifier();
 
-        root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| TrustAnchor {
-            subject: ta.subject.clone(),
-            subject_public_key_info: ta.subject_public_key_info.clone(),
-            name_constraints: ta.name_constraints.clone(),
-        }));
+        #[cfg(not(feature = "tls-native-roots"))]
+        let config = config.with_root_certificates(
+            webpki_roots::TLS_SERVER_ROOTS
+                .iter()
+                .map(|ta| rustls_pki_types::TrustAnchor {
+                    subject: ta.subject.clone(),
+                    subject_public_key_info: ta.subject_public_key_info.clone(),
+                    name_constraints: ta.name_constraints.clone(),
+                })
+                .collect::<rustls::RootCertStore>(),
+        );
 
-        config
-            .with_root_certificates(root_cert_store)
-            .with_no_client_auth()
+        config.with_no_client_auth()
     } else {
         config
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(DummyVerifier {}))
             .with_no_client_auth()
     }
+}
+
+pub fn reqwest_client_builder() -> reqwest::ClientBuilder {
+    let builder = reqwest::Client::builder();
+
+    #[cfg(feature = "tls-native-roots")]
+    let builder = builder.tls_built_in_native_certs(true);
+
+    #[cfg(not(feature = "tls-native-roots"))]
+    let builder = builder.tls_built_in_webpki_certs(true);
+
+    builder.user_agent(USER_AGENT)
 }
 
 #[derive(Debug)]

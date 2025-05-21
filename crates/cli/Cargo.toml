@@ -11,9 +11,9 @@ readme = "README.md"
 resolver = "2"
 
 [dependencies]
-jmap-client = { version = "0.3", features = ["async"] } 
-mail-parser = { version = "0.11", features = ["full_encoding", "serde"] } 
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"]}
+jmap-client = { version = "0.3", features = ["async"] }
+mail-parser = { version = "0.11", features = ["full_encoding", "serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["http2"]}
 tokio = { version = "1.45", features = ["full"] }
 num_cpus = "1.13.1"
 clap = { version = "4.1.6", features = ["derive"] }
@@ -30,3 +30,7 @@ futures = "0.3.28"
 pwhash = "1.0.0"
 rand = "0.9.0"
 mail-auth = { version = "0.7" }
+utils.path = "../utils"
+
+[features]
+tls-native-roots = ["utils/tls-native-roots"]

@@ -63,7 +63,7 @@ impl AzureStore {
         let timeout = config
             .property_or_default::<Duration>((&prefix, "timeout"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30));
-        let transport = match reqwest::Client::builder().timeout(timeout).build() {
+        let transport = match utils::reqwest_client_builder().timeout(timeout).build() {
             Ok(client) => Arc::new(client),
             Err(err) => {
                 config.new_build_error(

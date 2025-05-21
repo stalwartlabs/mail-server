@@ -3372,6 +3372,7 @@ dependencies = [
  "hyper 1.6.0",
  "hyper-util",
  "rustls 0.23.27",
+ "rustls-native-certs 0.8.1",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls 0.26.2",
@@ -6318,6 +6319,7 @@ dependencies = [
  "pin-project-lite",
  "quinn",
  "rustls 0.23.27",
+ "rustls-native-certs 0.8.1",
  "rustls-pemfile 2.2.0",
  "rustls-pki-types",
  "serde",
@@ -7694,6 +7696,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "utils",
 ]
 
 [[package]]
@@ -8795,6 +8798,7 @@ dependencies = [
  "rustls 0.23.27",
  "rustls-pemfile 2.2.0",
  "rustls-pki-types",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "smtp-proto",

@@ -91,7 +91,7 @@ impl HttpStore {
     async fn try_refresh(&self) -> trc::Result<AHashMap<String, Value<'static>>> {
         let time = Instant::now();
         let agent = BROWSER_USER_AGENTS.choose(&mut rand::rng()).unwrap();
-        let response = reqwest::Client::builder()
+        let response = utils::reqwest_client_builder()
             .timeout(self.config.timeout)
             .user_agent(*agent)
             .build()

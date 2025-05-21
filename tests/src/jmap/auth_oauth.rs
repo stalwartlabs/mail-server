@@ -411,7 +411,7 @@ async fn post_bytes(
     auth_token: Option<&str>,
     params: &AHashMap<String, String>,
 ) -> Bytes {
-    let mut client = reqwest::Client::builder()
+    let mut client = utils::reqwest_client_builder()
         .timeout(Duration::from_millis(500))
         .danger_accept_invalid_certs(true)
         .build()
@@ -437,7 +437,7 @@ async fn post_json<D: DeserializeOwned>(
     auth_token: Option<&str>,
     body: &impl Serialize,
 ) -> D {
-    let mut client = reqwest::Client::builder()
+    let mut client = utils::reqwest_client_builder()
         .timeout(Duration::from_millis(500))
         .danger_accept_invalid_certs(true)
         .build()
@@ -473,7 +473,7 @@ async fn post_with_auth<T: DeserializeOwned>(
 }
 
 async fn get_bytes(url: &str) -> Bytes {
-    reqwest::Client::builder()
+    utils::reqwest_client_builder()
         .timeout(Duration::from_millis(500))
         .danger_accept_invalid_certs(true)
         .build()

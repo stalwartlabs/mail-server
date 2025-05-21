@@ -86,7 +86,7 @@ fn parse_credentials(credentials: &str) -> Credentials {
 
 async fn oauth(url: &str) -> Credentials {
     let metadata: HashMap<String, serde_json::Value> = serde_json::from_slice(
-        &reqwest::Client::builder()
+        &utils::reqwest_client_builder()
             .danger_accept_invalid_certs(is_localhost(url))
             .build()
             .unwrap_or_default()
@@ -104,7 +104,7 @@ async fn oauth(url: &str) -> Credentials {
     let mut params: HashMap<String, String> =
         HashMap::from_iter([("client_id".to_string(), "Stalwart_CLI".to_string())]);
     let response: HashMap<String, serde_json::Value> = serde_json::from_slice(
-        &reqwest::Client::builder()
+        &utils::reqwest_client_builder()
             .danger_accept_invalid_certs(is_localhost(url))
             .build()
             .unwrap_or_default()
@@ -138,7 +138,7 @@ async fn oauth(url: &str) -> Credentials {
     std::io::stdin().lock().lines().next();
 
     let mut response: HashMap<String, serde_json::Value> = serde_json::from_slice(
-        &reqwest::Client::builder()
+        &utils::reqwest_client_builder()
             .danger_accept_invalid_certs(is_localhost(url))
             .build()
             .unwrap_or_default()
@@ -230,7 +230,7 @@ impl Client {
             },
             url
         );
-        let mut request = reqwest::Client::builder()
+        let mut request = utils::reqwest_client_builder()
             .danger_accept_invalid_certs(is_localhost(&url))
             .timeout(Duration::from_secs(self.timeout.unwrap_or(60)))
             .build()

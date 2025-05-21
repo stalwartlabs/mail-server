@@ -148,7 +148,7 @@ async fn post_webhook_events(
     }
 
     // Send request
-    let response = reqwest::Client::builder()
+    let response = utils::reqwest_client_builder()
         .timeout(settings.timeout)
         .danger_accept_invalid_certs(settings.tls_allow_invalid_certs)
         .build()

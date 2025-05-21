@@ -67,8 +67,7 @@ impl MtaStsLookup for Server {
 
         // Fetch policy
         #[cfg(not(feature = "test_mode"))]
-        let bytes = reqwest::Client::builder()
-            .user_agent(common::USER_AGENT)
+        let bytes = utils::reqwest_client_builder()
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::none())
             .build()?
