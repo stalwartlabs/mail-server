@@ -4,21 +4,22 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::SystemTime;
-
-use opentelemetry::global::set_error_handler;
-use opentelemetry_sdk::metrics::data::{
-    DataPoint, Gauge, Histogram, HistogramDataPoint, Metric, ResourceMetrics, ScopeMetrics, Sum,
-    Temporality,
-};
-use trc::{Collector, TelemetryEvent};
-
 use crate::config::telemetry::OtelMetrics;
+use opentelemetry_sdk::metrics::{
+    Temporality,
+    data::{
+        Gauge, GaugeDataPoint, Histogram, HistogramDataPoint, Metric, ResourceMetrics,
+        ScopeMetrics, Sum, SumDataPoint,
+    },
+    exporter::PushMetricExporter,
+};
+use std::time::SystemTime;
+use trc::{Collector, TelemetryEvent};
 
 impl OtelMetrics {
     pub async fn push_metrics(&self, is_enterprise: bool, start_time: SystemTime) {
         let mut metrics = Vec::with_capacity(256);
-        let now = SystemTime::now();
+        let time = SystemTime::now();
 
         // Add counters
         for counter in Collector::collect_counters(is_enterprise) {
@@ -27,15 +28,15 @@ impl OtelMetrics {
                 description: counter.id().description().into(),
                 unit: "events".into(),
                 data: Box::new(Sum {
-                    data_points: vec![DataPoint {
+                    data_points: vec![SumDataPoint {
                         attributes: vec![],
-                        start_time: start_time.into(),
-                        time: now.into(),
                         value: counter.value(),
                         exemplars: vec![],
                     }],
                     temporality: Temporality::Cumulative,
                     is_monotonic: true,
+                    start_time,
+                    time,
                 }),
             });
         }
@@ -47,13 +48,13 @@ impl OtelMetrics {
                 description: gauge.id().description().into(),
                 unit: gauge.id().unit().into(),
                 data: Box::new(Gauge {
-                    data_points: vec![DataPoint {
+                    data_points: vec![GaugeDataPoint {
                         attributes: vec![],
-                        start_time: start_time.into(),
-                        time: now.into(),
                         value: gauge.get(),
                         exemplars: vec![],
                     }],
+                    start_time: start_time.into(),
+                    time,
                 }),
             });
         }
@@ -67,8 +68,6 @@ impl OtelMetrics {
                 data: Box::new(Histogram {
                     data_points: vec![HistogramDataPoint {
                         attributes: vec![],
-                        start_time,
-                        time: now,
                         count: histogram.count(),
                         bounds: histogram.upper_bounds_vec(),
                         bucket_counts: histogram.buckets_vec(),
@@ -78,6 +77,8 @@ impl OtelMetrics {
                         exemplars: vec![],
                     }],
                     temporality: Temporality::Cumulative,
+                    start_time,
+                    time,
                 }),
             });
         }
@@ -102,11 +103,12 @@ impl OtelMetrics {
     }
 
     pub fn enable_errors() {
-        let _ = set_error_handler(|error| {
+        // TODO: Remove this when the OpenTelemetry SDK supports error handling
+        /*let _ = set_error_handler(|error| {
             trc::event!(
                 Telemetry(TelemetryEvent::OtelMetricsExporterError),
                 Reason = error.to_string(),
             );
-        });
+        });*/
     }
 }

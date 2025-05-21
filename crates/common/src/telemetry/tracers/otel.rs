@@ -4,38 +4,34 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    borrow::Cow,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
-
+use crate::{LONG_1Y_SLUMBER, config::telemetry::OtelTracer};
 use ahash::AHashMap;
 use mail_parser::DateTime;
 use opentelemetry::{
-    InstrumentationLibrary, Key, KeyValue, Value,
+    InstrumentationScope, Key, KeyValue, Value,
     logs::{AnyValue, Severity},
     trace::{SpanContext, SpanKind, Status, TraceFlags, TraceState},
 };
 use opentelemetry_sdk::{
     Resource,
-    export::{logs::LogBatch, trace::SpanData},
-    trace::{SpanEvents, SpanLinks},
+    logs::{LogBatch, LogExporter, SdkLogRecord},
+    trace::{SpanData, SpanEvents, SpanExporter, SpanLinks},
 };
-use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
+use opentelemetry_semantic_conventions::resource::SERVICE_VERSION;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use trc::{Event, EventDetails, Level, TelemetryEvent, ipc::subscriber::SubscriberBuilder};
-
-use crate::{LONG_1Y_SLUMBER, config::telemetry::OtelTracer};
 
 const MAX_EVENTS: usize = 2048;
 
 pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer) {
     let (_, mut rx) = builder.register();
     tokio::spawn(async move {
-        let resource = Cow::Owned(Resource::new([
-            KeyValue::new(SERVICE_NAME, "stalwart"),
-            KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-        ]));
-        let instrumentation = InstrumentationLibrary::builder("stalwart")
+        let resource = Resource::builder()
+            .with_service_name("stalwart")
+            .with_attribute(KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")))
+            .build();
+
+        let instrumentation = InstrumentationScope::builder("stalwart")
             .with_version(env!("CARGO_PKG_VERSION"))
             .build();
 
@@ -58,7 +54,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                 Ok(Some(events)) => {
                     for event in events {
                         if otel.log_exporter_enable {
-                            pending_logs.push(build_log_record(&event));
+                            pending_logs.push(otel.build_log_record(&event));
                         }
 
                         if otel.span_exporter_enable {
@@ -114,6 +110,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                             .iter()
                             .map(|log| (log, &instrumentation))
                             .collect::<Vec<_>>();
+
                         if let Err(err) = otel.log_exporter.export(LogBatch::new(&logs)).await {
                             trc::event!(
                                 Telemetry(TelemetryEvent::OtelExporterError),
@@ -143,7 +140,7 @@ fn build_span_data<I, T>(
     start_span: &Event<EventDetails>,
     end_span: &Event<EventDetails>,
     span_events: I,
-    instrumentation: &InstrumentationLibrary,
+    instrumentation: &InstrumentationScope,
 ) -> SpanData
 where
     I: IntoIterator<Item = T>,
@@ -184,53 +181,58 @@ where
         links: SpanLinks::default(),
         status: Status::default(),
         span_kind: SpanKind::Server,
-        instrumentation_lib: instrumentation.clone(),
+        instrumentation_scope: instrumentation.clone(),
     }
 }
 
-fn build_log_record(event: &Event<EventDetails>) -> opentelemetry_sdk::logs::LogRecord {
-    use opentelemetry::logs::LogRecord;
-    let mut record = opentelemetry_sdk::logs::LogRecord::default();
-    record.event_name = event.inner.typ.name().into();
-    record.severity_number = match event.inner.level {
-        Level::Trace => Severity::Trace,
-        Level::Debug => Severity::Debug,
-        Level::Info => Severity::Info,
-        Level::Warn => Severity::Warn,
-        Level::Error => Severity::Error,
-        Level::Disable => Severity::Error,
+impl OtelTracer {
+    fn build_log_record(&self, event: &Event<EventDetails>) -> SdkLogRecord {
+        use opentelemetry::logs::LogRecord;
+        use opentelemetry::logs::Logger;
+
+        let mut record = self.log_provider.create_log_record();
+        record.set_event_name(event.inner.typ.name());
+        record.set_severity_number(match event.inner.level {
+            Level::Trace => Severity::Trace,
+            Level::Debug => Severity::Debug,
+            Level::Info => Severity::Info,
+            Level::Warn => Severity::Warn,
+            Level::Error => Severity::Error,
+            Level::Disable => Severity::Error,
+        });
+        record.set_severity_text(event.inner.level.as_str());
+        record.set_body(AnyValue::String(event.inner.typ.description().into()));
+        record.set_timestamp(UNIX_EPOCH + Duration::from_secs(event.inner.timestamp));
+        record.set_observed_timestamp(SystemTime::now());
+        for (k, v) in &event.keys {
+            record.add_attribute(k.name(), build_any_value(v));
+        }
+        record
     }
-    .into();
-    record.severity_text = event.inner.level.as_str().into();
-    record.body = AnyValue::String(event.inner.typ.description().into()).into();
-    record.timestamp = (UNIX_EPOCH + Duration::from_secs(event.inner.timestamp)).into();
-    record.observed_timestamp = SystemTime::now().into();
-    for (k, v) in &event.keys {
-        record.add_attribute(k.name(), build_any_value(v));
-    }
-    record
 }
 
 fn build_key_value(key_value: &(trc::Key, trc::Value)) -> Option<KeyValue> {
-    (key_value.0 != trc::Key::SpanId).then(|| KeyValue {
-        key: build_key(&key_value.0),
-        value: match &key_value.1 {
-            trc::Value::String(v) => Value::String(v.to_string().into()),
-            trc::Value::UInt(v) => Value::I64(*v as i64),
-            trc::Value::Int(v) => Value::I64(*v),
-            trc::Value::Float(v) => Value::F64(*v),
-            trc::Value::Timestamp(v) => {
-                Value::String(DateTime::from_timestamp(*v as i64).to_rfc3339().into())
-            }
-            trc::Value::Duration(v) => Value::I64(*v as i64),
-            trc::Value::Bytes(_) => Value::String("[binary data]".into()),
-            trc::Value::Bool(v) => Value::Bool(*v),
-            trc::Value::Ipv4(v) => Value::String(v.to_string().into()),
-            trc::Value::Ipv6(v) => Value::String(v.to_string().into()),
-            trc::Value::Event(_) => Value::String("[event data]".into()),
-            trc::Value::Array(_) => Value::String("[array]".into()),
-            trc::Value::None => Value::Bool(false),
-        },
+    (key_value.0 != trc::Key::SpanId).then(|| {
+        KeyValue::new(
+            build_key(&key_value.0),
+            match &key_value.1 {
+                trc::Value::String(v) => Value::String(v.to_string().into()),
+                trc::Value::UInt(v) => Value::I64(*v as i64),
+                trc::Value::Int(v) => Value::I64(*v),
+                trc::Value::Float(v) => Value::F64(*v),
+                trc::Value::Timestamp(v) => {
+                    Value::String(DateTime::from_timestamp(*v as i64).to_rfc3339().into())
+                }
+                trc::Value::Duration(v) => Value::I64(*v as i64),
+                trc::Value::Bytes(_) => Value::String("[binary data]".into()),
+                trc::Value::Bool(v) => Value::Bool(*v),
+                trc::Value::Ipv4(v) => Value::String(v.to_string().into()),
+                trc::Value::Ipv6(v) => Value::String(v.to_string().into()),
+                trc::Value::Event(_) => Value::String("[event data]".into()),
+                trc::Value::Array(_) => Value::String("[array]".into()),
+                trc::Value::None => Value::Bool(false),
+            },
+        )
     })
 }
 

@@ -4,27 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
-
+use super::parse_http_headers;
 use ahash::{AHashMap, AHashSet};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hyper::{HeaderMap, header::CONTENT_TYPE};
-use opentelemetry::{InstrumentationLibrary, KeyValue};
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry::{InstrumentationScope, KeyValue, logs::LoggerProvider};
+use opentelemetry_otlp::{
+    LogExporter, MetricExporter, SpanExporter, WithExportConfig, WithHttpConfig,
+};
 use opentelemetry_sdk::{
     Resource,
-    export::{logs::LogExporter, trace::SpanExporter},
-    metrics::{
-        exporter::PushMetricsExporter,
-        reader::{DefaultAggregationSelector, DefaultTemporalitySelector},
-    },
+    logs::{SdkLogger, SdkLoggerProvider},
+    metrics::Temporality,
 };
-use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
+use opentelemetry_semantic_conventions::resource::SERVICE_VERSION;
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use store::Stores;
 use trc::{EventType, Level, TelemetryEvent, ipc::subscriber::Interests};
 use utils::config::{Config, utils::ParseValue};
-
-use super::parse_http_headers;
 
 #[derive(Debug)]
 pub struct TelemetrySubscriber {
@@ -34,6 +31,7 @@ pub struct TelemetrySubscriber {
     pub lossy: bool,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum TelemetrySubscriberType {
     ConsoleTracer(ConsoleTracer),
@@ -48,17 +46,18 @@ pub enum TelemetrySubscriberType {
 
 #[derive(Debug)]
 pub struct OtelTracer {
-    pub span_exporter: Box<dyn SpanExporter>,
+    pub span_exporter: SpanExporter,
     pub span_exporter_enable: bool,
-    pub log_exporter: Box<dyn LogExporter>,
+    pub log_exporter: LogExporter,
+    pub log_provider: SdkLogger,
     pub log_exporter_enable: bool,
     pub throttle: Duration,
 }
 
 pub struct OtelMetrics {
     pub resource: Resource,
-    pub instrumentation: InstrumentationLibrary,
-    pub exporter: Box<dyn PushMetricsExporter>,
+    pub instrumentation: InstrumentationScope,
+    pub exporter: MetricExporter,
     pub interval: Duration,
 }
 
@@ -259,9 +258,7 @@ impl Tracers {
                 "otel" | "open-telemetry" => {
                     let timeout = config
                         .property::<Duration>(("tracer", id, "timeout"))
-                        .unwrap_or(Duration::from_secs(
-                            opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT,
-                        ));
+                        .unwrap_or(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT);
                     let throttle = config
                         .property_or_default(("tracer", id, "throttle"), "1s")
                         .unwrap_or_else(|| Duration::from_secs(1));
@@ -277,12 +274,12 @@ impl Tracers {
                         .unwrap_or_default()
                     {
                         "grpc" => {
-                            let mut span_exporter = opentelemetry_otlp::new_exporter()
-                                .tonic()
+                            let mut span_exporter = SpanExporter::builder()
+                                .with_tonic()
                                 .with_protocol(opentelemetry_otlp::Protocol::Grpc)
                                 .with_timeout(timeout);
-                            let mut log_exporter = opentelemetry_otlp::new_exporter()
-                                .tonic()
+                            let mut log_exporter = LogExporter::builder()
+                                .with_tonic()
                                 .with_protocol(opentelemetry_otlp::Protocol::Grpc)
                                 .with_timeout(timeout);
                             if let Some(endpoint) = config.value(("tracer", id, "endpoint")) {
@@ -290,17 +287,17 @@ impl Tracers {
                                 log_exporter = log_exporter.with_endpoint(endpoint);
                             }
 
-                            match (
-                                span_exporter.build_span_exporter(),
-                                log_exporter.build_log_exporter(),
-                            ) {
+                            match (span_exporter.build(), log_exporter.build()) {
                                 (Ok(span_exporter), Ok(log_exporter)) => {
                                     TelemetrySubscriberType::OtelTracer(OtelTracer {
-                                        span_exporter: Box::new(span_exporter),
-                                        log_exporter: Box::new(log_exporter),
+                                        span_exporter,
+                                        log_exporter,
                                         throttle,
                                         span_exporter_enable,
                                         log_exporter_enable,
+                                        log_provider: SdkLoggerProvider::builder()
+                                            .build()
+                                            .logger("stalwart"),
                                     })
                                 }
                                 (Err(err), _) => {
@@ -346,12 +343,12 @@ impl Tracers {
                                     config.new_parse_error(("tracer", id, "headers"), err);
                                 }
 
-                                let mut span_exporter = opentelemetry_otlp::new_exporter()
-                                    .http()
+                                let mut span_exporter = SpanExporter::builder()
+                                    .with_http()
                                     .with_endpoint(&endpoint)
                                     .with_timeout(timeout);
-                                let mut log_exporter = opentelemetry_otlp::new_exporter()
-                                    .http()
+                                let mut log_exporter = LogExporter::builder()
+                                    .with_http()
                                     .with_endpoint(&endpoint)
                                     .with_timeout(timeout);
                                 if !headers.is_empty() {
@@ -359,17 +356,17 @@ impl Tracers {
                                     log_exporter = log_exporter.with_headers(headers);
                                 }
 
-                                match (
-                                    span_exporter.build_span_exporter(),
-                                    log_exporter.build_log_exporter(),
-                                ) {
+                                match (span_exporter.build(), log_exporter.build()) {
                                     (Ok(span_exporter), Ok(log_exporter)) => {
                                         TelemetrySubscriberType::OtelTracer(OtelTracer {
-                                            span_exporter: Box::new(span_exporter),
-                                            log_exporter: Box::new(log_exporter),
+                                            span_exporter,
+                                            log_exporter,
                                             throttle,
                                             span_exporter_enable,
                                             log_exporter_enable,
+                                            log_provider: SdkLoggerProvider::builder()
+                                                .build()
+                                                .logger("stalwart"),
                                         })
                                     }
                                     (Err(err), _) => {
@@ -653,36 +650,32 @@ impl Metrics {
         if let Some(is_grpc) = otel_enabled {
             let timeout = config
                 .property::<Duration>("metrics.open-telemetry.timeout")
-                .unwrap_or(Duration::from_secs(
-                    opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT,
-                ));
+                .unwrap_or(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT);
             let interval = config
                 .property_or_default("metrics.open-telemetry.interval", "1m")
                 .unwrap_or_else(|| Duration::from_secs(60));
-            let resource = Resource::new([
-                KeyValue::new(SERVICE_NAME, "stalwart"),
-                KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-            ]);
-            let instrumentation = InstrumentationLibrary::builder("stalwart")
+            let resource = Resource::builder()
+                .with_service_name("stalwart")
+                .with_attribute(KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")))
+                .build();
+            let instrumentation = InstrumentationScope::builder("stalwart")
                 .with_version(env!("CARGO_PKG_VERSION"))
                 .build();
 
             if is_grpc {
-                let mut exporter = opentelemetry_otlp::new_exporter()
-                    .tonic()
+                let mut exporter = MetricExporter::builder()
+                    .with_temporality(Temporality::Delta)
+                    .with_tonic()
                     .with_protocol(opentelemetry_otlp::Protocol::Grpc)
                     .with_timeout(timeout);
                 if let Some(endpoint) = config.value("metrics.open-telemetry.endpoint") {
                     exporter = exporter.with_endpoint(endpoint);
                 }
 
-                match exporter.build_metrics_exporter(
-                    Box::new(DefaultAggregationSelector::new()),
-                    Box::new(DefaultTemporalitySelector::new()),
-                ) {
+                match exporter.build() {
                     Ok(exporter) => {
                         metrics.otel = Some(Arc::new(OtelMetrics {
-                            exporter: Box::new(exporter),
+                            exporter,
                             interval,
                             resource,
                             instrumentation,
@@ -713,21 +706,19 @@ impl Metrics {
                     config.new_parse_error("metrics.open-telemetry.headers", err);
                 }
 
-                let mut exporter = opentelemetry_otlp::new_exporter()
-                    .http()
+                let mut exporter = MetricExporter::builder()
+                    .with_temporality(Temporality::Delta)
+                    .with_http()
                     .with_endpoint(&endpoint)
                     .with_timeout(timeout);
                 if !headers.is_empty() {
                     exporter = exporter.with_headers(headers);
                 }
 
-                match exporter.build_metrics_exporter(
-                    Box::new(DefaultAggregationSelector::new()),
-                    Box::new(DefaultTemporalitySelector::new()),
-                ) {
+                match exporter.build() {
                     Ok(exporter) => {
                         metrics.otel = Some(Arc::new(OtelMetrics {
-                            exporter: Box::new(exporter),
+                            exporter,
                             interval,
                             resource,
                             instrumentation,

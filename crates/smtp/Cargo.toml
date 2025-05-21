@@ -30,7 +30,7 @@ ahash = { version = "0.8" }
 rustls = { version = "0.23.5", default-features = false, features = ["std", "ring", "tls12"] }
 rustls-pemfile = "2.0"
 rustls-pki-types = { version = "1" }
-tokio = { version = "1.23", features = ["full"] }
+tokio = { version = "1.45", features = ["full"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 webpki-roots = { version = "1.0"}
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }

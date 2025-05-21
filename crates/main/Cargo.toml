@@ -34,7 +34,7 @@ services = { path = "../services" }
 trc = { path = "../trc" }
 utils = { path = "../utils" }
 migration = { path = "../migration" }
-tokio = { version = "1.23", features = ["full"] }
+tokio = { version = "1.45", features = ["full"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"
