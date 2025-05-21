@@ -226,7 +226,11 @@ pub enum PubSubStore {
     #[cfg(feature = "redis")]
     Redis(Arc<backend::redis::RedisStore>),
     #[cfg(feature = "nats")]
-    Nats(Arc<backend::nats::NatsStore>),
+    Nats(Arc<backend::nats::NatsPubSub>),
+    #[cfg(feature = "zenoh")]
+    Zenoh(Arc<backend::zenoh::ZenohPubSub>),
+    #[cfg(feature = "kafka")]
+    Kafka(Arc<backend::kafka::KafkaPubSub>),
     #[default]
     None,
 }

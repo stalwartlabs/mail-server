@@ -84,6 +84,7 @@ Key features:
   - Memory safe (thanks to Rust).
 - **Scalable and fault-tolerant**:
   - Designed to handle growth seamlessly, from small setups to large-scale deployments.
+  - Coordinator-less cluster orchestration or with **Kafka**, **NATS** or **Redis**.
   - Built with **fault tolerance** and **high availability** in mind, recovers from hardware or software failures with minimal operational impact. 
   - **Kubernetes** support for automated scaling and efficient container orchestration.
   - Read replicas, sharded blob storage and in-memory data stores for high performance and low latency.

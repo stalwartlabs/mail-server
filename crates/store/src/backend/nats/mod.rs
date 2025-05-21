@@ -12,11 +12,11 @@ use utils::config::{Config, utils::AsKey};
 pub mod pubsub;
 
 #[derive(Debug)]
-pub struct NatsStore {
+pub struct NatsPubSub {
     client: Client,
 }
 
-impl NatsStore {
+impl NatsPubSub {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         let urls = config
@@ -102,7 +102,7 @@ impl NatsStore {
                     format!("Failed to connect to Nats: {}", err),
                 );
             })
-            .map(|client| NatsStore { client })
+            .map(|client| NatsPubSub { client })
             .ok()
     }
 }

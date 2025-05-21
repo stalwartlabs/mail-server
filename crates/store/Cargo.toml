@@ -53,6 +53,7 @@ memchr = { version = "2" }
 rkyv = { version = "0.8.10", features = ["little_endian"] }
 compact_str = "0.9.0"
 zenoh = { version = "1.3.4", default-features = false, features = ["auth_pubkey", "transport_multilink", "transport_compression", "transport_quic", "transport_tcp", "transport_tls", "transport_udp"], optional = true }
+rdkafka = { version = "0.37.0", features = ["cmake-build"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.45", features = ["full"] }
@@ -79,9 +80,8 @@ redis = ["dep:redis", "deadpool"]
 
 # Pubsub
 nats = ["async-nats"]
-peer-to-peer = ["zenoh"]
+zenoh = ["dep:zenoh"]
+kafka = ["rdkafka"]
 
 enterprise = []
 test_mode = []
-
-

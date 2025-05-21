@@ -827,7 +827,6 @@ pub enum StoreEvent {
     ElasticsearchError,
     RedisError,
     S3Error,
-    NatsError,
     AzureError,
     FilesystemError,
     PoolError,

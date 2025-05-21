@@ -215,12 +215,32 @@ impl Stores {
                 }
                 #[cfg(feature = "nats")]
                 "nats" => {
-                    if let Some(db) = crate::backend::nats::NatsStore::open(config, prefix)
+                    if let Some(db) = crate::backend::nats::NatsPubSub::open(config, prefix)
                         .await
                         .map(std::sync::Arc::new)
                     {
                         self.pubsub_stores
                             .insert(store_id, crate::PubSubStore::Nats(db));
+                    }
+                }
+                #[cfg(feature = "zenoh")]
+                "zenoh" => {
+                    if let Some(db) = crate::backend::zenoh::ZenohPubSub::open(config, prefix)
+                        .await
+                        .map(std::sync::Arc::new)
+                    {
+                        self.pubsub_stores
+                            .insert(store_id, crate::PubSubStore::Zenoh(db));
+                    }
+                }
+                #[cfg(feature = "kafka")]
+                "kafka" => {
+                    if let Some(db) = crate::backend::kafka::KafkaPubSub::open(config, prefix)
+                        .await
+                        .map(std::sync::Arc::new)
+                    {
+                        self.pubsub_stores
+                            .insert(store_id, crate::PubSubStore::Kafka(db));
                     }
                 }
                 #[cfg(feature = "enterprise")]

@@ -13,6 +13,10 @@ pub enum PubSubStream {
     RedisCluster(crate::backend::redis::pubsub::RedisClusterPubSubStream),
     #[cfg(feature = "nats")]
     Nats(crate::backend::nats::pubsub::NatsPubSubStream),
+    #[cfg(feature = "zenoh")]
+    Zenoh(crate::backend::zenoh::pubsub::ZenohPubSubStream),
+    #[cfg(feature = "kafka")]
+    Kafka(crate::backend::kafka::pubsub::KafkaPubSubStream),
     #[cfg(not(any(feature = "redis", feature = "nats")))]
     Unimplemented,
 }
@@ -22,6 +26,10 @@ pub enum Msg {
     Redis(redis::Msg),
     #[cfg(feature = "nats")]
     Nats(async_nats::Message),
+    #[cfg(feature = "zenoh")]
+    Zenoh(Vec<u8>),
+    #[cfg(feature = "kafka")]
+    Kafka(Vec<u8>),
     #[cfg(not(any(feature = "redis", feature = "nats")))]
     Unimplemented,
 }
@@ -34,6 +42,10 @@ impl PubSubStore {
             PubSubStore::Redis(store) => store.publish(topic, message).await,
             #[cfg(feature = "nats")]
             PubSubStore::Nats(store) => store.publish(topic, message).await,
+            #[cfg(feature = "zenoh")]
+            PubSubStore::Zenoh(store) => store.publish(topic, message).await,
+            #[cfg(feature = "kafka")]
+            PubSubStore::Kafka(store) => store.publish(topic, message).await,
             PubSubStore::None => Err(trc::StoreEvent::NotSupported.into_err()),
         }
     }
@@ -44,6 +56,10 @@ impl PubSubStore {
             PubSubStore::Redis(store) => store.subscribe(topic).await,
             #[cfg(feature = "nats")]
             PubSubStore::Nats(store) => store.subscribe(topic).await,
+            #[cfg(feature = "zenoh")]
+            PubSubStore::Zenoh(store) => store.subscribe(topic).await,
+            #[cfg(feature = "kafka")]
+            PubSubStore::Kafka(store) => store.subscribe(topic).await,
             PubSubStore::None => Err(trc::StoreEvent::NotSupported.into_err()),
         }
     }
@@ -62,6 +78,10 @@ impl PubSubStream {
             PubSubStream::RedisCluster(stream) => stream.next().await,
             #[cfg(feature = "nats")]
             PubSubStream::Nats(stream) => stream.next().await,
+            #[cfg(feature = "zenoh")]
+            PubSubStream::Zenoh(stream) => stream.next().await,
+            #[cfg(feature = "kafka")]
+            PubSubStream::Kafka(stream) => stream.next().await,
             #[cfg(not(any(feature = "redis", feature = "nats")))]
             PubSubStream::Unimplemented => None,
         }
@@ -75,6 +95,10 @@ impl Msg {
             Msg::Redis(msg) => msg.get_payload_bytes(),
             #[cfg(feature = "nats")]
             Msg::Nats(msg) => msg.payload.as_ref(),
+            #[cfg(feature = "zenoh")]
+            Msg::Zenoh(msg) => msg.as_slice(),
+            #[cfg(feature = "kafka")]
+            Msg::Kafka(msg) => msg.as_slice(),
             #[cfg(not(any(feature = "redis", feature = "nats")))]
             Msg::Unimplemented => &[],
         }
@@ -86,6 +110,10 @@ impl Msg {
             Msg::Redis(msg) => msg.get_channel_name(),
             #[cfg(feature = "nats")]
             Msg::Nats(msg) => msg.subject.as_str(),
+            #[cfg(feature = "zenoh")]
+            Msg::Zenoh(_) => "",
+            #[cfg(feature = "kafka")]
+            Msg::Kafka(_) => "",
             #[cfg(not(any(feature = "redis", feature = "nats")))]
             Msg::Unimplemented => "",
         }

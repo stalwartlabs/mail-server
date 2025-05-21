@@ -35,7 +35,6 @@ impl EventType {
                 | StoreEvent::LdapError
                 | StoreEvent::ElasticsearchError
                 | StoreEvent::RedisError
-                | StoreEvent::NatsError
                 | StoreEvent::S3Error
                 | StoreEvent::AzureError
                 | StoreEvent::FilesystemError
