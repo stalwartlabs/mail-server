@@ -2,7 +2,7 @@
 name = "stalwart"
 description = "Stalwart and Collaboration Server"
 authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
-repository = "https://github.com/stalwartlabs/jmap-server"
+repository = "https://github.com/stalwartlabs/stalwart"
 homepage = "https://stalw.art"
 keywords = ["imap", "jmap", "smtp", "email", "mail", "webdav", "server"]
 categories = ["email"]
