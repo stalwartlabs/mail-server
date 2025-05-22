@@ -85,7 +85,7 @@ Key features:
 - **Scalable and fault-tolerant**:
   - Designed to handle growth seamlessly, from small setups to large-scale deployments of thousands of nodes.
   - Built with **fault tolerance** and **high availability** in mind, recovers from hardware or software failures with minimal operational impact. 
-  - Peer-to-peer cluster coordination or with **Kafka**, **NATS** or **Redis**.
+  - Peer-to-peer cluster coordination or with **Kafka**, **Redpanda**, **NATS** or **Redis**.
   - **Kubernetes**, **Apache Mesos** and **Docker Swarm** support for automated scaling and container orchestration.
   - Read replicas, sharded blob storage and in-memory data stores for high performance and low latency.
 - **Authentication and Authorization**:

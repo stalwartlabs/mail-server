@@ -20,11 +20,11 @@ impl NatsPubSub {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         let urls = config
-            .values((&prefix, "urls"))
+            .values((&prefix, "address"))
             .map(|(_, v)| v.to_string())
             .collect::<Vec<_>>();
         if urls.is_empty() {
-            config.new_build_error((&prefix, "urls"), "No Nats URLs specified");
+            config.new_build_error((&prefix, "address"), "No Nats addresses specified");
             return None;
         }
 
