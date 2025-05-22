@@ -52,6 +52,8 @@ s3 = ["store/s3"]
 redis = ["store/redis"]
 nats = ["store/nats"]
 azure = ["store/azure"]
+zenoh = ["store/zenoh"]
+kafka = ["store/kafka"]
 enterprise = [ "jmap/enterprise", 
                "smtp/enterprise", 
                "common/enterprise", 

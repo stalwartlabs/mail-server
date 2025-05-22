@@ -1,3 +1,71 @@
+Upgrading from `v0.11.x` to `v0.12.0`
+------------------------------------
+
+## Important Notes
+
+Version `0.12.0` introduces significant improvements such as zero-copy deserialization which make the new database layout incompatible with the previous version. As a result, the database must be migrated to the new layout. The migration is done automatically on startup and should not require any manual intervention. However, it is highly recommended to **back up your data** before upgrading since it is not possible to downgrade the database once it has been migrated. You may also want to run a mock migration before upgrading to ensure that everything works as expected.
+
+In addition to the database layout changes, multiple settings were renamed:
+
+- `server.http.*` to `http.*`.
+- `jmap.folders.*` to `email.folders.*`.
+- `jmap.account.purge.frequency` to `account.purge.frequency`.
+- `jmap.email.auto-expunge` to `email.auto-expunge`.
+- `jmap.protocol.changes.max-history` to `changes.max-history`.
+- `storage.encryption.*` to `email.encryption.*`.
+
+## Step-by-Step Upgrade Process
+
+- Stop Stalwart:
+
+  ```bash
+  $ sudo systemctl stop stalwart-mail
+  ```
+
+- Backup your data following your database system's instructions. For example, if you are using RocksDB or SQLite, you can simply copy the `data` directory to a backup location. If you are using PostgreSQL or MySQL, you can use the `pg_dump` or `mysqldump` commands to create a backup of your database. If your database does not support backups, you can use the `--export` command to export your data to a file. For example:
+
+  ```bash
+  $ sudo /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
+  $ sudo chown -R stalwart-mail:stalwart-mail /opt/stalwart-mail/export
+  ```
+
+- Download the `v0.12.0` binary for your platform (which is now called `stalwart` rather than `mail-server`) from the [releases page](https://github.com/stalwartlabs/stalwart/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
+
+- Start the service:
+  ```bash
+  $ sudo systemctl start stalwart-mail
+  ```
+
+- Upgrade the webadmin by clicking on `Manage` > `Maintenance` > `Update Webadmin`.
+
+## Step-by-Step Upgrade Process (Docker)
+
+- Stop the Stalwart container:
+
+  ```bash
+  $ docker stop stalwart-mail
+  ```
+
+- Backup your data following your database system's instructions. For example, if you are using RocksDB or SQLite, you can simply copy the `data` directory to a backup location. If you are using PostgreSQL or MySQL, you can use the `pg_dump` or `mysqldump` commands to create a backup of your database. If your database does not support backups, you can use the `--export` command to export your data to a file. For example:
+
+  ```bash
+  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it stalwart-mail /usr/local/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
+  ```
+
+- The Docker image location has now changed to `stalwartlabs/stalwart` instead of `stalwartlabs/mail-server`. Pull the latest image and configure it to use your existing data directory:
+
+  ```bash
+  $ docker run -d -ti -p 443:443 -p 8080:8080 \
+             -p 25:25 -p 587:587 -p 465:465 \
+             -p 143:143 -p 993:993 -p 4190:4190 \
+             -p 110:110 -p 995:995 \
+             -v <STALWART_DIR>:/opt/stalwart \
+             --name stalwart stalwartlabs/stalwart:latest
+  ```
+- Download the `v0.12.0` mail-server for your platform from the [releases page](https://github.com/stalwartlabs/stalwart/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
+
+- Upgrade the webadmin by clicking on `Manage` > `Maintenance` > `Update Webadmin`.
+
 Upgrading from `v0.10.x` to `v0.11.0`
 ------------------------------------
 

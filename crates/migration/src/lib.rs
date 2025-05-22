@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Duration;
+
 use changelog::reset_changelog;
 use common::{DATABASE_SCHEMA_VERSION, KV_LOCK_HOUSEKEEPER, Server};
 use jmap_proto::types::{collection::Collection, property::Property};
@@ -33,7 +35,9 @@ pub mod sieve;
 pub mod submission;
 pub mod threads;
 
-const LOCK_WAIT_TIME: u64 = 60;
+const LOCK_WAIT_TIME_ACCOUNT: u64 = 3 * 60;
+const LOCK_WAIT_TIME_CORE: u64 = 5 * 60;
+const LOCK_RETRY_TIME: Duration = Duration::from_secs(30);
 
 pub async fn try_migrate(server: &Server) -> trc::Result<()> {
     if server
@@ -57,7 +61,11 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         loop {
             if force_lock
                 || in_memory
-                    .try_lock(KV_LOCK_HOUSEKEEPER, b"migrate_core_lock", LOCK_WAIT_TIME)
+                    .try_lock(
+                        KV_LOCK_HOUSEKEEPER,
+                        b"migrate_core_lock",
+                        LOCK_WAIT_TIME_CORE,
+                    )
                     .await
                     .caused_by(trc::location!())?
             {
@@ -111,10 +119,10 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
             } else {
                 trc::event!(
                     Server(trc::ServerEvent::Startup),
-                    Details = format!("Migration lock busy, waiting 60 seconds.",)
+                    Details = format!("Migration lock busy, waiting 30 seconds.",)
                 );
 
-                tokio::time::sleep(std::time::Duration::from_secs(LOCK_WAIT_TIME)).await;
+                tokio::time::sleep(LOCK_RETRY_TIME).await;
             }
         }
 
@@ -132,7 +140,11 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
 
                     if force_lock
                         || in_memory
-                            .try_lock(KV_LOCK_HOUSEKEEPER, lock_key.as_bytes(), LOCK_WAIT_TIME)
+                            .try_lock(
+                                KV_LOCK_HOUSEKEEPER,
+                                lock_key.as_bytes(),
+                                LOCK_WAIT_TIME_ACCOUNT,
+                            )
                             .await
                             .caused_by(trc::location!())?
                     {
@@ -179,11 +191,11 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
                     trc::event!(
                         Server(trc::ServerEvent::Startup),
                         Details = format!(
-                            "Migrated {num_migrated} accounts and {} are locked by another node, waiting 60 seconds.",
+                            "Migrated {num_migrated} accounts and {} are locked by another node, waiting 30 seconds.",
                             skipped_principal_ids.len()
                         )
                     );
-                    tokio::time::sleep(std::time::Duration::from_secs(LOCK_WAIT_TIME)).await;
+                    tokio::time::sleep(LOCK_RETRY_TIME).await;
                     principal_ids = skipped_principal_ids;
                 } else {
                     trc::event!(
