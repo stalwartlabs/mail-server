@@ -1,6 +1,6 @@
 [package]
 name = "stalwart"
-description = "Stalwart and Collaboration Server"
+description = "Stalwart Mail and Collaboration Server"
 authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
 repository = "https://github.com/stalwartlabs/stalwart"
 homepage = "https://stalw.art"

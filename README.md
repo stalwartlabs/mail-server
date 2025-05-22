@@ -15,7 +15,7 @@
   &nbsp;
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg?label=license&style=flat-square" alt="License: AGPL v3"></a>
   &nbsp;
-  <a href="https://stalw.art/docs/get-started/"><img src="https://img.shields.io/badge/read_the-docs-red?style=flat-square" alt="Documentation"></a>
+  <a href="https://stalw.art/docs/install/get-started"><img src="https://img.shields.io/badge/read_the-docs-red?style=flat-square" alt="Documentation"></a>
 </p>
 <p align="center">
   <a href="https://mastodon.social/@stalwartlabs"><img src="https://img.shields.io/mastodon/follow/109929667531941122?style=flat-square&logo=mastodon&color=%236364ff&label=Follow%20on%20Mastodon" alt="Mastodon"></a>
@@ -30,7 +30,7 @@
 
 ## Features
 
-**Stalwart** is an open-source mail & collaboration server solution with JMAP, IMAP4, POP3, SMTP, CalDAV, CardDAV and WebDAV support and a wide range of modern features. It is written in Rust and designed to be secure, fast, robust and scalable.
+**Stalwart** is an open-source mail & collaboration server with JMAP, IMAP4, POP3, SMTP, CalDAV, CardDAV and WebDAV support and a wide range of modern features. It is written in Rust and designed to be secure, fast, robust and scalable.
 
 Key features:
 
@@ -52,10 +52,10 @@ Key features:
     * Inbound throttling and filtering with granular configuration rules, sieve scripting, MTA hooks and milter integration.
     * Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
     * Envelope rewriting and message modification.
-- **Calendar**, **Contacts** and **File Storage** server:
-  - [CalDAV](https://datatracker.ietf.org/doc/html/rfc4791) server for calendar and scheduling.
-  - [CardDAV](https://datatracker.ietf.org/doc/html/rfc6352) server for contact management.
-  - [WebDAV](https://datatracker.ietf.org/doc/html/rfc4918) server for file storage and sharing.
+- **Collaboration** server:
+  - Calendar and scheduling with [CalDAV](https://datatracker.ietf.org/doc/html/rfc4791).
+  - Contact management with [CardDAV](https://datatracker.ietf.org/doc/html/rfc6352).
+  - File storage and sharing with [WebDAV](https://datatracker.ietf.org/doc/html/rfc4918).
 - **Spam** and **Phishing** built-in filter:
   - Comprehensive set of filtering **rules** on par with popular solutions.
   - LLM-driven spam filtering and message analysis.
@@ -123,18 +123,18 @@ Key features:
 
 Install Stalwart on your server by following the instructions for your platform:
 
-- [Linux / MacOS](https://stalw.art/docs/install/linux)
-- [Windows](https://stalw.art/docs/install/windows)
-- [Docker](https://stalw.art/docs/install/docker)
+- [Linux / MacOS](https://stalw.art/docs/install/install/llinux)
+- [Windows](https://stalw.art/docs/install/install/lwindows)
+- [Docker](https://stalw.art/docs/install/install/ldocker)
 
-All documentation is available at [stalw.art/docs/get-started](https://stalw.art/docs/get-started).
+All documentation is available at [stalw.art/docs/install/get-started](https://stalw.art/docs/install/get-started).
 
 ## Support
 
 If you are having problems running Stalwart, you found a bug or just have a question,
 do not hesitate to reach us on [GitHub Discussions](https://github.com/stalwartlabs/stalwart/discussions),
 [Reddit](https://www.reddit.com/r/stalwartlabs) or [Discord](https://discord.gg/aVQr3jF8jd).
-Additionally you may purchase an [premium support](https://stalw.art/support) to obtain priority support from Stalwart Labs LLC.
+Additionally you may purchase an [Enterprise License](https://stalw.art/enterprise) to obtain priority support from Stalwart Labs LLC.
 
 ## Sponsorship
 
