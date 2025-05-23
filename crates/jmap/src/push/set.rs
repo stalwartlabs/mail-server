@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::get::PushSubscriptionFetch;
 use base64::{Engine, engine::general_purpose};
 use common::{Server, auth::AccessToken};
-
 use email::push::{Keys, PushSubscription};
 use jmap_proto::{
     error::set::SetError,
@@ -16,7 +16,6 @@ use jmap_proto::{
         collection::Collection,
         date::UTCDate,
         property::Property,
-        state::State,
         type_state::DataType,
         value::{MaybePatchValue, Object, Value},
     },
@@ -30,8 +29,6 @@ use store::{
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
-
-use super::get::PushSubscriptionFetch;
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
 const VERIFICATION_CODE_LEN: usize = 32;
@@ -194,12 +191,7 @@ impl PushSubscriptionSet for Server {
 
         // Write changes
         if !batch.is_empty() {
-            let change_id = self
-                .commit_batch(batch)
-                .await
-                .and_then(|ids| ids.last_change_id(account_id))
-                .caused_by(trc::location!())?;
-            response.new_state = State::Exact(change_id).into();
+            self.commit_batch(batch).await.caused_by(trc::location!())?;
         }
 
         // Update push subscriptions
