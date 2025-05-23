@@ -27,8 +27,9 @@ pub trait Autoconfig: Sync + Send {
         body: Option<Vec<u8>>,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
     fn autoconfig_parameters<'x>(
-        &self,
+        &'x self,
         emailaddress: &'x str,
+        fail_if_invalid: bool,
     ) -> impl Future<Output = trc::Result<(String, String, &'x str)>> + Send;
 }
 
@@ -40,7 +41,8 @@ impl Autoconfig for Server {
             .get("emailaddress")
             .unwrap_or_default()
             .to_lowercase();
-        let (account_name, server_name, domain) = self.autoconfig_parameters(&emailaddress).await?;
+        let (account_name, server_name, domain) =
+            self.autoconfig_parameters(&emailaddress, false).await?;
         let services = self.core.storage.config.get_services().await?;
 
         // Build XML response
@@ -101,7 +103,8 @@ impl Autoconfig for Server {
                     .details("Failed to parse autodiscover request")
                     .ctx(trc::Key::Reason, err)
             })?;
-        let (account_name, server_name, _) = self.autoconfig_parameters(&emailaddress).await?;
+        let (account_name, server_name, _) =
+            self.autoconfig_parameters(&emailaddress, true).await?;
         let services = self.core.storage.config.get_services().await?;
 
         // Build XML response
@@ -175,17 +178,24 @@ impl Autoconfig for Server {
     }
 
     async fn autoconfig_parameters<'x>(
-        &self,
+        &'x self,
         emailaddress: &'x str,
+        fail_if_invalid: bool,
     ) -> trc::Result<(String, String, &'x str)> {
-        let (_, domain) = emailaddress.rsplit_once('@').ok_or_else(|| {
-            trc::ResourceEvent::BadParameters
-                .into_err()
-                .details("Missing domain in email address")
-        })?;
-
-        // Obtain server name
-        let server_name = self.core.network.server_name.clone();
+        // Return EMAILADDRESS
+        let Some((_, domain)) = emailaddress.rsplit_once('@') else {
+            return if !fail_if_invalid {
+                Ok((
+                    "%EMAILADDRESS%".to_string(),
+                    self.core.network.server_name.clone(),
+                    &self.core.network.report_domain,
+                ))
+            } else {
+                Err(trc::ResourceEvent::BadParameters
+                    .into_err()
+                    .details("Missing domain in email address"))
+            };
+        };
 
         // Find the account name by e-mail address
         let mut account_name = emailaddress.into();
@@ -214,7 +224,7 @@ impl Autoconfig for Server {
             }
         }
 
-        Ok((account_name, server_name, domain))
+        Ok((account_name, self.core.network.server_name.clone(), domain))
     }
 }
 
