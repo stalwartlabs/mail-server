@@ -328,7 +328,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                                 set: true,
                             });
 
-                            if batch.len() >= 1000 {
+                            if batch.is_large_batch() {
                                 store
                                     .write(batch.build_all())
                                     .await

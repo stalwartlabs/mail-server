@@ -116,7 +116,7 @@ impl Store {
         batch.with_account_id(account_id);
         let mut last_collection = u8::MAX;
         for (revoke_account_id, acl_item) in delete_keys.into_iter() {
-            if batch.len() >= 1000 {
+            if batch.is_large_batch() {
                 self.write(batch.build_all())
                     .await
                     .caused_by(trc::location!())?;

@@ -196,7 +196,7 @@ impl ManageReports for Server {
 
                             batch.clear(ValueClass::Report(report_id));
 
-                            if batch.len() > 1000 {
+                            if batch.is_large_batch() {
                                 if let Err(err) =
                                     server.core.storage.data.write(batch.build_all()).await
                                 {

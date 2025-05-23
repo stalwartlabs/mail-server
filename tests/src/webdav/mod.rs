@@ -641,6 +641,24 @@ impl DavResponse {
         self
     }
 
+    pub fn with_any_value<'x>(
+        self,
+        query: &str,
+        expect: impl IntoIterator<Item = &'x str>,
+    ) -> Self {
+        let expect = expect.into_iter().collect::<AHashSet<_>>();
+        if let Some(value) = self.find_keys(query).next() {
+            if !expect.contains(value) {
+                self.dump_response();
+                panic!("Expected {query} = {expect:?} but got {value:?}");
+            }
+        } else {
+            self.dump_response();
+            panic!("Key {query} not found.");
+        }
+        self
+    }
+
     pub fn with_values<I, T>(self, query: &str, expect: I) -> Self
     where
         I: IntoIterator<Item = T>,

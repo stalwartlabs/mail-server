@@ -296,7 +296,7 @@ impl TracingStore for Store {
             let mut batch = BatchBuilder::new();
 
             for key in delete_keys {
-                if batch.len() >= 1000 {
+                if batch.is_large_batch() {
                     self.write(batch.build_all()).await?;
                     batch = BatchBuilder::new();
                 }

@@ -355,7 +355,7 @@ impl BatchBuilder {
     }
 
     pub fn commit_point(&mut self) -> &mut Self {
-        if self.batch_size > 5_000_000 || self.batch_ops > 1000 {
+        if self.is_large_batch() {
             self.serialize_changes();
             self.commit_points.push(self.ops.len());
             self.batch_ops = 0;
@@ -368,6 +368,11 @@ impl BatchBuilder {
             }
         }
         self
+    }
+
+    #[inline]
+    pub fn is_large_batch(&self) -> bool {
+        self.batch_size > 5_000_000 || self.batch_ops > 1000
     }
 
     pub fn any_op(&mut self, op: Operation) -> &mut Self {

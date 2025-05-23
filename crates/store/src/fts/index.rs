@@ -217,7 +217,7 @@ impl Store {
             .update_document(document.document_id);
 
         for key in keys.into_iter() {
-            if batch.len() >= 1000 {
+            if batch.is_large_batch() {
                 self.write(batch.build_all()).await?;
                 batch = BatchBuilder::new();
                 batch
@@ -311,8 +311,10 @@ impl Store {
             batch.update_document(document_id);
 
             for key in keys {
-                if batch.len() >= 1000 {
-                    self.write(batch.build_all()).await?;
+                if batch.is_large_batch() {
+                    self.write(batch.build_all())
+                        .await
+                        .caused_by(trc::location!())?;
                     batch = BatchBuilder::new();
                     batch
                         .with_account_id(account_id)
@@ -327,7 +329,9 @@ impl Store {
         }
 
         if !batch.is_empty() {
-            self.write(batch.build_all()).await?;
+            self.write(batch.build_all())
+                .await
+                .caused_by(trc::location!())?;
         }
 
         Ok(())

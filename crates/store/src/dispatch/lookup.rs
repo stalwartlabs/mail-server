@@ -398,7 +398,7 @@ impl InMemoryStore {
                             class: ValueClass::InMemory(InMemoryClass::Key(key)),
                             op: ValueOp::Clear,
                         });
-                        if batch.len() >= 1000 {
+                        if batch.is_large_batch() {
                             store
                                 .write(batch.build_all())
                                 .await
@@ -425,7 +425,7 @@ impl InMemoryStore {
                             class: ValueClass::InMemory(InMemoryClass::Key(key)),
                             op: ValueOp::Clear,
                         });
-                        if batch.len() >= 1000 {
+                        if batch.is_large_batch() {
                             store
                                 .write(batch.build_all())
                                 .await

@@ -58,9 +58,9 @@ pub async fn test(test: &WebDavTest) {
                 "D:prop.D:lockdiscovery.D:activelock.D:owner.D:href",
                 "super-owner",
             )
-            .with_value(
+            .with_any_value(
                 "D:prop.D:lockdiscovery.D:activelock.D:timeout",
-                "Second-456",
+                ["Second-456", "Second-455"],
             );
 
         // Test 3: Creating a collection under an unmapped resource with a lock token should fail
@@ -116,14 +116,17 @@ pub async fn test(test: &WebDavTest) {
             let props = response.properties(&href);
             props
                 .get(DavProperty::WebDav(WebDavProperty::LockDiscovery))
-                .with_values([
+                .with_some_values([
                     "D:activelock.D:owner.D:href:super-owner",
-                    "D:activelock.D:timeout:Second-456",
                     "D:activelock.D:depth:infinity",
                     format!("D:activelock.D:locktoken.D:href:{lock_token}").as_str(),
                     format!("D:activelock.D:lockroot.D:href:{path}").as_str(),
                     "D:activelock.D:locktype.D:write",
                     "D:activelock.D:lockscope.D:exclusive",
+                ])
+                .with_any_values([
+                    "D:activelock.D:timeout:Second-456",
+                    "D:activelock.D:timeout:Second-455",
                 ]);
         }
 

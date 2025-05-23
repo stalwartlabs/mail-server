@@ -837,6 +837,22 @@ impl<'x> DavQueryResult<'x> {
         self
     }
 
+    pub fn with_any_values(&self, expected_values: impl IntoIterator<Item = &'x str>) -> &Self {
+        let values = self
+            .values
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<AHashSet<_>>();
+        let expected_values = AHashSet::from_iter(expected_values);
+
+        if values.is_disjoint(&expected_values) {
+            self.response.dump_response();
+            panic!("Expected at least one of {expected_values:?} values, but got {values:?}",);
+        }
+
+        self
+    }
+
     pub fn without_values(&self, expected_values: impl IntoIterator<Item = &'x str>) -> &Self {
         let expected_values = AHashSet::from_iter(expected_values);
         let values = self

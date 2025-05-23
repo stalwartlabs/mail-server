@@ -50,7 +50,9 @@ impl MysqlStore {
                         && start.elapsed() < MAX_COMMIT_TIME => {}
                 CommitError::Retry => {
                     if retry_count > MAX_COMMIT_ATTEMPTS || start.elapsed() > MAX_COMMIT_TIME {
-                        return Err(trc::StoreEvent::AssertValueFailed.into());
+                        return Err(trc::StoreEvent::AssertValueFailed
+                            .into_err()
+                            .caused_by(trc::location!()));
                     }
                 }
                 CommitError::Mysql(err) => {
@@ -168,6 +170,7 @@ impl MysqlStore {
                                         trx.rollback().await?;
                                         return Err(trc::StoreEvent::AssertValueFailed
                                             .into_err()
+                                            .caused_by(trc::location!())
                                             .into());
                                     }
                                 }
@@ -219,6 +222,11 @@ impl MysqlStore {
                             );
                         }
                         ValueOp::Clear => {
+                            // Update asserted value
+                            if let Some(exists) = asserted_values.get_mut(&key) {
+                                *exists = false;
+                            }
+
                             let s = trx
                                 .prep(format!("DELETE FROM {} WHERE k = ?", table))
                                 .await?;
@@ -304,7 +312,10 @@ impl MysqlStore {
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
                         trx.rollback().await?;
-                        return Err(trc::StoreEvent::AssertValueFailed.into_err().into());
+                        return Err(trc::StoreEvent::AssertValueFailed
+                            .into_err()
+                            .caused_by(trc::location!())
+                            .into());
                     }
                     asserted_values.insert(key, exists);
                 }

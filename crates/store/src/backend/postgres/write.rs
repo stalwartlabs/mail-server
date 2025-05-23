@@ -48,7 +48,9 @@ impl PostgresStore {
                             ) if retry_count < MAX_COMMIT_ATTEMPTS
                                 && start.elapsed() < MAX_COMMIT_TIME => {}
                             Some(&SqlState::UNIQUE_VIOLATION) => {
-                                return Err(trc::StoreEvent::AssertValueFailed.into());
+                                return Err(trc::StoreEvent::AssertValueFailed
+                                    .into_err()
+                                    .caused_by(trc::location!()));
                             }
                             _ => return Err(into_error(err)),
                         },
@@ -57,7 +59,9 @@ impl PostgresStore {
                             if retry_count > MAX_COMMIT_ATTEMPTS
                                 || start.elapsed() > MAX_COMMIT_TIME
                             {
-                                return Err(trc::StoreEvent::AssertValueFailed.into());
+                                return Err(trc::StoreEvent::AssertValueFailed
+                                    .into_err()
+                                    .caused_by(trc::location!()));
                             }
                         }
                     }
@@ -165,7 +169,10 @@ impl PostgresStore {
                             };
 
                             if trx.execute(&s, &[&key, &(*value)]).await? == 0 {
-                                return Err(trc::StoreEvent::AssertValueFailed.into_err().into());
+                                return Err(trc::StoreEvent::AssertValueFailed
+                                    .into_err()
+                                    .caused_by(trc::location!())
+                                    .into());
                             }
                         }
                         ValueOp::AtomicAdd(by) => {
@@ -210,6 +217,11 @@ impl PostgresStore {
                                 .prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
                                 .await?;
                             trx.execute(&s, &[&key]).await?;
+
+                            // Update asserted value
+                            if let Some(exists) = asserted_values.get_mut(&key) {
+                                *exists = false;
+                            }
                         }
                     }
                 }
@@ -298,7 +310,10 @@ impl PostgresStore {
                         })
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
-                        return Err(trc::StoreEvent::AssertValueFailed.into_err().into());
+                        return Err(trc::StoreEvent::AssertValueFailed
+                            .into_err()
+                            .caused_by(trc::location!())
+                            .into());
                     }
                     asserted_values.insert(key, exists);
                 }

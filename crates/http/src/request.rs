@@ -716,20 +716,19 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
                     };
 
                     // Parse HTTP request
-                    let response = match server
-                        .parse_http_request(
-                            req,
-                            HttpSessionData {
-                                instance,
-                                local_ip: session.local_ip,
-                                local_port: session.local_port,
-                                remote_ip,
-                                remote_port: session.remote_port,
-                                is_tls,
-                                session_id: session.session_id,
-                            },
-                        )
-                        .await
+                    let response = match Box::pin(server.parse_http_request(
+                        req,
+                        HttpSessionData {
+                            instance,
+                            local_ip: session.local_ip,
+                            local_port: session.local_port,
+                            remote_ip,
+                            remote_port: session.remote_port,
+                            is_tls,
+                            session_id: session.session_id,
+                        },
+                    ))
+                    .await
                     {
                         Ok(response) => response,
                         Err(err) => {
