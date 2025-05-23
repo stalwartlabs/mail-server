@@ -79,19 +79,8 @@ pub mod vacation_response;
 pub mod webhooks;
 pub mod websocket;
 
-#[test]
-fn jmap_tests() {
-    tokio::runtime::Builder::new_multi_thread()
-        .thread_stack_size(3 * 1024 * 1024)
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(async {
-            jmap_tests_().await;
-        })
-}
-
-async fn jmap_tests_() {
+#[tokio::test(flavor = "multi_thread")]
+async fn jmap_tests() {
     let delete = true;
     let mut params = init_jmap_tests(
         &std::env::var("STORE")
@@ -100,8 +89,8 @@ async fn jmap_tests_() {
     )
     .await;
 
-    /*webhooks::test(&mut params).await;
-    email_query::test(&mut params, delete).await;
+    webhooks::test(&mut params).await;
+    /*email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -113,11 +102,11 @@ async fn jmap_tests_() {
     thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
-    auth_acl::test(&mut params).await;
+    auth_acl::test(&mut params).await;*/
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
-    push_subscription::test(&mut params).await;*/
+    push_subscription::test(&mut params).await;
     sieve_script::test(&mut params).await;
     vacation_response::test(&mut params).await;
     email_submission::test(&mut params).await;
@@ -736,7 +725,9 @@ impl<T: Debug> Response<T> {
 const SERVER: &str = r#"
 [server]
 hostname = "'jmap.example.org'"
-http.url = "'https://127.0.0.1:8899'"
+
+[http]
+url = "'https://127.0.0.1:8899'"
 
 [server.listener.jmap]
 bind = ["127.0.0.1:8899"]

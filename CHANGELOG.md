@@ -34,6 +34,7 @@ This version includes **breaking changes** to the database layout and requires a
 - Hide the current server version (#1435).
 - Use the newest `X-Spam-Status` Header (#1308).
 - MySQL Driver error: Transactions couldn't be nested (#1271).
+- Spawn a delivery thread for `EmailSubmission/set` requests (#1540).
 
 ## [0.11.8] - 2025-04-30
 

@@ -582,7 +582,7 @@ impl EmailSubmissionSet for Server {
             self.clone(),
             instance.clone(),
             SessionData::local(
-                Box::pin(self.get_access_token(account_id))
+                self.get_access_token(account_id)
                     .await
                     .caused_by(trc::location!())?,
                 None,
@@ -592,71 +592,88 @@ impl EmailSubmissionSet for Server {
             ),
         );
 
-        // MAIL FROM
-        let _ = Box::pin(session.handle_mail_from(mail_from)).await;
-        if let Some(error) = session.has_failed() {
-            return Ok(Err(SetError::new(SetErrorType::ForbiddenMailFrom)
-                .with_description(format!(
-                    "Server rejected MAIL-FROM: {}",
-                    error.trim()
-                ))));
-        }
-
-        // RCPT TO
-        let mut responses = Vec::new();
-        let mut has_success = false;
-        for rcpt in rcpt_to {
-            let addr = rcpt.address.clone();
-            let _ = Box::pin(session.handle_rcpt_to(rcpt)).await;
-            let response = session.has_failed();
-            if response.is_none() {
-                has_success = true;
+        // Spawn SMTP session to avoid overflowing the stack
+        let handle = tokio::spawn(async move {
+            // MAIL FROM
+            let _ = session.handle_mail_from(mail_from).await;
+            if let Some(error) = session.has_failed() {
+                return Err(SetError::new(SetErrorType::ForbiddenMailFrom)
+                    .with_description(format!("Server rejected MAIL-FROM: {}", error.trim())));
             }
-            responses.push((addr, response));
-        }
 
-        // DATA
-        if has_success {
-            session.data.message = message;
-            let response = Box::pin(session.queue_message()).await;
-            if let smtp::core::State::Accepted(queue_id) = session.state {
-                submission.queue_id = Some(queue_id);
+            // RCPT TO
+            let mut responses = Vec::new();
+            let mut has_success = false;
+            for rcpt in rcpt_to {
+                let addr = rcpt.address.clone();
+                let _ = session.handle_rcpt_to(rcpt).await;
+                let response = session.has_failed();
+                if response.is_none() {
+                    has_success = true;
+                }
+                responses.push((addr, response));
+            }
+
+            // DATA
+            if has_success {
+                session.data.message = message;
+                let response = session.queue_message().await;
+                if let smtp::core::State::Accepted(queue_id) = session.state {
+                    Ok((true, responses, Some(queue_id)))
+                } else {
+                    Err(
+                        SetError::new(SetErrorType::ForbiddenToSend).with_description(format!(
+                            "Server rejected DATA: {}",
+                            std::str::from_utf8(&response).unwrap().trim()
+                        )),
+                    )
+                }
             } else {
-                return Ok(Err(SetError::new(SetErrorType::ForbiddenToSend)
-                    .with_description(format!(
-                        "Server rejected DATA: {}",
-                        std::str::from_utf8(&response).unwrap().trim()
-                    ))));
+                Ok((false, responses, None))
             }
+        });
+
+        match handle.await {
+            Ok(Ok((has_success, responses, queue_id))) => {
+                // Set queue ID
+                if let Some(queue_id) = queue_id {
+                    submission.queue_id = Some(queue_id);
+                }
+
+                // Set responses
+                submission.undo_status = if has_success {
+                    UndoStatus::Final
+                } else {
+                    UndoStatus::Pending
+                };
+                submission.delivery_status = responses
+                    .into_iter()
+                    .map(|(addr, response)| {
+                        (
+                            addr.to_string(),
+                            DeliveryStatus {
+                                delivered: if response.is_none() {
+                                    Delivered::Unknown
+                                } else {
+                                    Delivered::No
+                                },
+                                smtp_reply: response
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| "250 2.1.5 Queued".to_string()),
+                                displayed: false,
+                            },
+                        )
+                    })
+                    .collect();
+
+                Ok(Ok(submission))
+            }
+            Ok(Err(err)) => Ok(Err(err)),
+            Err(err) => Err(trc::EventType::Server(trc::ServerEvent::ThreadError)
+                .reason(err)
+                .caused_by(trc::location!())
+                .details("Join Error")),
         }
-
-        // Set responses
-        submission.undo_status = if has_success {
-            UndoStatus::Final
-        } else {
-            UndoStatus::Pending
-        };
-        submission.delivery_status = responses
-            .into_iter()
-            .map(|(addr, response)| {
-                (
-                    addr.to_string(),
-                    DeliveryStatus {
-                        delivered: if response.is_none() {
-                            Delivered::Unknown
-                        } else {
-                            Delivered::No
-                        },
-                        smtp_reply: response
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| "250 2.1.5 Queued".to_string()),
-                        displayed: false,
-                    },
-                )
-            })
-            .collect();
-
-        Ok(Ok(submission))
     }
 }
 

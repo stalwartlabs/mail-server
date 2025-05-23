@@ -966,7 +966,9 @@ fn generate_random_name(length: usize) -> String {
 const SERVER: &str = r#"
 [server]
 hostname = "webdav.example.org"
-http.url = "'https://127.0.0.1:8899'"
+
+[http]
+url = "'https://127.0.0.1:8899'"
 
 [server.listener.webdav]
 bind = ["127.0.0.1:8899"]

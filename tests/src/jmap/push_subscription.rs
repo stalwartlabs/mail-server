@@ -40,7 +40,9 @@ use super::JMAPTest;
 const SERVER: &str = r#"
 [server]
 hostname = "'jmap-push.example.org'"
-http.url = "'https://127.0.0.1:9000'"
+
+[http]
+url = "'https://127.0.0.1:9000'"
 
 [server.listener.jmap]
 bind = ['127.0.0.1:9000']

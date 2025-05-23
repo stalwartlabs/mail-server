@@ -240,7 +240,9 @@ async fn build_server(mut config: Config, stores: Stores) -> (Server, watch::Sen
 const SERVER: &str = r#"
 [server]
 hostname = "'server{NODE_ID}.example.org'"
-http.url = "'https://127.0.0.1:800{NODE_ID}'"
+
+[http]
+url = "'https://127.0.0.1:800{NODE_ID}'"
 
 [cluster]
 node-id = {NODE_ID}

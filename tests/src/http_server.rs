@@ -19,7 +19,9 @@ use crate::{AssertConfig, add_test_certs};
 const MOCK_HTTP_SERVER: &str = r#"
 [server]
 hostname = "'oidc.example.org'"
-http.url = "'https://127.0.0.1:9090'"
+
+[http]
+url = "'https://127.0.0.1:9090'"
 
 [server.listener.jmap]
 bind = ['127.0.0.1:9090']
