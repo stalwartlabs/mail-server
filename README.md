@@ -123,11 +123,11 @@ Key features:
 
 Install Stalwart on your server by following the instructions for your platform:
 
-- [Linux / MacOS](https://stalw.art/docs/install/install/linux)
-- [Windows](https://stalw.art/docs/install/install/windows)
-- [Docker](https://stalw.art/docs/install/install/docker)
+- [Linux / MacOS](https://stalw.art/docs/install/platform/linux)
+- [Windows](https://stalw.art/docs/install/platform/windows)
+- [Docker](https://stalw.art/docs/install/platform/docker)
 
-All documentation is available at [stalw.art/docs/install/get-started](https://stalw.art/docs/install/get-started).
+All documentation is available at [stalw.art/docs](https://stalw.art/docs/install/get-started).
 
 ## Support
 
