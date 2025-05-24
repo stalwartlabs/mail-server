@@ -5,9 +5,14 @@
  */
 
 use super::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard};
-use crate::IDX_UID;
-use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use calcard::vcard::VCardProperty;
+use common::storage::index::{
+    IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
+};
+use common::{IDX_EMAIL, IDX_UID};
 use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
+use std::collections::HashSet;
+use utils::sanitize_email;
 
 impl IndexableObject for AddressBook {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -67,6 +72,15 @@ impl IndexableObject for ContactCard {
                 field: IDX_UID,
                 value: self.card.uid().into(),
             },
+            IndexValue::IndexList {
+                field: IDX_EMAIL,
+                value: self
+                    .emails()
+                    .map(Into::into)
+                    .collect::<HashSet<IndexItem>>()
+                    .into_iter()
+                    .collect(),
+            },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
                     + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
@@ -89,6 +103,15 @@ impl IndexableObject for &ArchivedContactCard {
                 field: IDX_UID,
                 value: self.card.uid().into(),
             },
+            IndexValue::IndexList {
+                field: IDX_EMAIL,
+                value: self
+                    .emails()
+                    .map(Into::into)
+                    .collect::<HashSet<IndexItem>>()
+                    .into_iter()
+                    .collect(),
+            },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
                     + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
@@ -107,5 +130,25 @@ impl IndexableObject for &ArchivedContactCard {
 impl IndexableAndSerializableObject for ContactCard {
     fn is_versioned() -> bool {
         true
+    }
+}
+
+impl ContactCard {
+    pub fn emails(&self) -> impl Iterator<Item = String> {
+        self.card.properties(&VCardProperty::Email).flat_map(|e| {
+            e.values
+                .iter()
+                .filter_map(|v| v.as_text().and_then(sanitize_email))
+        })
+    }
+}
+
+impl ArchivedContactCard {
+    pub fn emails(&self) -> impl Iterator<Item = String> {
+        self.card.properties(&VCardProperty::Email).flat_map(|e| {
+            e.values
+                .iter()
+                .filter_map(|v| v.as_text().and_then(sanitize_email))
+        })
     }
 }

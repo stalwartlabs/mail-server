@@ -24,6 +24,7 @@ use super::{Variable, functions::ResolveVariable, if_block::IfBlock, tokenizer::
 #[derive(Debug, Clone, Default)]
 pub struct SpamFilterConfig {
     pub enabled: bool,
+    pub card_is_ham: bool,
     pub dnsbl: DnsBlConfig,
     pub rules: SpamFilterRules,
     pub lists: SpamFilterLists,
@@ -85,6 +86,7 @@ pub struct BayesConfig {
     pub auto_learn_reply_ham: bool,
     pub auto_learn_spam_threshold: f64,
     pub auto_learn_ham_threshold: f64,
+    pub auto_learn_card_is_ham: bool,
     pub score_spam: f64,
     pub score_ham: f64,
     pub account_score_spam: f64,
@@ -177,6 +179,9 @@ impl SpamFilterConfig {
         SpamFilterConfig {
             enabled: config
                 .property_or_default("spam-filter.enable", "true")
+                .unwrap_or(true),
+            card_is_ham: config
+                .property_or_default("spam-filter.card-is-ham", "true")
                 .unwrap_or(true),
             dnsbl: DnsBlConfig::parse(config),
             rules: SpamFilterRules::parse(config),
@@ -569,6 +574,9 @@ impl BayesConfig {
             account_score_ham: config
                 .property_or_default("spam-filter.bayes.account.score.ham", "0.5")
                 .unwrap_or(0.5),
+            auto_learn_card_is_ham: config
+                .property_or_default("spam-filter.bayes.auto-learn.card-is-ham", "true")
+                .unwrap_or(true),
         }
         .into()
     }

@@ -13,8 +13,6 @@ pub mod calendar;
 pub mod contact;
 pub mod file;
 
-pub const IDX_UID: u8 = 0;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DavResourceName {
     Card,

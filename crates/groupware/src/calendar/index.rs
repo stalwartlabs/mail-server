@@ -8,7 +8,7 @@ use super::{
     ArchivedCalendar, ArchivedCalendarEvent, ArchivedCalendarPreferences, ArchivedDefaultAlert,
     ArchivedTimezone, Calendar, CalendarEvent, CalendarPreferences, DefaultAlert, Timezone,
 };
-use crate::IDX_UID;
+use common::IDX_UID;
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
 use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
 

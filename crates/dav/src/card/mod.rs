@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::IDX_UID;
 use common::{DavResources, Server};
 use dav_proto::schema::{
     property::{CardDavProperty, DavProperty, WebDavProperty},
     response::CardCondition,
 };
-use groupware::IDX_UID;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
 use store::query::Filter;

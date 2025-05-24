@@ -14,12 +14,12 @@ pub mod query;
 pub mod update;
 
 use crate::{DavError, DavErrorCondition};
+use common::IDX_UID;
 use common::{DavResources, Server};
 use dav_proto::schema::{
     property::{CalDavProperty, CalendarData, DavProperty, WebDavProperty},
     response::CalCondition,
 };
-use groupware::IDX_UID;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
 use store::query::Filter;

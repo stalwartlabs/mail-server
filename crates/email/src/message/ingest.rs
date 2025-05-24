@@ -18,7 +18,7 @@ use crate::{
     },
 };
 use common::{
-    Server,
+    IDX_EMAIL, Server,
     auth::{AccessToken, ResourceToken},
     storage::index::ObjectIndexBuilder,
 };
@@ -47,11 +47,13 @@ use std::{
 use store::{
     BlobClass, IndexKey, IndexKeyPrefix, IterateParams, U32_LEN,
     ahash::AHashMap,
+    query::Filter,
     roaring::RoaringBitmap,
     write::{BatchBuilder, TaskQueueClass, ValueClass, key::DeserializeBigEndian, now},
 };
 use store::{SerializeInfallible, rand::Rng};
 use trc::{AddContext, MessageIngestEvent};
+use utils::sanitize_email;
 
 #[derive(Default)]
 pub struct IngestedEmail {
@@ -194,14 +196,44 @@ impl EmailIngest for Server {
                             .is_some_and(|v| v.contains("Yes"));
                     }
 
+                    // If the message is classified as spam, check whether the sender address is present in the user's address book
+                    if is_spam && self.core.spam.card_is_ham {
+                        if let Some(sender) = message
+                            .from()
+                            .and_then(|s| s.first())
+                            .and_then(|s| s.address())
+                            .and_then(sanitize_email)
+                        {
+                            if !self
+                                .store()
+                                .filter(
+                                    account_id,
+                                    Collection::ContactCard,
+                                    vec![Filter::eq(IDX_EMAIL, sender.into_bytes())],
+                                )
+                                .await
+                                .caused_by(trc::location!())?
+                                .results
+                                .is_empty()
+                            {
+                                is_spam = false;
+                                if self
+                                    .core
+                                    .spam
+                                    .bayes
+                                    .as_ref()
+                                    .is_some_and(|config| config.auto_learn_card_is_ham)
+                                {
+                                    train_spam = Some(false);
+                                }
+                            }
+                        }
+                    }
+
                     // Classify the message with user's model
-                    if let Some(bayes_config) = self
-                        .core
-                        .spam
-                        .bayes
-                        .as_ref()
-                        .filter(|config| config.account_classify && params.spam_train)
-                    {
+                    if let Some(bayes_config) = self.core.spam.bayes.as_ref().filter(|config| {
+                        config.account_classify && params.spam_train && train_spam.is_none()
+                    }) {
                         // Initialize spam filter
                         let ctx = self.spam_filter_init(SpamFilterInput::from_account_message(
                             &message,

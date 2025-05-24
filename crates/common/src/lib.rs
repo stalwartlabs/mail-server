@@ -106,6 +106,9 @@ pub const KV_LOCK_HOUSEKEEPER: u8 = 24;
 pub const KV_LOCK_DAV: u8 = 25;
 pub const KV_SIEVE_ID: u8 = 26;
 
+pub const IDX_UID: u8 = 0;
+pub const IDX_EMAIL: u8 = 1;
+
 #[derive(Clone)]
 pub struct Server {
     pub inner: Arc<Inner>,

@@ -11,6 +11,7 @@ This version includes **breaking changes** to the database layout and requires a
 - Peer-to-peer [cluster coordination](https://stalw.art/docs/cluster/coordination/overview) or with Apache Kafka, Redpanda, NATS or Redis.
 - Incremental caching of emails, calendars, contacts and file metadata.
 - Zero-copy deserialization.
+- Train spam messages as ham when the sender is in the user's address book.  
 - `XOAUTH2` SASL mechanism support (#1194 #1369).
 - Support for RFC9698, the `JMAPACCESS` Extension for IMAP.
 - Search index for accounts and other principals (#1368).
