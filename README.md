@@ -59,7 +59,7 @@ Key features:
 - **Spam** and **Phishing** built-in filter:
   - Comprehensive set of filtering **rules** on par with popular solutions.
   - LLM-driven spam filtering and message analysis.
-  - Statistical **spam classifier** with automatic training capabilities.
+  - Statistical **spam classifier** with automatic training capabilities and address book integration.
   - DNS Blocklists (**DNSBLs**) checking of IP addresses, domains, and hashes.
   - Collaborative digest-based spam filtering with **Pyzor**.
   - **Phishing** protection against homographic URL attacks, sender spoofing and other techniques.

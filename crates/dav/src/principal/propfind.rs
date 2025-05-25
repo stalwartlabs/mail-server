@@ -228,6 +228,7 @@ impl PrincipalPropFind for Server {
                             ));
                         }
                         _ => {
+                            response.set_namespace(property.namespace());
                             fields_not_found.push(DavPropertyValue::empty(property.clone()));
                         }
                     },
@@ -275,6 +276,7 @@ impl PrincipalPropFind for Server {
                         }
                     },
                     _ => {
+                        response.set_namespace(property.namespace());
                         fields_not_found.push(DavPropertyValue::empty(property.clone()));
                     }
                 }

@@ -226,6 +226,18 @@ impl DavProperty {
             None,
         )
     }
+
+    pub fn namespace(&self) -> Namespace {
+        match self {
+            DavProperty::WebDav(WebDavProperty::GetCTag) => Namespace::CalendarServer,
+            DavProperty::CardDav(_)
+            | DavProperty::Principal(PrincipalProperty::AddressbookHomeSet) => Namespace::CardDav,
+            DavProperty::CalDav(_) | DavProperty::Principal(PrincipalProperty::CalendarHomeSet) => {
+                Namespace::CalDav
+            }
+            _ => Namespace::Dav,
+        }
+    }
 }
 
 impl AsRef<str> for DavProperty {

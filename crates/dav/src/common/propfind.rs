@@ -298,6 +298,7 @@ impl PropFindRequestHandler for Server {
                                 fields.push(DavPropertyValue::new(prop.clone(), reports));
                             }
                             _ => {
+                                response.set_namespace(prop.namespace());
                                 fields_not_found.push(DavPropertyValue::empty(prop.clone()));
                             }
                         }
@@ -1330,6 +1331,7 @@ impl PropFindRequestHandler for Server {
 
                         _ => {
                             if !skip_not_found {
+                                response.set_namespace(property.namespace());
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             }
                         }
@@ -1337,6 +1339,7 @@ impl PropFindRequestHandler for Server {
 
                     property => {
                         if !skip_not_found {
+                            response.set_namespace(property.namespace());
                             fields_not_found.push(DavPropertyValue::empty(property.clone()));
                         }
                     }
