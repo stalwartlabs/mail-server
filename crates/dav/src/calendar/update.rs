@@ -278,7 +278,7 @@ impl CalendarUpdateRequestHandler for Server {
 
 fn validate_ical(ical: &ICalendar) -> crate::Result<&str> {
     // Validate UIDs
-    let uids = ical.uids().collect::<HashSet<_>>();
+    let mut uids = HashSet::with_capacity(1);
 
     // Validate component types
     let mut types: [u8; 5] = [0; 5];
@@ -286,18 +286,33 @@ fn validate_ical(ical: &ICalendar) -> crate::Result<&str> {
         match comp.component_type {
             ICalendarComponentType::VEvent => {
                 types[0] += 1;
+                if let Some(uid) = comp.uid() {
+                    uids.insert(uid);
+                }
             }
             ICalendarComponentType::VTodo => {
                 types[1] += 1;
+                if let Some(uid) = comp.uid() {
+                    uids.insert(uid);
+                }
             }
             ICalendarComponentType::VJournal => {
                 types[2] += 1;
+                if let Some(uid) = comp.uid() {
+                    uids.insert(uid);
+                }
             }
             ICalendarComponentType::VFreebusy => {
                 types[3] += 1;
+                if let Some(uid) = comp.uid() {
+                    uids.insert(uid);
+                }
             }
             ICalendarComponentType::VAvailability => {
                 types[4] += 1;
+                if let Some(uid) = comp.uid() {
+                    uids.insert(uid);
+                }
             }
             _ => {}
         }
