@@ -22,8 +22,8 @@
     {
       "type": "DeadProperty",
       "data": {
-        "name": "apple:calendar-color",
-        "attrs": null
+        "name": "calendar-color",
+        "attrs": "xmlns=\"http://apple.com/ns/ical/\""
       }
     },
     {

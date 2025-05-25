@@ -4,29 +4,29 @@
     {
       "type": "DeadProperty",
       "data": {
-        "name": "R:bigbox",
-        "attrs": null
+        "name": "bigbox",
+        "attrs": "xmlns=\"http://ns.example.com/boxschema/\""
       }
     },
     {
       "type": "DeadProperty",
       "data": {
-        "name": "R:author",
-        "attrs": null
+        "name": "author",
+        "attrs": "xmlns=\"http://ns.example.com/boxschema/\""
       }
     },
     {
       "type": "DeadProperty",
       "data": {
-        "name": "R:DingALing",
-        "attrs": null
+        "name": "DingALing",
+        "attrs": "xmlns=\"http://ns.example.com/boxschema/\""
       }
     },
     {
       "type": "DeadProperty",
       "data": {
-        "name": "R:Random",
-        "attrs": null
+        "name": "Random",
+        "attrs": "xmlns=\"http://ns.example.com/boxschema/\""
       }
     }
   ]

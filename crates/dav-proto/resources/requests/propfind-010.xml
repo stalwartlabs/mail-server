@@ -1,0 +1,1 @@
+<d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:resourcetype /><d:displayname/><d:sync-token></d:sync-token><cs:getctag /><cs:me-card hello="world &amp; test"/></d:prop></d:propfind>

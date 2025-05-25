@@ -528,7 +528,7 @@ impl DavParser for ExpandProperty {
                                         depth: depth - 1,
                                     });
                                 } else {
-                                    let attrs = raw.0.attributes_raw().trim_ascii();
+                                    let attrs = raw.element.attributes_raw().trim_ascii();
                                     ep.properties.push(ExpandPropertyItem {
                                         property: DavProperty::DeadProperty(DeadElementTag {
                                             name,

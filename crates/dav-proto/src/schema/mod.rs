@@ -66,16 +66,20 @@ impl Namespace {
             Namespace::CalendarServer => "C",
         }
     }
-}
 
-impl AsRef<str> for Namespace {
-    fn as_ref(&self) -> &str {
+    pub fn namespace(&self) -> &'static str {
         match self {
             Namespace::Dav => "DAV:",
             Namespace::CalDav => "urn:ietf:params:xml:ns:caldav",
             Namespace::CardDav => "urn:ietf:params:xml:ns:carddav",
             Namespace::CalendarServer => "http://calendarserver.org/ns/",
         }
+    }
+}
+
+impl AsRef<str> for Namespace {
+    fn as_ref(&self) -> &str {
+        self.namespace()
     }
 }
 

@@ -27,7 +27,7 @@ impl DavParser for DeadProperty {
         loop {
             match stream.token()? {
                 Token::ElementStart { raw, .. } | Token::UnknownElement(raw) => {
-                    items.0.push(DeadPropertyTag::ElementStart(raw.into()));
+                    items.0.push(DeadPropertyTag::ElementStart((&raw).into()));
                     depth += 1;
                 }
                 Token::ElementEnd => {
@@ -142,14 +142,42 @@ impl ArchivedDeadElementTag {
     }
 }
 
-impl From<RawElement<'_>> for DeadElementTag {
-    fn from(raw: RawElement<'_>) -> Self {
-        let name = String::from_utf8_lossy(raw.0.name().as_ref().trim_ascii()).into_owned();
-        let attr = raw.0.attributes_raw().trim_ascii();
+impl From<&RawElement<'_>> for DeadElementTag {
+    fn from(raw: &RawElement<'_>) -> Self {
+        let name = std::str::from_utf8(raw.element.local_name().as_ref())
+            .unwrap_or("invalid-utf8")
+            .trim_ascii()
+            .to_string();
+        let mut attrs = String::with_capacity(raw.element.attributes_raw().len());
+        if let Some(namespace) = &raw.namespace {
+            attrs.push_str("xmlns=\"");
+            attrs.push_str(std::str::from_utf8(namespace).unwrap_or("invalid-utf8"));
+            attrs.push('"');
+        }
+
+        for attr in raw.element.attributes().flatten() {
+            if attr.key.as_ref() == b"xmlns" || attr.key.as_ref().starts_with(b"xmlns:") {
+                // Skip namespace attributes
+                continue;
+            }
+            if let (Ok(key), Ok(value)) = (
+                std::str::from_utf8(attr.key.as_ref()),
+                std::str::from_utf8(attr.value.as_ref()),
+            ) {
+                if !attrs.is_empty() {
+                    attrs.push(' ');
+                }
+                attrs.push_str(key);
+                attrs.push('=');
+                attrs.push('"');
+                attrs.push_str(value);
+                attrs.push('"');
+            }
+        }
 
         DeadElementTag {
             name,
-            attrs: (!attr.is_empty()).then(|| String::from_utf8_lossy(attr).into_owned()),
+            attrs: (!attrs.is_empty()).then_some(attrs),
         }
     }
 }

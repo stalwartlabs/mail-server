@@ -1,0 +1,36 @@
+{
+  "type": "Prop",
+  "data": [
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "ResourceType"
+      }
+    },
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "DisplayName"
+      }
+    },
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "SyncToken"
+      }
+    },
+    {
+      "type": "WebDav",
+      "data": {
+        "type": "GetCTag"
+      }
+    },
+    {
+      "type": "DeadProperty",
+      "data": {
+        "name": "me-card",
+        "attrs": "xmlns=\"http://calendarserver.org/ns/\" hello=\"world &amp; test\""
+      }
+    }
+  ]
+}

@@ -20,11 +20,14 @@ pub mod tokenizer;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Xml(quick_xml::Error),
-    UnexpectedToken {
-        expected: Option<Token<'static>>,
-        found: Token<'static>,
-    },
+    Xml(Box<quick_xml::Error>),
+    UnexpectedToken(Box<UnexpectedToken>),
+}
+
+#[derive(Debug, Clone)]
+pub struct UnexpectedToken {
+    pub expected: Option<Token<'static>>,
+    pub found: Token<'static>,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -43,7 +46,10 @@ pub enum Token<'x> {
 }
 
 #[derive(Debug, Clone)]
-pub struct RawElement<'x>(pub BytesStart<'x>);
+pub struct RawElement<'x> {
+    pub element: BytesStart<'x>,
+    pub namespace: Option<Cow<'static, [u8]>>,
+}
 
 pub trait DavParser: Sized {
     fn parse(stream: &mut Tokenizer<'_>) -> Result<Self>;
@@ -89,20 +95,50 @@ impl Token<'_> {
         match self {
             Token::ElementStart { name, raw } => Token::ElementStart {
                 name,
-                raw: RawElement(raw.0.into_owned()),
+                raw: raw.into_owned(),
             },
             Token::ElementEnd => Token::ElementEnd,
             Token::Bytes(bytes) => Token::Bytes(bytes.into_owned().into()),
             Token::Text(text) => Token::Text(text.into_owned().into()),
-            Token::UnknownElement(raw) => Token::UnknownElement(RawElement(raw.0.into_owned())),
+            Token::UnknownElement(raw) => Token::UnknownElement(raw.into_owned()),
             Token::Eof => Token::Eof,
         }
     }
 
     pub fn into_unexpected(self) -> Error {
-        Error::UnexpectedToken {
+        Error::UnexpectedToken(Box::new(UnexpectedToken {
             expected: None,
             found: self.into_owned(),
+        }))
+    }
+}
+
+impl<'x> RawElement<'x> {
+    pub fn new(element: BytesStart<'x>) -> Self {
+        RawElement {
+            element,
+            namespace: None,
+        }
+    }
+
+    pub fn with_namespace(self, namespace: quick_xml::name::Namespace<'_>) -> Self {
+        RawElement {
+            element: self.element,
+            namespace: Some(Cow::Owned(namespace.into_inner().to_vec())),
+        }
+    }
+
+    pub fn with_namespace_static(self, namespace: &'static [u8]) -> Self {
+        RawElement {
+            element: self.element,
+            namespace: Some(Cow::Borrowed(namespace)),
+        }
+    }
+
+    pub fn into_owned(self) -> RawElement<'static> {
+        RawElement {
+            element: self.element.into_owned(),
+            namespace: self.namespace,
         }
     }
 }
@@ -123,16 +159,17 @@ impl PartialEq for Token<'_> {
             ) => {
                 l_name == r_name
                     && l_raw
-                        .0
+                        .element
                         .attributes_raw()
                         .trim_ascii()
-                        .eq_ignore_ascii_case(r_raw.0.attributes_raw().trim_ascii())
+                        .eq_ignore_ascii_case(r_raw.element.attributes_raw().trim_ascii())
             }
             (Self::Bytes(l0), Self::Bytes(r0)) => l0 == r0,
             (Self::Text(l0), Self::Text(r0)) => l0 == r0,
-            (Self::UnknownElement(l0), Self::UnknownElement(r0)) => {
-                l0.0.as_ref().eq_ignore_ascii_case(r0.0.as_ref())
-            }
+            (Self::UnknownElement(l0), Self::UnknownElement(r0)) => l0
+                .element
+                .as_ref()
+                .eq_ignore_ascii_case(r0.element.as_ref()),
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }
@@ -140,19 +177,19 @@ impl PartialEq for Token<'_> {
 
 impl NamedElement {
     pub fn into_unexpected(self) -> Error {
-        Error::UnexpectedToken {
+        Error::UnexpectedToken(Box::new(UnexpectedToken {
             expected: None,
             found: Token::ElementStart {
                 name: self,
-                raw: RawElement(BytesStart::new("")),
+                raw: RawElement::new(BytesStart::new("")),
             },
-        }
+        }))
     }
 }
 
 impl Default for RawElement<'_> {
     fn default() -> Self {
-        RawElement(BytesStart::new(""))
+        RawElement::new(BytesStart::new(""))
     }
 }
 
@@ -160,9 +197,9 @@ impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Xml(err) => write!(f, "XML error: {}", err),
-            Error::UnexpectedToken { expected, found } => {
-                write!(f, "Unexpected token: {found:?}")?;
-                if let Some(expected) = expected {
+            Error::UnexpectedToken(err) => {
+                write!(f, "Unexpected token: {:?}", err.found)?;
+                if let Some(expected) = &err.expected {
                     write!(f, ", expected: {expected:?}")?;
                 }
                 Ok(())

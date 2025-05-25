@@ -65,7 +65,7 @@ impl Tokenizer<'_> {
                     break;
                 }
                 Token::UnknownElement(name) => {
-                    elements.push(DavProperty::DeadProperty(name.into()));
+                    elements.push(DavProperty::DeadProperty((&name).into()));
                     self.expect_element_end()?;
                 }
                 token => return Err(token.into_unexpected()),
@@ -369,7 +369,7 @@ impl Tokenizer<'_> {
                 }
                 Token::UnknownElement(raw) => {
                     elements.push(DavPropertyValue {
-                        property: DavProperty::DeadProperty(raw.into()),
+                        property: DavProperty::DeadProperty((&raw).into()),
                         value: DavValue::DeadProperty(DeadProperty::parse(self)?),
                     });
                 }

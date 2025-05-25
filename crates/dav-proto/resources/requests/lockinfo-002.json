@@ -5,8 +5,8 @@
     {
       "type": "ElementStart",
       "data": {
-        "name": "D:href",
-        "attrs": null
+        "name": "href",
+        "attrs": "xmlns=\"DAV:\""
       }
     },
     {

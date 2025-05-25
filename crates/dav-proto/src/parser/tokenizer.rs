@@ -12,7 +12,7 @@ use quick_xml::{
 
 use crate::schema::{Attribute, AttributeValue, Element, NamedElement, Namespace};
 
-use super::{Error, RawElement, Token, XmlValueParser};
+use super::{Error, RawElement, Token, UnexpectedToken, XmlValueParser};
 
 pub struct Tokenizer<'x> {
     xml: NsReader<&'x [u8]>,
@@ -47,7 +47,10 @@ impl<'x> Tokenizer<'x> {
                     return Ok(Token::ElementEnd);
                 }
                 Event::Text(text) if text.iter().any(|ch| !ch.is_ascii_whitespace()) => {
-                    return text.unescape().map(Token::Text).map_err(Error::Xml);
+                    return text
+                        .unescape()
+                        .map(Token::Text)
+                        .map_err(|err| Error::Xml(Box::new(err)));
                 }
                 Event::CData(bytes) => return Ok(Token::Bytes(bytes.into_inner())),
                 Event::Eof => return Ok(Token::Eof),
@@ -59,26 +62,29 @@ impl<'x> Tokenizer<'x> {
             // Parse element
             let name = tag.name();
             match resolve_result {
-                ResolveResult::Bound(ns) if !ns.as_ref().is_empty() => {
+                ResolveResult::Bound(raw_ns) if !raw_ns.as_ref().is_empty() => {
                     if let (Some(ns), Some(element)) = (
-                        Namespace::try_parse(ns.as_ref()),
+                        Namespace::try_parse(raw_ns.as_ref()),
                         Element::try_parse(name.local_name().as_ref()).copied(),
                     ) {
                         return Ok(Token::ElementStart {
                             name: NamedElement { ns, element },
-                            raw: RawElement(tag),
+                            raw: RawElement::new(tag)
+                                .with_namespace_static(ns.namespace().as_bytes()),
                         });
                     } else {
-                        return Ok(Token::UnknownElement(RawElement(tag)));
+                        return Ok(Token::UnknownElement(
+                            RawElement::new(tag).with_namespace(raw_ns),
+                        ));
                     }
                 }
                 ResolveResult::Unknown(p) => {
-                    return Err(Error::Xml(quick_xml::Error::Namespace(
+                    return Err(Error::Xml(Box::new(quick_xml::Error::Namespace(
                         quick_xml::name::NamespaceError::UnknownPrefix(p),
-                    )))
+                    ))))
                 }
                 _ => {
-                    return Ok(Token::UnknownElement(RawElement(tag)));
+                    return Ok(Token::UnknownElement(RawElement::new(tag)));
                 }
             }
         }
@@ -87,24 +93,24 @@ impl<'x> Tokenizer<'x> {
     pub fn unwrap_named_element(&mut self) -> super::Result<NamedElement> {
         match self.token()? {
             Token::ElementStart { name, .. } => Ok(name),
-            found => Err(Error::UnexpectedToken {
+            found => Err(Error::UnexpectedToken(Box::new(UnexpectedToken {
                 expected: None,
                 found: found.into_owned(),
-            }),
+            }))),
         }
     }
 
     pub fn expect_named_element(&mut self, expected: NamedElement) -> super::Result<()> {
         match self.token()? {
             Token::ElementStart { name, .. } if name == expected => Ok(()),
-            found => Err(Error::UnexpectedToken {
+            found => Err(Error::UnexpectedToken(Box::new(UnexpectedToken {
                 expected: Token::ElementStart {
                     name: expected,
                     raw: RawElement::default(),
                 }
                 .into(),
                 found: found.into_owned(),
-            }),
+            }))),
         }
     }
 
@@ -112,24 +118,24 @@ impl<'x> Tokenizer<'x> {
         match self.token()? {
             Token::ElementStart { name, .. } if name == expected => Ok(true),
             Token::Eof => Ok(false),
-            found => Err(Error::UnexpectedToken {
+            found => Err(Error::UnexpectedToken(Box::new(UnexpectedToken {
                 expected: Token::ElementStart {
                     name: expected,
                     raw: RawElement::default(),
                 }
                 .into(),
                 found: found.into_owned(),
-            }),
+            }))),
         }
     }
 
     pub fn expect_element_end(&mut self) -> super::Result<()> {
         match self.token()? {
             Token::ElementEnd => Ok(()),
-            found => Err(Error::UnexpectedToken {
+            found => Err(Error::UnexpectedToken(Box::new(UnexpectedToken {
                 expected: Token::ElementEnd.into(),
                 found: found.into_owned(),
-            }),
+            }))),
         }
     }
 
@@ -249,7 +255,7 @@ impl RawElement<'_> {
     pub fn attributes<T: AttributeValue>(
         &self,
     ) -> impl Iterator<Item = super::Result<Attribute<T>>> + '_ {
-        self.0.attributes().filter_map(|attr| match attr {
+        self.element.attributes().filter_map(|attr| match attr {
             Ok(attr) => match attr.unescape_value() {
                 Ok(value) => Attribute::from_param(attr.key.as_ref(), value).map(Ok),
                 Err(err) => Some(Err(err.into())),
@@ -261,13 +267,13 @@ impl RawElement<'_> {
 
 impl From<quick_xml::Error> for Error {
     fn from(err: quick_xml::Error) -> Self {
-        Error::Xml(err)
+        Error::Xml(Box::new(err))
     }
 }
 
 impl From<AttrError> for Error {
     fn from(err: AttrError) -> Self {
-        Error::Xml(err.into())
+        Error::Xml(Box::new(err.into()))
     }
 }
 

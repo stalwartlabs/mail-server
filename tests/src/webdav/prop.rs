@@ -501,8 +501,8 @@ pub async fn test(test: &WebDavTest) {
                         ),
                         (
                             DavProperty::DeadProperty(DeadElementTag::new(
-                                "C:my-dead-element".to_string(),
-                                None,
+                                "my-dead-element".to_string(),
+                                Some("xmlns=\"http://example.com/ns/\"".to_string()),
                             )),
                             "this is a dead but exciting element",
                         ),
@@ -514,8 +514,8 @@ pub async fn test(test: &WebDavTest) {
             let mut props = vec![
                 (
                     DavProperty::DeadProperty(DeadElementTag::new(
-                        "C:my-dead-element".to_string(),
-                        None,
+                        "my-dead-element".to_string(),
+                        Some("xmlns=\"http://example.com/ns/\"".to_string()),
                     )),
                     "",
                 ),
@@ -604,8 +604,8 @@ pub async fn test(test: &WebDavTest) {
             let mut chunky_props = vec![
                 DavProperty::WebDav(WebDavProperty::DisplayName),
                 DavProperty::DeadProperty(DeadElementTag::new(
-                    "C:my-chunky-dead-element".to_string(),
-                    None,
+                    "my-chunky-dead-element".to_string(),
+                    Some("xmlns=\"http://example.com/ns/\"".to_string()),
                 )),
             ];
             if !is_file {
