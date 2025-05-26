@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Duration;
+
 use utils::config::Config;
 
 #[derive(Debug, Clone, Default)]
@@ -42,7 +44,10 @@ impl GroupwareConfig {
                 .property_or_default::<Option<usize>>("dav.property.max-size.dead", "1024")
                 .unwrap_or(Some(1024)),
             live_property_size: config.property("dav.property.max-size.live").unwrap_or(250),
-            max_lock_timeout: config.property("dav.lock.max-timeout").unwrap_or(3600),
+            max_lock_timeout: config
+                .property::<Duration>("dav.lock.max-timeout")
+                .map(|d| d.as_secs())
+                .unwrap_or(3600),
             max_locks_per_user: config.property("dav.locks.max-per-user").unwrap_or(10),
             max_results: config.property("dav.response.max-results").unwrap_or(2000),
             default_calendar_name: config
