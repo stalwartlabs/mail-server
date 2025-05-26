@@ -62,7 +62,8 @@ In addition to the database layout changes, multiple settings were renamed:
              -v <STALWART_DIR>:/opt/stalwart \
              --name stalwart stalwartlabs/stalwart:latest
   ```
-- Download the `v0.12.0` mail-server for your platform from the [releases page](https://github.com/stalwartlabs/stalwart/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
+  
+- Since the mount point has changed from `/opt/stalwart-mail` to `/opt/stalwart`, you will need to update your Stalwart's configuration file to reflect this change. Open the file `/opt/stalwart/etc/config.toml` and update the paths accordingly.
 
 - Upgrade the webadmin by clicking on `Manage` > `Maintenance` > `Update Webadmin`.
 
