@@ -55,7 +55,7 @@ pub(crate) async fn migrate_sieve(server: &Server, account_id: u32) -> trc::Resu
             .caused_by(trc::location!())?;
     }
 
-    for script_id in script_ids {
+    for script_id in &script_ids {
         match server
             .store()
             .get_value::<Object<Value>>(ValueKey {
@@ -154,7 +154,11 @@ pub(crate) async fn migrate_sieve(server: &Server, account_id: u32) -> trc::Resu
     if did_migrate {
         server
             .store()
-            .assign_document_ids(account_id, Collection::SieveScript, num_scripts + 1)
+            .assign_document_ids(
+                account_id,
+                Collection::SieveScript,
+                script_ids.max().map(|id| id as u64).unwrap_or(num_scripts) + 1,
+            )
             .await
             .caused_by(trc::location!())?;
         Ok(num_scripts)

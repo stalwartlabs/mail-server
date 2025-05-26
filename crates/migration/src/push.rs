@@ -34,7 +34,7 @@ pub(crate) async fn migrate_push_subscriptions(
     }
     let mut did_migrate = false;
 
-    for push_subscription_id in push_subscription_ids {
+    for push_subscription_id in &push_subscription_ids {
         match server
             .store()
             .get_value::<Object<Value>>(ValueKey {
@@ -94,7 +94,11 @@ pub(crate) async fn migrate_push_subscriptions(
             .assign_document_ids(
                 account_id,
                 Collection::PushSubscription,
-                num_push_subscriptions + 1,
+                push_subscription_ids
+                    .max()
+                    .map(|id| id as u64)
+                    .unwrap_or(num_push_subscriptions)
+                    + 1,
             )
             .await
             .caused_by(trc::location!())?;

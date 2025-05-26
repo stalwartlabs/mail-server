@@ -28,7 +28,7 @@ pub(crate) async fn migrate_identities(server: &Server, account_id: u32) -> trc:
     }
     let mut did_migrate = false;
 
-    for identity_id in identity_ids {
+    for identity_id in &identity_ids {
         match server
             .store()
             .get_value::<Object<Value>>(ValueKey {
@@ -86,7 +86,15 @@ pub(crate) async fn migrate_identities(server: &Server, account_id: u32) -> trc:
     if did_migrate {
         server
             .store()
-            .assign_document_ids(account_id, Collection::Identity, num_identities + 1)
+            .assign_document_ids(
+                account_id,
+                Collection::Identity,
+                identity_ids
+                    .max()
+                    .map(|id| id as u64)
+                    .unwrap_or(num_identities)
+                    + 1,
+            )
             .await
             .caused_by(trc::location!())?;
         Ok(num_identities)

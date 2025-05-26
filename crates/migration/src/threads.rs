@@ -50,7 +50,11 @@ pub(crate) async fn migrate_threads(server: &Server, account_id: u32) -> trc::Re
     // Increment document id counter
     server
         .store()
-        .assign_document_ids(account_id, Collection::Thread, num_threads + 1)
+        .assign_document_ids(
+            account_id,
+            Collection::Thread,
+            thread_ids.max().map(|id| id as u64).unwrap_or(num_threads) + 1,
+        )
         .await
         .caused_by(trc::location!())?;
 

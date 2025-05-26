@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.12.1] - 2025-05-26
+
+If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+
+## Changed
+
+## Fixed
+- Migration tool to generate the correct next id (#1561).
+- Failed to parse setting dav.lock.max-timeout (closes #1559).
+- Failed to build OpenTelemetry span exporter: no http client specified (#1571).
+
 ## [0.12.0] - 2025-05-26
 
 This version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.

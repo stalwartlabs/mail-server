@@ -62,7 +62,7 @@ pub(crate) async fn migrate_email_submissions(
             .caused_by(trc::location!())?;
     }
 
-    for email_submission_id in email_submission_ids {
+    for email_submission_id in &email_submission_ids {
         match server
             .store()
             .get_value::<Object<Value>>(ValueKey {
@@ -126,7 +126,11 @@ pub(crate) async fn migrate_email_submissions(
             .assign_document_ids(
                 account_id,
                 Collection::EmailSubmission,
-                num_email_submissions + 1,
+                email_submission_ids
+                    .max()
+                    .map(|id| id as u64)
+                    .unwrap_or(num_email_submissions)
+                    + 1,
             )
             .await
             .caused_by(trc::location!())?;

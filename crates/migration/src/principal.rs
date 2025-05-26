@@ -100,7 +100,15 @@ pub(crate) async fn migrate_principals(server: &Server) -> trc::Result<RoaringBi
     if num_migrated > 0 {
         server
             .store()
-            .assign_document_ids(u32::MAX, Collection::Principal, num_principals + 1)
+            .assign_document_ids(
+                u32::MAX,
+                Collection::Principal,
+                principal_ids
+                    .max()
+                    .map(|id| id as u64)
+                    .unwrap_or(num_principals)
+                    + 1,
+            )
             .await
             .caused_by(trc::location!())?;
 

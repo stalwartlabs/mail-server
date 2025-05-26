@@ -106,14 +106,6 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
         message_data.entry(message_id).or_default().thread_id = thread_id;
     }
 
-    // Obtain changeIds
-    /*for (message_id, change_id) in
-        get_properties::<u64, _, _>(server, account_id, Collection::Email, &(), Property::Cid)
-            .await.caused_by(trc::location!())?
-    {
-        message_data.entry(message_id).or_default().change_id = change_id;
-    }*/
-
     // Write message data
     for (message_id, data) in message_data {
         if !tombstoned_ids.contains(message_id) {
@@ -145,7 +137,7 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
     }
 
     // Migrate message metadata
-    for message_id in message_ids {
+    for message_id in &message_ids {
         match server
             .store()
             .get_value::<LegacyBincode<LegacyMessageMetadata>>(ValueKey {
@@ -304,7 +296,11 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
     if did_migrate {
         server
             .store()
-            .assign_document_ids(account_id, Collection::Email, num_emails + 1)
+            .assign_document_ids(
+                account_id,
+                Collection::Email,
+                message_ids.max().map(|id| id as u64).unwrap_or(num_emails) + 1,
+            )
             .await
             .caused_by(trc::location!())?;
         Ok(num_emails)

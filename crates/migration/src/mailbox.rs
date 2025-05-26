@@ -32,7 +32,7 @@ pub(crate) async fn migrate_mailboxes(server: &Server, account_id: u32) -> trc::
     }
     let mut did_migrate = false;
 
-    for mailbox_id in mailbox_ids {
+    for mailbox_id in &mailbox_ids {
         match server
             .store()
             .get_value::<Object<Value>>(ValueKey {
@@ -114,7 +114,15 @@ pub(crate) async fn migrate_mailboxes(server: &Server, account_id: u32) -> trc::
     if did_migrate {
         server
             .store()
-            .assign_document_ids(account_id, Collection::Mailbox, num_mailboxes + 1)
+            .assign_document_ids(
+                account_id,
+                Collection::Mailbox,
+                mailbox_ids
+                    .max()
+                    .map(|id| id as u64)
+                    .unwrap_or(num_mailboxes)
+                    + 1,
+            )
             .await
             .caused_by(trc::location!())?;
         Ok(num_mailboxes)
