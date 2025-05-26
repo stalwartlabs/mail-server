@@ -30,6 +30,7 @@ In addition to the database layout changes, multiple settings were renamed:
   ```
 
 - Download the `v0.12.0` binary for your platform (which is now called `stalwart` rather than `mail-server`) from the [releases page](https://github.com/stalwartlabs/stalwart/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
+- Do not forget to rename the binary path in your systemd service file from `stalwart-mail` to `stalwart`. Also `chmod +x` the binary.
 
 - Start the service. In a cluster, you can speed up the migration process by starting all nodes at once. 
   ```bash
