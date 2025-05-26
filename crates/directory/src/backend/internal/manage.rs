@@ -783,7 +783,7 @@ impl ManageDirectory for Store {
         }
 
         // Delete principal data
-        self.purge_account(principal_id)
+        self.danger_destroy_account(principal_id)
             .await
             .caused_by(trc::location!())?;
 

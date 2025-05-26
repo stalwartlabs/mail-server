@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
-## [0.12.0] - 2025-05-XX
+## [0.12.0] - 2025-05-26
 
 This version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
 
@@ -18,7 +18,6 @@ This version includes **breaking changes** to the database layout and requires a
 - Add `description` property to OIDC ID token (#1234).
 
 ### Changed
-
 - Deprecated gossip protocol in favor of the new [coordinator](https://stalw.art/docs/cluster/coordination/overview) options.
 - Renamed Git repository from `stalwartlabs/mail-server` to `stalwartlabs/stalwart` and the Docker image from `stalwartlabs/mail-server` to `stalwartlabs/stalwart`.
 - Renamed multiple settings:
@@ -28,6 +27,7 @@ This version includes **breaking changes** to the database layout and requires a
   - `jmap.email.auto-expunge` to `email.auto-expunge`.
   - `jmap.protocol.changes.max-history` to `changes.max-history`.
   - `storage.encryption.*` to `email.encryption.*`.
+- Deprecated `lookup.default.*` settings in favor of `server.hostname` and `report.domain`. v0.11 and before supported both, v0.12 will only support the new settings.
 
 ### Fixed
 - Allow undiscovered UIDs to be used in IMAP `COPY`/`MOVE` operations (#1201).
@@ -36,6 +36,8 @@ This version includes **breaking changes** to the database layout and requires a
 - Use the newest `X-Spam-Status` Header (#1308).
 - MySQL Driver error: Transactions couldn't be nested (#1271).
 - Spawn a delivery thread for `EmailSubmission/set` requests (#1540).
+- ACME: Don't restrict challenge types (#1522).
+- Autoconfig: return `%EMAILADDRESS%` if no e-mail address is provided (#1537).
 
 ## [0.11.8] - 2025-04-30
 

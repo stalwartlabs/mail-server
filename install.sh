@@ -7,12 +7,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
 #
 
-# Stalwart Mail Server install script -- based on the rustup installation script.
+# Stalwart install script -- based on the rustup installation script.
 
 set -e
 set -u
 
-readonly BASE_URL="https://github.com/stalwartlabs/mail-server/releases/latest/download"
+readonly BASE_URL="https://github.com/stalwartlabs/stalwart/releases/latest/download"
 
 main() {
     downloader --check
@@ -32,25 +32,25 @@ main() {
     # Detect OS
     local _os="unknown"
     local _uname="$(uname)"
-    _account="stalwart-mail"
+    _account="stalwart"
     if [ "${_uname}" = "Linux" ]; then
         _os="linux"
     elif [ "${_uname}" = "Darwin" ]; then
         _os="macos"
-        _account="_stalwart-mail"
+        _account="_stalwart"
     fi
 
     # Read arguments
-    local _dir="/opt/stalwart-mail"
+    local _dir="/opt/stalwart"
 
     # Default component setting
-    local _component="stalwart-mail"
+    local _component="stalwart"
 
     # Loop through the arguments
     for arg in "$@"; do
         case "$arg" in
             --fdb)
-                _component="stalwart-mail-foundationdb"
+                _component="stalwart-foundationdb"
                 ;;
             *)
                 if [ -n "$arg" ]; then
@@ -70,15 +70,15 @@ main() {
 
     # Download latest binary
     say "⏳ Downloading ${_component} for ${_arch}..."
-    local _file="${_dir}/bin/stalwart-mail.tar.gz"
+    local _file="${_dir}/bin/stalwart.tar.gz"
     local _url="${BASE_URL}/${_component}-${_arch}.tar.gz"
     ensure mkdir -p "$_dir"
     ensure downloader "$_url" "$_file" "$_arch"
     ensure tar zxvf "$_file" -C "$_dir/bin"
-    if [ "$_component" = "stalwart-mail-foundationdb" ]; then
-        ignore mv "$_dir/bin/stalwart-mail-foundationdb" "$_dir/bin/stalwart-mail"
+    if [ "$_component" = "stalwart-foundationdb" ]; then
+        ignore mv "$_dir/bin/stalwart-foundationdb" "$_dir/bin/stalwart"
     fi
-    ignore chmod +x "$_dir/bin/stalwart-mail"
+    ignore chmod +x "$_dir/bin/stalwart"
     ignore rm "$_file"
 
     # Create system account
@@ -90,30 +90,30 @@ main() {
             local _uid="$((_last_uid+1))"
             local _gid="$((_last_gid+1))"
 
-            ensure dscl /Local/Default -create Groups/_stalwart-mail
-            ensure dscl /Local/Default -create Groups/_stalwart-mail Password \*
-            ensure dscl /Local/Default -create Groups/_stalwart-mail PrimaryGroupID $_gid
-            ensure dscl /Local/Default -create Groups/_stalwart-mail RealName "Stalwart Mail service"
-            ensure dscl /Local/Default -create Groups/_stalwart-mail RecordName _stalwart-mail stalwart-mail
+            ensure dscl /Local/Default -create Groups/_stalwart
+            ensure dscl /Local/Default -create Groups/_stalwart Password \*
+            ensure dscl /Local/Default -create Groups/_stalwart PrimaryGroupID $_gid
+            ensure dscl /Local/Default -create Groups/_stalwart RealName "Stalwart service"
+            ensure dscl /Local/Default -create Groups/_stalwart RecordName _stalwart stalwart
 
-            ensure dscl /Local/Default -create Users/_stalwart-mail
-            ensure dscl /Local/Default -create Users/_stalwart-mail NFSHomeDirectory /Users/_stalwart-mail
-            ensure dscl /Local/Default -create Users/_stalwart-mail Password \*
-            ensure dscl /Local/Default -create Users/_stalwart-mail PrimaryGroupID $_gid
-            ensure dscl /Local/Default -create Users/_stalwart-mail RealName "Stalwart Mail service"
-            ensure dscl /Local/Default -create Users/_stalwart-mail RecordName _stalwart-mail stalwart-mail
-            ensure dscl /Local/Default -create Users/_stalwart-mail UniqueID $_uid
-            ensure dscl /Local/Default -create Users/_stalwart-mail UserShell /bin/bash
+            ensure dscl /Local/Default -create Users/_stalwart
+            ensure dscl /Local/Default -create Users/_stalwart NFSHomeDirectory /Users/_stalwart
+            ensure dscl /Local/Default -create Users/_stalwart Password \*
+            ensure dscl /Local/Default -create Users/_stalwart PrimaryGroupID $_gid
+            ensure dscl /Local/Default -create Users/_stalwart RealName "Stalwart service"
+            ensure dscl /Local/Default -create Users/_stalwart RecordName _stalwart stalwart
+            ensure dscl /Local/Default -create Users/_stalwart UniqueID $_uid
+            ensure dscl /Local/Default -create Users/_stalwart UserShell /bin/bash
 
-            ensure dscl /Local/Default -delete /Users/_stalwart-mail AuthenticationAuthority
-            ensure dscl /Local/Default -delete /Users/_stalwart-mail PasswordPolicyOptions
+            ensure dscl /Local/Default -delete /Users/_stalwart AuthenticationAuthority
+            ensure dscl /Local/Default -delete /Users/_stalwart PasswordPolicyOptions
         else
             ensure useradd ${_account} -s /usr/sbin/nologin -M -r -U
         fi
     fi
 
     # Run init
-    ignore $_dir/bin/stalwart-mail --init "$_dir"
+    ignore $_dir/bin/stalwart --init "$_dir"
 
     # Set permissions
     say "🔐 Setting permissions..."
@@ -139,9 +139,9 @@ main() {
 # Functions to create service files
 create_service_linux() {
     local _dir="$1"
-    cat <<EOF | sed "s|__PATH__|$_dir|g" > /etc/systemd/system/stalwart-mail.service
+    cat <<EOF | sed "s|__PATH__|$_dir|g" > /etc/systemd/system/stalwart.service
 [Unit]
-Description=Stalwart Mail Server
+Description=Stalwart
 Conflicts=postfix.service sendmail.service exim4.service
 ConditionPathExists=__PATH__/etc/config.toml
 After=network-online.target
@@ -153,18 +153,18 @@ KillMode=process
 KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5
-ExecStart=__PATH__/bin/stalwart-mail --config=__PATH__/etc/config.toml
-SyslogIdentifier=stalwart-mail
-User=stalwart-mail
-Group=stalwart-mail
+ExecStart=__PATH__/bin/stalwart --config=__PATH__/etc/config.toml
+SyslogIdentifier=stalwart
+User=stalwart
+Group=stalwart
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    systemctl enable stalwart-mail.service
-    systemctl restart stalwart-mail.service
+    systemctl enable stalwart.service
+    systemctl restart stalwart.service
 }
 
 create_service_macos() {
@@ -178,10 +178,10 @@ create_service_macos() {
         <key>Label</key>
         <string>stalwart.mail</string>
         <key>ServiceDescription</key>
-        <string>Stalwart Mail Server</string>
+        <string>Stalwart</string>
         <key>ProgramArguments</key>
         <array>
-            <string>__PATH__/bin/stalwart-mail</string>
+            <string>__PATH__/bin/stalwart</string>
             <string>--config=__PATH__/etc/config.toml</string>
         </array>
         <key>RunAtLoad</key>

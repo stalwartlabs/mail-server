@@ -283,38 +283,19 @@ fn validate_ical(ical: &ICalendar) -> crate::Result<&str> {
     // Validate component types
     let mut types: [u8; 5] = [0; 5];
     for comp in &ical.components {
-        match comp.component_type {
-            ICalendarComponentType::VEvent => {
-                types[0] += 1;
-                if let Some(uid) = comp.uid() {
-                    uids.insert(uid);
-                }
+        *(match comp.component_type {
+            ICalendarComponentType::VEvent => &mut types[0],
+            ICalendarComponentType::VTodo => &mut types[1],
+            ICalendarComponentType::VJournal => &mut types[2],
+            ICalendarComponentType::VFreebusy => &mut types[3],
+            ICalendarComponentType::VAvailability => &mut types[4],
+            _ => {
+                continue;
             }
-            ICalendarComponentType::VTodo => {
-                types[1] += 1;
-                if let Some(uid) = comp.uid() {
-                    uids.insert(uid);
-                }
-            }
-            ICalendarComponentType::VJournal => {
-                types[2] += 1;
-                if let Some(uid) = comp.uid() {
-                    uids.insert(uid);
-                }
-            }
-            ICalendarComponentType::VFreebusy => {
-                types[3] += 1;
-                if let Some(uid) = comp.uid() {
-                    uids.insert(uid);
-                }
-            }
-            ICalendarComponentType::VAvailability => {
-                types[4] += 1;
-                if let Some(uid) = comp.uid() {
-                    uids.insert(uid);
-                }
-            }
-            _ => {}
+        }) += 1;
+
+        if let Some(uid) = comp.uid() {
+            uids.insert(uid);
         }
     }
 

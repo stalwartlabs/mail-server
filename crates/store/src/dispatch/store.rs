@@ -380,7 +380,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn purge_account(&self, account_id: u32) -> trc::Result<()> {
+    pub async fn danger_destroy_account(&self, account_id: u32) -> trc::Result<()> {
         for subspace in [
             SUBSPACE_BITMAP_ID,
             SUBSPACE_BITMAP_TAG,

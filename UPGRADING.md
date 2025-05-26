@@ -16,7 +16,7 @@ In addition to the database layout changes, multiple settings were renamed:
 
 ## Step-by-Step Upgrade Process
 
-- Stop Stalwart:
+- Stop Stalwart in **every single node of your cluster**. If you are using the systemd service, you can do this with the following command:
 
   ```bash
   $ sudo systemctl stop stalwart-mail
@@ -31,7 +31,7 @@ In addition to the database layout changes, multiple settings were renamed:
 
 - Download the `v0.12.0` binary for your platform (which is now called `stalwart` rather than `mail-server`) from the [releases page](https://github.com/stalwartlabs/stalwart/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
 
-- Start the service:
+- Start the service. In a cluster, you can speed up the migration process by starting all nodes at once. 
   ```bash
   $ sudo systemctl start stalwart-mail
   ```
@@ -40,7 +40,7 @@ In addition to the database layout changes, multiple settings were renamed:
 
 ## Step-by-Step Upgrade Process (Docker)
 
-- Stop the Stalwart container:
+- Stop the Stalwart container in **every single node of your cluster**. If you are using Docker, you can do this with the following command:
 
   ```bash
   $ docker stop stalwart-mail
