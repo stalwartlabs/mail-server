@@ -76,7 +76,7 @@ azure = ["azure_core", "azure_storage", "azure_storage_blobs"]
 elastic = ["elasticsearch", "serde_json"]
 
 # In-memory stores
-redis = ["dep:redis", "deadpool"]
+redis = ["dep:redis", "deadpool", "futures"]
 
 # Pubsub
 nats = ["async-nats"]
