@@ -37,7 +37,7 @@ migration = { path = "../migration" }
 tokio = { version = "1.45", features = ["full"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-jemallocator = "0.5.0"
+tikv-jemallocator = "0.6.0"
 
 [features]
 #default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "nats", "enterprise"]

@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 #[cfg(not(target_env = "msvc"))]
-use jemallocator::Jemalloc;
+use tikv_jemallocator::Jemalloc;
 #[cfg(test)]
 use trc::Collector;
 
