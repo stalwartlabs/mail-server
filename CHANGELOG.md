@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.12.2] - 2025-05-27
+
+If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- CardDAV: Legacy vCard 2.1 and 3.0 serialization support.
+- WebDAV: Add SRV Records to help DAV autodiscovery (closes #1565).
+
+## Changed
+
+## Fixed
+- Report list attempts to deserialize empty values (#1562)
+- Refresh expired FoundationDB transactions while retrieving large blobs (#1555).
+
+
 ## [0.12.1] - 2025-05-26
 
 If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
