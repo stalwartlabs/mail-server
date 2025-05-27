@@ -378,8 +378,8 @@ async fn fetch_incoming_reports(
                 last_id = id;
 
                 // TODO: Support filtering chunked records (over 10MB) on FDB
-                let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?;
                 let matches = if has_filters {
+                    let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?;
                     match typ {
                         ReportType::Dmarc => {
                             let report = archive
