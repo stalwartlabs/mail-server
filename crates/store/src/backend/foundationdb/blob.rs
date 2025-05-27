@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::ops::Range;
-
-use foundationdb::{KeySelector, RangeOption, options::StreamingMode};
-use futures::TryStreamExt;
-use utils::BLOB_HASH_LEN;
-
-use crate::{SUBSPACE_BLOBS, backend::foundationdb::into_error, write::key::KeySerializer};
-
 use super::{FdbStore, MAX_VALUE_SIZE};
+use crate::{
+    IterateParams, SUBSPACE_BLOBS,
+    backend::foundationdb::into_error,
+    write::{AnyKey, key::KeySerializer},
+};
+use std::ops::Range;
+use trc::AddContext;
+use utils::BLOB_HASH_LEN;
 
 impl FdbStore {
     pub(crate) async fn get_blob(
@@ -24,70 +24,75 @@ impl FdbStore {
         let bytes_start = range.start % MAX_VALUE_SIZE;
         let block_end = (range.end / MAX_VALUE_SIZE) + 1;
 
-        let begin = KeySerializer::new(key.len() + 3)
-            .write(SUBSPACE_BLOBS)
+        let begin = KeySerializer::new(key.len() + 2)
             .write(key)
             .write(block_start as u16)
             .finalize();
-        let end = KeySerializer::new(key.len() + 3)
-            .write(SUBSPACE_BLOBS)
+        let end = KeySerializer::new(key.len() + 2)
             .write(key)
             .write(block_end as u16)
             .finalize();
         let key_len = begin.len();
-        let trx = self.read_trx().await?;
-        let mut values = trx.get_ranges_keyvalues(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(begin),
-                end: KeySelector::first_greater_or_equal(end),
-                mode: StreamingMode::WantAll,
-                reverse: false,
-                ..RangeOption::default()
-            },
-            true,
-        );
+
         let mut blob_data: Option<Vec<u8>> = None;
         let blob_range = range.end - range.start;
 
-        'outer: while let Some(value) = values.try_next().await.map_err(into_error)? {
-            let key = value.key();
-            if key.len() == key_len {
-                let value = value.value();
-                if let Some(blob_data) = &mut blob_data {
-                    blob_data.extend_from_slice(
-                        value
-                            .get(
-                                ..std::cmp::min(
-                                    blob_range.saturating_sub(blob_data.len()),
-                                    value.len(),
-                                ),
-                            )
-                            .unwrap_or(&[]),
-                    );
-                    if blob_data.len() == blob_range {
-                        break 'outer;
-                    }
-                } else {
-                    let blob_size = if blob_range <= (5 * (1 << 20)) {
-                        blob_range
-                    } else if value.len() == MAX_VALUE_SIZE {
-                        MAX_VALUE_SIZE * 2
+        self.iterate(
+            IterateParams::new(
+                AnyKey {
+                    subspace: SUBSPACE_BLOBS,
+                    key: begin,
+                },
+                AnyKey {
+                    subspace: SUBSPACE_BLOBS,
+                    key: end,
+                },
+            ),
+            |key, value| {
+                if key.len() == key_len {
+                    if let Some(blob_data) = &mut blob_data {
+                        blob_data.extend_from_slice(
+                            value
+                                .get(
+                                    ..std::cmp::min(
+                                        blob_range.saturating_sub(blob_data.len()),
+                                        value.len(),
+                                    ),
+                                )
+                                .unwrap_or(&[]),
+                        );
+                        if blob_data.len() == blob_range {
+                            return Ok(false);
+                        }
                     } else {
-                        value.len()
-                    };
-                    let mut blob_data_ = Vec::with_capacity(blob_size);
-                    blob_data_.extend_from_slice(
-                        value
-                            .get(bytes_start..std::cmp::min(bytes_start + blob_range, value.len()))
-                            .unwrap_or(&[]),
-                    );
-                    if blob_data_.len() == blob_range {
-                        return Ok(Some(blob_data_));
+                        let blob_size = if blob_range <= (5 * (1 << 20)) {
+                            blob_range
+                        } else if value.len() == MAX_VALUE_SIZE {
+                            MAX_VALUE_SIZE * 2
+                        } else {
+                            value.len()
+                        };
+                        let mut blob_data_ = Vec::with_capacity(blob_size);
+                        blob_data_.extend_from_slice(
+                            value
+                                .get(
+                                    bytes_start
+                                        ..std::cmp::min(bytes_start + blob_range, value.len()),
+                                )
+                                .unwrap_or(&[]),
+                        );
+                        let is_done = blob_data_.len() == blob_range;
+                        blob_data = blob_data_.into();
+                        if is_done {
+                            return Ok(false);
+                        }
                     }
-                    blob_data = blob_data_.into();
                 }
-            }
-        }
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())?;
 
         Ok(blob_data)
     }
