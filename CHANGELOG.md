@@ -16,7 +16,6 @@ If you are upgrading from v0.11.x, this version includes **breaking changes** to
 - Report list attempts to deserialize empty values (#1562)
 - Refresh expired FoundationDB transactions while retrieving large blobs (#1555).
 
-
 ## [0.12.1] - 2025-05-26
 
 If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.

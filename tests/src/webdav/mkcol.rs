@@ -168,7 +168,11 @@ pub async fn test(test: &WebDavTest) {
             "MKCALENDAR",
             "/dav/cal/john/my-named-events2",
             [],
-            [("D:displayname", "Named Events 2")],
+            [
+                ("D:displayname", "Named Events 2"),
+                ("A:calendar-description", ""),
+                ("A:supported-calendar-component-set", ""),
+            ],
         )
         .await
         .with_status(StatusCode::CREATED)

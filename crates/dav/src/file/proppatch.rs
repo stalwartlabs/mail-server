@@ -242,6 +242,9 @@ impl FilePropPatchRequestHandler for Server {
                         has_errors = true;
                     }
                 }
+                (_, DavValue::Null) => {
+                    items.insert_ok(property.property);
+                }
                 _ => {
                     items.insert_error_with_description(
                         property.property,
