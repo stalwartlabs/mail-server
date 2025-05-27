@@ -13,7 +13,8 @@ use crate::{
     },
 };
 use calcard::vcard::{
-    ArchivedVCard, ArchivedVCardEntry, ArchivedVCardParameter, VCardParameterName,
+    ArchivedVCard, ArchivedVCardEntry, ArchivedVCardParameter, VCardParameterName, VCardProperty,
+    VCardVersion,
 };
 use common::{Server, auth::AccessToken};
 use dav_proto::{
@@ -200,22 +201,30 @@ fn find_parameter<'x>(
 pub(crate) fn serialize_vcard_with_props(
     card: &ArchivedVCard,
     props: &[CardDavPropertyName],
+    version: Option<VCardVersion>,
 ) -> String {
+    let mut vcard = String::with_capacity(128);
+    let version = version.or_else(|| card.version()).unwrap_or_default();
     if !props.is_empty() {
-        let mut vcard = String::with_capacity(128);
         let _ = write!(&mut vcard, "BEGIN:VCARD\r\n");
+        let is_v4 = matches!(version, VCardVersion::V4_0);
 
         for entry in card.entries.iter() {
             for item in props {
                 if entry.name == item.name && entry.group == item.group {
-                    let _ = entry.write_to(&mut vcard, !item.no_value);
+                    if item.name != VCardProperty::Version {
+                        let _ = entry.write_to(&mut vcard, !item.no_value, is_v4);
+                    } else {
+                        let _ = write!(&mut vcard, "VERSION:{version}\r\n");
+                    }
                     break;
                 }
             }
         }
         let _ = write!(&mut vcard, "END:VCARD\r\n");
-        vcard
     } else {
-        card.to_string()
+        let _ = card.write_to(&mut vcard, version);
     }
+
+    vcard
 }

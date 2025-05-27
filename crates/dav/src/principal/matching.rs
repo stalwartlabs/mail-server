@@ -69,7 +69,10 @@ impl PrincipalMatching for Server {
                                 ret: headers.ret,
                                 depth_no_root: headers.depth_no_root,
                                 uri: headers.uri,
-                                ..Default::default()
+                                sync_type: Default::default(),
+                                limit: Default::default(),
+                                max_vcard_version: Default::default(),
+                                expand: Default::default(),
                             },
                         )
                         .await;

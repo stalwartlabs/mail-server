@@ -6,7 +6,7 @@
 
 use calcard::{
     icalendar::{ICalendarComponentType, ICalendarParameterName, ICalendarProperty},
-    vcard::VCardParameterName,
+    vcard::{VCardParameterName, VCardVersion},
 };
 use dav_proto::{
     Depth, RequestHeaders, Return,
@@ -35,7 +35,7 @@ pub mod lock;
 pub mod propfind;
 pub mod uri;
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub(crate) struct DavQuery<'x> {
     pub uri: &'x str,
     pub resource: DavQueryResource<'x>,
@@ -43,6 +43,7 @@ pub(crate) struct DavQuery<'x> {
     pub sync_type: SyncType,
     pub depth: usize,
     pub limit: Option<u32>,
+    pub max_vcard_version: Option<VCardVersion>,
     pub ret: Return,
     pub depth_no_root: bool,
     pub expand: bool,
@@ -158,7 +159,10 @@ impl<'x> DavQuery<'x> {
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             uri: headers.uri,
-            ..Default::default()
+            max_vcard_version: headers.max_vcard_version,
+            sync_type: Default::default(),
+            limit: Default::default(),
+            expand: Default::default(),
         }
     }
 
@@ -176,7 +180,11 @@ impl<'x> DavQuery<'x> {
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             uri: headers.uri,
-            ..Default::default()
+            max_vcard_version: headers.max_vcard_version,
+            sync_type: Default::default(),
+            depth: Default::default(),
+            limit: Default::default(),
+            expand: Default::default(),
         }
     }
 
@@ -196,7 +204,10 @@ impl<'x> DavQuery<'x> {
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             uri: headers.uri,
-            ..Default::default()
+            max_vcard_version: headers.max_vcard_version,
+            sync_type: Default::default(),
+            depth: Default::default(),
+            expand: Default::default(),
         }
     }
 
@@ -220,7 +231,11 @@ impl<'x> DavQuery<'x> {
             ret: headers.ret,
             depth_no_root: headers.depth_no_root,
             uri: headers.uri,
-            ..Default::default()
+            sync_type: Default::default(),
+            depth: Default::default(),
+            limit: Default::default(),
+            max_vcard_version: Default::default(),
+            expand: Default::default(),
         }
     }
 
@@ -249,6 +264,7 @@ impl<'x> DavQuery<'x> {
             depth_no_root: headers.depth_no_root,
             expand: false,
             uri: headers.uri,
+            max_vcard_version: headers.max_vcard_version,
         }
     }
 
@@ -277,7 +293,9 @@ impl<'x> DavQuery<'x> {
             depth_no_root: headers.depth_no_root,
             expand: true,
             uri: headers.uri,
-            ..Default::default()
+            sync_type: Default::default(),
+            limit: Default::default(),
+            max_vcard_version: headers.max_vcard_version,
         }
     }
 

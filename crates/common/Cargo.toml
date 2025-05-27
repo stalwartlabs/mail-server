@@ -19,7 +19,7 @@ mail-auth = { version = "0.7" }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 smtp-proto = { version = "0.1", features = ["rkyv"] }
 dns-update = { version = "0.1" }
-calcard = { version = "0.1", features = ["rkyv"] }
+calcard = { version = "0.1.1", features = ["rkyv"] }
 ahash = { version = "0.8.2", features = ["serde"] }
 parking_lot = "0.12.1"
 regex = "1.7.0"

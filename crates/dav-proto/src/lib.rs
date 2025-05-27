@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use calcard::vcard::VCardVersion;
 use compact_str::{CompactString, ToCompactString};
 use trc::Value;
 
@@ -40,6 +41,7 @@ pub struct RequestHeaders<'x> {
     pub content_type: Option<&'x str>,
     pub destination: Option<&'x str>,
     pub lock_token: Option<&'x str>,
+    pub max_vcard_version: Option<VCardVersion>,
     pub overwrite_fail: bool,
     pub no_timezones: bool,
     pub ret: Return,

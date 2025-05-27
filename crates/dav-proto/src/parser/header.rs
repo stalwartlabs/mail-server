@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use calcard::vcard::VCardVersion;
+
 use crate::{Condition, Depth, If, RequestHeaders, ResourceState, Return, Timeout};
 
 impl<'x> RequestHeaders<'x> {
@@ -79,6 +81,23 @@ impl<'x> RequestHeaders<'x> {
                 let value = value.trim();
                 if (2..=127).contains(&value.len()) {
                     self.content_type = Some(value);
+                }
+                return true;
+            },
+            "Accept" => {
+                for value in value.split(',') {
+                    if value.trim().starts_with("text/vcard") {
+                        if let Some(version) = value.split_once("version=")
+                                               .and_then(|(_, version)| VCardVersion::try_parse(version.trim())) {
+                            if let Some(max_vcard_version) = &mut self.max_vcard_version {
+                                if version > *max_vcard_version {
+                                    *max_vcard_version = version;
+                                }
+                            } else {
+                                self.max_vcard_version = Some(version);
+                            }
+                        }
+                    }
                 }
                 return true;
             },

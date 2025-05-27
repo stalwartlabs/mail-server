@@ -1191,6 +1191,9 @@ impl PropFindRequestHandler for Server {
                                 DavValue::CData(serialize_vcard_with_props(
                                     &card.inner.card,
                                     items,
+                                    query
+                                        .max_vcard_version
+                                        .or_else(|| card.inner.card.version()),
                                 )),
                             ));
                         }

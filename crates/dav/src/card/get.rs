@@ -105,7 +105,14 @@ impl CardGetRequestHandler for Server {
             .with_etag(etag)
             .with_last_modified(Rfc1123DateTime::new(i64::from(card.modified)).to_string());
 
-        let vcard = card.card.to_string();
+        let mut vcard = String::with_capacity(128);
+        let _ = card.card.write_to(
+            &mut vcard,
+            headers
+                .max_vcard_version
+                .or_else(|| card.card.version())
+                .unwrap_or_default(),
+        );
 
         if !is_head {
             Ok(response.with_binary_body(vcard))

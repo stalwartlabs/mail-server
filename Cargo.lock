@@ -989,16 +989,16 @@ dependencies = [
 
 [[package]]
 name = "calcard"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75eaecaebc21cf56381d401db71ed288d61f3fcbb880c777e08cab2f82dfc0ab"
+checksum = "8e16f081c4da49b29187103679784b4dcf2fbda52e9b519388c397cb58414e5a"
 dependencies = [
  "ahash",
  "chrono",
  "chrono-tz",
  "hashify",
  "mail-builder",
- "mail-parser 0.10.2",
+ "mail-parser",
  "rkyv",
  "serde",
 ]
@@ -1289,7 +1289,7 @@ dependencies = [
  "libc",
  "mail-auth",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "md5",
  "nlp",
@@ -1776,7 +1776,7 @@ dependencies = [
  "compact_str",
  "hashify",
  "hyper 1.6.0",
- "mail-parser 0.11.0",
+ "mail-parser",
  "quick-xml 0.37.5",
  "rkyv",
  "serde",
@@ -1974,7 +1974,7 @@ dependencies = [
  "jmap_proto",
  "ldap3",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "md5",
  "nlp",
@@ -2252,7 +2252,7 @@ dependencies = [
  "hashify",
  "jmap_proto",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "nlp",
  "rand 0.8.5",
  "rasn",
@@ -3174,7 +3174,7 @@ dependencies = [
  "jmap_proto",
  "mail-auth",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "mime",
  "pkcs8",
@@ -3576,7 +3576,7 @@ dependencies = [
  "imap_proto",
  "indexmap 2.9.0",
  "jmap_proto",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "md5",
  "nlp",
@@ -3600,7 +3600,7 @@ dependencies = [
  "compact_str",
  "hashify",
  "jmap_proto",
- "mail-parser 0.11.0",
+ "mail-parser",
  "store",
  "tokio",
  "trc",
@@ -3860,7 +3860,7 @@ dependencies = [
  "lz4_flex",
  "mail-auth",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "nlp",
  "p256",
@@ -3916,7 +3916,7 @@ dependencies = [
  "compact_str",
  "fast-float",
  "hashify",
- "mail-parser 0.11.0",
+ "mail-parser",
  "rkyv",
  "serde",
  "serde_json",
@@ -4332,7 +4332,7 @@ dependencies = [
  "flate2",
  "hickory-resolver",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "quick-xml 0.37.5",
  "quick_cache",
  "rand 0.8.5",
@@ -4352,16 +4352,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0926cff74776d4af100a95c90a6649486659526ce638bee6648ecc9c41051810"
 dependencies = [
  "gethostname",
-]
-
-[[package]]
-name = "mail-parser"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "187a2b93c4c8c32f552ee06c2d99915e575de2fc7e04b07891c9edfee5b8edd6"
-dependencies = [
- "encoding_rs",
- "hashify",
 ]
 
 [[package]]
@@ -4405,7 +4395,7 @@ dependencies = [
  "imap",
  "imap_proto",
  "jmap_proto",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "md5",
  "parking_lot",
@@ -4508,7 +4498,7 @@ dependencies = [
  "jmap_proto",
  "lz4_flex",
  "mail-auth",
- "mail-parser 0.11.0",
+ "mail-parser",
  "nlp",
  "rkyv",
  "serde",
@@ -5467,7 +5457,7 @@ dependencies = [
  "email",
  "imap",
  "jmap_proto",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "rustls 0.23.27",
  "store",
@@ -7296,7 +7286,7 @@ dependencies = [
  "email",
  "hkdf",
  "jmap_proto",
- "mail-parser 0.11.0",
+ "mail-parser",
  "memory-stats",
  "p256",
  "reqwest 0.12.15",
@@ -7421,7 +7411,7 @@ dependencies = [
  "fancy-regex",
  "hashify",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "rkyv",
  "serde",
 ]
@@ -7508,7 +7498,7 @@ dependencies = [
  "lru-cache",
  "mail-auth",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "md5",
  "nlp",
@@ -7593,7 +7583,7 @@ dependencies = [
  "infer 0.19.0",
  "mail-auth",
  "mail-builder",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "nlp",
  "psl",
@@ -7684,7 +7674,7 @@ dependencies = [
  "indicatif",
  "jmap-client",
  "mail-auth",
- "mail-parser 0.11.0",
+ "mail-parser",
  "num_cpus",
  "prettytable-rs",
  "pwhash",
@@ -7946,7 +7936,7 @@ dependencies = [
  "jmap-client",
  "jmap_proto",
  "mail-auth",
- "mail-parser 0.11.0",
+ "mail-parser",
  "mail-send",
  "managesieve",
  "migration",
@@ -8467,7 +8457,7 @@ dependencies = [
  "compact_str",
  "event_macro",
  "mail-auth",
- "mail-parser 0.11.0",
+ "mail-parser",
  "parking_lot",
  "reqwest 0.12.15",
  "rkyv",
