@@ -1,9 +1,9 @@
-Upgrading from `v0.11.x` to `v0.12.0`
+Upgrading from `v0.11.x` to `v0.12.x`
 ------------------------------------
 
 ## Important Notes
 
-Version `0.12.0` introduces significant improvements such as zero-copy deserialization which make the new database layout incompatible with the previous version. As a result, the database must be migrated to the new layout. The migration is done automatically on startup and should not require any manual intervention. However, it is highly recommended to **back up your data** before upgrading since it is not possible to downgrade the database once it has been migrated. You may also want to run a mock migration before upgrading to ensure that everything works as expected.
+Version `0.12.x` introduces significant improvements such as zero-copy deserialization which make the new database layout incompatible with the previous version. As a result, the database must be migrated to the new layout. The migration is done automatically on startup and should not require any manual intervention. However, it is highly recommended to **back up your data** before upgrading since it is not possible to downgrade the database once it has been migrated. You may also want to run a mock migration before upgrading to ensure that everything works as expected.
 
 In addition to the database layout changes, multiple settings were renamed:
 
@@ -22,14 +22,14 @@ In addition to the database layout changes, multiple settings were renamed:
   $ sudo systemctl stop stalwart-mail
   ```
 
-- Backup your data following your database system's instructions. For example, if you are using RocksDB or SQLite, you can simply copy the `data` directory to a backup location. If you are using PostgreSQL or MySQL, you can use the `pg_dump` or `mysqldump` commands to create a backup of your database. If your database does not support backups, you can use the `--export` command to export your data to a file. For example:
+- Backup your data following your database system's instructions. For example, if you are using RocksDB or SQLite, you can simply copy the `data` directory to a backup location. If you are using PostgreSQL or MySQL, you can use the `pg_dump` or `mysqldump` commands to create a backup of your database. If your database does not support backups, you can use the [built-in migration utility](https://stalw.art/docs/management/migration) to export your data to a file. For example:
 
   ```bash
   $ sudo /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
   $ sudo chown -R stalwart-mail:stalwart-mail /opt/stalwart-mail/export
   ```
 
-- Download the `v0.12.0` binary for your platform (which is now called `stalwart` rather than `mail-server`) from the [releases page](https://github.com/stalwartlabs/stalwart/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
+- Download the `v0.12.x` binary for your platform (which is now called `stalwart` rather than `mail-server`) from the [releases page](https://github.com/stalwartlabs/stalwart/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you rename the binary from `stalwart` to `stalwart-mail`, you can keep the same systemd service file, otherwise you will need to update the service file to point to the new binary name. 
 
 - Start the service. In a cluster, you can speed up the migration process by starting all nodes at once. 
   ```bash
