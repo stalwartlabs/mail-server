@@ -1,6 +1,6 @@
 [package]
 name = "dav"
-version = "0.12.0"
+version = "0.12.2"
 edition = "2024"
 resolver = "2"
 

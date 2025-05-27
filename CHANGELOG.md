@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [0.12.1] - 2025-05-26
 
-If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
+If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
 
 ## Added
 
@@ -17,7 +17,7 @@ If you are upgrading from v0.11.x, this version includes **breaking changes** to
 
 ## [0.12.0] - 2025-05-26
 
-This version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
+This version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
 
 ### Added
 - [Collaboration](https://stalw.art/docs/collaboration/overview) features including [Calendars over CalDAV](https://stalw.art/docs/http/calendar/), [Contacts over CardDAV](https://stalw.art/docs/http/contact/) and [File Storage over WebDAV](https://stalw.art/docs/http/file-storage/).
