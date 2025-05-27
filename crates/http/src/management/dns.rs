@@ -184,11 +184,13 @@ impl DnsManagement for Server {
                 }
                 ("http", _) if is_tls => {
                     has_https = true;
-                    records.push(DnsRecord {
-                        typ: "SRV".to_string(),
-                        name: format!("_jmap._tcp.{domain_name}.",),
-                        content: format!("0 1 {port} {server_name}."),
-                    });
+                    for service in ["jmap", "caldavs", "carddavs"] {
+                        records.push(DnsRecord {
+                            typ: "SRV".to_string(),
+                            name: format!("_{service}._tcp.{domain_name}.",),
+                            content: format!("0 1 {port} {server_name}."),
+                        });
+                    }
                 }
                 _ => (),
             }
