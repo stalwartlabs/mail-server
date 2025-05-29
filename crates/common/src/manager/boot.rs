@@ -153,6 +153,7 @@ impl BootManager {
                 config.new_build_error("*", format!("Could not read configuration file: {err}"));
             }
         }
+        let cfg_local = config.keys.clone();
 
         // Resolve environment macros
         config.resolve_macros(&["env"]).await;
@@ -171,13 +172,11 @@ impl BootManager {
         let local_patterns = Patterns::parse(&mut config);
 
         // Build local keys and warn about database keys defined in the local configuration
-        let mut cfg_local = BTreeMap::new();
         let mut warn_keys = Vec::new();
-        for (key, value) in &config.keys {
+        for key in config.keys.keys() {
             if !local_patterns.is_local_key(key) {
                 warn_keys.push(key.clone());
             }
-            cfg_local.insert(key.clone(), value.clone());
         }
         for warn_key in warn_keys {
             config.new_build_warning(
