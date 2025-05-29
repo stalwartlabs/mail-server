@@ -109,11 +109,9 @@ impl Display for DavValue {
                 write!(
                     f,
                     concat!(
-                        "<B:supported-address-data>",
                         "<B:address-data-type content-type=\"text/vcard\" version=\"4.0\"/>",
                         "<B:address-data-type content-type=\"text/vcard\" version=\"3.0\"/>",
                         "<B:address-data-type content-type=\"text/vcard\" version=\"2.1\"/>",
-                        "</B:supported-address-data>"
                     )
                 )
             }
@@ -121,10 +119,8 @@ impl Display for DavValue {
                 write!(
                     f,
                     concat!(
-                        "<A:supported-calendar-data>",
                         "<A:calendar-data-type content-type=\"text/calendar\" version=\"2.0\"/>",
                         "<A:calendar-data-type content-type=\"text/calendar\" version=\"1.0\"/>",
-                        "</A:supported-calendar-data>"
                     )
                 )
             }
@@ -132,7 +128,6 @@ impl Display for DavValue {
                 write!(
                     f,
                     concat!(
-                        "<A:supported-calendar-component-set>",
                         "<A:comp name=\"VEVENT\"/>",
                         "<A:comp name=\"VTODO\"/>",
                         "<A:comp name=\"VJOURNAL\"/>",
@@ -146,7 +141,6 @@ impl Display for DavValue {
                         "<A:comp name=\"PARTICIPANT\"/>",
                         "<A:comp name=\"VLOCATION\"/>",
                         "<A:comp name=\"VRESOURCE\"/>",
-                        "</A:supported-calendar-component-set>"
                     )
                 )
             }

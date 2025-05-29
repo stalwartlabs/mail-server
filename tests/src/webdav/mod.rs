@@ -21,7 +21,10 @@ use common::{
     core::BuildServer,
     manager::boot::build_ipc,
 };
-use dav_proto::schema::property::{DavProperty, WebDavProperty};
+use dav_proto::{
+    schema::property::{DavProperty, WebDavProperty},
+    xml_pretty_print,
+};
 use directory::Permission;
 use groupware::{DavResourceName, cache::GroupwareCache};
 use http::HttpSessionManager;
@@ -604,6 +607,8 @@ impl DavResponse {
             eprintln!("  {}: {:?}", key, value);
         }
         if !self.xml.is_empty() {
+            eprintln!("XML: {}", xml_pretty_print(self.body.as_ref().unwrap()));
+
             for (key, value) in self.xml.iter() {
                 eprintln!("{} -> {:?}", key, value);
             }

@@ -323,29 +323,26 @@ pub async fn test(test: &WebDavTest) {
                             CalDavProperty::SupportedCalendarComponentSet,
                         ))
                         .with_values([
-                            "A:supported-calendar-component-set.A:comp.[name]:VAVAILABILITY",
-                            "A:supported-calendar-component-set.A:comp.[name]:AVAILABLE",
-                            "A:supported-calendar-component-set.A:comp.[name]:VRESOURCE",
-                            "A:supported-calendar-component-set.A:comp.[name]:VTODO",
-                            "A:supported-calendar-component-set.A:comp.[name]:DAYLIGHT",
-                            "A:supported-calendar-component-set.A:comp.[name]:STANDARD",
-                            "A:supported-calendar-component-set.A:comp.[name]:VLOCATION",
-                            "A:supported-calendar-component-set.A:comp.[name]:VTIMEZONE",
-                            "A:supported-calendar-component-set.A:comp.[name]:VFREEBUSY",
-                            "A:supported-calendar-component-set.A:comp.[name]:VEVENT",
-                            "A:supported-calendar-component-set.A:comp.[name]:VJOURNAL",
-                            "A:supported-calendar-component-set.A:comp.[name]:PARTICIPANT",
-                            "A:supported-calendar-component-set.A:comp.[name]:VALARM",
+                            "A:comp.[name]:VAVAILABILITY",
+                            "A:comp.[name]:AVAILABLE",
+                            "A:comp.[name]:VRESOURCE",
+                            "A:comp.[name]:VTODO",
+                            "A:comp.[name]:DAYLIGHT",
+                            "A:comp.[name]:STANDARD",
+                            "A:comp.[name]:VLOCATION",
+                            "A:comp.[name]:VTIMEZONE",
+                            "A:comp.[name]:VFREEBUSY",
+                            "A:comp.[name]:VEVENT",
+                            "A:comp.[name]:VJOURNAL",
+                            "A:comp.[name]:PARTICIPANT",
+                            "A:comp.[name]:VALARM",
                         ]);
                     properties
                         .get(DavProperty::CalDav(CalDavProperty::SupportedCalendarData))
                         .with_values([
-                            concat!(
-                                "A:supported-calendar-data.A:calendar-data-type.",
-                                "[content-type]:text/calendar"
-                            ),
-                            "A:supported-calendar-data.A:calendar-data-type.[version]:2.0",
-                            "A:supported-calendar-data.A:calendar-data-type.[version]:1.0",
+                            concat!("A:calendar-data-type.", "[content-type]:text/calendar"),
+                            "A:calendar-data-type.[version]:2.0",
+                            "A:calendar-data-type.[version]:1.0",
                         ]);
                     properties
                         .get(DavProperty::CalDav(CalDavProperty::SupportedCollationSet))
@@ -382,13 +379,10 @@ pub async fn test(test: &WebDavTest) {
                         properties
                             .get(DavProperty::CardDav(CardDavProperty::SupportedAddressData))
                             .with_values([
-                                concat!(
-                                    "B:supported-address-data.B:address-data-type.",
-                                    "[content-type]:text/vcard"
-                                ),
-                                "B:supported-address-data.B:address-data-type.[version]:3.0",
-                                "B:supported-address-data.B:address-data-type.[version]:4.0",
-                                "B:supported-address-data.B:address-data-type.[version]:2.1",
+                                concat!("B:address-data-type.", "[content-type]:text/vcard"),
+                                "B:address-data-type.[version]:3.0",
+                                "B:address-data-type.[version]:4.0",
+                                "B:address-data-type.[version]:2.1",
                             ]);
                         properties
                             .get(DavProperty::CardDav(CardDavProperty::SupportedCollationSet))
