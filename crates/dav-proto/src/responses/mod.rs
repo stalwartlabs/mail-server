@@ -25,6 +25,10 @@ trait XmlEscape {
     fn write_escaped_to(&self, out: &mut impl Write) -> std::fmt::Result;
 }
 
+trait XmlCdataEscape {
+    fn write_cdata_escaped_to(&self, out: &mut impl Write) -> std::fmt::Result;
+}
+
 impl<T: AsRef<str>> XmlEscape for T {
     fn write_escaped_to(&self, out: &mut impl Write) -> std::fmt::Result {
         let str = self.as_ref();
@@ -41,6 +45,30 @@ impl<T: AsRef<str>> XmlEscape for T {
         }
 
         Ok(())
+    }
+}
+
+impl<T: AsRef<str>> XmlCdataEscape for T {
+    fn write_cdata_escaped_to(&self, out: &mut impl Write) -> std::fmt::Result {
+        let str = self.as_ref();
+        let mut last_ch = '\0';
+        let mut last_ch2 = '\0';
+
+        out.write_str("<![CDATA[")?;
+
+        for ch in str.chars() {
+            match ch {
+                '>' if last_ch == ']' && last_ch2 == ']' => {
+                    out.write_str("]]><![CDATA[>")?;
+                }
+                _ => out.write_char(ch)?,
+            }
+
+            last_ch2 = last_ch;
+            last_ch = ch;
+        }
+
+        out.write_str("]]>")
     }
 }
 
@@ -176,6 +204,7 @@ mod tests {
 
     use crate::{
         parser::{tokenizer::Tokenizer, Token},
+        responses::XmlCdataEscape,
         schema::{
             property::{
                 ActiveLock, CalDavProperty, CardDavProperty, DavValue, LockScope, Privilege,
@@ -196,6 +225,18 @@ mod tests {
     impl<T: Display> List<T> {
         pub fn new(vec: impl IntoIterator<Item = T>) -> Self {
             List(vec.into_iter().collect())
+        }
+    }
+
+    impl From<ICalendar> for DavValue {
+        fn from(v: ICalendar) -> Self {
+            DavValue::ICalendar(v)
+        }
+    }
+
+    impl From<VCard> for DavValue {
+        fn from(v: VCard) -> Self {
+            DavValue::VCard(v)
         }
     }
 
@@ -632,6 +673,32 @@ END:VCARD
                     break;
                 }
             }
+        }
+    }
+
+    #[test]
+    fn escape_cdata() {
+        for (test, expected) in [
+            ("", "<![CDATA[]]>"),
+            ("hello", "<![CDATA[hello]]>"),
+            ("hello world", "<![CDATA[hello world]]>"),
+            ("<hello>", "<![CDATA[<hello>]]>"),
+            ("&hello;", "<![CDATA[&hello;]]>"),
+            ("'hello'", "<![CDATA['hello']]>"),
+            ("\"hello\"", "<![CDATA[\"hello\"]]>"),
+            ("<>&'\"", "<![CDATA[<>&'\"]]>"),
+            (">", "<![CDATA[>]]>"),
+            ("]]>]", "<![CDATA[]]]]><![CDATA[>]]]>"),
+            ("]]>", "<![CDATA[]]]]><![CDATA[>]]>"),
+            ("hello]]>world", "<![CDATA[hello]]]]><![CDATA[>world]]>"),
+            (
+                "hello]]><nasty-xml>pure-evil</nasty-xml>",
+                "<![CDATA[hello]]]]><![CDATA[><nasty-xml>pure-evil</nasty-xml>]]>",
+            ),
+        ] {
+            let mut output = String::new();
+            test.write_cdata_escaped_to(&mut output).unwrap();
+            assert_eq!(output, expected, "failed for input: {test:?}");
         }
     }
 }

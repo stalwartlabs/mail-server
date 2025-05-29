@@ -5,7 +5,6 @@
  */
 
 use std::{
-    collections::BTreeMap,
     net::{IpAddr, Ipv4Addr},
     path::PathBuf,
     sync::Arc,

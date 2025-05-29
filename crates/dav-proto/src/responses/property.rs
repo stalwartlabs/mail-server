@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::XmlEscape;
+use super::{XmlCdataEscape, XmlEscape};
 use crate::schema::{
     property::{
         ActiveLock, CalDavProperty, CardDavProperty, Comp, DavProperty, DavValue, LockDiscovery,
@@ -15,7 +15,6 @@ use crate::schema::{
     response::{Ace, AclRestrictions, Href, List, PropResponse, SupportedPrivilege},
     Namespace, Namespaces,
 };
-use calcard::{icalendar::ICalendar, vcard::VCard};
 use mail_parser::{
     parsers::fields::date::{DOW, MONTH},
     DateTime,
@@ -88,15 +87,7 @@ impl Display for DavValue {
             DavValue::ActiveLocks(v) => v.fmt(f),
             DavValue::LockEntries(v) => v.fmt(f),
             DavValue::ReportSets(v) => v.fmt(f),
-            DavValue::VCard(v) => {
-                write!(f, "<![CDATA[{v}]]>")
-            }
-            DavValue::ICalendar(v) => {
-                write!(f, "<![CDATA[{v}]]>")
-            }
-            DavValue::CData(v) => {
-                write!(f, "<![CDATA[{v}]]>")
-            }
+            DavValue::CData(v) => v.write_cdata_escaped_to(f),
             DavValue::Components(v) => v.fmt(f),
             DavValue::Collations(v) => v.fmt(f),
             DavValue::Href(v) => v.fmt(f),
@@ -145,7 +136,7 @@ impl Display for DavValue {
                 )
             }
             DavValue::Response(v) => v.fmt(f),
-            DavValue::Null => Ok(()),
+            DavValue::VCard(_) | DavValue::ICalendar(_) | DavValue::Null => Ok(()),
         }
     }
 }
@@ -350,18 +341,6 @@ impl From<Vec<Comp>> for DavValue {
 impl From<Vec<SupportedCollation>> for DavValue {
     fn from(v: Vec<SupportedCollation>) -> Self {
         DavValue::Collations(List(v))
-    }
-}
-
-impl From<ICalendar> for DavValue {
-    fn from(v: ICalendar) -> Self {
-        DavValue::ICalendar(v)
-    }
-}
-
-impl From<VCard> for DavValue {
-    fn from(v: VCard) -> Self {
-        DavValue::VCard(v)
     }
 }
 
