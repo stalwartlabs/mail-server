@@ -116,6 +116,7 @@ impl CalendarDeleteRequestHandler for Server {
                         .filter(|r| !r.is_container())
                         .map(|r| r.document_id())
                         .collect::<Vec<_>>(),
+                    resources.format_resource(delete_resource).into(),
                     &mut batch,
                 )
                 .await
@@ -163,6 +164,7 @@ impl CalendarDeleteRequestHandler for Server {
                 account_id,
                 document_id,
                 calendar_id,
+                resources.format_resource(delete_resource).into(),
                 &mut batch,
             )
             .caused_by(trc::location!())?;

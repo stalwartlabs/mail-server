@@ -49,6 +49,15 @@ pub enum SyncCollection {
     None = 8,
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[repr(u8)]
+pub enum VanishedCollection {
+    Email = 251,
+    Calendar = 252,
+    AddressBook = 253,
+    FileNode = 254,
+}
+
 impl Collection {
     pub fn main_collection(&self) -> Collection {
         match self {
@@ -120,6 +129,16 @@ impl SyncCollection {
             SyncCollection::EmailSubmission => Collection::EmailSubmission,
             SyncCollection::SieveScript => Collection::SieveScript,
             SyncCollection::None => Collection::None,
+        }
+    }
+
+    pub fn vanished_collection(&self) -> Option<VanishedCollection> {
+        match self {
+            SyncCollection::Email => Some(VanishedCollection::Email),
+            SyncCollection::Calendar => Some(VanishedCollection::Calendar),
+            SyncCollection::AddressBook => Some(VanishedCollection::AddressBook),
+            SyncCollection::FileNode => Some(VanishedCollection::FileNode),
+            _ => None,
         }
     }
 }
@@ -211,6 +230,12 @@ impl From<Collection> for u8 {
 
 impl From<SyncCollection> for u8 {
     fn from(v: SyncCollection) -> Self {
+        v as u8
+    }
+}
+
+impl From<VanishedCollection> for u8 {
+    fn from(v: VanishedCollection) -> Self {
         v as u8
     }
 }

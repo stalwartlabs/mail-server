@@ -117,6 +117,7 @@ impl CardDeleteRequestHandler for Server {
                         .filter(|r| !r.is_container())
                         .map(|r| r.document_id())
                         .collect::<Vec<_>>(),
+                    resources.format_resource(delete_resource).into(),
                     &mut batch,
                 )
                 .await
@@ -168,6 +169,7 @@ impl CardDeleteRequestHandler for Server {
                 account_id,
                 document_id,
                 addressbook_id,
+                resources.format_resource(delete_resource).into(),
                 &mut batch,
             )
             .caused_by(trc::location!())?;

@@ -7,6 +7,7 @@
 use super::metadata::MessageData;
 use crate::{cache::MessageCacheFetch, mailbox::*, message::metadata::MessageMetadata};
 use common::{KV_LOCK_PURGE_ACCOUNT, Server, storage::index::ObjectIndexBuilder};
+use jmap_proto::types::collection::VanishedCollection;
 use jmap_proto::types::{collection::Collection, property::Property};
 use std::future::Future;
 use std::time::Duration;
@@ -64,15 +65,18 @@ impl EmailDeletion for Server {
             &document_ids,
             |document_id, data_| {
                 // Add changes to batch
+                let metadata = data_
+                    .to_unarchived::<MessageData>()
+                    .caused_by(trc::location!())?;
+                for mailbox in metadata.inner.mailboxes.iter() {
+                    batch.log_vanished_item(
+                        VanishedCollection::Email,
+                        (mailbox.mailbox_id.to_native(), mailbox.uid.to_native()),
+                    );
+                }
                 batch
                     .update_document(document_id)
-                    .custom(
-                        ObjectIndexBuilder::<_, ()>::new().with_current(
-                            data_
-                                .to_unarchived::<MessageData>()
-                                .caused_by(trc::location!())?,
-                        ),
-                    )
+                    .custom(ObjectIndexBuilder::<_, ()>::new().with_current(metadata))
                     .caused_by(trc::location!())?
                     .tag(Property::MailboxIds, TagValue::Id(TOMBSTONE_ID))
                     .commit_point();

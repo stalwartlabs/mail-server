@@ -6,7 +6,7 @@
 
 use crate::DestroyArchive;
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
-use jmap_proto::types::collection::Collection;
+use jmap_proto::types::collection::{Collection, VanishedCollection};
 use store::write::{Archive, BatchBuilder, now};
 use trc::AddContext;
 
@@ -132,6 +132,7 @@ impl Calendar {
 }
 
 impl DestroyArchive<Archive<&ArchivedCalendar>> {
+    #[allow(clippy::too_many_arguments)]
     pub async fn delete_with_events(
         self,
         server: &Server,
@@ -139,6 +140,7 @@ impl DestroyArchive<Archive<&ArchivedCalendar>> {
         account_id: u32,
         document_id: u32,
         children_ids: Vec<u32>,
+        delete_path: Option<String>,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         // Process deletions
@@ -158,12 +160,13 @@ impl DestroyArchive<Archive<&ArchivedCalendar>> {
                     account_id,
                     document_id,
                     calendar_id,
+                    None,
                     batch,
                 )?;
             }
         }
 
-        self.delete(access_token, account_id, document_id, batch)
+        self.delete(access_token, account_id, document_id, delete_path, batch)
     }
 
     pub fn delete(
@@ -171,6 +174,7 @@ impl DestroyArchive<Archive<&ArchivedCalendar>> {
         access_token: &AccessToken,
         account_id: u32,
         document_id: u32,
+        delete_path: Option<String>,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         let calendar = self.0;
@@ -184,8 +188,11 @@ impl DestroyArchive<Archive<&ArchivedCalendar>> {
                     .with_tenant_id(access_token)
                     .with_current(calendar),
             )
-            .caused_by(trc::location!())?
-            .commit_point();
+            .caused_by(trc::location!())?;
+        if let Some(delete_path) = delete_path {
+            batch.log_vanished_item(VanishedCollection::Calendar, delete_path);
+        }
+        batch.commit_point();
 
         Ok(())
     }
@@ -198,6 +205,7 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
         account_id: u32,
         document_id: u32,
         calendar_id: u32,
+        delete_path: Option<String>,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         let event = self.0;
@@ -236,6 +244,10 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
                             .with_current(event),
                     )
                     .caused_by(trc::location!())?;
+            }
+
+            if let Some(delete_path) = delete_path {
+                batch.log_vanished_item(VanishedCollection::Calendar, delete_path);
             }
 
             batch.commit_point();

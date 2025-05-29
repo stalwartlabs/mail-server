@@ -5,7 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
-use jmap_proto::types::collection::Collection;
+use jmap_proto::types::collection::{Collection, VanishedCollection};
 use store::write::{Archive, BatchBuilder, now};
 use trc::AddContext;
 
@@ -123,6 +123,7 @@ impl AddressBook {
 }
 
 impl DestroyArchive<Archive<&ArchivedAddressBook>> {
+    #[allow(clippy::too_many_arguments)]
     pub async fn delete_with_cards(
         self,
         server: &Server,
@@ -130,6 +131,7 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
         account_id: u32,
         document_id: u32,
         children_ids: Vec<u32>,
+        delete_path: Option<String>,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         // Process deletions
@@ -149,12 +151,13 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
                     account_id,
                     document_id,
                     addressbook_id,
+                    None,
                     batch,
                 )?;
             }
         }
 
-        self.delete(access_token, account_id, document_id, batch)
+        self.delete(access_token, account_id, document_id, delete_path, batch)
     }
 
     pub fn delete(
@@ -162,6 +165,7 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
         access_token: &AccessToken,
         account_id: u32,
         document_id: u32,
+        delete_path: Option<String>,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         let book = self.0;
@@ -175,8 +179,13 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
                     .with_tenant_id(access_token)
                     .with_current(book),
             )
-            .caused_by(trc::location!())?
-            .commit_point();
+            .caused_by(trc::location!())?;
+
+        if let Some(delete_path) = delete_path {
+            batch.log_vanished_item(VanishedCollection::AddressBook, delete_path);
+        }
+
+        batch.commit_point();
 
         Ok(())
     }
@@ -189,6 +198,7 @@ impl DestroyArchive<Archive<&ArchivedContactCard>> {
         account_id: u32,
         document_id: u32,
         addressbook_id: u32,
+        delete_path: Option<String>,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         let card = self.0;
@@ -227,6 +237,10 @@ impl DestroyArchive<Archive<&ArchivedContactCard>> {
                             .with_current(card),
                     )
                     .caused_by(trc::location!())?;
+            }
+
+            if let Some(delete_path) = delete_path {
+                batch.log_vanished_item(VanishedCollection::AddressBook, delete_path);
             }
 
             batch.commit_point();

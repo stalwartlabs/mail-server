@@ -23,7 +23,7 @@ use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{
     acl::Acl,
-    collection::{Collection, SyncCollection},
+    collection::{Collection, SyncCollection, VanishedCollection},
 };
 use std::sync::Arc;
 use store::{
@@ -208,7 +208,19 @@ impl FileCopyMoveRequestHandler for Server {
             && is_move
         {
             // Rename
-            return rename_item(self, access_token, from_resource, destination).await;
+            let from_resource_path = if from_resource.resource.is_container {
+                from_resources.format_collection(from_resource_name)
+            } else {
+                from_resources.format_item(from_resource_name)
+            };
+            return rename_item(
+                self,
+                access_token,
+                from_resource,
+                from_resource_path,
+                destination,
+            )
+            .await;
         }
 
         // Validate quota
@@ -239,7 +251,7 @@ impl FileCopyMoveRequestHandler for Server {
                 let mut sorted_ids = Vec::with_capacity(ids.len());
                 sorted_ids.extend(ids.into_iter().map(|a| a.document_id()));
                 DestroyArchive(sorted_ids)
-                    .delete(self, access_token, destination.account_id)
+                    .delete(self, access_token, destination.account_id, None)
                     .await
                     .caused_by(trc::location!())?;
             }
@@ -273,10 +285,23 @@ impl FileCopyMoveRequestHandler for Server {
             }
             (false, true) => {
                 if let Some(delete_destination) = delete_destination {
-                    overwrite_and_delete_item(self, access_token, from_resource, delete_destination)
-                        .await
+                    overwrite_and_delete_item(
+                        self,
+                        access_token,
+                        from_resource,
+                        from_resources.format_item(from_resource_name),
+                        delete_destination,
+                    )
+                    .await
                 } else {
-                    move_item(self, access_token, from_resource, destination).await
+                    move_item(
+                        self,
+                        access_token,
+                        from_resource,
+                        from_resources.format_item(from_resource_name),
+                        destination,
+                    )
+                    .await
                 }
             }
 
@@ -357,6 +382,10 @@ async fn move_container(
             )
             .caused_by(trc::location!())?
             .etag();
+        batch.with_account_id(from_account_id).log_vanished_item(
+            VanishedCollection::FileNode,
+            from_resources.format_collection(from_resource_name),
+        );
         server
             .commit_batch(batch)
             .await
@@ -490,6 +519,10 @@ async fn copy_container(
                 .caused_by(trc::location!())?
                 .commit_point();
         }
+        batch.with_account_id(from_account_id).log_vanished_item(
+            VanishedCollection::FileNode,
+            from_resources.format_collection(from_resource_name),
+        );
     }
 
     // Write changes
@@ -508,6 +541,7 @@ async fn overwrite_and_delete_item(
     server: &Server,
     access_token: &AccessToken,
     from_resource: UriResource<u32, FileItemId>,
+    from_resource_path: String,
     destination: Destination,
 ) -> crate::Result<HttpResponse> {
     let from_account_id = from_resource.account_id;
@@ -557,7 +591,13 @@ async fn overwrite_and_delete_item(
         .caused_by(trc::location!())?
         .etag();
     DestroyArchive(source_node_)
-        .delete(access_token, from_account_id, from_document_id, &mut batch)
+        .delete(
+            access_token,
+            from_account_id,
+            from_document_id,
+            &mut batch,
+            from_resource_path,
+        )
         .caused_by(trc::location!())?;
     server
         .commit_batch(batch)
@@ -628,6 +668,7 @@ async fn move_item(
     server: &Server,
     access_token: &AccessToken,
     from_resource: UriResource<u32, FileItemId>,
+    from_resource_path: String,
     destination: Destination,
 ) -> crate::Result<HttpResponse> {
     let from_account_id = from_resource.account_id;
@@ -652,6 +693,7 @@ async fn move_item(
     let mut batch = BatchBuilder::new();
     let etag = if from_account_id == to_account_id {
         // Destination is in the same account: just update the parent id
+        batch.log_vanished_item(VanishedCollection::FileNode, from_resource_path);
         new_node
             .update(
                 access_token,
@@ -674,7 +716,13 @@ async fn move_item(
             .caused_by(trc::location!())?
             .etag();
         DestroyArchive(node)
-            .delete(access_token, from_account_id, from_document_id, &mut batch)
+            .delete(
+                access_token,
+                from_account_id,
+                from_document_id,
+                &mut batch,
+                from_resource_path,
+            )
             .caused_by(trc::location!())?;
         etag
     };
@@ -732,6 +780,7 @@ async fn rename_item(
     server: &Server,
     access_token: &AccessToken,
     from_resource: UriResource<u32, FileItemId>,
+    from_resource_path: String,
     destination: Destination,
 ) -> crate::Result<HttpResponse> {
     let from_account_id = from_resource.account_id;
@@ -760,6 +809,7 @@ async fn rename_item(
         )
         .caused_by(trc::location!())?
         .etag();
+    batch.log_vanished_item(VanishedCollection::FileNode, from_resource_path);
     server
         .commit_batch(batch)
         .await

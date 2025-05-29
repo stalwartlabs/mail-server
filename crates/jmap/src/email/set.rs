@@ -25,7 +25,7 @@ use jmap_proto::{
     response::references::EvalObjectReferences,
     types::{
         acl::Acl,
-        collection::{Collection, SyncCollection},
+        collection::{Collection, SyncCollection, VanishedCollection},
         keyword::Keyword,
         property::Property,
         state::{State, StateChange},
@@ -43,7 +43,7 @@ use mail_builder::{
 };
 use mail_parser::MessageParser;
 use std::future::Future;
-use store::{ahash::AHashSet, roaring::RoaringBitmap, write::BatchBuilder};
+use store::{ahash::AHashMap, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 
 pub trait EmailSet: Sync + Send {
@@ -734,7 +734,7 @@ impl EmailSet for Server {
 
         // Process updates
         let mut batch = BatchBuilder::new();
-        let mut changed_mailboxes = AHashSet::new();
+        let mut changed_mailboxes: AHashMap<u32, Vec<u32>> = AHashMap::new();
         let mut will_update = Vec::with_capacity(request.update.as_ref().map_or(0, |u| u.len()));
         'update: for (id, object) in request.unwrap_update() {
             // Make sure id won't be destroyed
@@ -848,7 +848,7 @@ impl EmailSet for Server {
                         .any(|keyword| keyword == &Keyword::Seen)
                 {
                     for mailbox_id in new_data.mailboxes.iter() {
-                        changed_mailboxes.insert(mailbox_id.mailbox_id);
+                        changed_mailboxes.insert(mailbox_id.mailbox_id, Vec::new());
                     }
                 }
             }
@@ -872,7 +872,7 @@ impl EmailSet for Server {
                         // Verify permissions on shared accounts
                         if !matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(mailbox_id.mailbox_id))
                         {
-                            changed_mailboxes.insert(mailbox_id.mailbox_id);
+                            changed_mailboxes.insert(mailbox_id.mailbox_id, Vec::new());
                         } else {
                             response.not_updated.append(
                                 id,
@@ -902,7 +902,10 @@ impl EmailSet for Server {
                     // Verify permissions on shared accounts
                     if !matches!(&can_delete_mailbox_ids, Some(ids) if !ids.contains(u32::from(mailbox_id.mailbox_id)))
                     {
-                        changed_mailboxes.insert(u32::from(mailbox_id.mailbox_id));
+                        changed_mailboxes
+                            .entry(mailbox_id.mailbox_id.to_native())
+                            .or_default()
+                            .push(mailbox_id.uid.to_native());
                     } else {
                         response.not_updated.append(
                             id,
@@ -943,8 +946,11 @@ impl EmailSet for Server {
 
         if !batch.is_empty() {
             // Log mailbox changes
-            for parent_id in changed_mailboxes {
+            for (parent_id, deleted_uids) in changed_mailboxes {
                 batch.log_container_property_change(SyncCollection::Email, parent_id);
+                for deleted_uid in deleted_uids {
+                    batch.log_vanished_item(VanishedCollection::Email, (parent_id, deleted_uid));
+                }
             }
 
             match self

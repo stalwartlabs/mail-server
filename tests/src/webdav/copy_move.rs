@@ -131,6 +131,24 @@ pub async fn test(test: &WebDavTest) {
         replace_prefix(&mut hierarchy, &hierarchy_root, &new_hierarchy_root);
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
+        // Validate changes
+        let changes = client
+            .sync_collection(
+                &user_base_path,
+                sync_token,
+                Depth::Infinity,
+                None,
+                ["D:getetag"],
+            )
+            .await
+            .with_href_count(2)
+            .into_propfind_response(None);
+        changes
+            .properties(&hierarchy_root)
+            .with_status(StatusCode::NOT_FOUND);
+        changes
+            .properties(&new_hierarchy_root)
+            .with_status(StatusCode::OK);
         let hierarchy_root = new_hierarchy_root;
 
         // Test 2: Copy container
@@ -167,6 +185,17 @@ pub async fn test(test: &WebDavTest) {
         // Test 4: Create a shallow container and overwrite the previous one using MOVE
         let (new_hierarchy_root, mut hierarchy) =
             client.create_hierarchy(&user_base_path, 0, 0, 3).await;
+        let sync_token = client
+            .sync_collection(
+                &user_base_path,
+                sync_token,
+                Depth::Infinity,
+                None,
+                ["D:getetag"],
+            )
+            .await
+            .sync_token()
+            .to_string();
         client
             .request_with_headers(
                 "MOVE",
@@ -182,6 +211,23 @@ pub async fn test(test: &WebDavTest) {
         replace_prefix(&mut hierarchy, &new_hierarchy_root, &hierarchy_root);
         assert_result(&response, &hierarchy);
         client.validate_values(&hierarchy).await;
+        // Validate changes
+        let changes = client
+            .sync_collection(
+                &user_base_path,
+                &sync_token,
+                Depth::Infinity,
+                None,
+                ["D:getetag"],
+            )
+            .await
+            .into_propfind_response(None);
+        changes
+            .properties(&new_hierarchy_root)
+            .with_status(StatusCode::NOT_FOUND);
+        changes
+            .properties(&hierarchy_root)
+            .with_status(StatusCode::OK);
 
         // Test 5: Create a deep container and overwrite the previous one using COPY
         let (new_hierarchy_root, new_hierarchy) = client

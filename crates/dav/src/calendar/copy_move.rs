@@ -15,7 +15,7 @@ use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{
     acl::Acl,
-    collection::{Collection, SyncCollection},
+    collection::{Collection, SyncCollection, VanishedCollection},
 };
 use store::write::BatchBuilder;
 use trc::AddContext;
@@ -195,6 +195,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                         from_account_id,
                         from_resource.document_id(),
                         from_children_ids,
+                        from_resources.format_collection(from_resource_name),
                         to_account_id,
                         to_resource.document_id().into(),
                         to_document_ids,
@@ -236,6 +237,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                             from_account_id,
                             from_resource.document_id(),
                             from_calendar_id,
+                            from_resources.format_item(from_resource_name),
                             to_account_id,
                             to_resource.document_id().into(),
                             to_calendar_id,
@@ -302,6 +304,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                             from_account_id,
                             from_resource.document_id(),
                             from_calendar_id,
+                            from_resources.format_item(from_resource_name),
                             to_account_id,
                             None,
                             to_calendar_id,
@@ -316,6 +319,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                             from_resource.document_id(),
                             from_calendar_id,
                             new_name,
+                            from_resources.format_item(from_resource_name),
                         )
                         .await
                     }
@@ -376,6 +380,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                             } else {
                                 return Err(DavError::Code(StatusCode::BAD_GATEWAY));
                             },
+                            from_resources.format_collection(from_resource_name),
                             to_account_id,
                             None,
                             vec![],
@@ -390,6 +395,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                             from_account_id,
                             from_resource.document_id(),
                             new_name,
+                            from_resources.format_collection(from_resource_name),
                         )
                         .await
                     }
@@ -404,6 +410,7 @@ impl CalendarCopyMoveRequestHandler for Server {
                         } else {
                             vec![]
                         },
+                        from_resources.format_collection(from_resource_name),
                         to_account_id,
                         None,
                         vec![],
@@ -507,6 +514,7 @@ async fn copy_event(
                     to_account_id,
                     to_document_id,
                     to_calendar_id,
+                    None,
                     &mut batch,
                 )
                 .caused_by(trc::location!())?;
@@ -532,6 +540,7 @@ async fn move_event(
     from_account_id: u32,
     from_document_id: u32,
     from_calendar_id: u32,
+    from_resource_path: String,
     to_account_id: u32,
     to_document_id: Option<u32>,
     to_calendar_id: u32,
@@ -599,6 +608,7 @@ async fn move_event(
                 &mut batch,
             )
             .caused_by(trc::location!())?;
+        batch.log_vanished_item(VanishedCollection::Calendar, from_resource_path);
     } else {
         let mut new_event = event
             .deserialize::<CalendarEvent>()
@@ -614,6 +624,7 @@ async fn move_event(
                 from_account_id,
                 from_document_id,
                 from_calendar_id,
+                from_resource_path.into(),
                 &mut batch,
             )
             .caused_by(trc::location!())?;
@@ -645,6 +656,7 @@ async fn move_event(
                     to_account_id,
                     to_document_id,
                     to_calendar_id,
+                    None,
                     &mut batch,
                 )
                 .caused_by(trc::location!())?;
@@ -671,6 +683,7 @@ async fn rename_event(
     document_id: u32,
     calendar_id: u32,
     new_name: &str,
+    from_resource_path: String,
 ) -> crate::Result<HttpResponse> {
     // Fetch event
     let event_ = server
@@ -697,6 +710,7 @@ async fn rename_event(
     new_event
         .update(access_token, event, account_id, document_id, &mut batch)
         .caused_by(trc::location!())?;
+    batch.log_vanished_item(VanishedCollection::Calendar, from_resource_path);
     server
         .commit_batch(batch)
         .await
@@ -712,6 +726,7 @@ async fn copy_container(
     from_account_id: u32,
     from_document_id: u32,
     from_children_ids: Vec<u32>,
+    from_resource_path: String,
     to_account_id: u32,
     to_document_id: Option<u32>,
     to_children_ids: Vec<u32>,
@@ -736,7 +751,13 @@ async fn copy_container(
 
     if remove_source {
         DestroyArchive(old_calendar)
-            .delete(access_token, from_account_id, from_document_id, &mut batch)
+            .delete(
+                access_token,
+                from_account_id,
+                from_document_id,
+                from_resource_path.into(),
+                &mut batch,
+            )
             .caused_by(trc::location!())?;
     }
 
@@ -773,6 +794,7 @@ async fn copy_container(
                     to_account_id,
                     to_document_id,
                     to_children_ids,
+                    None,
                     &mut batch,
                 )
                 .await
@@ -854,6 +876,7 @@ async fn copy_container(
                             from_account_id,
                             from_child_document_id,
                             from_document_id,
+                            None,
                             &mut batch,
                         )
                         .caused_by(trc::location!())?;
@@ -903,6 +926,7 @@ async fn rename_container(
     account_id: u32,
     document_id: u32,
     new_name: &str,
+    from_resource_path: String,
 ) -> crate::Result<HttpResponse> {
     // Fetch calendar
     let calendar_ = server
@@ -922,6 +946,7 @@ async fn rename_container(
     new_calendar
         .update(access_token, calendar, account_id, document_id, &mut batch)
         .caused_by(trc::location!())?;
+    batch.log_vanished_item(VanishedCollection::Calendar, from_resource_path);
     server
         .commit_batch(batch)
         .await

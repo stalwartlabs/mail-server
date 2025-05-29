@@ -603,4 +603,11 @@ impl ArchivedMessageData {
     pub fn has_mailbox_id(&self, mailbox_id: u32) -> bool {
         self.mailboxes.iter().any(|m| m.mailbox_id == mailbox_id)
     }
+
+    pub fn message_uid(&self, mailbox_id: u32) -> Option<u32> {
+        self.mailboxes
+            .iter()
+            .find(|m| m.mailbox_id == mailbox_id)
+            .map(|m| m.uid.to_native())
+    }
 }

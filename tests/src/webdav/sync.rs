@@ -223,15 +223,68 @@ pub async fn test(test: &WebDavTest) {
         }
         assert!(expected_changes.is_empty(), "{:?}", expected_changes);
 
+        // Test 10: Expect changes after deletion
         client
-            .request("DELETE", &folder_name, "")
+            .request("DELETE", &new_file, "")
             .await
             .with_status(StatusCode::NO_CONTENT);
-
+        let response = client
+            .sync_collection(
+                &user_base_path,
+                &sync_token,
+                Depth::Infinity,
+                None,
+                ["D:getetag"],
+            )
+            .await;
+        sync_token = response.sync_token().to_string();
+        response
+            .with_href_count(1)
+            .with_value("D:multistatus.D:response.D:href", &new_file)
+            .with_value(
+                "D:multistatus.D:response.D:status",
+                "HTTP/1.1 404 Not Found",
+            );
         client
             .request("DELETE", &new_collection, "")
             .await
             .with_status(StatusCode::NO_CONTENT);
+        let response = client
+            .sync_collection(
+                &user_base_path,
+                &sync_token,
+                Depth::Infinity,
+                None,
+                ["D:getetag"],
+            )
+            .await;
+        sync_token = response.sync_token().to_string();
+        response
+            .with_href_count(1)
+            .with_value("D:multistatus.D:response.D:href", &new_collection)
+            .with_value(
+                "D:multistatus.D:response.D:status",
+                "HTTP/1.1 404 Not Found",
+            );
+        client
+            .request("DELETE", &folder_name, "")
+            .await
+            .with_status(StatusCode::NO_CONTENT);
+        client
+            .sync_collection(
+                &user_base_path,
+                &sync_token,
+                Depth::Infinity,
+                None,
+                ["D:getetag"],
+            )
+            .await
+            .with_href_count(1)
+            .with_value("D:multistatus.D:response.D:href", &folder_name)
+            .with_value(
+                "D:multistatus.D:response.D:status",
+                "HTTP/1.1 404 Not Found",
+            );
     }
 
     client.delete_default_containers().await;

@@ -11,16 +11,25 @@ use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
-    message::{delete::EmailDeletion, metadata::MessageData},
+    mailbox::TOMBSTONE_ID,
+    message::metadata::MessageData,
 };
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     parser::parse_sequence_set,
     receiver::{Request, Token},
 };
-use jmap_proto::types::{acl::Acl, collection::Collection, keyword::Keyword};
+use jmap_proto::types::{
+    acl::Acl,
+    collection::{Collection, VanishedCollection},
+    keyword::Keyword,
+    property::Property,
+};
 use std::{sync::Arc, time::Instant};
-use store::{roaring::RoaringBitmap, write::BatchBuilder};
+use store::{
+    roaring::RoaringBitmap,
+    write::{BatchBuilder, TagValue},
+};
 use trc::AddContext;
 
 impl<T: SessionStream> Session<T> {
@@ -158,52 +167,60 @@ impl<T: SessionStream> SessionData<T> {
         deleted_ids: &RoaringBitmap,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
-        let mut destroy_ids = RoaringBitmap::new();
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Email);
 
         self.server
-            .get_archives(account_id, Collection::Email, deleted_ids, |id, data_| {
-                let data = data_
-                    .to_unarchived::<MessageData>()
-                    .caused_by(trc::location!())?;
+            .get_archives(
+                account_id,
+                Collection::Email,
+                deleted_ids,
+                |document_id, data_| {
+                    let metadata = data_
+                        .to_unarchived::<MessageData>()
+                        .caused_by(trc::location!())?;
 
-                if !data.inner.has_mailbox_id(mailbox_id) {
-                    return Ok(true);
-                } else if data.inner.mailboxes.len() == 1 {
-                    destroy_ids.insert(id);
-                    return Ok(true);
-                }
+                    if let Some(message_uid) = metadata.inner.message_uid(mailbox_id) {
+                        // Add vanished items
+                        batch.update_document(document_id);
+                        batch.log_vanished_item(
+                            VanishedCollection::Email,
+                            (mailbox_id, message_uid),
+                        );
 
-                // Untag message from this mailbox and remove Deleted flag
-                let mut new_data = data.deserialize().caused_by(trc::location!())?;
-                new_data.remove_mailbox(mailbox_id);
-                new_data.remove_keyword(&Keyword::Deleted);
+                        if metadata.inner.mailboxes.len() == 1 {
+                            // Tombstone message
+                            batch
+                                .custom(ObjectIndexBuilder::<_, ()>::new().with_current(metadata))
+                                .caused_by(trc::location!())?
+                                .tag(Property::MailboxIds, TagValue::Id(TOMBSTONE_ID))
+                                .commit_point();
+                        } else {
+                            // Untag message from this mailbox and remove Deleted flag
+                            let mut new_metadata = metadata
+                                .deserialize::<MessageData>()
+                                .caused_by(trc::location!())?;
+                            new_metadata.remove_mailbox(mailbox_id);
+                            new_metadata.remove_keyword(&Keyword::Deleted);
 
-                // Write changes
-                batch
-                    .update_document(id)
-                    .custom(
-                        ObjectIndexBuilder::new()
-                            .with_current(data)
-                            .with_changes(new_data),
-                    )
-                    .caused_by(trc::location!())?
-                    .commit_point();
+                            // Write changes
+                            batch
+                                .custom(
+                                    ObjectIndexBuilder::new()
+                                        .with_current(metadata)
+                                        .with_changes(new_metadata),
+                                )
+                                .caused_by(trc::location!())?
+                                .commit_point();
+                        }
+                    }
 
-                Ok(true)
-            })
+                    Ok(true)
+                },
+            )
             .await
             .caused_by(trc::location!())?;
-
-        if !destroy_ids.is_empty() {
-            // Delete message from all mailboxes
-            self.server
-                .emails_tombstone(account_id, batch, destroy_ids)
-                .await
-                .caused_by(trc::location!())?;
-        }
 
         Ok(())
     }

@@ -5,7 +5,7 @@
  */
 
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
-use jmap_proto::types::collection::Collection;
+use jmap_proto::types::collection::{Collection, VanishedCollection};
 use store::write::{Archive, BatchBuilder, now};
 use trc::AddContext;
 
@@ -71,6 +71,7 @@ impl DestroyArchive<Archive<&ArchivedFileNode>> {
         account_id: u32,
         document_id: u32,
         batch: &mut BatchBuilder,
+        path: String,
     ) -> trc::Result<()> {
         // Prepare write batch
         batch
@@ -82,6 +83,7 @@ impl DestroyArchive<Archive<&ArchivedFileNode>> {
                     .with_current(self.0)
                     .with_tenant_id(access_token),
             )?
+            .log_vanished_item(VanishedCollection::FileNode, path)
             .commit_point();
         Ok(())
     }
@@ -93,6 +95,7 @@ impl DestroyArchive<Vec<u32>> {
         server: &Server,
         access_token: &AccessToken,
         account_id: u32,
+        delete_path: Option<String>,
     ) -> trc::Result<()> {
         // Process deletions
         let mut batch = BatchBuilder::new();
@@ -122,6 +125,9 @@ impl DestroyArchive<Vec<u32>> {
 
         // Write changes
         if !batch.is_empty() {
+            if let Some(delete_path) = delete_path {
+                batch.log_vanished_item(VanishedCollection::FileNode, delete_path);
+            }
             server
                 .commit_batch(batch)
                 .await

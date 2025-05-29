@@ -4,15 +4,27 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{SerializeInfallible, U64_LEN};
 use ahash::AHashSet;
 use utils::{codec::leb128::Leb128Vec, map::vec_map::VecMap};
 
-use crate::SerializeInfallible;
+use super::key::KeySerializer;
 
 #[derive(Default, Debug)]
 pub(crate) struct ChangeLogBuilder {
     pub changes: VecMap<u8, Changes>,
+    pub vanished: VecMap<u8, VanishedItems>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum VanishedItem {
+    Name(String),
+    Id(u64),
+    IdPair(u32, u32),
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct VanishedItems(Vec<VanishedItem>);
 
 #[derive(Default, Debug)]
 pub struct Changes {
@@ -27,15 +39,13 @@ pub struct Changes {
 }
 
 impl ChangeLogBuilder {
-    pub fn into_iterator(self) -> impl Iterator<Item = (u8, Changes)> {
-        self.changes.into_iter()
-    }
-
     pub fn log_container_insert(&mut self, collection: impl Into<u8>, document_id: u32) {
-        self.changes
-            .get_mut_or_insert(collection.into())
-            .container_inserts
-            .insert(document_id);
+        let changes = self.changes.get_mut_or_insert(collection.into());
+        if changes.container_deletes.remove(&document_id) {
+            changes.container_updates.insert(document_id);
+        } else {
+            changes.container_inserts.insert(document_id);
+        }
     }
 
     pub fn log_item_insert(
@@ -44,10 +54,13 @@ impl ChangeLogBuilder {
         prefix: Option<u32>,
         document_id: u32,
     ) {
-        self.changes
-            .get_mut_or_insert(collection.into())
-            .item_inserts
-            .insert(build_id(prefix, document_id));
+        let id = build_id(prefix, document_id);
+        let changes = self.changes.get_mut_or_insert(collection.into());
+        if changes.item_deletes.remove(&id) {
+            changes.item_updates.insert(id);
+        } else {
+            changes.item_inserts.insert(id);
+        }
     }
 
     pub fn log_container_update(&mut self, collection: impl Into<u8>, document_id: u32) {
@@ -94,6 +107,13 @@ impl ChangeLogBuilder {
         let id = build_id(prefix, document_id);
         changes.item_updates.remove(&id);
         changes.item_deletes.insert(id);
+    }
+
+    pub fn log_vanished_item(&mut self, collection: impl Into<u8>, item: impl Into<VanishedItem>) {
+        self.vanished
+            .get_mut_or_insert(collection.into())
+            .0
+            .push(item.into());
     }
 }
 
@@ -160,5 +180,50 @@ impl SerializeInfallible for Changes {
         }
 
         buf
+    }
+}
+
+impl From<String> for VanishedItem {
+    fn from(value: String) -> Self {
+        VanishedItem::Name(value)
+    }
+}
+
+impl From<u64> for VanishedItem {
+    fn from(value: u64) -> Self {
+        VanishedItem::Id(value)
+    }
+}
+
+impl From<(u32, u32)> for VanishedItem {
+    fn from(value: (u32, u32)) -> Self {
+        VanishedItem::Id((value.0 as u64) << 32 | value.1 as u64)
+    }
+}
+
+impl VanishedItem {
+    pub fn serialized_size(&self) -> usize {
+        match self {
+            VanishedItem::Name(name) => name.len() + 1,
+            VanishedItem::Id(_) | VanishedItem::IdPair(..) => U64_LEN,
+        }
+    }
+}
+
+impl SerializeInfallible for VanishedItems {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = KeySerializer::new(64);
+
+        for item in &self.0 {
+            buf = match item {
+                VanishedItem::Name(name) => buf.write(name.as_bytes()).write(0u8),
+                VanishedItem::Id(id) => buf.write(id.to_be_bytes().as_slice()),
+                VanishedItem::IdPair(a, b) => buf
+                    .write(a.to_be_bytes().as_slice())
+                    .write(b.to_be_bytes().as_slice()),
+            };
+        }
+
+        buf.finalize()
     }
 }

@@ -534,16 +534,17 @@ impl Server {
     }
 
     pub async fn delete_changes(&self, account_id: u32, max_entries: usize) -> trc::Result<()> {
-        for collection in [
-            SyncCollection::Email.into(),
-            SyncCollection::Thread.into(),
-            SyncCollection::Identity.into(),
-            SyncCollection::EmailSubmission.into(),
-            SyncCollection::SieveScript.into(),
-            SyncCollection::FileNode.into(),
-            SyncCollection::AddressBook.into(),
-            SyncCollection::Calendar.into(),
+        for sync_collection in [
+            SyncCollection::Email,
+            SyncCollection::Thread,
+            SyncCollection::Identity,
+            SyncCollection::EmailSubmission,
+            SyncCollection::SieveScript,
+            SyncCollection::FileNode,
+            SyncCollection::AddressBook,
+            SyncCollection::Calendar,
         ] {
+            let collection = sync_collection.into();
             let from_key = LogKey {
                 account_id,
                 collection,
@@ -589,6 +590,27 @@ impl Server {
                     )
                     .await
                     .caused_by(trc::location!())?;
+
+                // Delete vanished items
+                if let Some(vanished_collection) =
+                    sync_collection.vanished_collection().map(u8::from)
+                {
+                    self.store()
+                        .delete_range(
+                            LogKey {
+                                account_id,
+                                collection: vanished_collection,
+                                change_id: 0,
+                            },
+                            LogKey {
+                                account_id,
+                                collection: vanished_collection,
+                                change_id: first_change_id,
+                            },
+                        )
+                        .await
+                        .caused_by(trc::location!())?;
+                }
 
                 // Write truncation entry for cache
                 let mut batch = BatchBuilder::new();

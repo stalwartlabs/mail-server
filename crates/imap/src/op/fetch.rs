@@ -34,7 +34,7 @@ use imap_proto::{
 };
 use jmap_proto::types::{
     acl::Acl,
-    collection::{Collection, SyncCollection},
+    collection::{Collection, SyncCollection, VanishedCollection},
     id::Id,
     keyword::Keyword,
     property::Property,
@@ -190,9 +190,25 @@ impl<T: SessionStream> SessionData<T> {
             // Send vanished UIDs
             if arguments.include_vanished && has_vanished {
                 // Add to vanished all known destroyed Ids
-                let vanished = mailbox
-                    .sequence_expand_missing(&arguments.sequence_set, true)
-                    .await;
+                let vanished = self
+                    .server
+                    .store()
+                    .vanished::<(u32, u32)>(
+                        account_id,
+                        VanishedCollection::Email,
+                        Query::from_modseq(changed_since),
+                    )
+                    .await
+                    .imap_ctx(&arguments.tag, trc::location!())?
+                    .into_iter()
+                    .filter_map(|(mailbox_id, uid)| {
+                        if mailbox.id.mailbox_id == mailbox_id {
+                            Some(uid)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
 
                 if !vanished.is_empty() {
                     let mut buf = Vec::with_capacity(vanished.len() * 3);

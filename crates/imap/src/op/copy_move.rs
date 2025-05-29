@@ -22,7 +22,12 @@ use imap_proto::{
 };
 use jmap_proto::{
     error::set::SetErrorType,
-    types::{acl::Acl, collection::Collection, state::StateChange, type_state::DataType},
+    types::{
+        acl::Acl,
+        collection::{Collection, VanishedCollection},
+        state::StateChange,
+        type_state::DataType,
+    },
 };
 use std::{sync::Arc, time::Instant};
 use store::{
@@ -250,6 +255,12 @@ impl<T: SessionStream> SessionData<T> {
                             .with_changes(new_data),
                     )
                     .imap_ctx(&arguments.tag, trc::location!())?;
+                if is_move {
+                    batch.log_vanished_item(
+                        VanishedCollection::Email,
+                        (src_mailbox.id.mailbox_id, imap_id.uid),
+                    );
+                }
 
                 // Add bayes train task
                 if can_spam_train {

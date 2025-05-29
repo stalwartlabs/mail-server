@@ -7,7 +7,7 @@
 use trc::AddContext;
 use utils::codec::leb128::Leb128Iterator;
 
-use crate::{IterateParams, LogKey, Store, U64_LEN, write::key::DeserializeBigEndian};
+use crate::{IterateParams, LogKey, Store, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Change {
@@ -36,6 +36,10 @@ pub enum Query {
     Since(u64),
     SinceInclusive(u64),
     RangeInclusive(u64, u64),
+}
+
+pub trait DeserializeVanished: Sized + Sync + Send {
+    fn deserialize_vanished<'x>(bytes: &mut impl Iterator<Item = &'x u8>) -> Option<Self>;
 }
 
 impl Default for Changes {
@@ -120,6 +124,62 @@ impl Store {
         }
 
         Ok(changelog)
+    }
+
+    pub async fn vanished<T: DeserializeVanished>(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8> + Sync + Send,
+        query: Query,
+    ) -> trc::Result<Vec<T>> {
+        let collection = collection.into();
+        let (is_inclusive, from_change_id, to_change_id) = match query {
+            Query::All => (true, 0, u64::MAX),
+            Query::Since(change_id) => (false, change_id, u64::MAX),
+            Query::SinceInclusive(change_id) => (true, change_id, u64::MAX),
+            Query::RangeInclusive(from_change_id, to_change_id) => {
+                (true, from_change_id, to_change_id)
+            }
+        };
+        let from_key = LogKey {
+            account_id,
+            collection,
+            change_id: from_change_id,
+        };
+        let to_key = LogKey {
+            account_id,
+            collection,
+            change_id: to_change_id,
+        };
+
+        let mut vanished = Vec::default();
+
+        self.iterate(
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
+                let change_id = key.deserialize_be_u64(key.len() - U64_LEN)?;
+                if is_inclusive || change_id != from_change_id {
+                    let mut iter = value.iter().peekable();
+
+                    while iter.peek().is_some() {
+                        if let Some(item) = T::deserialize_vanished(&mut iter) {
+                            vanished.push(item);
+                        } else {
+                            return Err(trc::Error::corrupted_key(
+                                key,
+                                value.into(),
+                                trc::location!(),
+                            ));
+                        }
+                    }
+                }
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())?;
+
+        Ok(vanished)
     }
 
     pub async fn get_last_change_id(
@@ -367,5 +427,43 @@ impl Change {
             self,
             Change::InsertItem(_) | Change::UpdateItem(_) | Change::DeleteItem(_)
         )
+    }
+}
+
+impl DeserializeVanished for u64 {
+    fn deserialize_vanished<'x>(bytes: &mut impl Iterator<Item = &'x u8>) -> Option<Self> {
+        let mut num = [0u8; U64_LEN];
+        for i in num.iter_mut() {
+            *i = *bytes.next()?;
+        }
+        Some(u64::from_be_bytes(num))
+    }
+}
+
+impl DeserializeVanished for (u32, u32) {
+    fn deserialize_vanished<'x>(bytes: &mut impl Iterator<Item = &'x u8>) -> Option<Self> {
+        let mut num1 = [0u8; U32_LEN];
+        let mut num2 = [0u8; U32_LEN];
+        for i in num1.iter_mut().chain(num2.iter_mut()) {
+            *i = *bytes.next()?;
+        }
+        Some((u32::from_be_bytes(num1), u32::from_be_bytes(num2)))
+    }
+}
+
+impl DeserializeVanished for String {
+    fn deserialize_vanished<'x>(bytes: &mut impl Iterator<Item = &'x u8>) -> Option<Self> {
+        let mut name = Vec::with_capacity(16);
+
+        loop {
+            let byte = bytes.next()?;
+            if *byte != 0 {
+                name.push(*byte);
+            } else {
+                break;
+            }
+        }
+
+        String::from_utf8(name).ok()
     }
 }

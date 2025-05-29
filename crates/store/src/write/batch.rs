@@ -6,7 +6,7 @@
 
 use super::{
     Batch, BatchBuilder, BitmapClass, ChangedCollection, IntoOperations, Operation, TagValue,
-    ValueClass, ValueOp, assert::ToAssertValue,
+    ValueClass, ValueOp, assert::ToAssertValue, log::VanishedItem,
 };
 use crate::{SerializeInfallible, U32_LEN};
 use utils::map::{bitmap::ShortId, vec_map::VecMap};
@@ -331,12 +331,30 @@ impl BatchBuilder {
         self
     }
 
+    pub fn log_vanished_item(
+        &mut self,
+        collection: impl Into<u8>,
+        item: impl Into<VanishedItem>,
+    ) -> &mut Self {
+        if let Some(account_id) = self.current_account_id {
+            let item = item.into();
+            self.batch_size += item.serialized_size();
+            let collection = collection.into();
+            debug_assert!(collection > 200);
+            self.changes
+                .get_mut_or_insert(account_id)
+                .log_vanished_item(collection, item);
+        }
+        self
+    }
+
     fn serialize_changes(&mut self) {
         if !self.changes.is_empty() {
             for (account_id, changelog) in std::mem::take(&mut self.changes) {
                 self.with_account_id(account_id);
 
-                for (collection, changes) in changelog.into_iterator() {
+                // Serialize changes
+                for (collection, changes) in changelog.changes.into_iter() {
                     let cc = self.changed_collections.get_mut_or_insert(account_id);
                     if changes.has_container_changes() {
                         cc.changed_containers.insert(ShortId(collection));
@@ -348,6 +366,14 @@ impl BatchBuilder {
                     self.ops.push(Operation::Log {
                         collection,
                         set: changes.serialize(),
+                    });
+                }
+
+                // Serialize vanished items
+                for (collection, vanished) in changelog.vanished.into_iter() {
+                    self.ops.push(Operation::Log {
+                        collection,
+                        set: vanished.serialize(),
                     });
                 }
             }
