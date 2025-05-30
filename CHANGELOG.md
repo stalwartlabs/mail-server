@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.12.3] - 2025-05-30
+
+If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- Store vanished IMAP UIDs and WebDAV paths in the changelog.
+
+## Changed
+
+## Fixed
+- XML `CDATA` injection (credits to @andreymal for the report).
+- Macro references are replaced with their content when writing config file (#1595).
+- Double nested CalDAV and CardDAV property tags (#1591).
+- Allow empty properties in PROPPATCH requests (#1580).
+
 ## [0.12.2] - 2025-05-27
 
 If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
