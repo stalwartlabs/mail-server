@@ -2255,7 +2255,7 @@ dependencies = [
  "mail-parser",
  "nlp",
  "rand 0.8.5",
- "rasn",
+ "rasn 0.26.6",
  "rasn-cms",
  "rasn-pkix",
  "rkyv",
@@ -5988,8 +5988,30 @@ dependencies = [
  "num-integer",
  "num-traits",
  "once_cell",
- "rasn-derive",
- "snafu",
+ "rasn-derive 0.10.6",
+ "snafu 0.7.5",
+]
+
+[[package]]
+name = "rasn"
+version = "0.26.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7863f4e3d3cbbe0d3a427aa48447c42b5a74a579cbfa7afa63735b0c10879c44"
+dependencies = [
+ "bitvec",
+ "bitvec-nom2",
+ "bytes",
+ "chrono",
+ "either",
+ "nom",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "once_cell",
+ "rasn-derive 0.26.6",
+ "serde_json",
+ "snafu 0.8.5",
+ "xml-no-std",
 ]
 
 [[package]]
@@ -5998,7 +6020,7 @@ version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09d45b1b6c0bfb41d1023246a3853a82d158d7e6690698ad4acac009f2f09380"
 dependencies = [
- "rasn",
+ "rasn 0.10.6",
  "rasn-pkix",
 ]
 
@@ -6018,12 +6040,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasn-derive"
+version = "0.26.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a16f695759320ec969864fe5e7aa8e2a9c5665469565b100b8c8c1a36cd5484"
+dependencies = [
+ "proc-macro2",
+ "rasn-derive-impl",
+ "syn 2.0.101",
+]
+
+[[package]]
+name = "rasn-derive-impl"
+version = "0.26.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f14454245fd76215b830d083b6b6c6842047e50cb7ee73ce1e769d4b099c89fd"
+dependencies = [
+ "either",
+ "itertools 0.13.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+ "uuid",
+]
+
+[[package]]
 name = "rasn-pkix"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c825c4183e8f4db9bd772206d7d0fa10f3df35b6ed5bcb8f6cb50fd1166f8e9"
 dependencies = [
- "rasn",
+ "rasn 0.10.6",
 ]
 
 [[package]]
@@ -7546,7 +7593,16 @@ checksum = "e4de37ad025c587a29e8f3f5605c00f70b98715ef90b9061a815b9e59e9042d6"
 dependencies = [
  "backtrace",
  "doc-comment",
- "snafu-derive",
+ "snafu-derive 0.7.5",
+]
+
+[[package]]
+name = "snafu"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "223891c85e2a29c3fe8fb900c1fae5e69c2e42415e3177752e8718475efa5019"
+dependencies = [
+ "snafu-derive 0.8.5",
 ]
 
 [[package]]
@@ -7559,6 +7615,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "snafu-derive"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03c3c6b7927ffe7ecaa769ee0e3994da3b8cafc8f444578982c83ecb161af917"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -9644,6 +9712,12 @@ dependencies = [
  "thiserror 2.0.12",
  "time",
 ]
+
+[[package]]
+name = "xml-no-std"
+version = "0.8.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd223bc94c615fc02bf2f4bbc22a4a9bfe489c2add3ec10b1038df3aca44cac7"
 
 [[package]]
 name = "xml-rs"
