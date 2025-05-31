@@ -934,9 +934,15 @@ impl PropFindRequestHandler for Server {
                         }
                         WebDavProperty::GetCTag => {
                             if item.is_container {
+                                let ctag = data
+                                    .resources(self, access_token, account_id, sync_collection)
+                                    .await
+                                    .caused_by(trc::location!())?
+                                    .highest_change_id;
+
                                 fields.push(DavPropertyValue::new(
                                     property.clone(),
-                                    DavValue::String(archive_.ctag()),
+                                    DavValue::String(format!("\"{ctag}\"")),
                                 ));
                             } else {
                                 fields_not_found.push(DavPropertyValue::empty(property.clone()));
