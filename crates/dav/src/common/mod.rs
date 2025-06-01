@@ -92,7 +92,7 @@ pub(crate) enum DavQueryFilter {
 
 pub(crate) trait ETag {
     fn etag(&self) -> String;
-    fn ctag(&self) -> String;
+    //fn ctag(&self) -> String;
 }
 
 pub(crate) trait ExtractETag {
@@ -104,9 +104,9 @@ impl<T> ETag for Archive<T> {
         format!("\"{}\"", self.version.hash().unwrap_or_default())
     }
 
-    fn ctag(&self) -> String {
+    /*fn ctag(&self) -> String {
         format!("\"{}\"", self.version.change_id().unwrap_or_default())
-    }
+    }*/
 }
 
 impl ExtractETag for BatchBuilder {

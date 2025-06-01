@@ -496,11 +496,23 @@ pub async fn test(test: &WebDavTest) {
                         (
                             DavProperty::DeadProperty(DeadElementTag::new(
                                 "my-dead-element".to_string(),
-                                Some("xmlns=\"http://example.com/ns/\"".to_string()),
+                                Some("xmlns=\"http://example.com/ns/\" prop=\"abc\"".to_string()),
                             )),
                             "this is a dead but exciting element",
                         ),
                     ],
+                )
+                .await;
+            client
+                .patch_and_check(
+                    path,
+                    [(
+                        DavProperty::DeadProperty(DeadElementTag::new(
+                            "my-dead-element".to_string(),
+                            Some("xmlns=\"http://example.com/ns/\" prop=\"xyz\"".to_string()),
+                        )),
+                        "this is a modified dead but exciting element",
+                    )],
                 )
                 .await;
 

@@ -61,7 +61,7 @@ impl DeadProperty {
         let mut remove = false;
         self.0.retain(|item| match item {
             DeadPropertyTag::ElementStart(tag) => {
-                if depth == 0 && !remove && tag == element {
+                if depth == 0 && !remove && tag.name == element.name {
                     remove = true;
                 }
                 depth += 1;
