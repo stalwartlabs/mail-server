@@ -77,7 +77,7 @@ impl CardUpdateRequestHandler for Server {
             ))
         })?;
 
-        let vcard = match Parser::new(vcard_raw).entry() {
+        let vcard = match Parser::new(vcard_raw).strict().entry() {
             Entry::VCard(vcard) => vcard,
             _ => {
                 return Err(DavError::Condition(DavErrorCondition::new(

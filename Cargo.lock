@@ -989,9 +989,9 @@ dependencies = [
 
 [[package]]
 name = "calcard"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e16f081c4da49b29187103679784b4dcf2fbda52e9b519388c397cb58414e5a"
+checksum = "c6387223a016027ad73f3482d6e58f804d22edcc8bff1a31df877094850621a6"
 dependencies = [
  "ahash",
  "chrono",
