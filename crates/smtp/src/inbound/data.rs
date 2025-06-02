@@ -682,7 +682,9 @@ impl<T: SessionStream> Session<T> {
             {
                 self.state = State::Accepted(queue_id);
                 self.data.messages_sent += 1;
-                (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into()
+                format!("250 2.0.0 Message queued with id {queue_id:x}.\r\n")
+                    .into_bytes()
+                    .into()
             } else {
                 (b"451 4.3.5 Unable to accept message at this time.\r\n"[..]).into()
             }
