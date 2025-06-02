@@ -42,7 +42,7 @@ use crate::{
 };
 
 use super::{NextHop, TlsStrategy, lookup::ToNextHop, mta_sts, session::SessionParams};
-use crate::queue::{Domain, Error, QueueEnvelope, QueuedMessage, Status};
+use crate::queue::{Domain, Error, FROM_REPORT, QueueEnvelope, QueuedMessage, Status};
 
 impl QueuedMessage {
     pub fn try_deliver(self, server: Server) {
@@ -300,7 +300,7 @@ impl QueuedMessage {
                 interval @ (AggregateFrequency::Hourly
                 | AggregateFrequency::Daily
                 | AggregateFrequency::Weekly)
-                    if is_smtp =>
+                    if is_smtp && (message.flags & FROM_REPORT == 0) =>
                 {
                     let time = Instant::now();
                     match server

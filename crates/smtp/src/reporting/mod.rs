@@ -25,7 +25,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     core::Session,
     inbound::DkimSign,
-    queue::{DomainPart, Message, MessageSource, spool::SmtpSpool},
+    queue::{DomainPart, FROM_REPORT, Message, MessageSource, spool::SmtpSpool},
 };
 
 pub mod analysis;
@@ -149,6 +149,7 @@ impl SmtpReporting for Server {
         }
 
         // Queue message
+        message.flags |= FROM_REPORT;
         message
             .queue(
                 signature.as_deref(),
