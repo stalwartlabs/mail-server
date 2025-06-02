@@ -210,12 +210,42 @@ impl<T: SessionStream> SessionData<T> {
                     .mailboxes
                     .iter()
                     .any(|mailbox| mailbox.mailbox_id == src_mailbox.id.mailbox_id)
-                    || data
-                        .inner
-                        .mailboxes
-                        .iter()
-                        .any(|mailbox| mailbox.mailbox_id == dest_mailbox_id.mailbox_id)
                 {
+                    continue;
+                }
+
+                // If the message is already in the destination mailbox, skip it.
+                if let Some(mailbox) = data
+                    .inner
+                    .mailboxes
+                    .iter()
+                    .find(|mailbox| mailbox.mailbox_id == dest_mailbox_id.mailbox_id)
+                {
+                    copied_ids.push((imap_id.uid, mailbox.uid.to_native()));
+
+                    if is_move {
+                        let mut new_data = data
+                            .deserialize()
+                            .imap_ctx(&arguments.tag, trc::location!())?;
+                        new_data.remove_mailbox(src_mailbox.id.mailbox_id);
+                        batch
+                            .with_account_id(account_id)
+                            .with_collection(Collection::Email)
+                            .update_document(id)
+                            .custom(
+                                ObjectIndexBuilder::new()
+                                    .with_current(data)
+                                    .with_changes(new_data),
+                            )
+                            .imap_ctx(&arguments.tag, trc::location!())?
+                            .log_vanished_item(
+                                VanishedCollection::Email,
+                                (src_mailbox.id.mailbox_id, imap_id.uid),
+                            )
+                            .commit_point();
+                        did_move = true;
+                    }
+
                     continue;
                 }
 
