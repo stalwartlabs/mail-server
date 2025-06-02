@@ -21,14 +21,6 @@ impl managed::Manager for LdapConnectionManager {
 
         ldap3::drive!(conn);
 
-        trc::event!(
-            Store(trc::StoreEvent::LdapBind),
-            Details = self
-                .bind_dn
-                .as_ref()
-                .map(|b| trc::Value::String(b.dn.as_str().into())),
-        );
-
         if let Some(bind) = &self.bind_dn {
             ldap.simple_bind(&bind.dn, &bind.password)
                 .await?

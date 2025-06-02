@@ -18,14 +18,14 @@ impl EventType {
                 | StoreEvent::BlobWrite
                 | StoreEvent::BlobDelete
                 | StoreEvent::SqlQuery
-                | StoreEvent::LdapQuery
-                | StoreEvent::LdapBind => Level::Trace,
+                | StoreEvent::LdapQuery => Level::Trace,
                 StoreEvent::CacheMiss
                 | StoreEvent::CacheHit
                 | StoreEvent::CacheStale
                 | StoreEvent::CacheUpdate
                 | StoreEvent::NotFound
-                | StoreEvent::HttpStoreFetch => Level::Debug,
+                | StoreEvent::HttpStoreFetch
+                | StoreEvent::LdapWarning => Level::Debug,
                 StoreEvent::AssertValueFailed
                 | StoreEvent::FoundationdbError
                 | StoreEvent::MysqlError

@@ -857,7 +857,7 @@ pub enum StoreEvent {
     BlobDelete,
     SqlQuery,
     LdapQuery,
-    LdapBind,
+    LdapWarning,
     HttpStoreFetch,
 }
 

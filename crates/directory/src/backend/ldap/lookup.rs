@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-use super::{LdapDirectory, LdapMappings};
+use super::{AuthBind, LdapDirectory, LdapMappings};
 
 impl LdapDirectory {
     pub async fn query(
@@ -29,16 +29,18 @@ impl LdapDirectory {
         return_member_of: bool,
     ) -> trc::Result<Option<Principal>> {
         let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
-
         let (mut external_principal, member_of, stored_principal) = match by {
             QueryBy::Name(username) => {
-                if let Some((mut principal, member_of)) = self
-                    .find_principal(&mut conn, &self.mappings.filter_name.build(username))
-                    .await?
-                {
-                    principal.name = username.into();
-                    (principal, member_of, None)
+                let filter = self.mappings.filter_name.build(username);
+                if let Some(mut result) = self.find_principal(&mut conn, &filter).await? {
+                    result.principal.name = username.into();
+                    (result.principal, result.member_of, None)
                 } else {
+                    trc::event!(
+                        Store(trc::StoreEvent::LdapWarning),
+                        Reason = "Name filter yielded no results",
+                        Details = filter
+                    );
                     return Ok(None);
                 }
             }
@@ -48,14 +50,14 @@ impl LdapDirectory {
                     .query(QueryBy::Id(uid), return_member_of)
                     .await?
                 {
-                    if let Some((principal, member_of)) = self
+                    if let Some(result) = self
                         .find_principal(
                             &mut conn,
                             &self.mappings.filter_name.build(stored_principal_.name()),
                         )
                         .await?
                     {
-                        (principal, member_of, Some(stored_principal_))
+                        (result.principal, result.member_of, Some(stored_principal_))
                     } else {
                         return Ok(None);
                     }
@@ -70,65 +72,138 @@ impl LdapDirectory {
                     Credentials::XOauth2 { username, secret } => (username, secret),
                 };
 
-                if let Some(auth_bind) = &self.auth_bind {
-                    let (auth_bind_conn, mut ldap) = LdapConnAsync::with_settings(
-                        self.pool.manager().settings.clone(),
-                        &self.pool.manager().address,
-                    )
-                    .await
-                    .map_err(|err| err.into_error().caused_by(trc::location!()))?;
-
-                    ldap3::drive!(auth_bind_conn);
-
-                    let dn = auth_bind.filter.build(username);
-
-                    trc::event!(Store(trc::StoreEvent::LdapBind), Details = dn.clone());
-
-                    if ldap
-                        .simple_bind(&dn, secret)
+                match &self.auth_bind {
+                    AuthBind::Template {
+                        template,
+                        can_search,
+                    } => {
+                        let (auth_bind_conn, mut ldap) = LdapConnAsync::with_settings(
+                            self.pool.manager().settings.clone(),
+                            &self.pool.manager().address,
+                        )
                         .await
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?
-                        .success()
-                        .is_err()
-                    {
-                        return Ok(None);
-                    }
+                        .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
-                    let filter = &self.mappings.filter_name.build(username);
-                    let principal = if auth_bind.search {
-                        self.find_principal(&mut ldap, filter).await
-                    } else {
-                        self.find_principal(&mut conn, filter).await
-                    };
-                    match principal {
-                        Ok(Some((mut principal, member_of))) => {
-                            principal.name = username.into();
-                            (principal, member_of, None)
-                        }
-                        Err(err)
-                            if err.matches(trc::EventType::Store(trc::StoreEvent::LdapError))
-                                && err
-                                    .value(trc::Key::Code)
-                                    .and_then(|v| v.to_uint())
-                                    .is_some_and(|rc| [49, 50].contains(&rc)) =>
+                        ldap3::drive!(auth_bind_conn);
+
+                        let dn = template.build(username);
+
+                        if ldap
+                            .simple_bind(&dn, secret)
+                            .await
+                            .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                            .success()
+                            .is_err()
                         {
+                            trc::event!(
+                                Store(trc::StoreEvent::LdapWarning),
+                                Reason = "Secret rejected during auth bind using template",
+                                Details = dn
+                            );
                             return Ok(None);
                         }
-                        Ok(None) => return Ok(None),
-                        Err(err) => return Err(err),
+
+                        let filter = self.mappings.filter_name.build(username);
+                        let result = if *can_search {
+                            self.find_principal(&mut ldap, &filter).await
+                        } else {
+                            self.find_principal(&mut conn, &filter).await
+                        };
+
+                        match result {
+                            Ok(Some(mut result)) => {
+                                result.principal.name = username.into();
+                                (result.principal, result.member_of, None)
+                            }
+                            Err(err)
+                                if err
+                                    .matches(trc::EventType::Store(trc::StoreEvent::LdapError))
+                                    && err
+                                        .value(trc::Key::Code)
+                                        .and_then(|v| v.to_uint())
+                                        .is_some_and(|rc| [49, 50].contains(&rc)) =>
+                            {
+                                trc::event!(
+                                    Store(trc::StoreEvent::LdapWarning),
+                                    Reason = "Error codes 49 or 50 returned by LDAP server",
+                                    Details = vec![dn, filter]
+                                );
+                                return Ok(None);
+                            }
+                            Ok(None) => {
+                                trc::event!(
+                                    Store(trc::StoreEvent::LdapWarning),
+                                    Reason = "Auth bind successful but filter yielded no results",
+                                    Details = vec![dn, filter]
+                                );
+
+                                return Ok(None);
+                            }
+                            Err(err) => return Err(err),
+                        }
                     }
-                } else if let Some((mut principal, member_of)) = self
-                    .find_principal(&mut conn, &self.mappings.filter_name.build(username))
-                    .await?
-                {
-                    if principal.verify_secret(secret).await? {
-                        principal.name = username.into();
-                        (principal, member_of, None)
-                    } else {
-                        return Ok(None);
+                    AuthBind::Lookup => {
+                        let filter = self.mappings.filter_name.build(username);
+                        if let Some(mut result) = self.find_principal(&mut conn, &filter).await? {
+                            // Perform bind auth using the found dn
+                            let (auth_bind_conn, mut ldap) = LdapConnAsync::with_settings(
+                                self.pool.manager().settings.clone(),
+                                &self.pool.manager().address,
+                            )
+                            .await
+                            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
+
+                            ldap3::drive!(auth_bind_conn);
+
+                            if ldap
+                                .simple_bind(&result.dn, secret)
+                                .await
+                                .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                                .success()
+                                .is_ok()
+                            {
+                                result.principal.name = username.into();
+                                (result.principal, result.member_of, None)
+                            } else {
+                                trc::event!(
+                                    Store(trc::StoreEvent::LdapWarning),
+                                    Reason = "Secret rejected during auth bind using lookup filter",
+                                    Details = vec![result.dn, filter]
+                                );
+                                return Ok(None);
+                            }
+                        } else {
+                            trc::event!(
+                                Store(trc::StoreEvent::LdapWarning),
+                                Reason = "Auth bind lookup filter yielded no results",
+                                Details = filter
+                            );
+                            return Ok(None);
+                        }
                     }
-                } else {
-                    return Ok(None);
+                    AuthBind::None => {
+                        let filter = self.mappings.filter_name.build(username);
+                        if let Some(mut result) = self.find_principal(&mut conn, &filter).await? {
+                            if result.principal.verify_secret(secret).await? {
+                                result.principal.name = username.into();
+                                (result.principal, result.member_of, None)
+                            } else {
+                                trc::event!(
+                                    Store(trc::StoreEvent::LdapWarning),
+                                    Reason = "Password verification failed",
+                                    Details = vec![result.dn, filter]
+                                );
+                                return Ok(None);
+                            }
+                        } else {
+                            trc::event!(
+                                Store(trc::StoreEvent::LdapWarning),
+                                Reason = "Authentication filter yielded no results",
+                                Details = filter
+                            );
+                            return Ok(None);
+                        }
+                    }
                 }
             }
         };
@@ -315,7 +390,7 @@ impl LdapDirectory {
         &self,
         conn: &mut Ldap,
         filter: &str,
-    ) -> trc::Result<Option<(Principal, Vec<String>)>> {
+    ) -> trc::Result<Option<LdapResult>> {
         conn.search(
             &self.mappings.base_dn,
             Scope::Subtree,
@@ -341,8 +416,14 @@ impl LdapDirectory {
     }
 }
 
+struct LdapResult {
+    dn: String,
+    principal: Principal,
+    member_of: Vec<String>,
+}
+
 impl LdapMappings {
-    fn entry_to_principal(&self, entry: SearchEntry) -> (Principal, Vec<String>) {
+    fn entry_to_principal(&self, entry: SearchEntry) -> LdapResult {
         let mut principal = Principal::new(0, Type::Individual);
         let mut role = ROLE_USER;
         let mut member_of = vec![];
@@ -411,15 +492,21 @@ impl LdapMappings {
         }
 
         principal.data.push(PrincipalData::Roles(vec![role]));
-        (principal, member_of)
+
+        LdapResult {
+            dn: entry.dn,
+            principal,
+            member_of,
+        }
     }
 }
 
 fn result_to_trace(rs: &ResultEntry) -> trc::Value {
-    SearchEntry::construct(rs.clone())
-        .attrs
+    let se = SearchEntry::construct(rs.clone());
+    se.attrs
         .into_iter()
         .map(|(k, v)| trc::Value::Array(vec![trc::Value::from(k), trc::Value::from(v.join(", "))]))
+        .chain([trc::Value::from(se.dn)])
         .collect::<Vec<_>>()
         .into()
 }

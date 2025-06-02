@@ -15,7 +15,7 @@ pub mod pool;
 pub struct LdapDirectory {
     pool: Pool<LdapConnectionManager>,
     mappings: LdapMappings,
-    auth_bind: Option<AuthBind>,
+    auth_bind: AuthBind,
     pub(crate) data_store: Store,
 }
 
@@ -37,14 +37,40 @@ pub struct LdapMappings {
 }
 
 #[derive(Debug, Default)]
-struct LdapFilter {
-    filter: Vec<String>,
+pub(crate) struct LdapFilter {
+    filter: Vec<LdapFilterItem>,
+}
+
+#[derive(Debug)]
+enum LdapFilterItem {
+    Static(String),
+    Full,
+    LocalPart,
+    DomainPart,
 }
 
 impl LdapFilter {
     pub fn build(&self, value: &str) -> String {
-        let value = ldap_escape(value);
-        self.filter.join(value.as_ref())
+        let mut result = String::with_capacity(value.len() + 16);
+
+        for item in &self.filter {
+            match item {
+                LdapFilterItem::Static(s) => result.push_str(s),
+                LdapFilterItem::Full => result.push_str(ldap_escape(value).as_ref()),
+                LdapFilterItem::LocalPart => {
+                    if let Some((value, _)) = value.rsplit_once('@') {
+                        result.push_str(value);
+                    }
+                }
+                LdapFilterItem::DomainPart => {
+                    if let Some((_, domain)) = value.rsplit_once('@') {
+                        result.push_str(domain);
+                    }
+                }
+            }
+        }
+
+        result
     }
 }
 
@@ -75,7 +101,11 @@ impl Bind {
     }
 }
 
-pub(crate) struct AuthBind {
-    filter: LdapFilter,
-    search: bool,
+pub(crate) enum AuthBind {
+    Template {
+        template: LdapFilter,
+        can_search: bool,
+    },
+    Lookup,
+    None,
 }

@@ -12,7 +12,9 @@ use utils::config::{Config, utils::AsKey};
 
 use crate::core::config::build_pool;
 
-use super::{AuthBind, Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapMappings};
+use super::{
+    AuthBind, Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapFilterItem, LdapMappings,
+};
 
 impl LdapDirectory {
     pub fn from_config(config: &mut Config, prefix: impl AsKey, data_store: Store) -> Option<Self> {
@@ -104,17 +106,25 @@ impl LdapDirectory {
             mappings.attrs_principal.extend(attr.iter().cloned());
         }
 
-        let auth_bind = if config
-            .property_or_default::<bool>((&prefix, "bind.auth.enable"), "false")
-            .unwrap_or_default()
+        let auth_bind = match config
+            .value((&prefix, "bind.auth.method"))
+            .unwrap_or("default")
         {
-            let filter = LdapFilter::from_config(config, (&prefix, "bind.auth.dn"));
-            let search = config
-                .property_or_default::<bool>((&prefix, "bind.auth.search"), "true")
-                .unwrap_or(true);
-            Some(AuthBind { filter, search })
-        } else {
-            None
+            "template" => AuthBind::Template {
+                template: LdapFilter::from_config(config, (&prefix, "bind.auth.template")),
+                can_search: config
+                    .property_or_default::<bool>((&prefix, "bind.auth.search"), "true")
+                    .unwrap_or(true),
+            },
+            "lookup" => AuthBind::Lookup,
+            "default" => AuthBind::None,
+            unknown => {
+                config.new_parse_error(
+                    (&prefix, "bind.auth.method"),
+                    format!("Unknown LDAP bind method: {unknown}"),
+                );
+                return None;
+            }
         };
 
         Some(LdapDirectory {
@@ -133,15 +143,60 @@ impl LdapDirectory {
 impl LdapFilter {
     fn from_config(config: &mut Config, key: impl AsKey) -> Self {
         if let Some(value) = config.value(key.clone()) {
-            let filter = LdapFilter {
-                filter: value.split('?').map(|s| s.to_string()).collect(),
-            };
-            if filter.filter.len() >= 2 {
-                return filter;
+            let mut filter = Vec::new();
+            let mut token = String::new();
+            let mut value = value.chars();
+
+            while let Some(ch) = value.next() {
+                match ch {
+                    '?' => {
+                        // For backwards compatibility, we treat '?' as a placeholder for the full value.
+                        if !token.is_empty() {
+                            filter.push(LdapFilterItem::Static(token));
+                            token = String::new();
+                        }
+                        filter.push(LdapFilterItem::Full);
+                    }
+                    '{' => {
+                        if !token.is_empty() {
+                            filter.push(LdapFilterItem::Static(token));
+                            token = String::new();
+                        }
+                        for ch in value.by_ref() {
+                            if ch == '}' {
+                                break;
+                            } else {
+                                token.push(ch);
+                            }
+                        }
+                        match token.as_str() {
+                            "user" | "username" | "email" => filter.push(LdapFilterItem::Full),
+                            "local" => filter.push(LdapFilterItem::LocalPart),
+                            "domain" => filter.push(LdapFilterItem::DomainPart),
+                            _ => {
+                                config.new_parse_error(
+                                    key,
+                                    format!("Unknown LDAP filter placeholder: {}", token),
+                                );
+                                return Self::default();
+                            }
+                        }
+                        token.clear();
+                    }
+                    _ => token.push(ch),
+                }
+            }
+
+            if !token.is_empty() {
+                filter.push(LdapFilterItem::Static(token));
+            }
+
+            if filter.len() >= 2 {
+                return LdapFilter { filter };
             } else {
                 config.new_parse_error(
                     key,
-                    format!("Missing '?' parameter placeholder in value {:?}", value),
+                    format!("Missing parameter placeholders in value {:?}", value),
                 );
             }
         }

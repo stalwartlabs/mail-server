@@ -143,21 +143,65 @@ base-dn = "dc=example,dc=org"
 dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
 secret = "mysecret"
 
-[directory."ldap".bind.auth]
-enable = false
-dn = "cn=?,ou=svcaccts,dc=example,dc=org"
-
 [directory."ldap".filter]
 name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
 email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(givenName=?)(sn=?)))"
-verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(givenName=*?*)))"
-expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(sn=?))"
-domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(givenName=*@?)(sn=*@?)))"
-
-# Glauth does not support searchable custom attributes so
-# 'sn' and 'givenName' are used to search for aliases/lists.
 
 [directory."ldap".attributes]
+name = "uid"
+description = ["principalName", "description"]
+secret = "userPassword"
+groups = ["memberOf", "otherGroups"]
+email = "mail"
+email-alias = "givenName"
+quota = "diskQuota"
+class = "objectClass"
+
+[directory."ldap-bind-template"]
+type = "ldap"
+url = "ldap://localhost:3893"
+base-dn = "dc=example,dc=org"
+
+[directory."ldap-bind-template".bind]
+dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
+secret = "mysecret"
+
+[directory."ldap-bind-template".bind.auth]
+method = "template"
+template = "cn={username},ou=,dc=example,dc=org"
+search = false
+
+[directory."ldap-bind-template".filter]
+name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
+email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(givenName=?)(sn=?)))"
+
+[directory."ldap-bind-template".attributes]
+name = "uid"
+description = ["principalName", "description"]
+secret = "userPassword"
+groups = ["memberOf", "otherGroups"]
+email = "mail"
+email-alias = "givenName"
+quota = "diskQuota"
+class = "objectClass"
+
+[directory."ldap-bind-lookup"]
+type = "ldap"
+url = "ldap://localhost:3893"
+base-dn = "dc=example,dc=org"
+
+[directory."ldap-bind-lookup".bind]
+dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
+secret = "mysecret"
+
+[directory."ldap-bind-lookup".bind.auth]
+method = "lookup"
+
+[directory."ldap-bind-lookup".filter]
+name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
+email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(givenName=?)(sn=?)))"
+
+[directory."ldap-bind-lookup".attributes]
 name = "uid"
 description = ["principalName", "description"]
 secret = "userPassword"
