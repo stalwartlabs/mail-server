@@ -23,7 +23,7 @@
   <a href="https://twitter.com/stalwartlabs"><img src="https://img.shields.io/twitter/follow/stalwartlabs?style=flat-square&logo=x&label=Follow%20on%20Twitter" alt="Twitter"></a>
 </p>
 <p align="center">
-  <a href="https://discord.gg/aVQr3jF8jd"><img src="https://img.shields.io/discord/923615863037390889?label=Join%20Discord&logo=discord&style=flat-square" alt="Discord"></a>
+  <a href="https://discord.com/servers/stalwart-923615863037390889"><img src="https://img.shields.io/discord/923615863037390889?label=Join%20Discord&logo=discord&style=flat-square" alt="Discord"></a>
   &nbsp;
   <a href="https://www.reddit.com/r/stalwartlabs/"><img src="https://img.shields.io/reddit/subreddit-subscribers/stalwartlabs?label=Join%20%2Fr%2Fstalwartlabs&logo=reddit&style=flat-square" alt="Reddit"></a>
 </p>
@@ -131,9 +131,7 @@ All documentation is available at [stalw.art/docs](https://stalw.art/docs/instal
 
 ## Support
 
-If you are having problems running Stalwart, you found a bug or just have a question,
-do not hesitate to reach us on [GitHub Discussions](https://github.com/stalwartlabs/stalwart/discussions),
-[Reddit](https://www.reddit.com/r/stalwartlabs) or [Discord](https://discord.gg/aVQr3jF8jd).
+If you are having problems running Stalwart, you found a bug or just have a question, do not hesitate to reach us on [GitHub Discussions](https://github.com/stalwartlabs/stalwart/discussions), [Reddit](https://www.reddit.com/r/stalwartlabs) or [Discord](https://discord.com/servers/stalwart-923615863037390889).
 Additionally you may purchase an [Enterprise License](https://stalw.art/enterprise) to obtain priority support from Stalwart Labs LLC.
 
 ## Sponsorship
