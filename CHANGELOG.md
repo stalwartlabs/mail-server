@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.12.4] - 2025-06-03
+
+If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- LDAP authentication enhancements (#1269 #1471 #795 #1496).
+- MTA: Return Queue IDs during message acceptance (#927).
+
+## Changed
+- LDAP: `bind.auth.enable` is now `bind.auth.method`, read the updated [LDAP documentation](https://stalw.art/docs/auth/backend/ldap) for more information.
+
+## Fixed
+- DNS: `hickory-resolver` bug hitting 100% CPU usage when resolving DNSSEC records.
+- IMAP: Return the message UID in the destination mailbox if the message already exists (#1201).
+- MTA: TLS reports being issued for sent TLS reports (infinite loop) (#1301).
+- WebDAV: Return `CTag` on `/dav/cal/account` resources to force iOS synchronize.
+- CardDAV: Strict vCard parsing (#1607).
+- WebDAV: Dead property updates (#1611).
+- WebDAV: Use last change id in `CTag`.
+
 ## [0.12.3] - 2025-05-30
 
 If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.

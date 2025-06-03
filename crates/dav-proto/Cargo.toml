@@ -1,6 +1,6 @@
 [package]
 name = "dav-proto"
-version = "0.12.3"
+version = "0.12.4"
 edition = "2021"
 
 [dependencies]
