@@ -6,6 +6,7 @@
 
 use std::borrow::Cow;
 
+use compact_str::ToCompactString;
 use http_body_util::BodyExt;
 
 use crate::HttpRequest;
@@ -31,6 +32,14 @@ pub async fn fetch_body(
                 trc::event!(
                     Http(trc::HttpEvent::RequestBody),
                     SpanId = session_id,
+                    Details = req
+                        .headers()
+                        .iter()
+                        .map(|(k, v)| trc::Value::Array(vec![
+                            k.as_str().to_compact_string().into(),
+                            v.to_str().unwrap_or_default().to_compact_string().into()
+                        ]))
+                        .collect::<Vec<_>>(),
                     Contents = std::str::from_utf8(&bytes)
                         .unwrap_or("[binary data]")
                         .to_string(),
@@ -46,6 +55,14 @@ pub async fn fetch_body(
     trc::event!(
         Http(trc::HttpEvent::RequestBody),
         SpanId = session_id,
+        Details = req
+            .headers()
+            .iter()
+            .map(|(k, v)| trc::Value::Array(vec![
+                k.as_str().to_compact_string().into(),
+                v.to_str().unwrap_or_default().to_compact_string().into()
+            ]))
+            .collect::<Vec<_>>(),
         Contents = std::str::from_utf8(&bytes)
             .unwrap_or("[binary data]")
             .to_string(),
