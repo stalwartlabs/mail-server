@@ -10,7 +10,8 @@ use common::{Server, auth::AccessToken};
 use dav_proto::schema::{
     Namespace,
     property::{
-        DavProperty, PrincipalProperty, Privilege, ReportSet, ResourceType, WebDavProperty,
+        DavProperty, DavValue, PrincipalProperty, Privilege, ReportSet, ResourceType,
+        WebDavProperty,
     },
     request::{DavPropertyValue, PropFind},
     response::{Href, MultiStatus, PropStat, Response},
@@ -192,6 +193,18 @@ impl PrincipalPropFind for Server {
                                 .sync_token();
 
                             fields.push(DavPropertyValue::new(property.clone(), sync_token));
+                        }
+                        WebDavProperty::GetCTag if !is_principal => {
+                            let ctag = self
+                                .fetch_dav_resources(access_token, account_id, collection.into())
+                                .await
+                                .caused_by(trc::location!())?
+                                .highest_change_id;
+
+                            fields.push(DavPropertyValue::new(
+                                property.clone(),
+                                DavValue::String(format!("\"{ctag}\"")),
+                            ));
                         }
                         WebDavProperty::Owner => {
                             fields.push(DavPropertyValue::new(
