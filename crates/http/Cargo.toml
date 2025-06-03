@@ -22,7 +22,7 @@ services = { path =  "../services" }
 smtp-proto = { version = "0.1" }
 mail-parser = { version = "0.11", features = ["full_encoding", "rkyv"] } 
 mail-builder = { version = "0.4" }
-mail-auth = { version = "0.7", features = ["generate"] }
+mail-auth = { version = "0.7.1", features = ["generate"] }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 tokio = { version = "1.45", features = ["rt"] }
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }

@@ -15,9 +15,8 @@ use mail_auth::{
     MessageAuthenticator,
     hickory_resolver::{
         TokioResolver,
-        config::{NameServerConfig, ResolverConfig, ResolverOpts},
+        config::{NameServerConfig, ProtocolConfig, ResolverConfig, ResolverOpts},
         name_server::TokioConnectionProvider,
-        proto::xfer::Protocol,
         system_conf::read_system_conf,
     },
 };
@@ -119,7 +118,7 @@ impl Resolvers {
                 })
                 .unwrap_or_else(|_| (ResolverConfig::cloudflare(), ResolverOpts::default())),
             "custom" => {
-                let mut resolver_config = ResolverConfig::new();
+                let mut resolver_config = ResolverConfig::default();
                 for url in config
                     .values("resolver.custom")
                     .map(|(_, v)| v.to_string())
@@ -131,21 +130,23 @@ impl Resolvers {
                     {
                         (
                             match proto.as_str() {
-                                "udp" => Protocol::Udp,
-                                "tcp" => Protocol::Tcp,
-                                "tls" => Protocol::Tls,
+                                "udp" => ProtocolConfig::Udp,
+                                "tcp" => ProtocolConfig::Tcp,
+                                "tls" => ProtocolConfig::Tls {
+                                    server_name: host.clone().into(),
+                                },
                                 _ => {
                                     config.new_parse_error(
                                         "resolver.custom",
                                         format!("Invalid custom resolver protocol {url:?}"),
                                     );
-                                    Protocol::Udp
+                                    ProtocolConfig::Udp
                                 }
                             },
                             host.to_string(),
                         )
                     } else {
-                        (Protocol::Udp, url)
+                        (ProtocolConfig::Udp, url)
                     };
 
                     let (host, port) = if let Some(host) = host.strip_prefix('[') {

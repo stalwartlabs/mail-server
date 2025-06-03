@@ -15,7 +15,7 @@ imap_proto = { path = "../imap-proto" }
 sieve-rs = { version = "0.7", features = ["rkyv", "serde"] }
 mail-parser = { version = "0.11", features = ["full_encoding"] } 
 mail-builder = { version = "0.4" }
-mail-auth = { version = "0.7" }
+mail-auth = { version = "0.7.1" }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 smtp-proto = { version = "0.1", features = ["rkyv"] }
 dns-update = { version = "0.1" }
@@ -57,7 +57,7 @@ unicode-security = "0.1.0"
 infer = "0.19"
 bincode = { version = "2.0", features = ["serde"] }
 hostname = "0.4.0"
-zip = "3.0"
+zip = "4.0"
 pwhash = "1.0.0"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 psl = "2"

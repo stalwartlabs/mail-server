@@ -44,7 +44,7 @@ trc = { path = "../crates/trc" }
 managesieve = { path = "../crates/managesieve", features = ["test_mode", "enterprise"] }
 smtp-proto = { version = "0.1" }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
-mail-auth = { version = "0.7", features = ["test"] }
+mail-auth = { version = "0.7.1", features = ["test"] }
 sieve-rs = { version = "0.7", features = ["rkyv"] } 
 utils = { path = "../crates/utils", features = ["test_mode"] }
 jmap-client = { version = "0.3", features = ["websockets", "debug", "async"] } 

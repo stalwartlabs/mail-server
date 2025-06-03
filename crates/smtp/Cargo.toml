@@ -20,7 +20,7 @@ common = { path =  "../common" }
 email = { path =  "../email" }
 spam-filter = { path =  "../spam-filter" }
 trc = { path = "../trc" }
-mail-auth = { version = "0.7", features = ["rkyv"] }
+mail-auth = { version = "0.7.1", features = ["rkyv"] }
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 mail-parser = { version = "0.11", features = ["full_encoding"] } 
 mail-builder = { version = "0.4" } 

@@ -29,4 +29,4 @@ human-size = "0.4.2"
 futures = "0.3.28"
 pwhash = "1.0.0"
 rand = "0.9.0"
-mail-auth = { version = "0.7" }
+mail-auth = { version = "0.7.1" }
