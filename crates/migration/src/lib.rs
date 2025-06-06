@@ -40,6 +40,18 @@ const LOCK_WAIT_TIME_CORE: u64 = 5 * 60;
 const LOCK_RETRY_TIME: Duration = Duration::from_secs(30);
 
 pub async fn try_migrate(server: &Server) -> trc::Result<()> {
+    if std::env::var("FORCE_MIGRATE_QUEUE").is_ok() {
+        migrate_queue(server).await.caused_by(trc::location!())?;
+    }
+    if let Some(account_id) = std::env::var("FORCE_MIGRATE_ACCOUNT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+    {
+        migrate_principal(server, account_id)
+            .await
+            .caused_by(trc::location!())?;
+    }
+
     if server
         .store()
         .get_value::<u32>(AnyKey {
