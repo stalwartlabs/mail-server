@@ -1,0 +1,72 @@
+<mjml>
+  <mj-head>
+    <mj-title>{{title}}</mj-title>
+    <mj-attributes>
+      <mj-all font-family="Arial, sans-serif" />
+      <mj-text font-size="14px" color="#333333" line-height="1.5" />
+      <mj-section background-color="#ffffff" />
+    </mj-attributes>
+    <mj-style inline="inline">
+      .event-detail {
+      font-weight: bold;
+      color: #2c5aa0;
+      }
+      .guest-list {
+      background-color: #f8f9fa;
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 5px;
+      }
+    </mj-style>
+  </mj-head>
+  <mj-body background-color="#f4f4f4">
+    <mj-section background-color="#ffffff" padding="20px 0">
+      <mj-column>
+        <mj-image src="https://stalw.art/img/logo-dark@2x.png" alt="Stalwart Logo" width="200px" align="center" />
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#ffffff" padding="0 20px">
+      <mj-column>
+        <mj-text align="center" font-size="20px" font-weight="bold" color="#2c5aa0" padding="20px 0">
+          {{upcoming_event}}
+        </mj-text>
+
+        <mj-text font-size="24px" font-weight="bold" color="#333333" padding="10px 0 5px 0">
+          {{event_title}}
+        </mj-text>
+
+        <mj-text font-size="14px" color="#666666" padding="0 0 20px 0" line-height="1.4">
+          {{event_description}}
+        </mj-text>
+
+        <mj-text padding="5px 0">
+          <span class="event-detail">{{field_name}}:</span> {{field_value}}
+        </mj-text>
+
+        <mj-text font-size="16px" font-weight="bold" color="#333333" padding="15px 0 5px 0">
+          {{attendees}}:
+        </mj-text>
+
+        <mj-text padding="0 0 20px 0">
+          <div class="guest-list">
+            • {{guest_name}} ({{guest_email}})<br />
+          </div>
+        </mj-text>
+
+        <mj-button background-color="#2c5aa0" color="#ffffff" font-size="16px" font-weight="bold" border-radius="6px" padding="15px 30px" href="{{event_url}}" align="center">
+          {{open_button}}
+        </mj-button>
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#f8f9fa" padding="20px">
+      <mj-column>
+        <mj-divider border-color="#e9ecef" border-width="1px" padding="0 0 15px 0" />
+        <mj-text font-size="12px" color="#6c757d" align="center" line-height="1.4">
+         {{footer}}
+        </mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

@@ -13,7 +13,7 @@ use calcard::{
 use dav_proto::schema::property::TimeRange;
 use groupware::{
     DavResourceName,
-    calendar::{CalendarEventData, dates::ExpandAlarm},
+    calendar::{CalendarEventData, alarm::ExpandAlarm},
 };
 use hyper::StatusCode;
 use store::write::serialize::rkyv_unarchive;
@@ -228,8 +228,8 @@ fn roundtrip_expansion(ics: &str, ignore_errors: bool) {
 
             for alarm in ical.alarms_for_id(e.comp_id) {
                 if let Some(alarm_time) = alarm
-                    .expand_alarm()
-                    .and_then(|delta| delta.to_timestamp(start, end, Tz::UTC))
+                    .expand_alarm(0, 0)
+                    .and_then(|alarm| alarm.delta.to_timestamp(start, end, Tz::UTC))
                 {
                     if alarm_time < min {
                         min = alarm_time;
@@ -256,7 +256,7 @@ fn roundtrip_expansion(ics: &str, ignore_errors: bool) {
         .collect::<Vec<_>>();
 
     // Verify min/max UTC timestamps
-    let event_data = CalendarEventData::new(ical, Tz::UTC, 100);
+    let event_data = CalendarEventData::new(ical, Tz::UTC, 100, &mut None);
     let from_time = event_data.base_time_utc as i64 + event_data.base_offset;
     let to_time = from_time + event_data.duration as i64;
 

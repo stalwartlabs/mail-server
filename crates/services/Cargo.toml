@@ -11,10 +11,15 @@ utils = { path =  "../utils" }
 trc = { path = "../trc" }
 email = { path = "../email" }
 smtp = { path = "../smtp" }
+groupware = { path = "../groupware" }
 jmap_proto = { path = "../jmap-proto" }
 directory = { path =  "../directory" }
+smtp-proto = { version = "0.1.6", features = ["rkyv", "serde"] }
 tokio = { version = "1.45", features = ["rt"] }
 mail-parser = { version = "0.11", features = ["full_encoding", "rkyv"] }
+mail-builder = { version = "0.4" } 
+calcard = { version = "0.1.2", features = ["rkyv"] }
+chrono = { version = "0.4", features = ["unstable-locales"] }
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 memory-stats = "1.2.0"

@@ -56,7 +56,7 @@ pub enum PrincipalData {
     ExternalMembers(Vec<String>),
     Urls(Vec<String>),
     PrincipalQuota(Vec<PrincipalQuota>),
-    Language(String),
+    Locale(String),
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
@@ -373,6 +373,8 @@ pub enum Permission {
     DavCalQuery,
     DavCalMultiGet,
     DavCalFreeBusyQuery,
+
+    CalendarAlarms,
     // WARNING: add new ids at the end (TODO: use static ids)
 }
 

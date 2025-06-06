@@ -1123,6 +1123,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "pure-rust-locales",
  "serde",
  "wasm-bindgen",
  "windows-link",
@@ -5691,6 +5692,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pure-rust-locales"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1190fd18ae6ce9e137184f207593877e70f39b015040156b1e05081cdfe3733a"
+
+[[package]]
 name = "pwhash"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7264,12 +7271,16 @@ dependencies = [
  "aes-gcm",
  "aes-gcm-siv",
  "base64 0.22.1",
+ "calcard",
+ "chrono",
  "common",
  "compact_str",
  "directory",
  "email",
+ "groupware",
  "hkdf",
  "jmap_proto",
+ "mail-builder",
  "mail-parser",
  "memory-stats",
  "p256",
@@ -7279,6 +7290,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "smtp",
+ "smtp-proto",
  "store",
  "tokio",
  "trc",

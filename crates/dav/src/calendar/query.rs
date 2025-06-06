@@ -34,7 +34,10 @@ use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{acl::Acl, collection::SyncCollection};
 use std::{fmt::Write, slice::Iter, str::FromStr};
-use store::{ahash::AHashMap, write::serialize::rkyv_deserialize};
+use store::{
+    ahash::{AHashMap, AHashSet},
+    write::serialize::rkyv_deserialize,
+};
 use trc::AddContext;
 
 use super::freebusy::freebusy_in_range;
@@ -377,26 +380,27 @@ impl CalendarQueryHandler {
                                     .data
                                     .alarms
                                     .iter()
-                                    .map(|alarm| (alarm.comp_id.to_native(), alarm))
-                                    .collect::<AHashMap<_, _>>();
+                                    .map(|alarm| alarm.parent_id.to_native())
+                                    .collect::<AHashSet<_>>();
 
                                 !matching_comp_ids.is_empty()
-                                    && self.expanded_times.iter().any(|event| {
-                                        matching_comp_ids.get(&event.comp_id).is_some_and(|ct| {
-                                            ct.alarms.iter().any(|alarm| {
-                                                alarm
-                                                    .to_timestamp(
-                                                        event.start,
-                                                        event.end,
-                                                        self.default_tz,
-                                                    )
-                                                    .is_some_and(|timestamp| {
-                                                        range.is_in_range(
-                                                            false, timestamp, timestamp,
+                                    && self.expanded_times.iter().any(|time| {
+                                        matching_comp_ids.contains(&time.comp_id)
+                                            && event.data.alarms.iter().any(|alarm| {
+                                                alarm.parent_id.to_native() == time.comp_id
+                                                    && alarm
+                                                        .delta
+                                                        .to_timestamp(
+                                                            time.start,
+                                                            time.end,
+                                                            self.default_tz,
                                                         )
-                                                    })
+                                                        .is_some_and(|timestamp| {
+                                                            range.is_in_range(
+                                                                false, timestamp, timestamp,
+                                                            )
+                                                        })
                                             })
-                                        })
                                     })
                             }
                         }

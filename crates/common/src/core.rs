@@ -471,7 +471,7 @@ impl Server {
 
     #[inline(always)]
     pub fn notify_task_queue(&self) {
-        self.inner.ipc.index_tx.notify_one();
+        self.inner.ipc.task_tx.notify_one();
     }
 
     pub async fn total_queued_messages(&self) -> trc::Result<u64> {

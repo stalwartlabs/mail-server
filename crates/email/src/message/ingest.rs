@@ -530,7 +530,7 @@ impl EmailIngest for Server {
                 .log_container_insert(SyncCollection::Thread);
         }
 
-        let seq = self.generate_snowflake_id();
+        let due = now();
         let document_id = self
             .store()
             .assign_document_ids(account_id, Collection::Email, 1)
@@ -554,7 +554,7 @@ impl EmailIngest for Server {
             .caused_by(trc::location!())?
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                    seq,
+                    due,
                     hash: blob_id.hash.clone(),
                 }),
                 vec![],
@@ -564,7 +564,7 @@ impl EmailIngest for Server {
         if let Some(learn_spam) = train_spam {
             batch.set(
                 ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                    seq,
+                    due,
                     hash: blob_id.hash.clone(),
                     learn_spam,
                 }),

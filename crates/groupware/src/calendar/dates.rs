@@ -5,31 +5,29 @@
  */
 
 use super::{
-    Alarm, AlarmDelta, ArchivedAlarmDelta, ArchivedCalendarEventData, ArchivedTimezone,
-    CalendarEventData, Timezone,
+    ArchivedCalendarEventData, ArchivedTimezone, CalendarEventData, Timezone,
+    alarm::{CalendarAlarm, ExpandAlarm},
 };
 use crate::calendar::ComponentTimeRange;
 use calcard::{
     common::timezone::Tz,
-    icalendar::{
-        ICalendar, ICalendarComponent, ICalendarParameter, ICalendarProperty, ICalendarValue,
-        Related,
-        dates::{CalendarEvent, TimeOrDelta},
-    },
+    icalendar::{ICalendar, ICalendarComponentType, dates::TimeOrDelta},
 };
-use chrono::{DateTime, TimeZone};
 use compact_str::ToCompactString;
-use dav_proto::schema::property::TimeRange;
-use std::str::FromStr;
 use store::{
     ahash::AHashMap,
-    write::{bitpack::BitpackIterator, key::KeySerializer},
+    write::{key::KeySerializer, now},
 };
-use utils::codec::leb128::Leb128Reader;
 
 impl CalendarEventData {
-    pub fn new(ical: ICalendar, default_tz: Tz, max_expansions: usize) -> Self {
+    pub fn new(
+        ical: ICalendar,
+        default_tz: Tz,
+        max_expansions: usize,
+        next_email_alarm: &mut Option<CalendarAlarm>,
+    ) -> Self {
         let mut ranges = TimeRanges::default();
+        let now = now() as i64;
 
         let expanded = ical.expand_dates(default_tz, max_expansions);
         let mut groups: AHashMap<(u16, u16, u16, i32), Vec<i64>> = AHashMap::with_capacity(16);
@@ -64,20 +62,56 @@ impl CalendarEventData {
             // Expand alarms
             let mut min = std::cmp::min(start_timestamp_utc, end_timestamp_utc);
             let mut max = std::cmp::max(start_timestamp_utc, end_timestamp_utc);
-            for alarm_delta in alarms.entry(event.comp_id).or_insert_with(|| {
-                ical.alarms_for_id(event.comp_id)
-                    .filter_map(|alarm| alarm.expand_alarm())
+            for alarm in alarms.entry(event.comp_id).or_insert_with(|| {
+                ical.component_by_id(event.comp_id)
+                    .map_or(&[][..], |c| c.component_ids.as_slice())
+                    .iter()
+                    .filter_map(|alarm_id| {
+                        ical.component_by_id(*alarm_id).and_then(|alarm| {
+                            if alarm.component_type == ICalendarComponentType::VAlarm {
+                                alarm.expand_alarm(*alarm_id, event.comp_id)
+                            } else {
+                                None
+                            }
+                        })
+                    })
                     .collect::<Vec<_>>()
-                    .into_boxed_slice()
             }) {
                 if let Some(alarm_time) =
-                    alarm_delta.to_timestamp(start_timestamp_utc, end_timestamp_utc, default_tz)
+                    alarm
+                        .delta
+                        .to_timestamp(start_timestamp_utc, end_timestamp_utc, default_tz)
                 {
                     if alarm_time < min {
                         min = alarm_time;
                     }
                     if alarm_time > max {
                         max = alarm_time;
+                    }
+                    if alarm.is_email_alert && alarm_time > now {
+                        if let Some(next) = next_email_alarm {
+                            if alarm_time < next.alarm_time {
+                                *next = CalendarAlarm {
+                                    alarm_id: alarm.id,
+                                    event_id: alarm.parent_id,
+                                    alarm_time,
+                                    event_start: start_timestamp_naive,
+                                    event_end: end_timestamp_naive,
+                                    event_start_tz: start_tz,
+                                    event_end_tz: end_tz,
+                                };
+                            }
+                        } else {
+                            *next_email_alarm = Some(CalendarAlarm {
+                                alarm_id: alarm.id,
+                                event_id: alarm.parent_id,
+                                alarm_time,
+                                event_start: start_timestamp_naive,
+                                event_end: end_timestamp_naive,
+                                event_start_tz: start_tz,
+                                event_end_tz: end_tz,
+                            });
+                        }
                     }
                 }
             }
@@ -141,14 +175,8 @@ impl CalendarEventData {
             event: ical,
             time_ranges: events.into_boxed_slice(),
             alarms: alarms
-                .into_iter()
-                .filter_map(|(comp_id, alarms)| {
-                    if !alarms.is_empty() {
-                        Some(Alarm { comp_id, alarms })
-                    } else {
-                        None
-                    }
-                })
+                .into_values()
+                .flatten()
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
             base_offset: ranges.base_offset,
@@ -163,92 +191,6 @@ impl CalendarEventData {
         } else {
             None
         }
-    }
-}
-
-impl ArchivedCalendarEventData {
-    pub fn expand(&self, default_tz: Tz, limit: TimeRange) -> Option<Vec<CalendarEvent<i64, i64>>> {
-        let mut expansion = Vec::with_capacity(self.time_ranges.len());
-        let base_offset = self.base_offset.to_native();
-
-        'outer: for range in self.time_ranges.iter() {
-            let instances = range.instances.as_ref();
-            let (offset_or_count, bytes_read) = instances.read_leb128::<u32>()?;
-
-            let comp_id = range.id.to_native();
-            let duration = range.duration.to_native() as i64;
-            let mut start_tz = Tz::from_id(range.start_tz.to_native())?;
-            let mut end_tz = Tz::from_id(range.end_tz.to_native())?;
-
-            if start_tz.is_floating() && !default_tz.is_floating() {
-                start_tz = default_tz;
-            }
-            if end_tz.is_floating() && !default_tz.is_floating() {
-                end_tz = default_tz;
-            }
-
-            if instances.len() > bytes_read {
-                // Recurring event
-                let unpacker =
-                    BitpackIterator::from_bytes_and_offset(instances, bytes_read, offset_or_count);
-                for start_offset in unpacker {
-                    let start_date_naive = start_offset as i64 + base_offset;
-                    let end_date_naive = start_date_naive + duration;
-                    let start = start_tz
-                        .from_local_datetime(
-                            &DateTime::from_timestamp(start_date_naive, 0)?.naive_local(),
-                        )
-                        .single()?
-                        .timestamp();
-                    let end = end_tz
-                        .from_local_datetime(
-                            &DateTime::from_timestamp(end_date_naive, 0)?.naive_local(),
-                        )
-                        .single()?
-                        .timestamp();
-
-                    if ((start < limit.end) || (start <= limit.start))
-                        && (end > limit.start || end >= limit.end)
-                    {
-                        expansion.push(CalendarEvent {
-                            comp_id,
-                            start,
-                            end,
-                        });
-                    } else if start > limit.end {
-                        continue 'outer;
-                    }
-                }
-            } else {
-                // Single event
-                let start_date_naive = offset_or_count as i64 + base_offset;
-                let end_date_naive = start_date_naive + duration;
-                let start = start_tz
-                    .from_local_datetime(
-                        &DateTime::from_timestamp(start_date_naive, 0)?.naive_local(),
-                    )
-                    .single()?
-                    .timestamp();
-                let end = end_tz
-                    .from_local_datetime(
-                        &DateTime::from_timestamp(end_date_naive, 0)?.naive_local(),
-                    )
-                    .single()?
-                    .timestamp();
-
-                if ((start < limit.end) || (start <= limit.start))
-                    && (end > limit.start || end >= limit.end)
-                {
-                    expansion.push(CalendarEvent {
-                        comp_id,
-                        start,
-                        end,
-                    });
-                }
-            }
-        }
-
-        Some(expansion)
     }
 }
 
@@ -315,88 +257,6 @@ impl ArchivedTimezone {
                 .filter_map(|t| t.timezone().map(|x| x.1))
                 .next(),
             ArchivedTimezone::Default => None,
-        }
-    }
-}
-
-pub trait ExpandAlarm {
-    fn expand_alarm(&self) -> Option<AlarmDelta>;
-}
-
-impl ExpandAlarm for ICalendarComponent {
-    fn expand_alarm(&self) -> Option<AlarmDelta> {
-        for entry in self.entries.iter() {
-            if matches!(entry.name, ICalendarProperty::Trigger) {
-                let mut tz = None;
-                let mut trigger_start = true;
-
-                for param in entry.params.iter() {
-                    match param {
-                        ICalendarParameter::Related(related) => {
-                            trigger_start = matches!(related, Related::Start);
-                        }
-                        ICalendarParameter::Tzid(tz_id) => {
-                            tz = Tz::from_str(tz_id).ok();
-                        }
-                        _ => {}
-                    }
-                }
-
-                return match entry.values.first()? {
-                    ICalendarValue::PartialDateTime(dt) => {
-                        let tz = tz.unwrap_or(Tz::Floating);
-
-                        dt.to_date_time_with_tz(tz).map(|dt| {
-                            let timestamp = dt.timestamp();
-                            if !dt.timezone().is_floating() {
-                                AlarmDelta::FixedUtc(timestamp)
-                            } else {
-                                AlarmDelta::FixedFloating(timestamp)
-                            }
-                        })
-                    }
-                    ICalendarValue::Duration(duration) => {
-                        if trigger_start {
-                            Some(AlarmDelta::Start(duration.as_seconds()))
-                        } else {
-                            Some(AlarmDelta::End(duration.as_seconds()))
-                        }
-                    }
-                    _ => None,
-                };
-            }
-        }
-
-        None
-    }
-}
-
-impl AlarmDelta {
-    pub fn to_timestamp(&self, start: i64, end: i64, default_tz: Tz) -> Option<i64> {
-        match self {
-            AlarmDelta::Start(delta) => Some(start + delta),
-            AlarmDelta::End(delta) => Some(end + delta),
-            AlarmDelta::FixedUtc(timestamp) => Some(*timestamp),
-            AlarmDelta::FixedFloating(timestamp) => default_tz
-                .from_local_datetime(&DateTime::from_timestamp(*timestamp, 0)?.naive_local())
-                .single()
-                .map(|dt| dt.timestamp()),
-        }
-    }
-}
-
-impl ArchivedAlarmDelta {
-    pub fn to_timestamp(&self, start: i64, end: i64, default_tz: Tz) -> Option<i64> {
-        match self {
-            ArchivedAlarmDelta::Start(delta) => Some(start + delta.to_native()),
-            ArchivedAlarmDelta::End(delta) => Some(end + delta.to_native()),
-            ArchivedAlarmDelta::FixedUtc(timestamp) => Some(timestamp.to_native()),
-            ArchivedAlarmDelta::FixedFloating(timestamp) => default_tz
-                .from_local_datetime(
-                    &DateTime::from_timestamp(timestamp.to_native(), 0)?.naive_local(),
-                )
-                .single()
-                .map(|dt| dt.timestamp()),
         }
     }
 }

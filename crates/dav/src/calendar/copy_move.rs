@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use calcard::common::timezone::Tz;
 use common::{DavName, Server, auth::AccessToken};
 use dav_proto::{Depth, RequestHeaders};
 use groupware::{
@@ -17,7 +18,7 @@ use jmap_proto::types::{
     acl::Acl,
     collection::{Collection, SyncCollection, VanishedCollection},
 };
-use store::write::BatchBuilder;
+use store::write::{BatchBuilder, now};
 use trc::AddContext;
 
 use crate::{
@@ -480,6 +481,7 @@ async fn copy_event(
             )
             .caused_by(trc::location!())?;
     } else {
+        let next_email_alarm = event.inner.data.next_alarm(now() as i64, Tz::Floating);
         let mut new_event = event
             .deserialize::<CalendarEvent>()
             .caused_by(trc::location!())?;
@@ -493,7 +495,13 @@ async fn copy_event(
             .await
             .caused_by(trc::location!())?;
         new_event
-            .insert(access_token, to_account_id, to_document_id, &mut batch)
+            .insert(
+                access_token,
+                to_account_id,
+                to_document_id,
+                next_email_alarm,
+                &mut batch,
+            )
             .caused_by(trc::location!())?;
     }
 
@@ -610,6 +618,7 @@ async fn move_event(
             .caused_by(trc::location!())?;
         batch.log_vanished_item(VanishedCollection::Calendar, from_resource_path);
     } else {
+        let next_email_alarm = event.inner.data.next_alarm(now() as i64, Tz::Floating);
         let mut new_event = event
             .deserialize::<CalendarEvent>()
             .caused_by(trc::location!())?;
@@ -635,7 +644,13 @@ async fn move_event(
             .await
             .caused_by(trc::location!())?;
         new_event
-            .insert(access_token, to_account_id, to_document_id, &mut batch)
+            .insert(
+                access_token,
+                to_account_id,
+                to_document_id,
+                next_email_alarm,
+                &mut batch,
+            )
             .caused_by(trc::location!())?;
     }
 
@@ -869,6 +884,7 @@ async fn copy_container(
                     )
                     .caused_by(trc::location!())?;
             } else {
+                let next_email_alarm = event.inner.data.next_alarm(now() as i64, Tz::Floating);
                 if remove_source {
                     DestroyArchive(event)
                         .delete(
@@ -881,7 +897,6 @@ async fn copy_container(
                         )
                         .caused_by(trc::location!())?;
                 }
-
                 let to_document_id = server
                     .store()
                     .assign_document_ids(to_account_id, Collection::CalendarEvent, 1)
@@ -890,7 +905,13 @@ async fn copy_container(
                 new_event.names = vec![new_name];
                 required_space += new_event.size as u64;
                 new_event
-                    .insert(access_token, to_account_id, to_document_id, &mut batch)
+                    .insert(
+                        access_token,
+                        to_account_id,
+                        to_document_id,
+                        next_email_alarm,
+                        &mut batch,
+                    )
                     .caused_by(trc::location!())?;
             }
         }

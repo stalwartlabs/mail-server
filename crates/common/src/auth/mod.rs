@@ -32,6 +32,7 @@ pub struct AccessToken {
     pub access_to: VecMap<u32, Bitmap<Collection>>,
     pub name: String,
     pub description: Option<String>,
+    pub locale: Option<String>,
     pub emails: Vec<String>,
     pub quota: u64,
     pub permissions: Permissions,

@@ -4,14 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::DestroyArchive;
+use crate::{DavResourceName, DestroyArchive};
+use calcard::common::timezone::Tz;
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::collection::{Collection, VanishedCollection};
-use store::write::{Archive, BatchBuilder, now};
+use percent_encoding::NON_ALPHANUMERIC;
+use store::{
+    U16_LEN, U64_LEN,
+    write::{Archive, BatchBuilder, TaskQueueClass, ValueClass, key::KeySerializer, now},
+};
 use trc::AddContext;
 
 use super::{
     ArchivedCalendar, ArchivedCalendarEvent, Calendar, CalendarEvent, CalendarPreferences,
+    alarm::CalendarAlarm,
 };
 
 impl CalendarEvent {
@@ -47,6 +53,7 @@ impl CalendarEvent {
         access_token: &AccessToken,
         account_id: u32,
         document_id: u32,
+        next_alarm: Option<CalendarAlarm>,
         batch: &'x mut BatchBuilder,
     ) -> trc::Result<&'x mut BatchBuilder> {
         // Build event
@@ -65,7 +72,13 @@ impl CalendarEvent {
                     .with_changes(event)
                     .with_tenant_id(access_token),
             )
-            .map(|b| b.commit_point())
+            .map(|batch| {
+                if let Some(next_alarm) = next_alarm {
+                    next_alarm.write_task(batch);
+                }
+
+                batch.commit_point()
+            })
     }
 }
 
@@ -236,8 +249,14 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
                     .caused_by(trc::location!())?;
             } else {
                 // Delete event
+                batch.delete_document(document_id);
+
+                // Remove next alarm if it exists
+                if let Some(next_alarm) = event.inner.data.next_alarm(now() as i64, Tz::Floating) {
+                    next_alarm.delete_task(batch);
+                }
+
                 batch
-                    .delete_document(document_id)
                     .custom(
                         ObjectIndexBuilder::<_, ()>::new()
                             .with_tenant_id(access_token)
@@ -254,5 +273,67 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
         }
 
         Ok(())
+    }
+}
+
+impl CalendarAlarm {
+    pub fn write_task(&self, batch: &mut BatchBuilder) {
+        batch.set(
+            ValueClass::TaskQueue(TaskQueueClass::SendAlarm {
+                due: self.alarm_time as u64,
+                event_id: self.event_id,
+                alarm_id: self.alarm_id,
+            }),
+            KeySerializer::new((U64_LEN * 2) + (U16_LEN * 2))
+                .write(self.event_start as u64)
+                .write(self.event_end as u64)
+                .write(self.event_start_tz)
+                .write(self.event_end_tz)
+                .finalize(),
+        );
+    }
+
+    pub fn delete_task(&self, batch: &mut BatchBuilder) {
+        batch.clear(ValueClass::TaskQueue(TaskQueueClass::SendAlarm {
+            due: self.alarm_time as u64,
+            event_id: self.event_id,
+            alarm_id: self.alarm_id,
+        }));
+    }
+}
+
+impl ArchivedCalendarEvent {
+    pub async fn webcal_uri(
+        &self,
+        server: &Server,
+        access_token: &AccessToken,
+    ) -> trc::Result<String> {
+        for event_name in self.names.iter() {
+            if let Some(calendar_) = server
+                .get_archive(
+                    access_token.primary_id,
+                    Collection::Calendar,
+                    event_name.parent_id.to_native(),
+                )
+                .await
+                .caused_by(trc::location!())?
+            {
+                let calendar = calendar_
+                    .unarchive::<Calendar>()
+                    .caused_by(trc::location!())?;
+                return Ok(format!(
+                    "webcal://{}{}/{}/{}/{}",
+                    server.core.network.server_name,
+                    DavResourceName::Cal.base_path(),
+                    percent_encoding::utf8_percent_encode(&access_token.name, NON_ALPHANUMERIC),
+                    calendar.name,
+                    event_name.name
+                ));
+            }
+        }
+
+        Err(trc::StoreEvent::UnexpectedError
+            .into_err()
+            .details("Event is not linked to any calendar"))
     }
 }

@@ -3,6 +3,7 @@ name = "common"
 version = "0.12.4"
 edition = "2024"
 resolver = "2"
+build = "build.rs"
 
 [dependencies]
 utils = { path = "../utils" }

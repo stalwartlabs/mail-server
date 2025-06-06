@@ -357,3 +357,29 @@ impl<T: serde::de::DeserializeOwned + Sized + Sync + Send> Deserialize for Legac
             .map(|inner| Self { inner })
     }
 }
+
+/*
+
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+pub struct CalendarEventData {
+    pub event: ICalendar,
+    pub time_ranges: Box<[ComponentTimeRange]>,
+    pub alarms: Box<[Alarm]>,
+    pub base_offset: i64,
+    pub base_time_utc: u32,
+    pub duration: u32,
+}
+
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+#[rkyv(compare(PartialEq), derive(Debug))]
+pub struct Alarm {
+    pub comp_id: u16,
+    pub alarms: Box<[AlarmDelta]>,
+}
+
+
+*/

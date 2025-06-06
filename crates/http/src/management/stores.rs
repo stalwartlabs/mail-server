@@ -20,7 +20,7 @@ use email::message::{ingest::EmailIngest, metadata::MessageData};
 use hyper::Method;
 use jmap_proto::types::{collection::Collection, property::Property};
 use serde_json::json;
-use services::index::Indexer;
+use services::task_manager::fts::FtsIndexTask;
 use store::{
     Serialize, rand,
     write::{Archiver, BatchBuilder, ValueClass},
@@ -179,7 +179,7 @@ impl ManageStore for Server {
                     Some("lock-purge-account") => vec![KV_LOCK_PURGE_ACCOUNT].into(),
                     Some("lock-queue-message") => vec![KV_LOCK_QUEUE_MESSAGE].into(),
                     Some("lock-queue-report") => vec![KV_LOCK_QUEUE_REPORT].into(),
-                    Some("lock-email-task") => vec![KV_LOCK_EMAIL_TASK].into(),
+                    Some("lock-email-task") => vec![KV_LOCK_TASK].into(),
                     Some("lock-housekeeper") => vec![KV_LOCK_HOUSEKEEPER].into(),
                     _ => None,
                 };
@@ -228,7 +228,7 @@ impl ManageStore for Server {
 
                 let jmap = self.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = jmap.reindex(account_id, tenant_id).await {
+                    if let Err(err) = jmap.fts_reindex(account_id, tenant_id).await {
                         trc::error!(err.details("Failed to reindex FTS"));
                     }
                 });

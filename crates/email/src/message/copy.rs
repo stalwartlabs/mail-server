@@ -25,7 +25,7 @@ use jmap_proto::{
 use mail_parser::{HeaderName, HeaderValue, parsers::fields::thread::thread_name};
 use store::{
     BlobClass,
-    write::{BatchBuilder, TaskQueueClass, ValueClass},
+    write::{BatchBuilder, TaskQueueClass, ValueClass, now},
 };
 use trc::AddContext;
 
@@ -200,7 +200,7 @@ impl EmailCopy for Server {
             .caused_by(trc::location!())?
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                    seq: self.generate_snowflake_id(),
+                    due: now(),
                     hash: metadata.blob_hash.clone(),
                 }),
                 vec![],

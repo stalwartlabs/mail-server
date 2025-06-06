@@ -191,21 +191,19 @@ impl HousekeeperEvent {
 impl TaskQueueEvent {
     pub fn description(&self) -> &'static str {
         match self {
-            TaskQueueEvent::Index => "Full-text search indexing completed",
-            TaskQueueEvent::Locked => "Task is locked by another process",
+            TaskQueueEvent::TaskAcquired => "Task acquired from queue",
+            TaskQueueEvent::TaskLocked => "Task is locked by another process",
             TaskQueueEvent::BlobNotFound => "Blob not found for task",
             TaskQueueEvent::MetadataNotFound => "Metadata not found for task",
-            TaskQueueEvent::BayesTrain => "Bayesian training completed",
         }
     }
 
     pub fn explain(&self) -> &'static str {
         match self {
-            TaskQueueEvent::Index => "The full-text search index has been updated",
-            TaskQueueEvent::Locked => "The task id is locked by another process",
+            TaskQueueEvent::TaskAcquired => "A task has been acquired from the queue",
+            TaskQueueEvent::TaskLocked => "The task id is locked by another process",
             TaskQueueEvent::BlobNotFound => "The requested blob was not found for task",
             TaskQueueEvent::MetadataNotFound => "The metadata was not found for task",
-            TaskQueueEvent::BayesTrain => "Bayesian training has been completed",
         }
     }
 }
@@ -1020,6 +1018,7 @@ impl SpamEvent {
             SpamEvent::ClassifyError => "Not enough training data for spam filter",
             SpamEvent::Dnsbl => "DNSBL query",
             SpamEvent::DnsblError => "Error querying DNSBL",
+            SpamEvent::TrainAccount => "Training spam filter for account",
         }
     }
 
@@ -1034,6 +1033,7 @@ impl SpamEvent {
             SpamEvent::Pyzor => "Pyzor query successful",
             SpamEvent::Dnsbl => "The DNSBL query was successful",
             SpamEvent::DnsblError => "An error occurred while querying the DNSBL",
+            SpamEvent::TrainAccount => "The spam filter has been trained for the account",
         }
     }
 }
@@ -1613,6 +1613,7 @@ impl MessageIngestEvent {
             MessageIngestEvent::JmapAppend => "Message appended via JMAP",
             MessageIngestEvent::Duplicate => "Skipping duplicate message",
             MessageIngestEvent::Error => "Message ingestion error",
+            MessageIngestEvent::FtsIndex => "Full-text search index updated",
         }
     }
 
@@ -1624,6 +1625,7 @@ impl MessageIngestEvent {
             MessageIngestEvent::JmapAppend => "The message has been appended via JMAP",
             MessageIngestEvent::Duplicate => "The message is a duplicate and has been skipped",
             MessageIngestEvent::Error => "An error occurred while ingesting the message",
+            MessageIngestEvent::FtsIndex => "The full-text search index has been updated",
         }
     }
 }
@@ -1889,6 +1891,10 @@ impl CalendarEvent {
     pub fn description(&self) -> &'static str {
         match self {
             CalendarEvent::RuleExpansionError => "Calendar rule expansion error",
+            CalendarEvent::AlarmSent => "Calendar alarm sent",
+            CalendarEvent::AlarmSkipped => "Calendar alarm skipped",
+            CalendarEvent::AlarmRecipientOverride => "Calendar alarm recipient overriden",
+            CalendarEvent::AlarmFailed => "Calendar alarm could not be sent",
         }
     }
 
@@ -1897,6 +1903,10 @@ impl CalendarEvent {
             CalendarEvent::RuleExpansionError => {
                 "An error occurred while expanding calendar recurrences"
             }
+            CalendarEvent::AlarmSent => "A calendar alarm has been sent to the recipient",
+            CalendarEvent::AlarmSkipped => "A calendar alarm was skipped",
+            CalendarEvent::AlarmRecipientOverride => "A calendar alarm recipient was overridden",
+            CalendarEvent::AlarmFailed => "A calendar alarm could not be sent to the recipient",
         }
     }
 }

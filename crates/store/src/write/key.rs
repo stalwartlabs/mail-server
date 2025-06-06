@@ -281,22 +281,33 @@ impl ValueClass {
                 .write(collection)
                 .write(document_id),
             ValueClass::TaskQueue(task) => match task {
-                TaskQueueClass::IndexEmail { seq, hash } => serializer
-                    .write(*seq)
+                TaskQueueClass::IndexEmail { due, hash } => serializer
+                    .write(*due)
                     .write(account_id)
                     .write(0u8)
                     .write(document_id)
                     .write::<&[u8]>(hash.as_ref()),
                 TaskQueueClass::BayesTrain {
-                    seq,
+                    due,
                     hash,
                     learn_spam,
                 } => serializer
-                    .write(*seq)
+                    .write(*due)
                     .write(account_id)
                     .write(if *learn_spam { 1u8 } else { 2u8 })
                     .write(document_id)
                     .write::<&[u8]>(hash.as_ref()),
+                TaskQueueClass::SendAlarm {
+                    due,
+                    event_id,
+                    alarm_id,
+                } => serializer
+                    .write(*due)
+                    .write(account_id)
+                    .write(3u8)
+                    .write(document_id)
+                    .write(*event_id)
+                    .write(*alarm_id),
             },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { hash, until } => serializer
@@ -565,7 +576,12 @@ impl ValueClass {
                     BLOB_HASH_LEN + U32_LEN * 2 + 2
                 }
             },
-            ValueClass::TaskQueue { .. } => BLOB_HASH_LEN + U64_LEN * 2,
+            ValueClass::TaskQueue(e) => match e {
+                TaskQueueClass::IndexEmail { .. } | TaskQueueClass::BayesTrain { .. } => {
+                    (BLOB_HASH_LEN + U64_LEN * 2) + 1
+                }
+                TaskQueueClass::SendAlarm { .. } => U64_LEN + (U32_LEN * 3) + 1,
+            },
             ValueClass::Queue(q) => match q {
                 QueueClass::Message(_) => U64_LEN,
                 QueueClass::MessageEvent(_) => U64_LEN * 2,

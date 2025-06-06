@@ -236,9 +236,8 @@ pub enum HousekeeperEvent {
 
 #[event_type]
 pub enum TaskQueueEvent {
-    Index,
-    BayesTrain,
-    Locked,
+    TaskAcquired,
+    TaskLocked,
     BlobNotFound,
     MetadataNotFound,
 }
@@ -608,6 +607,7 @@ pub enum SpamEvent {
     TrainError,
     Classify,
     ClassifyError,
+    TrainAccount,
 }
 
 #[event_type]
@@ -870,6 +870,7 @@ pub enum MessageIngestEvent {
     JmapAppend,
     Duplicate,
     Error,
+    FtsIndex,
 }
 
 #[event_type]
@@ -983,6 +984,10 @@ pub enum WebDavEvent {
 #[event_type]
 pub enum CalendarEvent {
     RuleExpansionError,
+    AlarmSent,
+    AlarmSkipped,
+    AlarmRecipientOverride,
+    AlarmFailed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -6,7 +6,7 @@
 
 use ahash::AHashSet;
 use directory::{
-    Permission, Principal, QueryBy, Type,
+    Permission, Principal, PrincipalData, QueryBy, Type,
     backend::internal::{
         lookup::DirectoryStore,
         manage::{ChangedPrincipals, ManageDirectory},
@@ -111,6 +111,13 @@ impl Server {
             description: principal.description,
             emails: principal.emails,
             quota: principal.quota.unwrap_or_default(),
+            locale: principal.data.iter().find_map(|data| {
+                if let PrincipalData::Locale(v) = data {
+                    Some(v.to_string())
+                } else {
+                    None
+                }
+            }),
             permissions,
             concurrent_imap_requests: self.core.imap.rate_concurrent.map(ConcurrencyLimiter::new),
             concurrent_http_requests: self

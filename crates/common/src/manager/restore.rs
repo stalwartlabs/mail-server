@@ -17,7 +17,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{
         AnyClass, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, InMemoryClass,
-        Operation, TagValue, TaskQueueClass, ValueClass, ValueOp, key::DeserializeBigEndian,
+        Operation, TagValue, TaskQueueClass, ValueClass, ValueOp, key::DeserializeBigEndian, now,
     },
 };
 use store::{
@@ -68,7 +68,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
     let mut collection = u8::MAX;
     let mut family = Family::None;
     let email_collection = u8::from(Collection::Email);
-    let mut seq = 0;
+    let mut due = now();
 
     let mut batch_size = 0;
     let mut batch = BatchBuilder::new();
@@ -148,12 +148,12 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                             if reader.version == 1 && collection == email_collection {
                                 batch.set(
                                     ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                                        seq,
+                                        due,
                                         hash: hash.clone(),
                                     }),
                                     0u64.serialize(),
                                 );
-                                seq += 1;
+                                due += 1;
                             }
                             batch.set(ValueClass::Blob(BlobOp::Link { hash }), vec![]);
                         } else {

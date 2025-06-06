@@ -24,9 +24,12 @@ use llm::AiApiConfig;
 use mail_parser::DateTime;
 use store::Store;
 use trc::{AddContext, EventType, MetricType};
-use utils::{HttpLimitResponse, config::cron::SimpleCron};
+use utils::{HttpLimitResponse, config::cron::SimpleCron, template::Template};
 
-use crate::{Core, Server, expr::Expression, manager::webadmin::Resource};
+use crate::{
+    Core, Server, config::groupware::CalendarTemplateVariable, expr::Expression,
+    manager::webadmin::Resource,
+};
 
 #[derive(Clone)]
 pub struct Enterprise {
@@ -38,6 +41,8 @@ pub struct Enterprise {
     pub metrics_alerts: Vec<MetricAlert>,
     pub ai_apis: AHashMap<String, Arc<AiApiConfig>>,
     pub spam_filter_llm: Option<SpamFilterLlmConfig>,
+    pub template_calendar_alarm: Option<Template<CalendarTemplateVariable>>,
+    pub template_calendar_invite: Option<Template<CalendarTemplateVariable>>,
 }
 
 #[derive(Debug, Clone)]

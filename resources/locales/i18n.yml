@@ -1,0 +1,549 @@
+# SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+
+calendar.alarm_subject_prefix:
+  en: Notification
+  es: Notificación
+  fr: Notification
+  de: Benachrichtigung
+  it: Notifica
+  pt: Notificação
+  ru: Уведомление
+  zh: 通知
+  ja: 通知
+  ko: 알림
+  ar: إشعار
+  hi: सूचना
+  nl: Melding
+  sv: Meddelande
+  da: Besked
+  no: Varsel
+  fi: Ilmoitus
+  pl: Powiadomienie
+  cs: Oznámení
+  sk: Oznámenie
+  hu: Értesítés
+  ro: Notificare
+  bg: Известие
+  hr: Obavijest
+  sl: Obvestilo
+  et: Teade
+  lv: Paziņojums
+  lt: Pranešimas
+  el: Ειδοποίηση
+  tr: Bildirim
+  he: הודעה
+  th: การแจ้งเตือน
+  vi: Thông báo
+  id: Pemberitahuan
+  ms: Pemberitahuan
+  tl: Abiso
+  uk: Сповіщення
+  be: Паведамленне
+  mk: Известување
+  sq: Njoftim
+  mt: Notifika
+  cy: Hysbysiad
+  ga: Fógra
+  is: Tilkynning
+
+calendar.alarm_header:
+  en: You have an upcoming event
+  es: Tienes un evento próximo
+  fr: Vous avez un événement à venir
+  de: Sie haben einen bevorstehenden Termin
+  it: Hai un evento in programma
+  pt: Você tem um evento próximo
+  ru: У вас предстоящее событие
+  zh: 您有即将到来的活动
+  ja: 予定されたイベントがあります
+  ko: 다가오는 이벤트가 있습니다
+  ar: لديك حدث قادم
+  hi: आपका एक आगामी कार्यक्रम है
+  nl: U heeft een aankomende gebeurtenis
+  sv: Du har ett kommande evenemang
+  da: Du har en kommende begivenhed
+  no: Du har en kommende hendelse
+  fi: Sinulla on tuleva tapahtuma
+  pl: Masz nadchodzące wydarzenie
+  cs: Máte nadcházející událost
+  sk: Máte nadchádzajúcu udalosť
+  hu: Közelgő eseménye van
+  ro: Aveți un eveniment viitor
+  bg: Имате предстоящо събитие
+  hr: Imate nadolazeći događaj
+  sl: Imate prihajajoči dogodek
+  et: Teil on tulev sündmus
+  lv: Jums ir gaidāms notikums
+  lt: Turite artėjantį įvykį
+  el: Έχετε μια επερχόμενη εκδήλωση
+  tr: Yaklaşan bir etkinliğiniz var
+  he: יש לך אירוע קרוב
+  th: คุณมีกิจกรรมที่กำลังจะมาถึง
+  vi: Bạn có một sự kiện sắp tới
+  id: Anda memiliki acara yang akan datang
+  ms: Anda mempunyai acara yang akan datang
+  tl: Mayroon kayong paparating na kaganapan
+  uk: У вас є майбутня подія
+  be: У вас ёсць будучая падзея
+  mk: Имате претстојувачки настан
+  sq: Keni një ngjarje të ardhshme
+  mt: Għandkom avveniment li ġej
+  cy: Mae gennych chi ddigwyddiad sydd ar ddod
+  ga: Tá imeacht ag teacht agat
+  is: Þú átt komandi viðburð
+
+calendar.alarm_footer:
+  en: You are receiving this email because you have enabled calendar notifications. To stop receiving these emails, login to the self-service portal and disable event notifications.
+  es: Recibe este correo porque ha habilitado las notificaciones de calendario. Para dejar de recibir estos correos, inicie sesión en el portal de autoservicio y desactive las notificaciones de eventos.
+  fr: Vous recevez cet e-mail car vous avez activé les notifications de calendrier. Pour arrêter de recevoir ces e-mails, connectez-vous au portail libre-service et désactivez les notifications d'événements.
+  de: Sie erhalten diese E-Mail, weil Sie Kalender-Benachrichtigungen aktiviert haben. Um diese E-Mails nicht mehr zu erhalten, melden Sie sich im Self-Service-Portal an und deaktivieren Sie Ereignisbenachrichtigungen.
+  it: Ricevi questa email perché hai abilitato le notifiche del calendario. Per smettere di ricevere queste email, accedi al portale self-service e disabilita le notifiche degli eventi.
+  pt: Você está recebendo este e-mail porque habilitou as notificações do calendário. Para parar de receber estes e-mails, faça login no portal de autoatendimento e desative as notificações de eventos.
+  ru: Вы получаете это письмо, потому что включили уведомления календаря. Чтобы прекратить получать эти письма, войдите в портал самообслуживания и отключите уведомления о событиях.
+  zh: 您收到此邮件是因为您已启用日历通知。要停止接收这些邮件，请登录自助服务门户并禁用事件通知。
+  ja: カレンダー通知を有効にしているため、このメールを受信しています。これらのメールの受信を停止するには、セルフサービスポータルにログインしてイベント通知を無効にしてください。
+  ko: 캘린더 알림을 활성화했기 때문에 이 이메일을 받고 있습니다. 이러한 이메일 수신을 중지하려면 셀프서비스 포털에 로그인하여 이벤트 알림을 비활성화하십시오.
+  ar: تتلقى هذا البريد الإلكتروني لأنك قمت بتمكين إشعارات التقويم. لإيقاف تلقي هذه الرسائل الإلكترونية، قم بتسجيل الدخول إلى بوابة الخدمة الذاتية وإلغاء تنشيط إشعارات الأحداث.
+  hi: आप यह ईमेल इसलिए प्राप्त कर रहे हैं क्योंकि आपने कैलेंडर सूचनाएं सक्षम की हैं। इन ईमेल प्राप्त करना बंद करने के लिए, स्व-सेवा पोर्टल में लॉगिन करें और इवेंट सूचनाएं अक्षम करें।
+  nl: U ontvangt deze e-mail omdat u kalendernotificaties heeft ingeschakeld. Om deze e-mails niet meer te ontvangen, logt u in op de selfservice-portal en schakelt u gebeurtenismeldingen uit.
+  sv: Du får detta e-postmeddelande eftersom du har aktiverat kalendernotifieringar. För att sluta få dessa e-postmeddelanden, logga in på självbetjäningsportalen och inaktivera händelsenotifieringar.
+  da: Du modtager denne e-mail, fordi du har aktiveret kalendernotifikationer. For at stoppe med at modtage disse e-mails skal du logge ind på selvbetjeningsportalen og deaktivere begivenhedsnotifikationer.
+  no: Du mottar denne e-posten fordi du har aktivert kalendervarslinger. For å slutte å motta disse e-postene, logg inn på selvbetjeningsportalen og deaktiver hendelsesvarslinger.
+  fi: Saat tämän sähköpostin, koska olet ottanut kalenteritiedotukset käyttöön. Lopettaaksesi näiden sähköpostien vastaanottamisen, kirjaudu itsepalveluportaaliin ja poista käytöstä tapahtumatiedotukset.
+  pl: Otrzymujesz ten e-mail, ponieważ włączyłeś powiadomienia kalendarza. Aby przestać otrzymywać te e-maile, zaloguj się do portalu samoobsługowego i wyłącz powiadomienia o zdarzeniach.
+  cs: Tento e-mail dostáváte, protože máte povolená oznámení kalendáře. Chcete-li přestat dostávat tyto e-maily, přihlaste se na portál samoobsluhy a zakažte oznámení událostí.
+  sk: Tento e-mail dostávate, pretože máte povolené oznámenia kalendára. Ak chcete prestať dostávať tieto e-maily, prihláste sa na portál samoobsluhy a zakážte oznámenia udalostí.
+  hu: Azért kapja ezt az e-mailt, mert engedélyezte a naptár értesítéseket. Az e-mailek fogadásának leállításához jelentkezzen be az önkiszolgáló portálra és tiltsa le az esemény értesítéseket.
+  ro: Primiți acest e-mail pentru că ați activat notificările de calendar. Pentru a opri primirea acestor e-mailuri, autentificați-vă în portalul de autoservire și dezactivați notificările de evenimente.
+  bg: Получавате този имейл, защото сте разрешили известията за календара. За да спрете получаването на тези имейли, влезте в портала за самообслужване и изключете известията за събития.
+  hr: Primate ovaj e-mail jer ste omogućili obavijesti kalendara. Da prestanete primati ove e-mailove, prijavite se na portal za samoposluživanje i onemogućite obavijesti o događajima.
+  sl: To e-pošto prejemate, ker ste omogočili obvestila koledarja. Če želite prenehati prejemati te e-pošte, se prijavite v portal za samopostrežbo in onemogočite obvestila o dogodkih.
+  et: Saate seda e-kirja, kuna olete lubanud kalendri teatised. Nende e-kirjade saamise lõpetamiseks logige sisse iseteenindusportaali ja keelake sündmuste teatised.
+  lv: Jūs saņemat šo e-pastu, jo esat iespējojuši kalendāra paziņojumus. Lai pārtrauktu šo e-pastu saņemšanu, piesakieties pašapkalpošanās portālā un atspējojiet notikumu paziņojumus.
+  lt: Gaunate šį el. laišką, nes įjungėte kalendoriaus pranešimus. Norėdami nebegauti šių el. laiškų, prisijunkite prie savitarnos portalo ir išjunkite įvykių pranešimus.
+  el: Λαμβάνετε αυτό το email επειδή έχετε ενεργοποιήσει τις ειδοποιήσεις ημερολογίου. Για να σταματήσετε να λαμβάνετε αυτά τα emails, συνδεθείτε στην πύλη αυτοεξυπηρέτησης και απενεργοποιήστε τις ειδοποιήσεις εκδηλώσεων.
+  tr: Bu e-postayı alıyorsunuz çünkü takvim bildirimlerini etkinleştirdiniz. Bu e-postaları almayı durdurmak için self-servis portalına giriş yapın ve etkinlik bildirimlerini devre dışı bırakın.
+  he: אתה מקבל את המייל הזה כי הפעלת התראות לוח שנה. כדי להפסיק לקבל מיילים אלה, התחבר לפורטל השירות העצמי והשבת התראות אירועים.
+  th: คุณได้รับอีเมลนี้เพราะคุณได้เปิดใช้งานการแจ้งเตือนปฏิทิน หากต้องการหยุดรับอีเมลเหล่านี้ ให้เข้าสู่ระบบพอร์ทัลบริการตนเองและปิดใช้งานการแจ้งเตือนเหตุการณ์
+  vi: Bạn nhận được email này vì bạn đã bật thông báo lịch. Để ngừng nhận những email này, hãy đăng nhập vào cổng tự phục vụ và tắt thông báo sự kiện.
+  id: Anda menerima email ini karena Anda telah mengaktifkan notifikasi kalender. Untuk berhenti menerima email ini, masuk ke portal layanan mandiri dan nonaktifkan notifikasi acara.
+  ms: Anda menerima e-mel ini kerana anda telah mendayakan pemberitahuan kalendar. Untuk berhenti menerima e-mel ini, log masuk ke portal layan diri dan lumpuhkan pemberitahuan acara.
+  tl: Natatanggap ninyo ang email na ito dahil pinagana ninyo ang mga abiso sa kalendaryo. Para tumigil sa pagtanggap ng mga email na ito, mag-login sa self-service portal at i-disable ang mga abiso sa kaganapan.
+  uk: Ви отримуєте цей електронний лист, оскільки ввімкнули сповіщення календаря. Щоб припинити отримувати ці листи, увійдіть до порталу самообслуговування та вимкніть сповіщення про події.
+  be: Вы атрымліваеце гэты ліст, таму што ўключылі паведамленні календара. Каб спыніць атрыманне гэтых лістоў, увайдзіце ў партал самаабслугоўвання і адключыце паведамленні пра падзеі.
+  mk: Го примате овој е-мејл бидејќи сте овозможиле известувања за календар. За да престанете да примате овие е-мејлови, најавете се на порталот за самоуслуга и оневозможете ги известувањата за настани.
+  sq: Po merrni këtë email sepse keni aktivizuar njoftimet e kalendarit. Për të ndalur marrjen e këtyre emaileve, hyni në portalin e vetëshërbimit dhe çaktivizoni njoftimet e ngjarjeve.
+  mt: Qed tirċievi din l-email għax inti bbelit in-notifiki tal-kalendarju. Biex tieqaf tirċievi dawn l-emails, idħol fil-portal tas-self-service u diżattiva n-notifiki tal-avvenimenti.
+  cy: Rydych yn derbyn yr e-bost hwn oherwydd eich bod wedi galluogi hysbysiadau calendr. I roi'r gorau i dderbyn yr e-byst hyn, mewngofnodwch i'r porth hunanwasanaeth ac analluogi hysbysiadau digwyddiadau.
+  ga: Tá tú ag fáil an ríomhphoist seo toisc go bhfuil fógraí féilire cumasaithe agat. Chun stop a chur le fáil na ríomhphoist seo, logáil isteach sa phortán féinseirbhíse agus díchumasaigh fógraí imeachtaí.
+  is: Þú færð þetta tölvupóst vegna þess að þú hefur virkjað dagbókartilkynningar. Til að hætta að fá þessa tölvupósta skaltu skrá þig inn á sjálfsafgreiðslugáttina og slökkva á viðburðartilkynningum.
+
+calendar.alarm_open:
+  en: View Event
+  es: Ver Evento
+  fr: Voir l'Événement
+  de: Termin Anzeigen
+  it: Visualizza Evento
+  pt: Ver Evento
+  ru: Просмотреть Событие
+  zh: 查看活动
+  ja: イベントを表示
+  ko: 이벤트 보기
+  ar: عرض الحدث
+  hi: इवेंट देखें
+  nl: Gebeurtenis Bekijken
+  sv: Visa Händelse
+  da: Se Begivenhed
+  no: Vis Hendelse
+  fi: Näytä Tapahtuma
+  pl: Zobacz Wydarzenie
+  cs: Zobrazit Událost
+  sk: Zobraziť Udalosť
+  hu: Esemény Megtekintése
+  ro: Vezi Evenimentul
+  bg: Виж Събитието
+  hr: Pogledaj Događaj
+  sl: Ogled Dogodka
+  et: Vaata Sündmust
+  lv: Skatīt Notikumu
+  lt: Peržiūrėti Įvykį
+  el: Προβολή Εκδήλωσης
+  tr: Etkinliği Görüntüle
+  he: צפייה באירוע
+  th: ดูกิจกรรม
+  vi: Xem Sự kiện
+  id: Lihat Acara
+  ms: Lihat Acara
+  tl: Tingnan ang Kaganapan
+  uk: Переглянути Подію
+  be: Прагледзець Падзею
+  mk: Погледај Настан
+  sq: Shiko Ngjarjen
+  mt: Ara l-Avveniment
+  cy: Gweld Digwyddiad
+  ga: Féach ar Imeacht
+  is: Skoða Viðburð
+
+calendar.organizer:
+  en: Organizer
+  es: Organizador
+  fr: Organisateur
+  de: Organisator
+  it: Organizzatore
+  pt: Organizador
+  ru: Организатор
+  zh: 组织者
+  ja: 主催者
+  ko: 주최자
+  ar: المنظم
+  hi: आयोजक
+  nl: Organisator
+  sv: Arrangör
+  da: Arrangør
+  no: Arrangør
+  fi: Järjestäjä
+  pl: Organizator
+  cs: Organizátor
+  sk: Organizátor
+  hu: Szervező
+  ro: Organizator
+  bg: Организатор
+  hr: Organizator
+  sl: Organizator
+  et: Korraldaja
+  lv: Organizētājs
+  lt: Organizatorius
+  el: Διοργανωτής
+  tr: Organizatör
+  he: מארגן
+  th: ผู้จัดงาน
+  vi: Người tổ chức
+  id: Penyelenggara
+  ms: Penganjur
+  tl: Tagaayos
+  uk: Організатор
+  be: Арганізатар
+  mk: Организатор
+  sq: Organizatori
+  mt: Organizzatur
+  cy: Trefnydd
+  ga: Eagraí
+  is: Skipuleggjandi
+
+calendar.attendees:
+  en: Guests
+  es: Invitados
+  fr: Invités
+  de: Gäste
+  it: Ospiti
+  pt: Convidados
+  ru: Гости
+  zh: 客人
+  ja: ゲスト
+  ko: 게스트
+  ar: الضيوف
+  hi: अतिथि
+  nl: Gasten
+  sv: Gäster
+  da: Gæster
+  no: Gjester
+  fi: Vieraat
+  pl: Goście
+  cs: Hosté
+  sk: Hostia
+  hu: Vendégek
+  ro: Oaspeți
+  bg: Гости
+  hr: Gosti
+  sl: Gostje
+  et: Külalised
+  lv: Viesi
+  lt: Svečiai
+  el: Καλεσμένοι
+  tr: Konuklar
+  he: אורחים
+  th: แขก
+  vi: Khách mời
+  id: Tamu
+  ms: Tetamu
+  tl: Mga Bisita
+  uk: Гості
+  be: Госці
+  mk: Гости
+  sq: Mysafirë
+  mt: Mistednin
+  cy: Gwesteion
+  ga: Aíonna
+  is: Gestir
+
+calendar.start:
+  en: Start
+  es: Inicio
+  fr: Début
+  de: Beginn
+  it: Inizio
+  pt: Início
+  ru: Начало
+  zh: 开始
+  ja: 開始
+  ko: 시작
+  ar: البداية
+  hi: प्रारंभ
+  nl: Begin
+  sv: Start
+  da: Start
+  no: Start
+  fi: Alkaa
+  pl: Początek
+  cs: Začátek
+  sk: Začiatok
+  hu: Kezdés
+  ro: Început
+  bg: Начало
+  hr: Početak
+  sl: Začetek
+  et: Algus
+  lv: Sākums
+  lt: Pradžia
+  el: Έναρξη
+  tr: Başlangıç
+  he: התחלה
+  th: เริ่ม
+  vi: Bắt đầu
+  id: Mulai
+  ms: Mula
+  tl: Simula
+  uk: Початок
+  be: Пачатак
+  mk: Почеток
+  sq: Fillimi
+  mt: Bidu
+  cy: Dechrau
+  ga: Tosaigh
+  is: Byrjun
+
+calendar.end:
+  en: End
+  es: Fin
+  fr: Fin
+  de: Ende
+  it: Fine
+  pt: Fim
+  ru: Конец
+  zh: 结束
+  ja: 終了
+  ko: 끝
+  ar: النهاية
+  hi: समाप्ति
+  nl: Einde
+  sv: Slut
+  da: Slut
+  no: Slutt
+  fi: Loppu
+  pl: Koniec
+  cs: Konec
+  sk: Koniec
+  hu: Vége
+  ro: Sfârșit
+  bg: Край
+  hr: Kraj
+  sl: Konec
+  et: Lõpp
+  lv: Beigas
+  lt: Pabaiga
+  el: Τέλος
+  tr: Bitiş
+  he: סוף
+  th: สิ้นสุด
+  vi: Kết thúc
+  id: Selesai
+  ms: Tamat
+  tl: Wakas
+  uk: Кінець
+  be: Канец
+  mk: Крај
+  sq: Fundi
+  mt: Tmiem
+  cy: Diwedd
+  ga: Deireadh
+  is: Endir
+
+calendar.location:
+  en: Location
+  es: Ubicación
+  fr: Lieu
+  de: Ort
+  it: Luogo
+  pt: Local
+  ru: Место
+  zh: 地点
+  ja: 場所
+  ko: 위치
+  ar: الموقع
+  hi: स्थान
+  nl: Locatie
+  sv: Plats
+  da: Sted
+  no: Sted
+  fi: Paikka
+  pl: Miejsce
+  cs: Místo
+  sk: Miesto
+  hu: Helyszín
+  ro: Locație
+  bg: Местоположение
+  hr: Lokacija
+  sl: Lokacija
+  et: Asukoht
+  lv: Atrašanās vieta
+  lt: Vieta
+  el: Τοποθεσία
+  tr: Konum
+  he: מיקום
+  th: สถานที่
+  vi: Địa điểm
+  id: Lokasi
+  ms: Lokasi
+  tl: Lokasyon
+  uk: Місце
+  be: Месца
+  mk: Локација
+  sq: Vendndodhja
+  mt: Post
+  cy: Lleoliad
+  ga: Suíomh
+  is: Staðsetning
+
+calendar.date_template:
+  # English: "Sun May 25, 2025 9am"
+  en: "%a %b %-d, %Y %-I%P"
+
+  # Spanish: "dom 25 may 2025 9h" (day month year hour)
+  es: "%a %-d %b %Y %-Hh"
+
+  # French: "dim 25 mai 2025 9h" (day month year hour)
+  fr: "%a %-d %b %Y %-Hh"
+
+  # German: "So 25. Mai 2025 9 Uhr" (day date month year hour)
+  de: "%a %-d. %b %Y %-H Uhr"
+
+  # Italian: "dom 25 mag 2025 ore 9" (day date month year hour)
+  it: "%a %-d %b %Y ore %-H"
+
+  # Portuguese: "dom 25 mai 2025 9h" (day date month year hour)
+  pt: "%a %-d %b %Y %-Hh"
+
+  # Russian: "вс 25 мая 2025 9:00" (day date month year time)
+  ru: "%a %-d %b %Y %-H:%M"
+
+  # Chinese (Simplified): "2025年5月25日 周日 9时" (year month date weekday hour)
+  zh: "%Y年%-m月%-d日 %a %-H时"
+
+  # Japanese: "2025年5月25日（日）9時" (year month date weekday hour)
+  ja: "%Y年%-m月%-d日（%a）%-H時"
+
+  # Korean: "2025년 5월 25일 일요일 오전 9시" (year month date weekday AM/PM hour)
+  ko: "%Y년 %-m월 %-d일 %a %p %-I시"
+
+  # Arabic: "الأحد 25 مايو 2025 9 ص" (weekday date month year hour AM/PM)
+  ar: "%a %-d %b %Y %-I %p"
+
+  # Hindi: "रवि 25 मई 2025 सुबह 9 बजे" (weekday date month year morning/evening hour)
+  hi: "%a %-d %b %Y %p %-I बजे"
+
+  # Dutch: "zo 25 mei 2025 9u" (weekday date month year hour)
+  nl: "%a %-d %b %Y %-Hu"
+
+  # Swedish: "sön 25 maj 2025 09:00" (weekday date month year time)
+  sv: "%a %-d %b %Y %H:%M"
+
+  # Danish: "søn 25. maj 2025 09.00" (weekday date month year time with periods)
+  da: "%a %-d. %b %Y %H.%M"
+
+  # Norwegian: "søn 25. mai 2025 09:00" (weekday date month year time)
+  no: "%a %-d. %b %Y %H:%M"
+
+  # Finnish: "su 25. toukokuuta 2025 klo 9.00" (weekday date month year clock time)
+  fi: "%a %-d. %b %Y klo %-H.%M"
+
+  # Polish: "ndz 25 maj 2025 9:00" (weekday date month year time)
+  pl: "%a %-d %b %Y %-H:%M"
+
+  # Czech: "ne 25. 5. 2025 9:00" (weekday date month year time)
+  cs: "%a %-d. %-m. %Y %-H:%M"
+
+  # Slovak: "ne 25. 5. 2025 9:00" (weekday date month year time)
+  sk: "%a %-d. %-m. %Y %-H:%M"
+
+  # Hungarian: "v 2025. 05. 25. 9:00" (weekday year month date time)
+  hu: "%a %Y. %m. %d. %-H:%M"
+
+  # Romanian: "dum 25 mai 2025 9:00" (weekday date month year time)
+  ro: "%a %-d %b %Y %-H:%M"
+
+  # Bulgarian: "нед 25 май 2025 9:00" (weekday date month year time)
+  bg: "%a %-d %b %Y %-H:%M"
+
+  # Croatian: "ned 25. svi 2025 9:00" (weekday date month year time)
+  hr: "%a %-d. %b %Y %-H:%M"
+
+  # Slovenian: "ned 25. maj 2025 9:00" (weekday date month year time)
+  sl: "%a %-d. %b %Y %-H:%M"
+
+  # Estonian: "P 25. mai 2025 9:00" (weekday date month year time)
+  et: "%a %-d. %b %Y %-H:%M"
+
+  # Latvian: "sv 25. maijs 2025 9:00" (weekday date month year time)
+  lv: "%a %-d. %b %Y %-H:%M"
+
+  # Lithuanian: "sk 2025 m. gegužės 25 d. 9:00" (weekday year month date time)
+  lt: "%a %Y m. %b %-d d. %-H:%M"
+
+  # Greek: "Κυρ 25 Μάι 2025 9:00 πμ" (weekday date month year time AM/PM)
+  el: "%a %-d %b %Y %-I:%M %p"
+
+  # Turkish: "Paz 25 May 2025 09:00" (weekday date month year time)
+  tr: "%a %-d %b %Y %H:%M"
+
+  # Hebrew: "א׳ 25 מאי 2025 9:00" (weekday date month year time)
+  he: "%a %-d %b %Y %-H:%M"
+
+  # Thai: "อา. 25 พ.ค. 2568 9:00 น." (weekday date month Buddhist year time)
+  th: "%a %-d %b %Y %-H:%M น."
+
+  # Vietnamese: "CN 25 thg 5 2025 9:00" (weekday date month year time)
+  vi: "%a %-d thg %-m %Y %-H:%M"
+
+  # Indonesian: "Min 25 Mei 2025 09.00" (weekday date month year time with periods)
+  id: "%a %-d %b %Y %H.%M"
+
+  # Malaysian: "Ahd 25 Mei 2025 9:00 PG" (weekday date month year time AM/PM)
+  ms: "%a %-d %b %Y %-I:%M %p"
+
+  # Filipino/Tagalog: "Lin 25 May 2025 9:00 ng umaga" (weekday date month year time AM/PM)
+  tl: "%a %-d %b %Y %-I:%M %p"
+
+  # Ukrainian: "нд 25 тра 2025 9:00" (weekday date month year time)
+  uk: "%a %-d %b %Y %-H:%M"
+
+  # Belarusian: "нд 25 мая 2025 9:00" (weekday date month year time)
+  be: "%a %-d %b %Y %-H:%M"
+
+  # Macedonian: "нед 25 мај 2025 9:00" (weekday date month year time)
+  mk: "%a %-d %b %Y %-H:%M"
+
+  # Albanian: "Die 25 Maj 2025 9:00" (weekday date month year time)
+  sq: "%a %-d %b %Y %-H:%M"
+
+  # Maltese: "Ħad 25 Mej 2025 9:00" (weekday date month year time)
+  mt: "%a %-d %b %Y %-H:%M"
+
+  # Welsh: "Sul 25 Mai 2025 9:00" (weekday date month year time)
+  cy: "%a %-d %b %Y %-H:%M"
+
+  # Irish: "Domh 25 Beal 2025 9:00" (weekday date month year time)
+  ga: "%a %-d %b %Y %-H:%M"
+
+  # Icelandic: "sun 25. maí 2025 09:00" (weekday date month year time)
+  is: "%a %-d. %b %Y %H:%M"

@@ -1407,6 +1407,7 @@ impl Permission {
                 | Permission::DavCalQuery
                 | Permission::DavCalMultiGet
                 | Permission::DavCalFreeBusyQuery
+                | Permission::CalendarAlarms
         )
     }
 

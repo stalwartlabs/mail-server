@@ -159,7 +159,7 @@ pub async fn wait_for_index(server: &Server) {
                         collection: 0,
                         document_id: 0,
                         class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                            seq: 0,
+                            due: 0,
                             hash: BlobHash::default(),
                         }),
                     },
@@ -168,7 +168,7 @@ pub async fn wait_for_index(server: &Server) {
                         collection: u8::MAX,
                         document_id: u32::MAX,
                         class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                            seq: u64::MAX,
+                            due: u64::MAX,
                             hash: BlobHash::default(),
                         }),
                     },

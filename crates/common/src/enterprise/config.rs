@@ -14,10 +14,13 @@ use ahash::AHashMap;
 use directory::{Type, backend::internal::manage::ManageDirectory};
 use store::{Store, Stores};
 use trc::{EventType, MetricType, TOTAL_EVENT_COUNT};
-use utils::config::{
-    Config, ConfigKey,
-    cron::SimpleCron,
-    utils::{AsKey, ParseValue},
+use utils::{
+    config::{
+        Config, ConfigKey,
+        cron::SimpleCron,
+        utils::{AsKey, ParseValue},
+    },
+    template::Template,
 };
 
 use crate::{
@@ -193,7 +196,8 @@ impl Enterprise {
             }
         }
 
-        Some(Enterprise {
+        // Build the enterprise configuration
+        let mut enterprise = Enterprise {
             license,
             undelete: config
                 .property_or_default::<Option<Duration>>("storage.undelete.retention", "false")
@@ -205,7 +209,32 @@ impl Enterprise {
             metrics_alerts: parse_metric_alerts(config),
             spam_filter_llm: SpamFilterLlmConfig::parse(config, &ai_apis),
             ai_apis,
-        })
+            template_calendar_alarm: None,
+            template_calendar_invite: None,
+        };
+
+        // Parse templates
+        for (key, value) in [
+            (
+                "calendar.alarms.template",
+                &mut enterprise.template_calendar_alarm,
+            ),
+            (
+                "calendar.scheduling.template",
+                &mut enterprise.template_calendar_invite,
+            ),
+        ] {
+            if let Some(template) = config.value(key) {
+                match Template::parse(template) {
+                    Ok(template) => *value = Some(template),
+                    Err(err) => {
+                        config.new_build_error(key, format!("Invalid template: {err}"));
+                    }
+                }
+            }
+        }
+
+        Some(enterprise)
     }
 }
 

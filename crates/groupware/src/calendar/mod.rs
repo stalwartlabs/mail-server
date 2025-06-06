@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod alarm;
 pub mod dates;
+pub mod expand;
 pub mod index;
 pub mod storage;
 
@@ -88,13 +90,13 @@ pub struct CalendarEventData {
     pub duration: u32,
 }
 
-#[derive(
-    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
-)]
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
 #[rkyv(compare(PartialEq), derive(Debug))]
 pub struct Alarm {
-    pub comp_id: u16,
-    pub alarms: Box<[AlarmDelta]>,
+    pub id: u16,
+    pub parent_id: u16,
+    pub delta: AlarmDelta,
+    pub is_email_alert: bool,
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]

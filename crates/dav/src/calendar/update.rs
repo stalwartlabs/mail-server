@@ -26,7 +26,7 @@ use jmap_proto::types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
 };
-use store::write::BatchBuilder;
+use store::write::{BatchBuilder, now};
 use trc::AddContext;
 
 use crate::{
@@ -173,13 +173,22 @@ impl CalendarUpdateRequestHandler for Server {
                 )));
             }
 
-            // Build node
+            // Obtain previous alarm
+            let prev_email_alarm = event.inner.data.next_alarm(now() as i64, Tz::Floating);
+
+            // Build event
+            let mut next_email_alarm = None;
             let mut new_event = event
                 .deserialize::<CalendarEvent>()
                 .caused_by(trc::location!())?;
             new_event.size = bytes.len() as u32;
-            new_event.data =
-                CalendarEventData::new(ical, Tz::Floating, self.core.groupware.max_ical_instances);
+            new_event.data = CalendarEventData::new(
+                ical,
+                Tz::Floating,
+                self.core.groupware.max_ical_instances,
+                &mut next_email_alarm,
+            );
+            let has_alarms = next_email_alarm.is_some();
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
@@ -187,7 +196,18 @@ impl CalendarUpdateRequestHandler for Server {
                 .update(access_token, event, account_id, document_id, &mut batch)
                 .caused_by(trc::location!())?
                 .etag();
+            if prev_email_alarm != next_email_alarm {
+                if let Some(prev_alarm) = prev_email_alarm {
+                    prev_alarm.delete_task(&mut batch);
+                }
+                if let Some(next_alarm) = next_email_alarm {
+                    next_alarm.write_task(&mut batch);
+                }
+            }
             self.commit_batch(batch).await.caused_by(trc::location!())?;
+            if has_alarms {
+                self.notify_task_queue();
+            }
 
             Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
         } else if let Some((Some(parent), name)) = resources.map_parent(resource_name) {
@@ -241,7 +261,8 @@ impl CalendarUpdateRequestHandler for Server {
             )
             .await?;
 
-            // Build node
+            // Build event
+            let mut next_email_alarm = None;
             let event = CalendarEvent {
                 names: vec![DavName {
                     name: name.to_string(),
@@ -251,10 +272,12 @@ impl CalendarUpdateRequestHandler for Server {
                     ical,
                     Tz::Floating,
                     self.core.groupware.max_ical_instances,
+                    &mut next_email_alarm,
                 ),
                 size: bytes.len() as u32,
                 ..Default::default()
             };
+            let has_alarms = next_email_alarm.is_some();
 
             // Prepare write batch
             let mut batch = BatchBuilder::new();
@@ -264,10 +287,21 @@ impl CalendarUpdateRequestHandler for Server {
                 .await
                 .caused_by(trc::location!())?;
             let etag = event
-                .insert(access_token, account_id, document_id, &mut batch)
+                .insert(
+                    access_token,
+                    account_id,
+                    document_id,
+                    next_email_alarm,
+                    &mut batch,
+                )
                 .caused_by(trc::location!())?
                 .etag();
+
             self.commit_batch(batch).await.caused_by(trc::location!())?;
+
+            if has_alarms {
+                self.notify_task_queue();
+            }
 
             Ok(HttpResponse::new(StatusCode::CREATED).with_etag_opt(etag))
         } else {
