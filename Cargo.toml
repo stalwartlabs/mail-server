@@ -49,7 +49,7 @@ panic = 'unwind'
 debug-assertions = false
 overflow-checks = false
 rpath = false
-#strip = true
+strip = true
 
 [profile.test]
 opt-level = 0
