@@ -6,7 +6,7 @@
 
 use super::GroupwareCache;
 use crate::{
-    DavResourceName,
+    DavResourceName, RFC_3986,
     calendar::{ArchivedCalendar, ArchivedCalendarEvent, Calendar, CalendarEvent},
     contact::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard},
 };
@@ -19,7 +19,6 @@ use jmap_proto::types::{
     collection::{Collection, SyncCollection},
     value::AclGrant,
 };
-use percent_encoding::NON_ALPHANUMERIC;
 use std::sync::Arc;
 use store::ahash::{AHashMap, AHashSet};
 use tokio::sync::Semaphore;
@@ -98,7 +97,7 @@ pub(super) async fn build_calcard_resources(
                 DavResourceName::Card
             }
             .base_path(),
-            percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+            percent_encoding::utf8_percent_encode(&name, RFC_3986),
         ),
         paths: AHashSet::with_capacity((container_ids.len() + item_ids.len()) as usize),
         resources: Vec::with_capacity((container_ids.len() + item_ids.len()) as usize),

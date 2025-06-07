@@ -28,6 +28,7 @@ use crate::{
         uri::DavUriResource,
     },
     file::DavFileResource,
+    fix_percent_encoding,
 };
 
 use super::assert_is_unique_uid;
@@ -60,9 +61,11 @@ impl CardUpdateRequestHandler for Server {
             .fetch_dav_resources(access_token, account_id, SyncCollection::AddressBook)
             .await
             .caused_by(trc::location!())?;
-        let resource_name = resource
-            .resource
-            .ok_or(DavError::Code(StatusCode::CONFLICT))?;
+        let resource_name = fix_percent_encoding(
+            resource
+                .resource
+                .ok_or(DavError::Code(StatusCode::CONFLICT))?,
+        );
 
         if bytes.len() > self.core.groupware.max_vcard_size {
             return Err(DavError::Condition(DavErrorCondition::new(
@@ -87,7 +90,7 @@ impl CardUpdateRequestHandler for Server {
             }
         };
 
-        if let Some(resource) = resources.by_path(resource_name) {
+        if let Some(resource) = resources.by_path(resource_name.as_ref()) {
             if resource.is_container() {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
@@ -121,7 +124,7 @@ impl CardUpdateRequestHandler for Server {
                         collection: Collection::ContactCard,
                         document_id: Some(document_id),
                         etag: card.etag().into(),
-                        path: resource_name,
+                        path: resource_name.as_ref(),
                         ..Default::default()
                     }],
                     Default::default(),
@@ -184,7 +187,7 @@ impl CardUpdateRequestHandler for Server {
             self.commit_batch(batch).await.caused_by(trc::location!())?;
 
             Ok(HttpResponse::new(StatusCode::NO_CONTENT).with_etag_opt(etag))
-        } else if let Some((Some(parent), name)) = resources.map_parent(resource_name) {
+        } else if let Some((Some(parent), name)) = resources.map_parent(resource_name.as_ref()) {
             if !parent.is_container() {
                 return Err(DavError::Code(StatusCode::METHOD_NOT_ALLOWED));
             }
@@ -208,7 +211,7 @@ impl CardUpdateRequestHandler for Server {
                     account_id,
                     collection: resource.collection,
                     document_id: Some(u32::MAX),
-                    path: resource_name,
+                    path: resource_name.as_ref(),
                     ..Default::default()
                 }],
                 Default::default(),

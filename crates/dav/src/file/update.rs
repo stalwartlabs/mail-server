@@ -13,6 +13,7 @@ use crate::{
         uri::DavUriResource,
     },
     file::DavFileResource,
+    fix_percent_encoding,
 };
 use common::{
     Server, auth::AccessToken, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder,
@@ -60,15 +61,20 @@ impl FileUpdateRequestHandler for Server {
             .fetch_dav_resources(access_token, account_id, SyncCollection::FileNode)
             .await
             .caused_by(trc::location!())?;
-        let resource_name = resource
-            .resource
-            .ok_or(DavError::Code(StatusCode::CONFLICT))?;
+        let resource_name = fix_percent_encoding(
+            resource
+                .resource
+                .ok_or(DavError::Code(StatusCode::CONFLICT))?,
+        );
 
         if bytes.len() > self.core.groupware.max_file_size {
             return Err(DavError::Code(StatusCode::PAYLOAD_TOO_LARGE));
         }
 
-        if let Some(document_id) = resources.by_path(resource_name).map(|r| r.document_id()) {
+        if let Some(document_id) = resources
+            .by_path(resource_name.as_ref())
+            .map(|r| r.document_id())
+        {
             // Update
             let node_ = self
                 .get_archive(account_id, Collection::FileNode, document_id)
@@ -100,7 +106,7 @@ impl FileUpdateRequestHandler for Server {
                         collection: resource.collection,
                         document_id: Some(document_id),
                         etag: node.etag().into(),
-                        path: resource_name,
+                        path: resource_name.as_ref(),
                         ..Default::default()
                     }],
                     Default::default(),
@@ -196,7 +202,7 @@ impl FileUpdateRequestHandler for Server {
             // Insert
             let orig_resource_name = resource_name;
             let (parent, resource_name) = resources
-                .map_parent(resource_name)
+                .map_parent(orig_resource_name.as_ref())
                 .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
             // Validate ACL
@@ -220,7 +226,7 @@ impl FileUpdateRequestHandler for Server {
                     account_id,
                     collection: resource.collection,
                     document_id: Some(u32::MAX),
-                    path: orig_resource_name,
+                    path: orig_resource_name.as_ref(),
                     ..Default::default()
                 }],
                 Default::default(),

@@ -15,8 +15,9 @@ use dav_proto::schema::{
     request::DavPropertyValue,
     response::{Condition, List, Prop, PropStat, ResponseDescription, Status},
 };
-use groupware::DavResourceName;
+use groupware::{DavResourceName, RFC_3986};
 use hyper::{Method, StatusCode};
+use std::borrow::Cow;
 use store::ahash::AHashMap;
 
 pub(crate) type Result<T> = std::result::Result<T, DavError>;
@@ -223,4 +224,28 @@ impl PropStatBuilder {
             })
             .collect()
     }
+}
+
+// Workaround for Apple bug with missing percent encoding in paths
+pub(crate) fn fix_percent_encoding(path: &str) -> Cow<str> {
+    let (parent, name) = if let Some((parent, name)) = path.rsplit_once('/') {
+        (Some(parent), name)
+    } else {
+        (None, path)
+    };
+
+    for &ch in name.as_bytes() {
+        if !matches!(ch, b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'.' | b'_' | b'~' | b'%')
+        {
+            let name = percent_encoding::percent_encode(name.as_bytes(), RFC_3986);
+
+            return if let Some(parent) = parent {
+                Cow::Owned(format!("{parent}/{name}"))
+            } else {
+                Cow::Owned(name.to_string())
+            };
+        }
+    }
+
+    path.into()
 }

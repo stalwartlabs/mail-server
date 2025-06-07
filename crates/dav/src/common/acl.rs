@@ -18,6 +18,7 @@ use dav_proto::{
     },
 };
 use directory::{QueryBy, Type, backend::internal::manage::ManageDirectory};
+use groupware::RFC_3986;
 use groupware::{cache::GroupwareCache, calendar::Calendar, contact::AddressBook, file::FileNode};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
@@ -26,7 +27,6 @@ use jmap_proto::types::{
     collection::Collection,
     value::{AclGrant, ArchivedAclGrant},
 };
-use percent_encoding::NON_ALPHANUMERIC;
 use rkyv::vec::ArchivedVec;
 use store::{ahash::AHashSet, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
@@ -435,10 +435,7 @@ impl DavAclHandler for Server {
                     Principal::Href(Href(format!(
                         "{}/{}/",
                         DavResourceName::Principal.base_path(),
-                        percent_encoding::utf8_percent_encode(
-                            &grant_account_name,
-                            NON_ALPHANUMERIC
-                        ),
+                        percent_encoding::utf8_percent_encode(&grant_account_name, RFC_3986),
                     )))
                 };
 

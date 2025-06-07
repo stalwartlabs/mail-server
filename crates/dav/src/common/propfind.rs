@@ -47,6 +47,7 @@ use dav_proto::{
     },
 };
 use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
+use groupware::RFC_3986;
 use groupware::{
     DavCalendarResource, DavResourceName, cache::GroupwareCache, calendar::ArchivedTimezone,
 };
@@ -56,7 +57,6 @@ use jmap_proto::types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
 };
-use percent_encoding::NON_ALPHANUMERIC;
 use std::sync::Arc;
 use store::{
     ahash::AHashMap,
@@ -263,7 +263,7 @@ impl PropFindRequestHandler for Server {
                                         DavResourceName::Cal.base_path(),
                                         percent_encoding::utf8_percent_encode(
                                             &access_token.name,
-                                            NON_ALPHANUMERIC
+                                            RFC_3986
                                         ),
                                     ))],
                                 ));
@@ -277,7 +277,7 @@ impl PropFindRequestHandler for Server {
                                         DavResourceName::Card.base_path(),
                                         percent_encoding::utf8_percent_encode(
                                             &access_token.name,
-                                            NON_ALPHANUMERIC
+                                            RFC_3986
                                         ),
                                     ))],
                                 ));

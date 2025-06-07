@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    DavResourceName,
+    DavResourceName, RFC_3986,
     file::{ArchivedFileNode, FileNode},
 };
 use common::{DavPath, DavResource, DavResourceMetadata, DavResources, Server};
@@ -15,7 +15,6 @@ use jmap_proto::types::{
     property::Property,
     value::AclGrant,
 };
-use percent_encoding::NON_ALPHANUMERIC;
 use std::sync::Arc;
 use store::{
     Deserialize, IterateParams, U32_LEN, ValueKey,
@@ -50,7 +49,7 @@ pub(super) async fn build_file_resources(
         base_path: format!(
             "{}/{}/",
             DavResourceName::File.base_path(),
-            percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+            percent_encoding::utf8_percent_encode(&name, RFC_3986),
         ),
         size: std::mem::size_of::<DavResources>() as u64,
         paths: AHashSet::with_capacity(resources.len()),

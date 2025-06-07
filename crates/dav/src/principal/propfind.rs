@@ -20,7 +20,7 @@ use directory::{QueryBy, backend::internal::manage::ManageDirectory};
 use groupware::cache::GroupwareCache;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
-use percent_encoding::NON_ALPHANUMERIC;
+use groupware::RFC_3986;
 use trc::AddContext;
 
 use crate::{
@@ -212,7 +212,7 @@ impl PrincipalPropFind for Server {
                                 vec![Href(format!(
                                     "{}/{}/",
                                     DavResourceName::Principal.base_path(),
-                                    percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+                                    percent_encoding::utf8_percent_encode(&name, RFC_3986),
                                 ))],
                             ));
                         }
@@ -257,7 +257,7 @@ impl PrincipalPropFind for Server {
                                 vec![Href(format!(
                                     "{}/{}/",
                                     DavResourceName::Principal.base_path(),
-                                    percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+                                    percent_encoding::utf8_percent_encode(&name, RFC_3986),
                                 ))],
                             ));
                         }
@@ -267,7 +267,7 @@ impl PrincipalPropFind for Server {
                                 vec![Href(format!(
                                     "{}/{}/",
                                     DavResourceName::Cal.base_path(),
-                                    percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+                                    percent_encoding::utf8_percent_encode(&name, RFC_3986),
                                 ))],
                             ));
                             response.set_namespace(Namespace::CalDav);
@@ -278,7 +278,7 @@ impl PrincipalPropFind for Server {
                                 vec![Href(format!(
                                     "{}/{}/",
                                     DavResourceName::Card.base_path(),
-                                    percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+                                    percent_encoding::utf8_percent_encode(&name, RFC_3986),
                                 ))],
                             ));
                             response.set_namespace(Namespace::CardDav);
@@ -310,7 +310,7 @@ impl PrincipalPropFind for Server {
                 Href(format!(
                     "{}/{}/",
                     base_path,
-                    percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+                    percent_encoding::utf8_percent_encode(&name, RFC_3986),
                 )),
                 prop_stats,
             ));
@@ -351,7 +351,7 @@ impl PrincipalPropFind for Server {
             Ok(Href(format!(
                 "{}/{}/",
                 DavResourceName::Principal.base_path(),
-                percent_encoding::utf8_percent_encode(&name, NON_ALPHANUMERIC),
+                percent_encoding::utf8_percent_encode(&name, RFC_3986),
             )))
         }
     }

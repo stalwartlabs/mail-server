@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{DavResourceName, DestroyArchive};
+use crate::{DavResourceName, DestroyArchive, RFC_3986};
 use calcard::common::timezone::Tz;
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::collection::{Collection, VanishedCollection};
-use percent_encoding::NON_ALPHANUMERIC;
 use store::{
     U16_LEN, U64_LEN,
     write::{Archive, BatchBuilder, TaskQueueClass, ValueClass, key::KeySerializer, now},
@@ -325,7 +324,7 @@ impl ArchivedCalendarEvent {
                     "webcal://{}{}/{}/{}/{}",
                     server.core.network.server_name,
                     DavResourceName::Cal.base_path(),
-                    percent_encoding::utf8_percent_encode(&access_token.name, NON_ALPHANUMERIC),
+                    percent_encoding::utf8_percent_encode(&access_token.name, RFC_3986),
                     calendar.name,
                     event_name.name
                 ));
