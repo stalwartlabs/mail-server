@@ -6,7 +6,10 @@
       <mj-text font-size="14px" color="#333333" line-height="1.5" />
       <mj-section background-color="#ffffff" />
     </mj-attributes>
-    <mj-style inline="inline">
+    <mj-style>
+      :root {
+        color-scheme: light only;
+      }
       .event-detail {
       font-weight: bold;
       color: #2c5aa0;

@@ -8,7 +8,7 @@ use super::WebDavTest;
 use email::{cache::MessageCacheFetch, message::metadata::MessageMetadata};
 use hyper::StatusCode;
 use jmap_proto::types::{collection::Collection, property::Property};
-use mail_parser::DateTime;
+use mail_parser::{DateTime, MessageParser};
 use store::write::now;
 
 pub async fn test(test: &WebDavTest) {
@@ -51,28 +51,32 @@ pub async fn test(test: &WebDavTest) {
             .await
             .unwrap()
             .unwrap();
-        let contents = String::from_utf8(
-            test.server
-                .blob_store()
-                .get_blob(
-                    metadata_
-                        .unarchive::<MessageMetadata>()
-                        .unwrap()
-                        .blob_hash
-                        .0
-                        .as_slice(),
-                    0..usize::MAX,
-                )
-                .await
-                .unwrap()
-                .unwrap(),
-        )
-        .unwrap();
-        /*std::fs::write(
-            format!("message_{}.eml", message.document_id),
-            contents.as_bytes(),
-        )
-        .unwrap();*/
+        let contents = test
+            .server
+            .blob_store()
+            .get_blob(
+                metadata_
+                    .unarchive::<MessageMetadata>()
+                    .unwrap()
+                    .blob_hash
+                    .0
+                    .as_slice(),
+                0..usize::MAX,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        //let t = std::fs::write(format!("message_{}.eml", message.document_id), &contents).unwrap();
+
+        let message = MessageParser::new().parse(&contents).unwrap();
+        let contents = message
+            .html_bodies()
+            .next()
+            .unwrap()
+            .text_contents()
+            .unwrap();
+
         if idx == 0 {
             // First alarm does not have a summary or description
             assert!(
@@ -89,7 +93,7 @@ pub async fn test(test: &WebDavTest) {
                 "failed for {contents}"
             );
             assert!(
-                contents.contains("It's alarming how charming I feel."),
+                contents.contains("It&#39;s alarming how charming I feel."),
                 "failed for {contents}"
             );
         }

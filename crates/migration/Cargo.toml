@@ -14,9 +14,12 @@ common = { path =  "../common" }
 email = { path =  "../email" }
 directory = { path =  "../directory" }
 smtp = { path =  "../smtp" }
+groupware = { path =  "../groupware" }
+dav-proto = { path =  "../dav-proto" }
 mail-parser = { version = "0.11", features = ["full_encoding"] } 
 mail-auth = { version = "0.7.1", features = ["rkyv"] }
 sieve-rs = { version = "0.7", features = ["rkyv"] } 
+calcard = { version = "0.1.2", features = ["rkyv"] }
 tokio = { version = "1.45", features = ["net", "macros"] }
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"

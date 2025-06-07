@@ -120,7 +120,7 @@ impl GroupwareConfig {
                 .map(|s| s.to_string()),
             alarms_template: Template::parse(include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/../../resources/email-templates/calendar-alarm.html"
+                "/../../resources/email-templates/calendar-alarm.html.min"
             )))
             .expect("Failed to parse calendar template"),
         }

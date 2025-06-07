@@ -4476,10 +4476,13 @@ version = "0.12.4"
 dependencies = [
  "base64 0.22.1",
  "bincode 1.3.3",
+ "calcard",
  "common",
  "compact_str",
+ "dav-proto",
  "directory",
  "email",
+ "groupware",
  "jmap_proto",
  "lz4_flex",
  "mail-auth",
