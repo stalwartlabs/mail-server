@@ -35,7 +35,6 @@ pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
     )));
 
     let mut queue_ids = AHashSet::new();
-
     server
         .store()
         .iterate(
@@ -49,7 +48,22 @@ pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
         .await
         .caused_by(trc::location!())?;
 
-    let count = queue_ids.len();
+    let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(0)));
+    let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
+    server
+        .store()
+        .iterate(
+            IterateParams::new(from_key, to_key).ascending().no_values(),
+            |key, _| {
+                queue_ids.insert(key.deserialize_be_u64(0)?);
+
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())?;
+
+    let mut count = 0;
 
     for queue_id in queue_ids {
         match server
@@ -96,7 +110,7 @@ pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
                         .serialize()
                         .caused_by(trc::location!())?,
                 );
-
+                count += 1;
                 server
                     .store()
                     .write(batch.build_all())
