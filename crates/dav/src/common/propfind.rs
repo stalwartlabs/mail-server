@@ -129,19 +129,21 @@ impl PropFindRequestHandler for Server {
         let return_children = match headers.depth {
             Depth::One | Depth::None => true,
             Depth::Zero => false,
-            Depth::Infinity => {
-                if resource.account_id.is_none()
-                    || resource.resource.is_none()
-                    || matches!(resource.collection, Collection::FileNode)
+            Depth::Infinity => match resource.collection {
+                Collection::Principal => true,
+                Collection::Calendar | Collection::AddressBook
+                    if resource.account_id.is_some() && resource.resource.is_some() =>
                 {
+                    true
+                }
+                _ => {
                     return Err(DavErrorCondition::new(
                         StatusCode::FORBIDDEN,
                         BaseCondition::PropFindFiniteDepth,
                     )
                     .into());
                 }
-                true
-            }
+            },
         };
 
         // List shared resources
