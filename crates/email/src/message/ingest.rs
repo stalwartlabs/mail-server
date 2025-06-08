@@ -204,17 +204,18 @@ impl EmailIngest for Server {
                             .and_then(|s| s.address())
                             .and_then(sanitize_email)
                         {
-                            if !self
-                                .store()
-                                .filter(
-                                    account_id,
-                                    Collection::ContactCard,
-                                    vec![Filter::eq(IDX_EMAIL, sender.into_bytes())],
-                                )
-                                .await
-                                .caused_by(trc::location!())?
-                                .results
-                                .is_empty()
+                            if sender != deliver_to
+                                && !self
+                                    .store()
+                                    .filter(
+                                        account_id,
+                                        Collection::ContactCard,
+                                        vec![Filter::eq(IDX_EMAIL, sender.into_bytes())],
+                                    )
+                                    .await
+                                    .caused_by(trc::location!())?
+                                    .results
+                                    .is_empty()
                             {
                                 is_spam = false;
                                 if self
