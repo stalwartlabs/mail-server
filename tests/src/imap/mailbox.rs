@@ -109,7 +109,7 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap.send("RENAME \"Tofu\" \"INBOX\"").await;
     imap.assert_read(Type::Tagged, ResponseType::No).await;
-    imap.send("RENAME \"Tofu\" \"INBOX/Tofu\"").await;
+    imap.send("RENAME \"Tofu\" \"Inbox/Tofu\"").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap.send("RENAME \"Deleted Items\" \"Recycle Bin\"").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;

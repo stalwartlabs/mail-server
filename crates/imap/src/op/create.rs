@@ -175,44 +175,55 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Validate special folders
-        let full_path: String = path.join("/");
         let mut parent_mailbox_id = None;
         let mut parent_mailbox_name = None;
         let (account_id, path) = {
             let mailboxes = self.mailboxes.lock();
-            let account = if path.first() == Some(&self.server.core.jmap.shared_folder.as_str()) {
-                // Shared Folders/<username>/<folder>
-                if path.len() < 3 {
+            let (account, full_path) =
+                if path.first() == Some(&self.server.core.jmap.shared_folder.as_str()) {
+                    // Shared Folders/<username>/<folder>
+                    if path.len() < 3 {
+                        return Err(trc::ImapEvent::Error
+                            .into_err()
+                            .details("Mailboxes under root shared folders are not allowed.")
+                            .code(ResponseCode::Cannot));
+                    }
+                    // Build path
+                    let root = &mut path[2];
+                    if root.eq_ignore_ascii_case("INBOX") {
+                        *root = "INBOX";
+                    }
+                    let full_path = path.join("/");
+                    let prefix = Some(format!("{}/{}", path.remove(0), path.remove(0)));
+
+                    // Locate account
+                    if let Some(account) = mailboxes
+                        .iter()
+                        .skip(1)
+                        .find(|account| account.prefix == prefix)
+                    {
+                        (account, full_path)
+                    } else {
+                        #[allow(clippy::unnecessary_literal_unwrap)]
+                        return Err(trc::ImapEvent::Error.into_err().details(format!(
+                            "Shared account '{}' not found.",
+                            prefix.unwrap_or_default()
+                        )));
+                    }
+                } else if let Some(account) = mailboxes.first() {
+                    let root = &mut path[0];
+                    if root.eq_ignore_ascii_case("INBOX") {
+                        *root = "INBOX";
+                    }
+
+                    (account, path.join("/"))
+                } else {
                     return Err(trc::ImapEvent::Error
                         .into_err()
-                        .details("Mailboxes under root shared folders are not allowed.")
-                        .code(ResponseCode::Cannot));
-                }
-                let prefix = Some(format!("{}/{}", path.remove(0), path.remove(0)));
-
-                // Locate account
-                if let Some(account) = mailboxes
-                    .iter()
-                    .skip(1)
-                    .find(|account| account.prefix == prefix)
-                {
-                    account
-                } else {
-                    #[allow(clippy::unnecessary_literal_unwrap)]
-                    return Err(trc::ImapEvent::Error.into_err().details(format!(
-                        "Shared account '{}' not found.",
-                        prefix.unwrap_or_default()
-                    )));
-                }
-            } else if let Some(account) = mailboxes.first() {
-                account
-            } else {
-                return Err(trc::ImapEvent::Error
-                    .into_err()
-                    .details("Internal server error.")
-                    .caused_by(trc::location!())
-                    .code(ResponseCode::ContactAdmin));
-            };
+                        .details("Internal server error.")
+                        .caused_by(trc::location!())
+                        .code(ResponseCode::ContactAdmin));
+                };
 
             // Locate parent mailbox
             if account.mailbox_names.contains_key(&full_path) {
@@ -270,7 +281,6 @@ impl<T: SessionStream> SessionData<T> {
         Ok(CreateParams {
             account_id,
             path,
-            full_path,
             parent_mailbox_id,
             parent_mailbox_name,
             special_use: if let Some(mailbox_role) = mailbox_role {
@@ -305,7 +315,6 @@ impl<T: SessionStream> SessionData<T> {
 pub struct CreateParams<'x> {
     pub account_id: u32,
     pub path: Vec<&'x str>,
-    pub full_path: String,
     pub parent_mailbox_id: Option<u32>,
     pub parent_mailbox_name: Option<String>,
     pub special_use: Option<Attribute>,
