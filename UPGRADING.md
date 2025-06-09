@@ -14,6 +14,18 @@ In addition to the database layout changes, multiple settings were renamed:
 - `jmap.protocol.changes.max-history` to `changes.max-history`.
 - `storage.encryption.*` to `email.encryption.*`.
 
+### Issues with Delivery
+
+Some users are reporting issues with mail not getting delivered. Version `0.12.0` enabled EDNS resolution by default in order to support DANE. This issue stems from queries for TLSA records failing to return EDNS information.
+
+The best solution would be to ensure that your resolver is returning EDNS information. With the `dig` command you can check this by querying `dig _25._tcp.mail.protonmail.ch TLSA +dnssec` on the server running Stalwart. You should see at least one `TLSA` record as well as an `RRSIG` record. If the response is coming from a server you control, and you do not see such an `RRSIG` record, then you can try adjusting your settings on the DNS resolver. Some resolvers, such as `systemd-resolved` on Fedora, do not have config options for returning DNSSEC records.
+
+If it is not possible to adjust the settings on your resolver, you can try changing your DNS Resolver in **Settings** -> **SMTP** -> **Outbound** -> **DNS** -> **Resolver** to something other than `System Resolver`. Some ISPs and routers will intercept port 53 traffic, so this may network.
+
+Another possible solution is to try setting `resolver.edns` to false in your config.
+
+If all else fails, you can try disabling DANE checks by having the expression in **Settings** -> **SMTP** -> **Outbound** -> **TLS** -> **DANE** evaluate to `disabled`.
+
 ## Step-by-Step Upgrade Process
 
 - Stop Stalwart in **every single node of your cluster**. If you are using the systemd service, you can do this with the following command:
