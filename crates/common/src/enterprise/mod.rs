@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
  *
  * SPDX-License-Identifier: LicenseRef-SEL
  *
@@ -120,7 +120,7 @@ impl Server {
     // Any attempt to modify, bypass, or disable this license validation mechanism
     // constitutes a severe violation of the Stalwart Enterprise License Agreement.
     // Such actions may result in immediate termination of your license, legal action,
-    // and substantial financial penalties. Stalwart Labs Ltd. actively monitors for
+    // and substantial financial penalties. Stalwart Labs LLC actively monitors for
     // unauthorized modifications and will pursue all available legal remedies against
     // violators to the fullest extent of the law, including but not limited to claims
     // for copyright infringement, breach of contract, and fraud.

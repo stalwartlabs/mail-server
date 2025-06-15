@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
@@ -70,7 +70,7 @@ pub static VERSION_PUBLIC: &str = "1.0.0";
 
 pub static USER_AGENT: &str = "Stalwart/1.0.0";
 pub static DAEMON_NAME: &str = concat!("Stalwart v", env!("CARGO_PKG_VERSION"),);
-pub static PROD_ID: &str = "-//Stalwart Labs Ltd.//Stalwart Server//EN";
+pub static PROD_ID: &str = "-//Stalwart Labs LLC//Stalwart Server//EN";
 
 pub const DATABASE_SCHEMA_VERSION: u32 = 2;
 

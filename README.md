@@ -171,4 +171,4 @@ Each file in this project contains a license notice at the top, indicating the a
 
 ## Copyright
 
-Copyright (C) 2020, Stalwart Labs Ltd.
+Copyright (C) 2020, Stalwart Labs LLC

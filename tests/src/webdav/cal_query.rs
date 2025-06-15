@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
@@ -727,7 +727,7 @@ const REPORT_10: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
 
 const REPORT_10_RESPONSE: &str = r#"BEGIN:VCALENDAR
 VERSION:2.0
-PRODID:-//Stalwart Labs Ltd.//Stalwart Server//EN
+PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
 BEGIN:VFREEBUSY
 DTSTART:20060104T140000Z
 DTEND:20060105T220000Z
@@ -747,7 +747,7 @@ const REPORT_11: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
 
 const REPORT_11_RESPONSE: &str = r#"BEGIN:VCALENDAR
 VERSION:2.0
-PRODID:-//Stalwart Labs Ltd.//Stalwart Server//EN
+PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
 BEGIN:VFREEBUSY
 DTSTART:20060101T000000Z
 DTEND:20060104T140000Z

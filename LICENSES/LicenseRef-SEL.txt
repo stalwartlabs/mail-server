@@ -3,15 +3,15 @@ Stalwart Enterprise License 1.0 (SELv1) Agreement
 
 Last Update: April 29, 2025
 
-PLEASE CAREFULLY READ THIS STALWART ENTERPRISE LICENSE AGREEMENT ("AGREEMENT"). THIS AGREEMENT CONSTITUTES A LEGALLY BINDING AGREEMENT BETWEEN YOU AND STALWART LABS LTD AND GOVERNS YOUR USE OF THE SOFTWARE (DEFINED BELOW). IF YOU DO NOT AGREE WITH THIS AGREEMENT, YOU MAY NOT USE THE SOFTWARE. IF YOU ARE USING THE SOFTWARE ON BEHALF OF A LEGAL ENTITY, YOU REPRESENT AND WARRANT THAT YOU HAVE AUTHORITY TO AGREE TO THIS AGREEMENT ON BEHALF OF SUCH ENTITY. IF YOU DO NOT HAVE SUCH AUTHORITY, DO NOT USE THE SOFTWARE IN ANY MANNER.
+PLEASE CAREFULLY READ THIS STALWART ENTERPRISE LICENSE AGREEMENT ("AGREEMENT"). THIS AGREEMENT CONSTITUTES A LEGALLY BINDING AGREEMENT BETWEEN YOU AND Stalwart Labs LLC AND GOVERNS YOUR USE OF THE SOFTWARE (DEFINED BELOW). IF YOU DO NOT AGREE WITH THIS AGREEMENT, YOU MAY NOT USE THE SOFTWARE. IF YOU ARE USING THE SOFTWARE ON BEHALF OF A LEGAL ENTITY, YOU REPRESENT AND WARRANT THAT YOU HAVE AUTHORITY TO AGREE TO THIS AGREEMENT ON BEHALF OF SUCH ENTITY. IF YOU DO NOT HAVE SUCH AUTHORITY, DO NOT USE THE SOFTWARE IN ANY MANNER.
 
-This Agreement is entered into by and between Stalwart Labs Ltd and you, or the legal entity on behalf of whom you are acting.
+This Agreement is entered into by and between Stalwart Labs LLC and you, or the legal entity on behalf of whom you are acting.
 
 1. DEFINITIONS
 
 1.1. "Software" refers to the Stalwart Server Enterprise Edition software, including all its versions, updates, modifications, accompanying documentation, and related materials.
 1.2. "Subscription" refers to the paid access to the Software provided by Licensor to Licensee.
-1.3. "Licensor" refers to Stalwart Labs Ltd, the entity providing the Software.
+1.3. "Licensor" refers to Stalwart Labs LLC, the entity providing the Software.
 1.4. "Licensee" refers to the individual or entity installing, accessing, or using the Software with a valid Subscription.
 1.5. "License Key" refers to the unique code provided by Licensor upon purchasing a Subscription which activates the full features of the Software.
 1.6. "Source Code" refers to the human-readable version of the Software's code, as opposed to the compiled machine-readable version.
@@ -94,9 +94,10 @@ Neither party shall be in default or otherwise liable for any delay in or failur
 
 17. CONTACT INFORMATION
 
-If you have any questions about this Agreement, please contact Stalwart Labs Ltd. at:
+If you have any questions about this Agreement, please contact Stalwart Labs LLC at:
 
-Stalwart Labs Ltd.
-128 City Road
-London, United Kingdom
+Stalwart Labs LLC
+1309 Coffeen Avenue STE 1200
+Sheridan, Wyoming 82801
+USA
 hello@stalw.art

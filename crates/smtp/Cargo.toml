@@ -1,7 +1,7 @@
 [package]
 name = "smtp"
 description = "Stalwart SMTP Server"
-authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
+authors = [ "Stalwart Labs LLC <hello@stalw.art>"]
 repository = "https://github.com/stalwartlabs/smtp-server"
 homepage = "https://stalw.art/smtp"
 keywords = ["smtp", "email", "mail", "server"]

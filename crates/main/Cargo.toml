@@ -1,7 +1,7 @@
 [package]
 name = "stalwart"
 description = "Stalwart Mail and Collaboration Server"
-authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
+authors = [ "Stalwart Labs LLC <hello@stalw.art>"]
 repository = "https://github.com/stalwartlabs/stalwart"
 homepage = "https://stalw.art"
 keywords = ["imap", "jmap", "smtp", "email", "mail", "webdav", "server"]
