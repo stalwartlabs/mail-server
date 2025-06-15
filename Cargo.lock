@@ -653,15 +653,6 @@ checksum = "89e25b6adfb930f02d1981565a6e5d9c547ac15a96606256d3b59040e5cd4ca3"
 
 [[package]]
 name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "bincode"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36eaf5d7b090263e8150820482d5d93cd964a81e4019913c972f4edcc6edb740"
@@ -1269,7 +1260,7 @@ dependencies = [
  "ahash",
  "arc-swap",
  "base64 0.22.1",
- "bincode 2.0.1",
+ "bincode",
  "biscuit",
  "calcard",
  "chrono",
@@ -4475,7 +4466,7 @@ name = "migration"
 version = "0.12.4"
 dependencies = [
  "base64 0.22.1",
- "bincode 1.3.3",
+ "bincode",
  "calcard",
  "common",
  "compact_str",
@@ -4713,7 +4704,7 @@ name = "nlp"
 version = "0.12.4"
 dependencies = [
  "ahash",
- "bincode 1.3.3",
+ "bincode",
  "farmhash",
  "hashify",
  "jieba-rs",
