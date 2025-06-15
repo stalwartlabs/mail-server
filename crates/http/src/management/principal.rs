@@ -64,7 +64,7 @@ pub trait PrincipalManager: Sync + Send {
         body: Option<Vec<u8>>,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 
-    fn assert_supported_directory(&self) -> trc::Result<()>;
+    fn assert_supported_directory(&self, override_: bool) -> trc::Result<()>;
 }
 
 impl PrincipalManager for Server {
@@ -75,8 +75,8 @@ impl PrincipalManager for Server {
         body: Option<Vec<u8>>,
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
-        match (path.get(1), req.method()) {
-            (None, &Method::POST) => {
+        match (path.get(1).copied(), req.method()) {
+            (None | Some("deploy"), &Method::POST) => {
                 // Parse principal
                 let principal =
                     serde_json::from_slice::<PrincipalSet>(body.as_deref().unwrap_or_default())
@@ -114,7 +114,7 @@ impl PrincipalManager for Server {
 
                 // Make sure the current directory supports updates
                 if matches!(principal.typ(), Type::Individual) {
-                    self.assert_supported_directory()?;
+                    self.assert_supported_directory(path.get(1).copied() == Some("deploy"))?;
                 }
 
                 // Validate roles
@@ -575,7 +575,7 @@ impl PrincipalManager for Server {
                         for change in &changes {
                             match change.field {
                                 PrincipalField::Secrets => {
-                                    self.assert_supported_directory()?;
+                                    self.assert_supported_directory(false)?;
                                 }
                                 PrincipalField::Name
                                 | PrincipalField::Emails
@@ -793,7 +793,7 @@ impl PrincipalManager for Server {
         }
 
         // Make sure the current directory supports updates
-        self.assert_supported_directory()?;
+        self.assert_supported_directory(false)?;
 
         // Build actions
         let mut actions = Vec::with_capacity(requests.len());
@@ -850,7 +850,7 @@ impl PrincipalManager for Server {
         .into_http_response())
     }
 
-    fn assert_supported_directory(&self) -> trc::Result<()> {
+    fn assert_supported_directory(&self, override_: bool) -> trc::Result<()> {
         let class = match &self.core.storage.directory.store {
             DirectoryInner::Internal(_) => return Ok(()),
             DirectoryInner::Ldap(_) => "LDAP",
@@ -861,13 +861,17 @@ impl PrincipalManager for Server {
             DirectoryInner::OpenId(_) => "OpenID",
         };
 
-        Err(manage::unsupported(format!(
-            concat!(
-                "{} directory cannot be managed. ",
-                "Only internal directories support inserts ",
-                "and update operations."
-            ),
-            class
-        )))
+        if !override_ {
+            Err(manage::unsupported(format!(
+                concat!(
+                    "{} directory cannot be managed. ",
+                    "Only internal directories support inserts ",
+                    "and update operations."
+                ),
+                class
+            )))
+        } else {
+            Ok(())
+        }
     }
 }
