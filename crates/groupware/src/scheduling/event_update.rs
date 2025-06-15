@@ -7,29 +7,31 @@
 use crate::{
     icalendar::ICalendar,
     scheduling::{
-        attendee::attendee_handle_update, event_cancel::itip_cancel,
+        attendee::attendee_handle_update, event_cancel::itip_cancel, itip::itip_finalize,
         organizer::organizer_handle_update, snapshot::itip_snapshot, ItipError, ItipMessage,
-        SchedulingInfo,
     },
 };
 
 pub fn itip_update(
-    ical: &ICalendar,
-    old_ical: &ICalendar,
+    ical: &mut ICalendar,
+    old_ical: &mut ICalendar,
     account_emails: &[&str],
-    info: &mut SchedulingInfo,
 ) -> Result<ItipMessage, ItipError> {
     let old_itip = itip_snapshot(old_ical, account_emails, false)?;
     match itip_snapshot(ical, account_emails, false) {
         Ok(new_itip) => {
+            let mut sequences = Vec::new();
             if old_itip.organizer.email != new_itip.organizer.email {
                 // RFC 6638 does not support replacing the organizer
-                Err(ItipError::ChangeNotAllowed)
+                Err(ItipError::OrganizerMismatch)
             } else if old_itip.organizer.email.is_local {
-                organizer_handle_update(old_ical, ical, old_itip, new_itip, info)
+                organizer_handle_update(old_ical, ical, old_itip, new_itip, &mut sequences)
             } else {
-                attendee_handle_update(old_ical, ical, old_itip, new_itip, info)
+                attendee_handle_update(old_ical, ical, old_itip, new_itip)
             }
+            .inspect(|_| {
+                itip_finalize(ical, &sequences);
+            })
         }
         Err(err) => {
             match &err {
@@ -39,7 +41,7 @@ pub fn itip_update(
                 | ItipError::OtherSchedulingAgent => {
                     if old_itip.organizer.email.is_local {
                         // RFC 6638 does not support replacing the organizer, so we cancel the event
-                        itip_cancel(old_ical, account_emails, info)
+                        itip_cancel(old_ical, account_emails)
                     } else {
                         Err(ItipError::ChangeNotAllowed)
                     }

@@ -12,8 +12,8 @@ use crate::{
     },
     scheduling::{
         event_cancel::cancel_component,
-        itip::{itip_build_envelope, itip_export_component},
-        InstanceId, ItipError, ItipMessage, ItipSnapshots, SchedulingInfo,
+        itip::{itip_build_envelope, itip_export_component, ItipExportAs},
+        InstanceId, ItipError, ItipMessage, ItipSnapshots,
     },
 };
 use ahash::AHashSet;
@@ -23,7 +23,7 @@ pub(crate) fn organizer_handle_update(
     new_ical: &ICalendar,
     old_itip: ItipSnapshots<'_>,
     new_itip: ItipSnapshots<'_>,
-    info: &mut SchedulingInfo,
+    increment_sequences: &mut Vec<u16>,
 ) -> Result<ItipMessage, ItipError> {
     let mut added_instances = Vec::new();
     let mut deleted_instances = Vec::new();
@@ -43,11 +43,17 @@ pub(crate) fn organizer_handle_update(
                         .entries
                         .symmetric_difference(&old_instance.entries)
                         .any(|entry| {
-                            !matches!(
+                            matches!(
                                 entry.name,
-                                ICalendarProperty::Summary
-                                    | ICalendarProperty::Description
-                                    | ICalendarProperty::Priority
+                                ICalendarProperty::Dtstart
+                                    | ICalendarProperty::Dtend
+                                    | ICalendarProperty::Duration
+                                    | ICalendarProperty::Due
+                                    | ICalendarProperty::Rrule
+                                    | ICalendarProperty::Rdate
+                                    | ICalendarProperty::Exdate
+                                    | ICalendarProperty::Status
+                                    | ICalendarProperty::Location
                             )
                         });
 
@@ -79,12 +85,6 @@ pub(crate) fn organizer_handle_update(
         }
     }
 
-    let sequence = if increment_sequence {
-        info.sequence + 1
-    } else {
-        info.sequence
-    };
-
     let (method, instances) = match (
         !added_instances.is_empty(),
         !deleted_instances.is_empty(),
@@ -105,9 +105,12 @@ pub(crate) fn organizer_handle_update(
         }
         (_, _, _, true) => {
             // Send full REQUEST message
-            return organizer_request_full(new_ical, new_itip, sequence, false).inspect(|_| {
-                info.sequence = sequence;
-            });
+            return organizer_request_full(
+                new_ical,
+                new_itip,
+                increment_sequence.then_some(increment_sequences),
+                false,
+            );
         }
         _ => return Err(ItipError::NothingToSend),
     };
@@ -126,17 +129,26 @@ pub(crate) fn organizer_handle_update(
 
     let mut recipients = AHashSet::new();
     let mut copy_components = AHashSet::new();
-    let mut scheduling_component_ids = Vec::with_capacity(ical.components.len());
+    let mut increment_sequences = Vec::new();
 
     for (instance_id, comp) in instances {
         // Prepare component for iTIP
+        let sequence = if increment_sequence {
+            comp.sequence.unwrap_or_default() + 1
+        } else {
+            comp.sequence.unwrap_or_default()
+        };
         let orig_component = &ical.components[comp.comp_id as usize];
         let component = if !is_cancel {
             // Add attendees
             for attendee in &comp.attendees {
-                if attendee.send_scheduling_messages() {
+                if attendee.send_update_messages() {
                     recipients.insert(attendee.email.email.as_str());
                 }
+            }
+
+            if increment_sequence {
+                increment_sequences.push(comp.comp_id);
             }
 
             // Export component with updated sequence and participation status
@@ -145,7 +157,7 @@ pub(crate) fn organizer_handle_update(
                 itip.uid,
                 &dt_stamp,
                 sequence,
-                Some(&ICalendarParticipationStatus::NeedsAction),
+                ItipExportAs::Organizer(&ICalendarParticipationStatus::NeedsAction),
             )
         } else if let Some(mut cancel_comp) = cancel_component(
             ical,
@@ -166,7 +178,6 @@ pub(crate) fn organizer_handle_update(
         };
 
         // Add component to message
-        scheduling_component_ids.push(comp.comp_id);
         message.components[comp.comp_id as usize] = component;
         message.components[0].component_ids.push(comp.comp_id);
     }
@@ -175,25 +186,24 @@ pub(crate) fn organizer_handle_update(
     for (comp_id, comp) in ical.components.iter().enumerate() {
         if !is_cancel && matches!(comp.component_type, ICalendarComponentType::VTimezone) {
             copy_components.extend(comp.component_ids.iter().copied());
+            message.components[0].component_ids.push(comp_id as u16);
         } else if !copy_components.contains(&(comp_id as u16)) {
             continue;
         }
-        message.components.push(comp.clone());
-        message.components[0].component_ids.push(comp_id as u16);
+        message.components[comp_id] = comp.clone();
     }
+    message.components[0].component_ids.sort_unstable();
 
     if !recipients.is_empty() {
-        if increment_sequence {
-            info.sequence = sequence;
-        }
-
-        Ok(ItipMessage {
+        let message = ItipMessage {
             method: ICalendarMethod::Request,
             from: itip.organizer.email.email.clone(),
             to: recipients.into_iter().map(|e| e.to_string()).collect(),
             changed_properties: vec![],
             message,
-        })
+        };
+
+        Ok(message)
     } else {
         Err(ItipError::NothingToSend)
     }
@@ -202,7 +212,7 @@ pub(crate) fn organizer_handle_update(
 pub(crate) fn organizer_request_full(
     ical: &ICalendar,
     itip: ItipSnapshots<'_>,
-    sequence: u32,
+    mut increment_sequence: Option<&mut Vec<u16>>,
     include_alarms: bool,
 ) -> Result<ItipMessage, ItipError> {
     // Prepare iTIP message
@@ -214,19 +224,23 @@ pub(crate) fn organizer_request_full(
 
     let mut recipients = AHashSet::new();
     let mut copy_components = AHashSet::new();
-    let mut scheduling_component_ids = Vec::with_capacity(itip.components.len());
 
     for comp in itip.components.into_values() {
         // Prepare component for iTIP
+        let sequence = if let Some(increment_sequence) = &mut increment_sequence {
+            increment_sequence.push(comp.comp_id);
+            comp.sequence.unwrap_or_default() + 1
+        } else {
+            comp.sequence.unwrap_or_default()
+        };
         let orig_component = &ical.components[comp.comp_id as usize];
         let mut component = itip_export_component(
             orig_component,
             itip.uid,
             &dt_stamp,
             sequence,
-            Some(&ICalendarParticipationStatus::NeedsAction),
+            ItipExportAs::Organizer(&ICalendarParticipationStatus::NeedsAction),
         );
-        scheduling_component_ids.push(comp.comp_id);
 
         // Add VALARM sub-components
         if include_alarms {
@@ -247,7 +261,7 @@ pub(crate) fn organizer_request_full(
 
         // Add attendees
         for attendee in comp.attendees {
-            if attendee.send_scheduling_messages() {
+            if attendee.send_invite_messages() {
                 recipients.insert(attendee.email.email);
             }
         }
@@ -257,12 +271,13 @@ pub(crate) fn organizer_request_full(
     for (comp_id, comp) in ical.components.iter().enumerate() {
         if matches!(comp.component_type, ICalendarComponentType::VTimezone) {
             copy_components.extend(comp.component_ids.iter().copied());
+            message.components[0].component_ids.push(comp_id as u16);
         } else if !copy_components.contains(&(comp_id as u16)) {
             continue;
         }
-        message.components.push(comp.clone());
-        message.components[0].component_ids.push(comp_id as u16);
+        message.components[comp_id] = comp.clone();
     }
+    message.components[0].component_ids.sort_unstable();
 
     if !recipients.is_empty() {
         Ok(ItipMessage {

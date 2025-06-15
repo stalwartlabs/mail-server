@@ -10,23 +10,23 @@ use crate::{
         ICalendarValue, Uri,
     },
     scheduling::{
-        Attendee, Email, InstanceId, ItipEntry, ItipEntryValue, ItipError, ItipSnapshot,
-        ItipSnapshots, Organizer, RecurrenceId, UnresolvedDateTime,
+        Attendee, Email, InstanceId, ItipDateTime, ItipEntry, ItipEntryValue, ItipError,
+        ItipSnapshot, ItipSnapshots, Organizer, RecurrenceId,
     },
 };
 use ahash::AHashMap;
 
-pub(crate) fn itip_snapshot<'x>(
+pub(crate) fn itip_snapshot<'x, 'y>(
     ical: &'x ICalendar,
-    account_emails: &'x [&'x str],
+    account_emails: &'y [&'y str],
     force_add_client_scheduling: bool,
 ) -> Result<ItipSnapshots<'x>, ItipError> {
     let mut organizer: Option<Organizer<'x>> = None;
     let mut uid: Option<&'x str> = None;
-    let mut sequence: Option<i64> = None;
     let mut components = AHashMap::new();
     let mut expect_object_type = None;
     let mut has_local_emails = false;
+    let mut tz_resolver = None;
 
     for (comp_id, comp) in ical.components.iter().enumerate() {
         if comp.component_type.is_scheduling_object()
@@ -185,40 +185,41 @@ pub(crate) fn itip_snapshot<'x>(
                         }
                     }
                     ICalendarProperty::Sequence => {
-                        if let Some(sequence_) = entry.values.first().and_then(|v| v.as_integer()) {
-                            match sequence {
-                                Some(existing_sequence) if existing_sequence != sequence_ => {
-                                    return Err(ItipError::MultipleSequence);
-                                }
-                                None => {
-                                    sequence = Some(sequence_);
-                                }
-                                _ => {}
-                            }
+                        if let Some(sequence) = entry.values.first().and_then(|v| v.as_integer()) {
+                            sched_comp.sequence = Some(sequence);
                         }
                     }
                     ICalendarProperty::RecurrenceId => {
                         if let Some(date) =
                             entry.values.first().and_then(|v| v.as_partial_date_time())
                         {
-                            let mut recurrence_id = RecurrenceId {
-                                entry_id: entry_id as u16,
-                                date: UnresolvedDateTime { date, tz_id: None },
-                                this_and_future: false,
-                            };
+                            let mut this_and_future = false;
+                            let mut tz_id = None;
+
                             for param in &entry.params {
                                 match param {
                                     ICalendarParameter::Tzid(id) => {
-                                        recurrence_id.date.tz_id = Some(id.as_str());
+                                        tz_id = Some(id.as_str());
                                     }
                                     ICalendarParameter::Range => {
-                                        recurrence_id.this_and_future = true;
+                                        this_and_future = true;
                                     }
                                     _ => (),
                                 }
                             }
 
-                            instance_id = InstanceId::Recurrence(recurrence_id);
+                            instance_id = InstanceId::Recurrence(RecurrenceId {
+                                entry_id: entry_id as u16,
+                                date: date
+                                    .to_date_time_with_tz(
+                                        tz_resolver
+                                            .get_or_insert_with(|| ical.build_tz_resolver())
+                                            .resolve(tz_id),
+                                    )
+                                    .map(|dt| dt.timestamp())
+                                    .unwrap_or_else(|| date.to_timestamp().unwrap_or_default()),
+                                this_and_future,
+                            });
                         }
                     }
                     ICalendarProperty::RequestStatus => {
@@ -241,17 +242,29 @@ pub(crate) fn itip_snapshot<'x>(
                     | ICalendarProperty::Location
                     | ICalendarProperty::Summary
                     | ICalendarProperty::Description
-                    | ICalendarProperty::Priority => {
+                    | ICalendarProperty::Priority
+                    | ICalendarProperty::PercentComplete
+                    | ICalendarProperty::Completed => {
                         let tz_id = entry.tz_id();
                         for value in &entry.values {
                             let value = match value {
                                 ICalendarValue::Uri(Uri::Location(v)) => {
                                     ItipEntryValue::Text(v.as_str())
                                 }
-                                ICalendarValue::PartialDateTime(partial_date_time) => {
-                                    ItipEntryValue::DateTime(UnresolvedDateTime {
-                                        date: partial_date_time,
+                                ICalendarValue::PartialDateTime(date) => {
+                                    ItipEntryValue::DateTime(ItipDateTime {
+                                        date: date.as_ref(),
                                         tz_id,
+                                        timestamp: date
+                                            .to_date_time_with_tz(
+                                                tz_resolver
+                                                    .get_or_insert_with(|| ical.build_tz_resolver())
+                                                    .resolve(tz_id),
+                                            )
+                                            .map(|dt| dt.timestamp())
+                                            .unwrap_or_else(|| {
+                                                date.to_timestamp().unwrap_or_default()
+                                            }),
                                     })
                                 }
                                 ICalendarValue::Duration(v) => ItipEntryValue::Duration(v),
@@ -282,12 +295,19 @@ pub(crate) fn itip_snapshot<'x>(
         Ok(ItipSnapshots {
             organizer: organizer.ok_or(ItipError::NoSchedulingInfo)?,
             uid: uid.ok_or(ItipError::MissingUid)?,
-            sequence,
             components,
         })
     } else if !has_local_emails {
         Err(ItipError::NotOrganizerNorAttendee)
     } else {
         Err(ItipError::NoSchedulingInfo)
+    }
+}
+
+impl ItipSnapshot<'_> {
+    pub fn attendee_by_email(&self, email: &str) -> Option<&Attendee<'_>> {
+        self.attendees
+            .iter()
+            .find(|attendee| attendee.email.email == email)
     }
 }

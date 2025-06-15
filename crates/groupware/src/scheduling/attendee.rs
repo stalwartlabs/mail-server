@@ -11,9 +11,8 @@ use crate::{
         ICalendarParticipationStatus, ICalendarProperty, ICalendarValue,
     },
     scheduling::{
-        itip::{itip_build_envelope, itip_export_component},
+        itip::{itip_add_tz, itip_build_envelope, itip_export_component, ItipExportAs},
         Email, InstanceId, ItipEntryValue, ItipError, ItipMessage, ItipSnapshot, ItipSnapshots,
-        SchedulingInfo,
     },
 };
 use ahash::AHashSet;
@@ -23,7 +22,6 @@ pub(crate) fn attendee_handle_update(
     new_ical: &ICalendar,
     old_itip: ItipSnapshots<'_>,
     new_itip: ItipSnapshots<'_>,
-    info: &mut SchedulingInfo,
 ) -> Result<ItipMessage, ItipError> {
     let dt_stamp = PartialDateTime::now();
     let mut message = ICalendar {
@@ -35,52 +33,35 @@ pub(crate) fn attendee_handle_update(
 
     let mut mail_from = None;
     let mut email_rcpt = AHashSet::new();
-    let mut tz_resolver = None;
 
     for (instance_id, instance) in &new_itip.components {
         if let Some(old_instance) = old_itip.components.get(instance_id) {
             match (instance.local_attendee(), old_instance.local_attendee()) {
                 (Some(attendee), Some(old_attendee)) if attendee.email == old_attendee.email => {
                     // Check added fields
-                    for new_entry in old_instance.entries.difference(&instance.entries) {
+                    for new_entry in instance.entries.difference(&old_instance.entries) {
                         match (new_entry.name, &new_entry.value) {
-                            (ICalendarProperty::Exdate, ItipEntryValue::DateTime(udt))
+                            (ICalendarProperty::Exdate, ItipEntryValue::DateTime(date))
                                 if instance_id == &InstanceId::Main =>
                             {
-                                if let Some(date) = udt.date.to_date_time_with_tz(
-                                    tz_resolver
-                                        .get_or_insert_with(|| old_ical.build_tz_resolver())
-                                        .resolve(udt.tz_id),
+                                if let Some((mut cancel_comp, attendee_email)) = attendee_decline(
+                                    old_ical,
+                                    instance_id,
+                                    &old_itip,
+                                    old_instance,
+                                    &dt_stamp,
+                                    &mut email_rcpt,
                                 ) {
-                                    if let Some((mut cancel_comp, attendee_email)) =
-                                        attendee_decline(
-                                            old_ical,
-                                            instance_id,
-                                            &old_itip,
-                                            old_instance,
-                                            &dt_stamp,
-                                            info.sequence,
-                                            &mut email_rcpt,
-                                        )
-                                    {
-                                        // Add EXDATE as RECURRENCE-ID
-                                        cancel_comp.add_property(
-                                            ICalendarProperty::RecurrenceId,
-                                            ICalendarValue::PartialDateTime(Box::new(
-                                                PartialDateTime::from_utc_timestamp(
-                                                    date.timestamp(),
-                                                ),
-                                            )),
-                                        );
+                                    // Add EXDATE as RECURRENCE-ID
+                                    cancel_comp
+                                        .entries
+                                        .push(date.to_entry(ICalendarProperty::RecurrenceId));
 
-                                        // Add cancel component
-                                        let comp_id = message.components.len() as u16;
-                                        message.components[0].component_ids.push(comp_id);
-                                        message.components.push(cancel_comp);
-                                        mail_from = Some(&attendee_email.email);
-                                    }
-                                } else {
-                                    return Err(ItipError::ChangeNotAllowed);
+                                    // Add cancel component
+                                    let comp_id = message.components.len() as u16;
+                                    message.components[0].component_ids.push(comp_id);
+                                    message.components.push(cancel_comp);
+                                    mail_from = Some(&attendee_email.email);
                                 }
                             }
                             (
@@ -108,14 +89,20 @@ pub(crate) fn attendee_handle_update(
                             &new_ical.components[instance.comp_id as usize],
                             new_itip.uid,
                             &dt_stamp,
-                            info.sequence,
-                            None,
+                            instance.sequence.unwrap_or_default(),
+                            ItipExportAs::Attendee(
+                                instance
+                                    .attendee_delegates(attendee)
+                                    .chain([attendee])
+                                    .map(|a| a.entry_id)
+                                    .collect(),
+                            ),
                         ));
                         mail_from = Some(&attendee.email.email);
                     }
 
                     // Check removed fields
-                    for removed_entry in instance.entries.difference(&old_instance.entries) {
+                    for removed_entry in old_instance.entries.difference(&instance.entries) {
                         if !matches!(
                             removed_entry.name,
                             ICalendarProperty::Exdate
@@ -143,8 +130,14 @@ pub(crate) fn attendee_handle_update(
                 &new_ical.components[instance.comp_id as usize],
                 new_itip.uid,
                 &dt_stamp,
-                info.sequence,
-                None,
+                instance.sequence.unwrap_or_default(),
+                ItipExportAs::Attendee(
+                    instance
+                        .attendee_delegates(local_attendee)
+                        .chain([local_attendee])
+                        .map(|a| a.entry_id)
+                        .collect(),
+                ),
             ));
             mail_from = Some(&local_attendee.email.email);
         } else {
@@ -162,7 +155,6 @@ pub(crate) fn attendee_handle_update(
                     &old_itip,
                     old_instance,
                     &dt_stamp,
-                    info.sequence,
                     &mut email_rcpt,
                 ) {
                     // Add cancel component
@@ -181,6 +173,9 @@ pub(crate) fn attendee_handle_update(
     if let Some(from) = mail_from {
         email_rcpt.insert(&new_itip.organizer.email.email);
 
+        // Add timezones if needed
+        itip_add_tz(&mut message, new_ical);
+
         Ok(ItipMessage {
             method: ICalendarMethod::Reply,
             from: from.to_string(),
@@ -195,11 +190,10 @@ pub(crate) fn attendee_handle_update(
 
 pub(crate) fn attendee_decline<'x>(
     ical: &'x ICalendar,
-    instance_id: &'x InstanceId<'x>,
+    instance_id: &'x InstanceId,
     itip: &'x ItipSnapshots<'x>,
     comp: &'x ItipSnapshot<'x>,
     dt_stamp: &'x PartialDateTime,
-    sequence: u32,
     email_rcpt: &mut AHashSet<&'x str>,
 ) -> Option<(ICalendarComponent, &'x Email)> {
     let component = &ical.components[comp.comp_id as usize];
@@ -249,7 +243,7 @@ pub(crate) fn attendee_decline<'x>(
         );
         cancel_comp.add_uid(itip.uid);
         cancel_comp.add_dtstamp(dt_stamp.clone());
-        cancel_comp.add_sequence(sequence);
+        cancel_comp.add_sequence(comp.sequence.unwrap_or_default());
 
         if let InstanceId::Recurrence(recurrence_id) = instance_id {
             cancel_comp

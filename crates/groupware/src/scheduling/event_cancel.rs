@@ -11,16 +11,17 @@ use crate::{
         ICalendarValue,
     },
     scheduling::{
-        attendee::attendee_decline, itip::itip_build_envelope, snapshot::itip_snapshot, Email,
-        ItipError, ItipMessage, ItipSnapshot, ItipSnapshots, SchedulingInfo,
+        attendee::attendee_decline,
+        itip::{itip_add_tz, itip_build_envelope, itip_finalize},
+        snapshot::itip_snapshot,
+        Email, InstanceId, ItipError, ItipMessage, ItipSnapshot, ItipSnapshots,
     },
 };
 use ahash::AHashSet;
 
 pub fn itip_cancel(
-    ical: &ICalendar,
+    ical: &mut ICalendar,
     account_emails: &[&str],
-    info: &mut SchedulingInfo,
 ) -> Result<ItipMessage, ItipError> {
     // Prepare iTIP message
     let itip = itip_snapshot(ical, account_emails, false)?;
@@ -34,25 +35,30 @@ pub fn itip_cancel(
         let mut comp = itip_build_envelope(ICalendarMethod::Cancel);
         comp.component_ids.push(1);
         message.components.push(comp);
-        let sequence = info.sequence + 1;
 
         // Fetch guest emails
         let mut recipients = AHashSet::new();
         let mut cancel_guests = AHashSet::new();
         let mut component_type = &ICalendarComponentType::VEvent;
-        for comp in itip.components.values() {
+        let mut increment_sequences = Vec::new();
+        let mut sequence = 0;
+        for (instance_id, comp) in &itip.components {
             component_type = &ical.components[comp.comp_id as usize].component_type;
             for attendee in &comp.attendees {
-                if attendee.send_scheduling_messages() {
+                if attendee.send_update_messages() {
                     recipients.insert(attendee.email.email.clone());
                 }
                 cancel_guests.insert(&attendee.email);
             }
+
+            // Increment sequence if needed
+            increment_sequences.push(comp.comp_id);
+            if instance_id == &InstanceId::Main {
+                sequence = comp.sequence.unwrap_or_default() + 1;
+            }
         }
 
         if !recipients.is_empty() && component_type != &ICalendarComponentType::VFreebusy {
-            info.sequence = sequence;
-
             message.components.push(build_cancel_component(
                 component_type.clone(),
                 &itip,
@@ -60,14 +66,17 @@ pub fn itip_cancel(
                 dt_stamp,
                 cancel_guests,
             ));
-
-            Ok(ItipMessage {
+            let message = ItipMessage {
                 method: ICalendarMethod::Cancel,
                 from: itip.organizer.email.email,
                 to: recipients.into_iter().collect(),
                 changed_properties: vec![],
                 message,
-            })
+            };
+
+            itip_finalize(ical, &increment_sequences);
+
+            Ok(message)
         } else {
             Err(ItipError::NothingToSend)
         }
@@ -81,15 +90,9 @@ pub fn itip_cancel(
         let mut mail_from = None;
         let mut email_rcpt = AHashSet::new();
         for (instance_id, comp) in &itip.components {
-            if let Some((cancel_comp, attendee_email)) = attendee_decline(
-                ical,
-                instance_id,
-                &itip,
-                comp,
-                &dt_stamp,
-                info.sequence,
-                &mut email_rcpt,
-            ) {
+            if let Some((cancel_comp, attendee_email)) =
+                attendee_decline(ical, instance_id, &itip, comp, &dt_stamp, &mut email_rcpt)
+            {
                 // Add cancel component
                 let comp_id = message.components.len() as u16;
                 message.components[0].component_ids.push(comp_id);
@@ -99,15 +102,21 @@ pub fn itip_cancel(
         }
 
         if let Some(from) = mail_from {
-            email_rcpt.insert(&itip.organizer.email.email);
+            // Add timezone information if needed
+            itip_add_tz(&mut message, ical);
 
-            Ok(ItipMessage {
+            email_rcpt.insert(&itip.organizer.email.email);
+            let message = ItipMessage {
                 method: ICalendarMethod::Reply,
                 from: from.to_string(),
                 to: email_rcpt.into_iter().map(|e| e.to_string()).collect(),
                 changed_properties: vec![],
                 message,
-            })
+            };
+
+            itip_finalize(ical, &[]);
+
+            Ok(message)
         } else {
             Err(ItipError::NothingToSend)
         }
@@ -118,7 +127,7 @@ pub(crate) fn cancel_component<'x>(
     ical: &'x ICalendar,
     itip: &'x ItipSnapshots<'x>,
     comp: &'x ItipSnapshot<'x>,
-    sequence: u32,
+    sequence: i64,
     dt_stamp: PartialDateTime,
     recipients: &mut AHashSet<&'x str>,
 ) -> Option<ICalendarComponent> {
@@ -127,7 +136,7 @@ pub(crate) fn cancel_component<'x>(
     let mut has_recipients = false;
 
     for attendee in &comp.attendees {
-        if attendee.send_scheduling_messages() {
+        if attendee.send_update_messages() {
             recipients.insert(attendee.email.email.as_str());
             has_recipients = true;
         }
@@ -150,7 +159,7 @@ pub(crate) fn cancel_component<'x>(
 fn build_cancel_component(
     component_type: ICalendarComponentType,
     itip: &ItipSnapshots<'_>,
-    sequence: u32,
+    sequence: i64,
     dt_stamp: PartialDateTime,
     cancel_guests: AHashSet<&Email>,
 ) -> ICalendarComponent {

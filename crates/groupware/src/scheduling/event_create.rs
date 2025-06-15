@@ -7,15 +7,14 @@
 use crate::{
     icalendar::ICalendar,
     scheduling::{
-        organizer::organizer_request_full, snapshot::itip_snapshot, ItipError, ItipMessage,
-        SchedulingInfo,
+        itip::itip_finalize, organizer::organizer_request_full, snapshot::itip_snapshot, ItipError,
+        ItipMessage,
     },
 };
 
 pub fn itip_create(
-    ical: &ICalendar,
+    ical: &mut ICalendar,
     account_emails: &[&str],
-    info: &mut SchedulingInfo,
 ) -> Result<ItipMessage, ItipError> {
     let itip = itip_snapshot(ical, account_emails, false)?;
     if !itip.organizer.is_server_scheduling {
@@ -23,9 +22,9 @@ pub fn itip_create(
     } else if !itip.organizer.email.is_local {
         Err(ItipError::NotOrganizer)
     } else {
-        let sequence = std::cmp::max(itip.sequence.unwrap_or_default() as u32, info.sequence) + 1;
-        organizer_request_full(ical, itip, sequence, true).inspect(|_| {
-            info.sequence = sequence;
+        let mut sequences = Vec::new();
+        organizer_request_full(ical, itip, Some(&mut sequences), true).inspect(|_| {
+            itip_finalize(ical, &sequences);
         })
     }
 }
